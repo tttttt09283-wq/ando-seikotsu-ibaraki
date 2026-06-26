@@ -5,15 +5,12 @@ export default async function handler(req, res) {
 
   const body = req.body;
   let groupId = null;
-  let userId = null;
 
   if (body.events && body.events.length > 0) {
     const source = body.events[0].source;
     groupId = source.groupId || null;
-    userId = source.userId || null;
   }
 
-  // グループIDをSupabaseに保存
   if (groupId) {
     await fetch('https://dctlirxcwitcupaewiyt.supabase.co/rest/v1/line_groups', {
       method: 'POST',
@@ -27,5 +24,5 @@ export default async function handler(req, res) {
     });
   }
 
-  return res.status(200).json({ status: 'ok', groupId, userId });
+  return res.status(200).json({ status: 'ok', groupId });
 }
