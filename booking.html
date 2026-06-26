@@ -66,7 +66,7 @@ const sb = {
   insert:(table,data)=>sb.query(table,"POST",data),
 };
 
-function getDays(n){return Array.from({length:n},(_,i)=>{const d=new Date();d.setDate(d.getDate()+i+1);return d;});}
+function getDays(n){return Array.from({length:n},(_,i)=>{const d=new Date();d.setDate(d.getDate()+i);return d;});}
 function fmtDate(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;}
 function fmtDateJP(d){return `${d.getMonth()+1}月${d.getDate()}日（${DAYS_JP[d.getDay()]}）`;}
 
@@ -295,7 +295,7 @@ function App(){
             <div style={{marginBottom:20}}>
               <div style={{fontSize:13,fontWeight:700,color:"#555",marginBottom:8}}>📅 日付</div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
-                {days.slice(0,12).map((d,i)=>{
+                {days.slice(0,14).map((d,i)=>{
                   const isSat=d.getDay()===6,isSun=d.getDay()===0;
                   const isSel=selDate&&fmtDate(selDate)===fmtDate(d);
                   return <button key={i} onClick={()=>{setSelDate(d);setSelTime(null);}}
