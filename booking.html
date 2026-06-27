@@ -171,9 +171,9 @@ function App(){
         `💭 継続意思：${form.wantContinue}\n`+
         `📣 経路：${howKnowText}`;
 
-      await fetch('/api/line-notify',{
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
+      await fetch("/api/line-notify",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
         body:JSON.stringify({groupId:LINE_GROUP_ID, message:lineMsg})
       });
     }catch(e){console.error(e);}
