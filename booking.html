@@ -7,7 +7,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-<style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#f0f4f8;}</style>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#f0f4f8;}
+</style>
 </head>
 <body>
 <div id="root"></div>
@@ -18,507 +21,574 @@ const CLINIC_TEL = "0000-00-0000";
 const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
 const LINE_GROUP_ID = "Cfd9d54fedc95bbe4ce1a7ac64ec97fa0";
+const LINE_TOKEN = "IjKfscY0v26S5eBl+Soop/Ty2r+YLovOOanqXJRbUL8093lsfJt1sjgj4T+xN66KZ3ufgPomsXn5BIR3Uy9Bw4HPArx/hpo4dqI6knZXj8aADrf/eTJekeLzCC662exQYxHRUtNSpUUvFweJHRFXCwdB04t89/1O/w1cDnyilFU=";
 
-// スタッフ5名（担当制なし・空き枠管理用）
 const STAFF = [
-  {id:1, name:"岩永"},
-  {id:2, name:"大皿"},
-  {id:3, name:"定井"},
-  {id:4, name:"細永"},
-  {id:5, name:"広川"},
+  {id:1,name:"岩永"},{id:2,name:"大皿"},
+  {id:3,name:"定井"},{id:4,name:"細永"},{id:5,name:"広川"}
 ];
 
-const SLOTS = ["09:00","09:30","10:00","10:30","11:00","11:30","13:00","13:30","14:00","14:30","15:00","15:30","16:00","16:30","17:00","17:30","18:00"];
+const SLOTS = [
+  "09:00","09:30","10:00","10:30","11:00","11:30",
+  "13:00","13:30","14:00","14:30","15:00","15:30",
+  "16:00","16:30","17:00","17:30","18:00"
+];
+
 const DAYS_JP = ["日","月","火","水","木","金","土"];
 const STEPS = ["日時","お客様情報","症状・問診","確認"];
 const HOW_KNOW = ["Instagram","Facebook","Twitter/X","Google検索","チラシ・ポスター","友人・知人の紹介","その他"];
-const BODY_PARTS = ["頸部（首）","肩","上腕","肘","前腕","手首・手","胸部","腰部","臀部","大腿（太もも）","膝","下腿（すね・ふくらはぎ）","足首・足","その他"];
-const INJURY_CAUSES = [
-  {label:"日常生活中のケガ", icon:"🏠", desc:"家事・歩行中など"},
-  {label:"スポーツ中のケガ", icon:"⚽", desc:"運動・練習・試合中"},
-  {label:"交通事故", icon:"🚗", desc:"自動車・自転車事故"},
-  {label:"労働災害", icon:"🔧", desc:"仕事中・通勤中"},
-  {label:"その他のケガ", icon:"📝", desc:"上記以外"},
+const BODY_PARTS = [
+  "頸部（首）","肩","上腕","肘","前腕","手首・手",
+  "胸部","腰部","臀部","大腿（太もも）","膝",
+  "下腿（すね・ふくらはぎ）","足首・足","その他"
 ];
-const PAIN_WHEN = ["今日","昨日","2〜3日前","1週間以内","2週間以内","1ヶ月以内","3ヶ月以内","半年以内","1年以上前"];
+const INJURY_CAUSES = [
+  {label:"日常生活中のケガ",icon:"🏠",desc:"家事・歩行中など"},
+  {label:"スポーツ中のケガ",icon:"⚽",desc:"運動・練習・試合中"},
+  {label:"交通事故",icon:"🚗",desc:"自動車・自転車事故"},
+  {label:"労働災害",icon:"🔧",desc:"仕事中・通勤中"},
+  {label:"その他のケガ",icon:"📝",desc:"上記以外"},
+];
+const PAIN_WHEN = [
+  "今日","昨日","2〜3日前","1週間以内",
+  "2週間以内","1ヶ月以内","3ヶ月以内","半年以内","1年以上前"
+];
 
-const sb = {
-  async query(table, method="GET", body=null, filters="") {
-    const url = `${SUPABASE_URL}/rest/v1/${table}${filters}`;
-    const res = await fetch(url, {
-      method,
-      headers: {"apikey":SUPABASE_ANON_KEY,"Authorization":`Bearer ${SUPABASE_ANON_KEY}`,"Content-Type":"application/json","Prefer":"return=representation"},
-      body: body ? JSON.stringify(body) : null,
-    });
-    const text = await res.text();
-    return text ? JSON.parse(text) : [];
+function toMin(t){
+  var parts = t.split(":");
+  return parseInt(parts[0])*60 + parseInt(parts[1]);
+}
+function fmtDate(d){
+  return d.getFullYear()+"-"+
+    String(d.getMonth()+1).padStart(2,"0")+"-"+
+    String(d.getDate()).padStart(2,"0");
+}
+function fmtDateJP(d){
+  return (d.getMonth()+1)+"月"+d.getDate()+"日（"+DAYS_JP[d.getDay()]+"）";
+}
+function getDays(n){
+  var arr=[];
+  for(var i=0;i<n;i++){
+    var d=new Date();
+    d.setDate(d.getDate()+i);
+    arr.push(d);
+  }
+  return arr;
+}
+
+var sb = {
+  select: function(table, filters){
+    filters = filters || "";
+    return fetch(SUPABASE_URL+"/rest/v1/"+table+filters, {
+      headers:{
+        "apikey":SUPABASE_ANON_KEY,
+        "Authorization":"Bearer "+SUPABASE_ANON_KEY
+      }
+    }).then(function(r){return r.json();}).catch(function(){return [];});
   },
-  select:(table,f="")=>sb.query(table,"GET",null,f),
-  insert:(table,data)=>sb.query(table,"POST",data),
-};
-
-function getDays(n){return Array.from({length:n},(_,i)=>{const d=new Date();d.setDate(d.getDate()+i);return d;});}
-function toMin(t){const[h,m]=t.split(":").map(Number);return h*60+m;}
-function fmtDate(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;}
-function fmtDateJP(d){return `${d.getMonth()+1}月${d.getDate()}日（${DAYS_JP[d.getDay()]}）`;}
-
-const S={
-  label:{display:"block",fontSize:13,fontWeight:700,color:"#444",marginBottom:6},
-  input:{width:"100%",padding:"11px 12px",border:"1.5px solid #ddd",borderRadius:10,fontSize:15,boxSizing:"border-box"},
-  section:{background:"white",borderRadius:12,padding:16,marginBottom:14,boxShadow:"0 1px 6px rgba(0,0,0,0.05)"},
-  sectionTitle:{fontWeight:800,fontSize:14,color:"#1e3a5f",marginBottom:12,borderBottom:"2px solid #eff6ff",paddingBottom:8},
-  btn:{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",color:"white",border:"none",borderRadius:10,padding:"12px 20px",fontWeight:800,cursor:"pointer",fontSize:14},
-  btnBack:{background:"white",color:"#666",border:"1.5px solid #ddd",borderRadius:10,padding:"12px 16px",fontWeight:600,cursor:"pointer",fontSize:14},
-  chip:(sel,color="#1e3a5f")=>({padding:"8px 12px",borderRadius:20,border:`1.5px solid ${sel?color:"#ddd"}`,background:sel?color:"white",color:sel?"white":"#444",fontWeight:sel?700:400,cursor:"pointer",fontSize:13,whiteSpace:"nowrap"}),
+  insert: function(table, data){
+    return fetch(SUPABASE_URL+"/rest/v1/"+table, {
+      method:"POST",
+      headers:{
+        "apikey":SUPABASE_ANON_KEY,
+        "Authorization":"Bearer "+SUPABASE_ANON_KEY,
+        "Content-Type":"application/json",
+        "Prefer":"return=representation"
+      },
+      body:JSON.stringify(data)
+    }).then(function(r){return r.json();}).catch(function(){return null;});
+  }
 };
 
 function App(){
-  const [step,setStep]=React.useState(0);
-  const [selDate,setSelDate]=React.useState(null);
-  const [selTime,setSelTime]=React.useState(null);
-  const [slotData,setSlotData]=React.useState({booked:[],breaks:[]});
-  const [form,setForm]=React.useState({
+  var useState = React.useState;
+  var useEffect = React.useEffect;
+
+  var stepState = useState(0);
+  var step = stepState[0]; var setStep = stepState[1];
+
+  var dateState = useState(null);
+  var selDate = dateState[0]; var setSelDate = dateState[1];
+
+  var timeState = useState(null);
+  var selTime = timeState[0]; var setSelTime = timeState[1];
+
+  var slotState = useState({booked:[],breaks:[]});
+  var slotData = slotState[0]; var setSlotData = slotState[1];
+
+  var doneState = useState(false);
+  var done = doneState[0]; var setDone = doneState[1];
+
+  var submittingState = useState(false);
+  var submitting = submittingState[0]; var setSubmitting = submittingState[1];
+
+  var errState = useState({});
+  var errors = errState[0]; var setErrors = errState[1];
+
+  var formState = useState({
     name:"",nameKana:"",phone:"",
     bodyParts:[],injuryCause:"",injuryCauseDetail:"",
     painWhen:"",painLevel:"",symptoms:[],
     otherClinic:"",otherClinicName:"",medicalHistory:"",
-    wantContinue:"",howKnow:"",howKnowOther:"",lineNotify:false,
+    wantContinue:"",howKnow:"",howKnowOther:"",lineNotify:false
   });
-  const [errors,setErrors]=React.useState({});
-  const [done,setDone]=React.useState(false);
-  const [submitting,setSubmitting]=React.useState(false);
+  var form = formState[0]; var setForm = formState[1];
 
-  const days=getDays(14);
+  var days = getDays(14);
 
-  // 日付選択時に予約・休憩データを取得
-  React.useEffect(()=>{
+  useEffect(function(){
     if(!selDate) return;
-    async function fetch(){
-      try{
-        const dateStr=fmtDate(selDate);
-        const [bookings, breaks] = await Promise.all([
-          sb.select("bookings",`?date=eq.${dateStr}&menu=eq.無料施術体験会（60分）`),
-          sb.select("staff_breaks",`?date=eq.${dateStr}`)
-        ]);
-        setSlotData({
-          booked: Array.isArray(bookings)?bookings:[],
-          breaks: Array.isArray(breaks)?breaks:[]
-        });
-      }catch{setSlotData({booked:[],breaks:[]});}
-    }
-    fetch();
-  },[selDate]);
+    var ds = fmtDate(selDate);
+    Promise.all([
+      sb.select("bookings","?date=eq."+ds+"&menu=eq.無料施術体験会（60分）"),
+      sb.select("staff_breaks","?date=eq."+ds)
+    ]).then(function(results){
+      setSlotData({
+        booked: Array.isArray(results[0])?results[0]:[],
+        breaks: Array.isArray(results[1])?results[1]:[]
+      });
+    });
+  }, [selDate]);
 
-  // そのスロットが満員かどうか判定
-  // 満員 = 予約数 + 休憩数 >= スタッフ数（5名）
-  function isSlotFull(time){
-    const bookedCount = slotData.booked.filter(b=>b.time===time).length;
-    const breakCount = slotData.breaks.filter(b=>b.time===time).length;
-    return (bookedCount + breakCount) >= STAFF.length;
+  function isSlotFull(t){
+    var booked = slotData.booked.filter(function(b){return b.time===t;}).length;
+    var breaks = slotData.breaks.filter(function(b){return b.time===t;}).length;
+    return (booked+breaks) >= STAFF.length;
   }
 
-  // 空いているスタッフを自動割り当て
-  function getAvailableStaffId(time){
-    const bookedStaff = slotData.booked.filter(b=>b.time===time).map(b=>b.staff_id);
-    const breakStaff = slotData.breaks.filter(b=>b.time===time).map(b=>b.staff_id);
-    const unavailable = [...bookedStaff, ...breakStaff];
-    const available = STAFF.find(s=>!unavailable.includes(s.id));
-    return available?.id || 1;
+  function isPastSlot(t){
+    if(!selDate) return false;
+    var now = new Date();
+    if(fmtDate(selDate) !== fmtDate(now)) return false;
+    var nowMin = now.getHours()*60 + now.getMinutes();
+    return toMin(t) <= nowMin;
   }
 
-  function toggleArr(key,val){setForm(f=>({...f,[key]:f[key].includes(val)?f[key].filter(x=>x!==val):[...f[key],val]}));}
+  function getAvailableStaffId(t){
+    var bookedIds = slotData.booked.filter(function(b){return b.time===t;}).map(function(b){return b.staff_id;});
+    var breakIds = slotData.breaks.filter(function(b){return b.time===t;}).map(function(b){return b.staff_id;});
+    var unavail = bookedIds.concat(breakIds);
+    var found = STAFF.find(function(s){return unavail.indexOf(s.id)===-1;});
+    return found ? found.id : 1;
+  }
+
+  function toggleArr(key, val){
+    var arr = form[key];
+    var newArr = arr.indexOf(val)>-1 ? arr.filter(function(x){return x!==val;}) : arr.concat([val]);
+    var upd = {}; upd[key] = newArr;
+    setForm(Object.assign({}, form, upd));
+  }
+
+  function setF(key, val){
+    var upd = {}; upd[key] = val;
+    setForm(Object.assign({}, form, upd));
+  }
 
   function validate2(){
-    const e={};
-    if(!form.name.trim())e.name="お名前を入力してください";
-    if(!form.phone.trim())e.phone="電話番号を入力してください";
-    setErrors(e);return Object.keys(e).length===0;
+    var e = {};
+    if(!form.name.trim()) e.name = "お名前を入力してください";
+    if(!form.phone.trim()) e.phone = "電話番号を入力してください";
+    setErrors(e);
+    return Object.keys(e).length===0;
   }
 
   function validate3(){
-    const e={};
-    if(form.bodyParts.length===0)e.bodyParts="負傷部位を選択してください";
-    if(!form.injuryCause)e.injuryCause="負傷原因を選択してください";
-    if(!form.painWhen)e.painWhen="時期を選択してください";
-    if(!form.wantContinue)e.wantContinue="ご回答をお選びください";
-    if(!form.howKnow)e.howKnow="お選びください";
-    setErrors(e);return Object.keys(e).length===0;
+    var e = {};
+    if(form.bodyParts.length===0) e.bodyParts = "負傷部位を選択してください";
+    if(!form.injuryCause) e.injuryCause = "負傷原因を選択してください";
+    if(!form.painWhen) e.painWhen = "時期を選択してください";
+    if(!form.wantContinue) e.wantContinue = "ご回答をお選びください";
+    if(!form.howKnow) e.howKnow = "お選びください";
+    setErrors(e);
+    return Object.keys(e).length===0;
   }
 
-  async function submit(){
-    if(!validate3())return;
+  function submit(){
+    if(!validate3()) return;
     setSubmitting(true);
-    try{
-      const assignedStaffId = getAvailableStaffId(selTime);
-      await sb.insert("bookings",{
-        patient_name:form.name, phone:form.phone,
-        staff_id:assignedStaffId,
-        date:fmtDate(selDate), time:selTime,
-        menu:"無料施術体験会（60分）",
-        line_notify:form.lineNotify, reminded:false,
-      });
+    var staffId = getAvailableStaffId(selTime);
+    var howKnowText = form.howKnow==="その他" ? "その他："+form.howKnowOther : form.howKnow;
 
-      // LINEグループに通知
-      const howKnowText = form.howKnow==="その他"?`その他：${form.howKnowOther}`:form.howKnow;
-      const lineMsg =
-        `🏥【あんど整骨院 新規予約】\n\n`+
-        `👤 ${form.name} 様\n`+
-        `📞 ${form.phone}\n`+
-        `📅 ${fmtDateJP(selDate)} ${selTime}\n`+
-        `🦴 負傷部位：${form.bodyParts.join("・")}\n`+
-        `⚡ 原因：${form.injuryCause}\n`+
-        `📅 いつから：${form.painWhen}\n`+
-        `💭 継続意思：${form.wantContinue}\n`+
-        `📣 経路：${howKnowText}`;
+    sb.insert("bookings",{
+      patient_name:form.name,
+      phone:form.phone,
+      staff_id:staffId,
+      date:fmtDate(selDate),
+      time:selTime,
+      menu:"無料施術体験会（60分）",
+      line_notify:form.lineNotify,
+      reminded:false,
+      body_parts:form.bodyParts.join("・"),
+      injury_cause:form.injuryCause,
+      injury_cause_detail:form.injuryCauseDetail,
+      pain_when:form.painWhen,
+      pain_level:form.painLevel,
+      symptoms:form.symptoms.join("・"),
+      other_clinic:form.otherClinic+(form.otherClinicName?"（"+form.otherClinicName+"）":""),
+      medical_history:form.medicalHistory,
+      want_continue:form.wantContinue,
+      how_know:howKnowText
+    }).then(function(){
+      var msg = "🏥【あんど整骨院 新規予約】\n\n"+
+        "👤 "+form.name+" 様\n"+
+        "📞 "+form.phone+"\n"+
+        "📅 "+fmtDateJP(selDate)+" "+selTime+"\n"+
+        "🦴 負傷部位："+form.bodyParts.join("・")+"\n"+
+        "⚡ 原因："+form.injuryCause+"\n"+
+        "📅 いつから："+form.painWhen+"\n"+
+        "💭 継続意思："+form.wantContinue+"\n"+
+        "📣 経路："+howKnowText;
 
-      await fetch("/api/line-notify",{
+      return fetch("/api/line-notify",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({groupId:LINE_GROUP_ID, message:lineMsg})
+        body:JSON.stringify({groupId:LINE_GROUP_ID, message:msg})
       });
-    }catch(e){console.error(e);}
-    setDone(true);setSubmitting(false);
+    }).catch(function(){}).finally(function(){
+      setDone(true);
+      setSubmitting(false);
+    });
   }
 
   function reset(){
-    setStep(0);setSelDate(null);setSelTime(null);setSlotData({booked:[],breaks:[]});
+    setStep(0); setSelDate(null); setSelTime(null);
+    setSlotData({booked:[],breaks:[]});
     setForm({name:"",nameKana:"",phone:"",bodyParts:[],injuryCause:"",injuryCauseDetail:"",painWhen:"",painLevel:"",symptoms:[],otherClinic:"",otherClinicName:"",medicalHistory:"",wantContinue:"",howKnow:"",howKnowOther:"",lineNotify:false});
     setDone(false);
   }
 
-  const Header=()=>(
-    <div>
-      <div style={{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",color:"white",padding:"18px 16px",textAlign:"center"}}>
-        <div style={{fontSize:20,fontWeight:800,letterSpacing:2}}>{CLINIC_NAME}</div>
-        <div style={{fontSize:12,opacity:0.75,marginTop:2}}>無料施術体験会 オンライン予約</div>
-      </div>
-      <div style={{background:"#fef9ec",borderBottom:"2px solid #fde68a",padding:"10px 16px",textAlign:"center"}}>
-        <span style={{fontWeight:800,color:"#92400e",fontSize:14}}>🎁 無料施術体験会（60分）¥0</span>
-        <span style={{fontSize:12,color:"#a16207",marginLeft:8}}>初めての方限定</span>
-      </div>
-    </div>
+  var H = {
+    label:{display:"block",fontSize:13,fontWeight:700,color:"#444",marginBottom:6},
+    input:{width:"100%",padding:"11px 12px",border:"1.5px solid #ddd",borderRadius:10,fontSize:15,boxSizing:"border-box"},
+    sec:{background:"white",borderRadius:12,padding:16,marginBottom:14,boxShadow:"0 1px 6px rgba(0,0,0,0.05)"},
+    secT:{fontWeight:800,fontSize:14,color:"#1e3a5f",marginBottom:12,borderBottom:"2px solid #eff6ff",paddingBottom:8},
+    btn:{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",color:"white",border:"none",borderRadius:10,padding:"12px 20px",fontWeight:800,cursor:"pointer",fontSize:14,width:"100%"},
+    btnB:{background:"white",color:"#666",border:"1.5px solid #ddd",borderRadius:10,padding:"12px 16px",fontWeight:600,cursor:"pointer",fontSize:14}
+  };
+
+  function chip(sel, val, onClick, color){
+    color = color||"#1e3a5f";
+    return React.createElement("button",{
+      key:val, onClick:onClick,
+      style:{padding:"8px 12px",borderRadius:20,border:"1.5px solid "+(sel?color:"#ddd"),
+        background:sel?color:"white",color:sel?"white":"#444",
+        fontWeight:sel?700:400,cursor:"pointer",fontSize:13,whiteSpace:"nowrap",marginBottom:4}
+    }, val);
+  }
+
+  if(done) return React.createElement("div",{style:{minHeight:"100vh",background:"#f0f4f8"}},
+    React.createElement("div",{style:{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",color:"white",padding:"18px 16px",textAlign:"center"}},
+      React.createElement("div",{style:{fontSize:20,fontWeight:800,letterSpacing:2}},CLINIC_NAME)
+    ),
+    React.createElement("div",{style:{maxWidth:480,margin:"0 auto",padding:"40px 16px",textAlign:"center"}},
+      React.createElement("div",{style:{fontSize:72,marginBottom:16}},"🎉"),
+      React.createElement("div",{style:{fontSize:22,fontWeight:800,color:"#1e3a5f",marginBottom:8}},"予約が完了しました！"),
+      React.createElement("div",{style:{color:"#666",fontSize:14,marginBottom:28,lineHeight:1.8}},
+        "無料施術体験会のご予約ありがとうございます。",React.createElement("br"),
+        "ご来院をお待ちしております🌸"
+      ),
+      React.createElement("div",{style:{background:"#f0f7ff",borderRadius:14,padding:20,textAlign:"left",marginBottom:24}},
+        [["メニュー","🎁 無料施術体験会（60分）¥0"],
+         ["日時",selDate?fmtDateJP(selDate)+" "+selTime:""],
+         ["お名前",form.name+" 様"],
+         ["電話番号",form.phone]
+        ].map(function(item){
+          return React.createElement("div",{key:item[0],style:{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #e5e7eb",gap:12}},
+            React.createElement("span",{style:{fontSize:13,color:"#9ca3af",fontWeight:600,whiteSpace:"nowrap"}},item[0]),
+            React.createElement("span",{style:{fontSize:14,color:"#1e3a5f",fontWeight:600,textAlign:"right"}},item[1])
+          );
+        })
+      ),
+      React.createElement("div",{style:{background:"#fef9ec",border:"1px solid #fde68a",borderRadius:10,padding:"12px 16px",marginBottom:24,fontSize:13,color:"#92400e",textAlign:"left"}},
+        "🔔 キャンセル・変更は前日18時までに",React.createElement("br"),
+        React.createElement("strong",null,CLINIC_TEL),"までご連絡ください。"
+      ),
+      React.createElement("button",{onClick:reset,style:H.btn},"別の予約をする")
+    )
   );
 
-  if(done) return(
-    <div style={{minHeight:"100vh",background:"#f0f4f8"}}>
-      <Header/>
-      <div style={{maxWidth:480,margin:"0 auto",padding:"40px 16px",textAlign:"center"}}>
-        <div style={{fontSize:72,marginBottom:16}}>🎉</div>
-        <div style={{fontSize:22,fontWeight:800,color:"#1e3a5f",marginBottom:8}}>予約が完了しました！</div>
-        <div style={{color:"#666",fontSize:14,marginBottom:28,lineHeight:1.8}}>無料施術体験会のご予約ありがとうございます。<br/>ご来院をお待ちしております🌸</div>
-        <div style={{background:"#f0f7ff",borderRadius:14,padding:20,textAlign:"left",marginBottom:24}}>
-          {[
+  return React.createElement("div",{style:{minHeight:"100vh",background:"#f0f4f8"}},
+    // ヘッダー
+    React.createElement("div",{style:{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",color:"white",padding:"18px 16px",textAlign:"center"}},
+      React.createElement("div",{style:{fontSize:20,fontWeight:800,letterSpacing:2}},CLINIC_NAME),
+      React.createElement("div",{style:{fontSize:12,opacity:0.75,marginTop:2}},"無料施術体験会 オンライン予約")
+    ),
+    // 無料バナー
+    React.createElement("div",{style:{background:"#fef9ec",borderBottom:"2px solid #fde68a",padding:"10px 16px",textAlign:"center"}},
+      React.createElement("span",{style:{fontWeight:800,color:"#92400e",fontSize:14}},"🎁 無料施術体験会（60分）¥0"),
+      React.createElement("span",{style:{fontSize:12,color:"#a16207",marginLeft:8}},"初めての方限定")
+    ),
+    // ステッパー
+    React.createElement("div",{style:{background:"white",borderBottom:"1px solid #eee",padding:"12px 16px"}},
+      React.createElement("div",{style:{maxWidth:480,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between"}},
+        STEPS.map(function(label,i){
+          return React.createElement("div",{key:i,style:{display:"flex",alignItems:"center",flex:i<STEPS.length-1?1:"none"}},
+            React.createElement("div",{style:{display:"flex",flexDirection:"column",alignItems:"center"}},
+              React.createElement("div",{style:{width:24,height:24,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,background:i<step?"#059669":i===step?"#1e3a5f":"#e5e7eb",color:i<=step?"white":"#9ca3af"}},
+                i<step?"✓":String(i+1)
+              ),
+              React.createElement("div",{style:{fontSize:9,marginTop:2,color:i===step?"#1e3a5f":"#9ca3af",fontWeight:i===step?700:400,whiteSpace:"nowrap"}},label)
+            ),
+            i<STEPS.length-1?React.createElement("div",{style:{flex:1,height:2,background:i<step?"#059669":"#e5e7eb",margin:"0 2px",marginBottom:12}}):null
+          );
+        })
+      )
+    ),
+    // コンテンツ
+    React.createElement("div",{style:{maxWidth:480,margin:"0 auto",padding:"20px 16px"}},
+
+      // STEP 0: 日時
+      step===0?React.createElement("div",null,
+        React.createElement("div",{style:{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:16}},"日時を選んでください"),
+        React.createElement("div",{style:{marginBottom:20}},
+          React.createElement("div",{style:{fontSize:13,fontWeight:700,color:"#555",marginBottom:8}},"📅 日付"),
+          React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}},
+            days.map(function(d,i){
+              var isSat=d.getDay()===6, isSun=d.getDay()===0;
+              var isSel=selDate&&fmtDate(selDate)===fmtDate(d);
+              return React.createElement("button",{key:i,onClick:function(){setSelDate(d);setSelTime(null);},
+                style:{padding:"8px 4px",borderRadius:8,border:isSel?"2px solid #1e3a5f":"1.5px solid #e5e7eb",background:isSel?"#1e3a5f":"white",color:isSel?"white":isSun?"#ef4444":isSat?"#3b82f6":"#333",cursor:"pointer",fontSize:12,lineHeight:1.5}},
+                React.createElement("div",null,i===0?"今日":(d.getMonth()+1)+"/"+d.getDate()),
+                React.createElement("div",{style:{fontSize:10}},"（"+DAYS_JP[d.getDay()]+"）")
+              );
+            })
+          )
+        ),
+        selDate?React.createElement("div",{style:{marginBottom:20}},
+          React.createElement("div",{style:{fontSize:13,fontWeight:700,color:"#555",marginBottom:8}},"🕐 時間"),
+          React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}},
+            SLOTS.map(function(t){
+              var full=isSlotFull(t);
+              var past=isPastSlot(t);
+              var disabled=full||past;
+              var isSel=selTime===t;
+              return React.createElement("button",{key:t,disabled:disabled,
+                onClick:function(){if(!disabled)setSelTime(t);},
+                style:{padding:"9px 4px",borderRadius:8,
+                  border:isSel?"2px solid #1e3a5f":"1.5px solid #e5e7eb",
+                  background:disabled?"#f3f4f6":isSel?"#1e3a5f":"white",
+                  color:disabled?"#d1d5db":isSel?"white":"#333",
+                  cursor:disabled?"not-allowed":"pointer",fontSize:13,
+                  fontWeight:isSel?700:400,
+                  textDecoration:disabled?"line-through":"none",
+                  opacity:past?0.5:1}},
+                t
+              );
+            })
+          ),
+          React.createElement("div",{style:{fontSize:11,color:"#9ca3af",marginTop:8}},"※ ×は満員・休憩中・受付終了です")
+        ):null,
+        React.createElement("button",{
+          onClick:function(){setStep(1);},
+          disabled:!selDate||!selTime,
+          style:Object.assign({},H.btn,{opacity:(!selDate||!selTime)?0.4:1})
+        },"次へ →")
+      ):null,
+
+      // STEP 1: 基本情報
+      step===1?React.createElement("div",null,
+        React.createElement("div",{style:{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:16}},"基本情報を入力してください"),
+        React.createElement("div",{style:H.sec},
+          React.createElement("div",{style:H.secT},"👤 お客様情報"),
+          [
+            {label:"お名前 *",key:"name",type:"text",ph:"山本 花子"},
+            {label:"フリガナ",key:"nameKana",type:"text",ph:"ヤマモト ハナコ"},
+            {label:"電話番号 *",key:"phone",type:"tel",ph:"090-0000-0000"}
+          ].map(function(f){
+            return React.createElement("div",{key:f.key,style:{marginBottom:14}},
+              React.createElement("label",{style:H.label},f.label),
+              React.createElement("input",{type:f.type,value:form[f.key],placeholder:f.ph,
+                onChange:function(e){setF(f.key,e.target.value);},
+                style:Object.assign({},H.input,{border:errors[f.key]?"2px solid #ef4444":"1.5px solid #ddd"})
+              }),
+              errors[f.key]?React.createElement("div",{style:{color:"#ef4444",fontSize:12,marginTop:4}},"⚠ "+errors[f.key]):null
+            );
+          })
+        ),
+        React.createElement("div",{style:{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"12px 14px",marginBottom:20}},
+          React.createElement("label",{style:{display:"flex",alignItems:"flex-start",gap:10,cursor:"pointer"}},
+            React.createElement("input",{type:"checkbox",checked:form.lineNotify,onChange:function(e){setF("lineNotify",e.target.checked);},style:{marginTop:2,width:16,height:16,flexShrink:0}}),
+            React.createElement("div",null,
+              React.createElement("div",{style:{fontWeight:700,fontSize:13,color:"#065f46"}},"🟢 LINEでリマインドを受け取る"),
+              React.createElement("div",{style:{fontSize:12,color:"#059669",marginTop:2}},"前日17時に予約確認メッセージが届きます")
+            )
+          )
+        ),
+        React.createElement("div",{style:{display:"flex",gap:10}},
+          React.createElement("button",{onClick:function(){setStep(0);},style:H.btnB},"← 戻る"),
+          React.createElement("button",{onClick:function(){if(validate2())setStep(2);},style:Object.assign({},H.btn,{flex:1,width:"auto"})},"次へ →")
+        )
+      ):null,
+
+      // STEP 2: 症状
+      step===2?React.createElement("div",null,
+        React.createElement("div",{style:{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:4}},"症状・問診票"),
+        React.createElement("div",{style:{fontSize:12,color:"#9ca3af",marginBottom:16}},"保険請求に必要な情報です。"),
+
+        // 負傷部位
+        React.createElement("div",{style:H.sec},
+          React.createElement("div",{style:H.secT},"🦴 負傷部位（複数選択可）*"),
+          React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:6}},
+            BODY_PARTS.map(function(p){
+              return chip(form.bodyParts.indexOf(p)>-1, p, function(){toggleArr("bodyParts",p);});
+            })
+          ),
+          errors.bodyParts?React.createElement("div",{style:{color:"#ef4444",fontSize:12,marginTop:8}},"⚠ "+errors.bodyParts):null,
+          form.bodyParts.length>0?React.createElement("div",{style:{marginTop:10,padding:"8px 12px",background:"#eff6ff",borderRadius:8,fontSize:13,color:"#1e3a5f",fontWeight:600}},"選択中："+form.bodyParts.join("・")):null
+        ),
+
+        // 負傷原因
+        React.createElement("div",{style:H.sec},
+          React.createElement("div",{style:H.secT},"⚡ 負傷原因 *"),
+          INJURY_CAUSES.map(function(c){
+            return React.createElement("button",{key:c.label,
+              onClick:function(){setF("injuryCause",c.label);},
+              style:{width:"100%",padding:"12px 14px",borderRadius:10,border:"1.5px solid "+(form.injuryCause===c.label?"#1e3a5f":"#e5e7eb"),background:form.injuryCause===c.label?"#eff6ff":"white",textAlign:"left",cursor:"pointer",marginBottom:8,display:"flex",alignItems:"center",gap:10}},
+              React.createElement("span",{style:{fontSize:20}},c.icon),
+              React.createElement("div",null,
+                React.createElement("div",{style:{fontWeight:700,fontSize:14,color:"#1e3a5f"}},c.label),
+                React.createElement("div",{style:{fontSize:12,color:"#666"}},c.desc)
+              ),
+              form.injuryCause===c.label?React.createElement("span",{style:{marginLeft:"auto",color:"#2563eb"}},"✓"):null
+            );
+          }),
+          errors.injuryCause?React.createElement("div",{style:{color:"#ef4444",fontSize:12}},"⚠ "+errors.injuryCause):null
+        ),
+
+        // いつから
+        React.createElement("div",{style:H.sec},
+          React.createElement("div",{style:H.secT},"📅 いつ頃から痛みがありますか？ *"),
+          React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:6}},
+            PAIN_WHEN.map(function(w){
+              return chip(form.painWhen===w, w, function(){setF("painWhen",w);});
+            })
+          ),
+          errors.painWhen?React.createElement("div",{style:{color:"#ef4444",fontSize:12,marginTop:8}},"⚠ "+errors.painWhen):null
+        ),
+
+        // 痛みの強さ
+        React.createElement("div",{style:H.sec},
+          React.createElement("div",{style:H.secT},"😣 痛みの強さ（0〜10）"),
+          React.createElement("div",{style:{fontSize:12,color:"#9ca3af",marginBottom:10}},"0=痛みなし　10=我慢できないほど痛い"),
+          React.createElement("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
+            ["0","1","2","3","4","5","6","7","8","9","10"].map(function(n){
+              return React.createElement("button",{key:n,onClick:function(){setF("painLevel",n);},
+                style:{width:40,height:40,borderRadius:"50%",border:"1.5px solid "+(form.painLevel===n?"#1e3a5f":"#ddd"),background:form.painLevel===n?"#1e3a5f":"white",color:form.painLevel===n?"white":"#444",cursor:"pointer",fontSize:14,fontWeight:form.painLevel===n?700:400}},n);
+            })
+          )
+        ),
+
+        // 主な症状
+        React.createElement("div",{style:H.sec},
+          React.createElement("div",{style:H.secT},"💬 主な症状（複数選択可）"),
+          React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:6}},
+            ["痛み","しびれ","こり・張り","むくみ","だるさ","動かしにくい","寝返りが辛い","歩行が辛い","その他"].map(function(s){
+              return chip(form.symptoms.indexOf(s)>-1, s, function(){toggleArr("symptoms",s);}, "#059669");
+            })
+          )
+        ),
+
+        // 他院受診
+        React.createElement("div",{style:H.sec},
+          React.createElement("div",{style:H.secT},"🏥 他の整骨院・病院への受診"),
+          React.createElement("div",{style:{display:"flex",gap:10,marginBottom:10}},
+            ["受診している","受診していない"].map(function(v){
+              return React.createElement("button",{key:v,onClick:function(){setF("otherClinic",v);},
+                style:{flex:1,padding:"10px",borderRadius:8,border:"1.5px solid "+(form.otherClinic===v?"#1e3a5f":"#ddd"),background:form.otherClinic===v?"#1e3a5f":"white",color:form.otherClinic===v?"white":"#444",cursor:"pointer",fontSize:14,fontWeight:form.otherClinic===v?700:400}},v);
+            })
+          ),
+          form.otherClinic==="受診している"?React.createElement("input",{type:"text",value:form.otherClinicName,placeholder:"院名・病院名を入力",onChange:function(e){setF("otherClinicName",e.target.value);},style:H.input}):null
+        ),
+
+        // 既往歴
+        React.createElement("div",{style:H.sec},
+          React.createElement("div",{style:H.secT},"📋 既往歴"),
+          React.createElement("textarea",{value:form.medicalHistory,placeholder:"過去の病気・手術・骨折など\nなければ「なし」とご記入ください",rows:3,onChange:function(e){setF("medicalHistory",e.target.value);},style:Object.assign({},H.input,{resize:"none",lineHeight:1.6})})
+        ),
+
+        // 継続意思
+        React.createElement("div",{style:H.sec},
+          React.createElement("div",{style:H.secT},"💭 今後について *"),
+          React.createElement("div",{style:{fontSize:13,color:"#555",marginBottom:10,lineHeight:1.7}},"お体の根本改善に向けて、今回の体験会で状態が良くなりそうであれば、今後も継続して通いたいですか？"),
+          React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:8}},
+            ["はい、通いたいです","まだわかりません","いいえ"].map(function(v){
+              return React.createElement("button",{key:v,onClick:function(){setF("wantContinue",v);},
+                style:{padding:"11px 14px",borderRadius:8,border:"1.5px solid "+(form.wantContinue===v?"#1e3a5f":"#ddd"),background:form.wantContinue===v?"#1e3a5f":"white",color:form.wantContinue===v?"white":"#444",cursor:"pointer",fontSize:14,textAlign:"left",fontWeight:form.wantContinue===v?700:400}},v);
+            })
+          ),
+          errors.wantContinue?React.createElement("div",{style:{color:"#ef4444",fontSize:12,marginTop:6}},"⚠ "+errors.wantContinue):null
+        ),
+
+        // 何で知ったか
+        React.createElement("div",{style:H.sec},
+          React.createElement("div",{style:H.secT},"📣 当院を何でお知りになりましたか？ *"),
+          React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8}},
+            HOW_KNOW.map(function(v){
+              return React.createElement("button",{key:v,onClick:function(){setF("howKnow",v);},
+                style:{padding:"10px 8px",borderRadius:8,border:"1.5px solid "+(form.howKnow===v?"#1e3a5f":"#ddd"),background:form.howKnow===v?"#1e3a5f":"white",color:form.howKnow===v?"white":"#444",cursor:"pointer",fontSize:13,fontWeight:form.howKnow===v?700:400}},v);
+            })
+          ),
+          form.howKnow==="その他"?React.createElement("input",{type:"text",value:form.howKnowOther,placeholder:"具体的に教えてください",onChange:function(e){setF("howKnowOther",e.target.value);},style:Object.assign({},H.input,{marginTop:10})}):null,
+          errors.howKnow?React.createElement("div",{style:{color:"#ef4444",fontSize:12,marginTop:6}},"⚠ "+errors.howKnow):null
+        ),
+
+        React.createElement("div",{style:{display:"flex",gap:10}},
+          React.createElement("button",{onClick:function(){setStep(1);},style:H.btnB},"← 戻る"),
+          React.createElement("button",{onClick:function(){if(validate3())setStep(3);},style:Object.assign({},H.btn,{flex:1,width:"auto"})},"確認画面へ →")
+        )
+      ):null,
+
+      // STEP 3: 確認
+      step===3?React.createElement("div",null,
+        React.createElement("div",{style:{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:16}},"予約内容を確認してください"),
+        React.createElement("div",{style:{background:"white",borderRadius:14,border:"2px solid #e5e7eb",overflow:"hidden",marginBottom:12}},
+          React.createElement("div",{style:{background:"#1e3a5f",color:"white",padding:"12px 16px",fontSize:13,fontWeight:700}},"📅 予約情報"),
+          [
             ["メニュー","🎁 無料施術体験会（60分）¥0"],
-            ["日時",selDate?`${fmtDateJP(selDate)} ${selTime}`:""],
-            ["お名前",`${form.name} 様`],
-            ["電話番号",form.phone],
-          ].map(([l,v])=>(
-            <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #e5e7eb",gap:12}}>
-              <span style={{fontSize:13,color:"#9ca3af",fontWeight:600,whiteSpace:"nowrap"}}>{l}</span>
-              <span style={{fontSize:14,color:"#1e3a5f",fontWeight:600,textAlign:"right"}}>{v}</span>
-            </div>
-          ))}
-        </div>
-        <div style={{background:"#fef9ec",border:"1px solid #fde68a",borderRadius:10,padding:"12px 16px",marginBottom:24,fontSize:13,color:"#92400e",textAlign:"left"}}>
-          🔔 キャンセル・変更は前日18時までに<br/><strong>{CLINIC_TEL}</strong>までご連絡ください。
-        </div>
-        <button onClick={reset} style={{...S.btn,width:"100%"}}>別の予約をする</button>
-      </div>
-    </div>
-  );
-
-  const Stepper=()=>(
-    <div style={{background:"white",borderBottom:"1px solid #eee",padding:"12px 16px"}}>
-      <div style={{maxWidth:480,margin:"0 auto",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        {STEPS.map((label,i)=>(
-          <div key={i} style={{display:"flex",alignItems:"center",flex:i<STEPS.length-1?1:"none"}}>
-            <div style={{display:"flex",flexDirection:"column",alignItems:"center"}}>
-              <div style={{width:24,height:24,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,background:i<step?"#059669":i===step?"#1e3a5f":"#e5e7eb",color:i<=step?"white":"#9ca3af"}}>
-                {i<step?"✓":i+1}
-              </div>
-              <div style={{fontSize:9,marginTop:2,color:i===step?"#1e3a5f":"#9ca3af",fontWeight:i===step?700:400,whiteSpace:"nowrap"}}>{label}</div>
-            </div>
-            {i<STEPS.length-1&&<div style={{flex:1,height:2,background:i<step?"#059669":"#e5e7eb",margin:"0 2px",marginBottom:12}}/>}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  return(
-    <div style={{minHeight:"100vh",background:"#f0f4f8"}}>
-      <Header/>
-      <Stepper/>
-      <div style={{maxWidth:480,margin:"0 auto",padding:"20px 16px"}}>
-
-        {/* STEP 0: 日時選択 */}
-        {step===0&&(
-          <div>
-            <div style={{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:16}}>日時を選んでください</div>
-            <div style={{marginBottom:20}}>
-              <div style={{fontSize:13,fontWeight:700,color:"#555",marginBottom:8}}>📅 日付</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
-                {days.slice(0,14).map((d,i)=>{
-                  const isSat=d.getDay()===6,isSun=d.getDay()===0;
-                  const isSel=selDate&&fmtDate(selDate)===fmtDate(d);
-                  const isToday=i===0;
-                  return <button key={i} onClick={()=>{setSelDate(d);setSelTime(null);}}
-                    style={{padding:"8px 4px",borderRadius:8,border:isSel?"2px solid #1e3a5f":"1.5px solid #e5e7eb",background:isSel?"#1e3a5f":"white",color:isSel?"white":isSun?"#ef4444":isSat?"#3b82f6":"#333",fontWeight:isSel?700:400,cursor:"pointer",fontSize:12,lineHeight:1.5}}>
-                    <div>{isToday?"今日":`${d.getMonth()+1}/${d.getDate()}`}</div>
-                    <div style={{fontSize:10}}>（{DAYS_JP[d.getDay()]}）</div>
-                  </button>;
-                })}
-              </div>
-            </div>
-            {selDate&&(
-              <div style={{marginBottom:20}}>
-                <div style={{fontSize:13,fontWeight:700,color:"#555",marginBottom:8}}>🕐 時間</div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
-                   {SLOTS.map(t=>{
-                     const full=isSlotFull(t);
-                     // 当日の場合、現在時刻を過ぎたスロットは選択不可
-                     const now=new Date();
-                     const isPast = selDate && fmtDate(selDate)===fmtDate(now) && toMin(t) <= toMin(String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0"));
-                     const disabled = full || isPast;
-                     const isSel=selTime===t;
-                     return <button key={t} disabled={disabled} onClick={()=>!disabled&&setSelTime(t)}
-                       style={{padding:"9px 4px",borderRadius:8,border:isSel?"2px solid #1e3a5f":"1.5px solid #e5e7eb",background:isPast?"#fafafa":full?"#f3f4f6":isSel?"#1e3a5f":"white",color:disabled?"#d1d5db":isSel?"white":"#333",cursor:disabled?"not-allowed":"pointer",fontSize:13,fontWeight:isSel?700:400,textDecoration:disabled?"line-through":"none",opacity:isPast?0.4:1}}>
-                       {t}
-                     </button>;
-                   })}
-                 </div>
-                 <div style={{fontSize:11,color:"#9ca3af",marginTop:8}}>※ ×は満員・休憩中・受付終了です</div>
-            )}
-            <button onClick={()=>setStep(1)} disabled={!selDate||!selTime}
-              style={{...S.btn,width:"100%",opacity:(!selDate||!selTime)?0.4:1}}>
-              次へ →
-            </button>
-          </div>
-        )}
-
-        {/* STEP 1: 基本情報 */}
-        {step===1&&(
-          <div>
-            <div style={{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:16}}>基本情報を入力してください</div>
-            <div style={S.section}>
-              <div style={S.sectionTitle}>👤 お客様情報</div>
-              {[
-                {label:"お名前 *",key:"name",type:"text",placeholder:"山本 花子"},
-                {label:"フリガナ",key:"nameKana",type:"text",placeholder:"ヤマモト ハナコ"},
-                {label:"電話番号 *",key:"phone",type:"tel",placeholder:"090-0000-0000"},
-              ].map(({label,key,type,placeholder})=>(
-                <div key={key} style={{marginBottom:14}}>
-                  <label style={S.label}>{label}</label>
-                  <input type={type} value={form[key]} placeholder={placeholder}
-                    onChange={e=>setForm(f=>({...f,[key]:e.target.value}))}
-                    style={{...S.input,border:errors[key]?"2px solid #ef4444":"1.5px solid #ddd"}}/>
-                  {errors[key]&&<div style={{color:"#ef4444",fontSize:12,marginTop:4}}>⚠ {errors[key]}</div>}
-                </div>
-              ))}
-            </div>
-            <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"12px 14px",marginBottom:20}}>
-              <label style={{display:"flex",alignItems:"flex-start",gap:10,cursor:"pointer"}}>
-                <input type="checkbox" checked={form.lineNotify} onChange={e=>setForm(f=>({...f,lineNotify:e.target.checked}))} style={{marginTop:2,width:16,height:16,flexShrink:0}}/>
-                <div>
-                  <div style={{fontWeight:700,fontSize:13,color:"#065f46"}}>🟢 LINEでリマインドを受け取る</div>
-                  <div style={{fontSize:12,color:"#059669",marginTop:2}}>前日17時に予約確認メッセージが届きます</div>
-                </div>
-              </label>
-            </div>
-            <div style={{display:"flex",gap:10}}>
-              <button onClick={()=>setStep(0)} style={S.btnBack}>← 戻る</button>
-              <button onClick={()=>{if(validate2())setStep(2);}} style={{...S.btn,flex:1}}>次へ →</button>
-            </div>
-          </div>
-        )}
-
-        {/* STEP 2: 症状・問診 */}
-        {step===2&&(
-          <div>
-            <div style={{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:4}}>症状・問診票</div>
-            <div style={{fontSize:12,color:"#9ca3af",marginBottom:16}}>保険請求に必要な情報です。正確にご記入ください。</div>
-
-            <div style={S.section}>
-              <div style={S.sectionTitle}>🦴 負傷部位（複数選択可）*</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-                {BODY_PARTS.map(p=>(
-                  <button key={p} onClick={()=>toggleArr("bodyParts",p)} style={S.chip(form.bodyParts.includes(p))}>{p}</button>
-                ))}
-              </div>
-              {errors.bodyParts&&<div style={{color:"#ef4444",fontSize:12,marginTop:8}}>⚠ {errors.bodyParts}</div>}
-              {form.bodyParts.length>0&&<div style={{marginTop:10,padding:"8px 12px",background:"#eff6ff",borderRadius:8,fontSize:13,color:"#1e3a5f",fontWeight:600}}>選択中：{form.bodyParts.join("・")}</div>}
-            </div>
-
-            <div style={S.section}>
-              <div style={S.sectionTitle}>⚡ 負傷原因 *</div>
-              {INJURY_CAUSES.map(c=>(
-                <button key={c.label} onClick={()=>setForm(f=>({...f,injuryCause:c.label}))}
-                  style={{width:"100%",padding:"12px 14px",borderRadius:10,border:`1.5px solid ${form.injuryCause===c.label?"#1e3a5f":"#e5e7eb"}`,background:form.injuryCause===c.label?"#eff6ff":"white",textAlign:"left",cursor:"pointer",marginBottom:8,display:"flex",alignItems:"center",gap:10}}>
-                  <span style={{fontSize:20}}>{c.icon}</span>
-                  <div>
-                    <div style={{fontWeight:700,fontSize:14,color:"#1e3a5f"}}>{c.label}</div>
-                    <div style={{fontSize:12,color:"#666"}}>{c.desc}</div>
-                  </div>
-                  {form.injuryCause===c.label&&<span style={{marginLeft:"auto",color:"#2563eb",fontSize:18}}>✓</span>}
-                </button>
-              ))}
-              {form.injuryCause&&(
-                <div style={{marginTop:4}}>
-                  <label style={S.label}>原因の詳細（任意）</label>
-                  <input type="text" value={form.injuryCauseDetail} placeholder="例：階段を踏み外して転倒した"
-                    onChange={e=>setForm(f=>({...f,injuryCauseDetail:e.target.value}))} style={S.input}/>
-                </div>
-              )}
-              {errors.injuryCause&&<div style={{color:"#ef4444",fontSize:12,marginTop:4}}>⚠ {errors.injuryCause}</div>}
-            </div>
-
-            <div style={S.section}>
-              <div style={S.sectionTitle}>📅 いつ頃から痛みがありますか？ *</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-                {PAIN_WHEN.map(w=>(
-                  <button key={w} onClick={()=>setForm(f=>({...f,painWhen:w}))} style={S.chip(form.painWhen===w)}>{w}</button>
-                ))}
-              </div>
-              {errors.painWhen&&<div style={{color:"#ef4444",fontSize:12,marginTop:8}}>⚠ {errors.painWhen}</div>}
-            </div>
-
-            <div style={S.section}>
-              <div style={S.sectionTitle}>😣 痛みの強さ（0〜10）</div>
-              <div style={{fontSize:12,color:"#9ca3af",marginBottom:10}}>0=痛みなし　10=我慢できないほど痛い</div>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                {Array.from({length:11},(_,i)=>String(i)).map(n=>(
-                  <button key={n} onClick={()=>setForm(f=>({...f,painLevel:n}))}
-                    style={{width:40,height:40,borderRadius:"50%",border:`1.5px solid ${form.painLevel===n?"#1e3a5f":"#ddd"}`,background:form.painLevel===n?"#1e3a5f":"white",color:form.painLevel===n?"white":"#444",fontWeight:form.painLevel===n?700:400,cursor:"pointer",fontSize:14}}>
-                    {n}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div style={S.section}>
-              <div style={S.sectionTitle}>💬 主な症状（複数選択可）</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-                {["痛み","しびれ","こり・張り","むくみ","だるさ","動かしにくい","寝返りが辛い","歩行が辛い","その他"].map(s=>(
-                  <button key={s} onClick={()=>toggleArr("symptoms",s)} style={S.chip(form.symptoms.includes(s),"#059669")}>{s}</button>
-                ))}
-              </div>
-            </div>
-
-            <div style={S.section}>
-              <div style={S.sectionTitle}>🏥 他の整骨院・病院への受診</div>
-              <div style={{display:"flex",gap:10,marginBottom:10}}>
-                {["受診している","受診していない"].map(v=>(
-                  <button key={v} onClick={()=>setForm(f=>({...f,otherClinic:v}))}
-                    style={{flex:1,padding:"10px",borderRadius:8,border:`1.5px solid ${form.otherClinic===v?"#1e3a5f":"#ddd"}`,background:form.otherClinic===v?"#1e3a5f":"white",color:form.otherClinic===v?"white":"#444",fontWeight:form.otherClinic===v?700:400,cursor:"pointer",fontSize:14}}>
-                    {v}
-                  </button>
-                ))}
-              </div>
-              {form.otherClinic==="受診している"&&(
-                <input type="text" value={form.otherClinicName} placeholder="院名・病院名を入力"
-                  onChange={e=>setForm(f=>({...f,otherClinicName:e.target.value}))} style={S.input}/>
-              )}
-            </div>
-
-            <div style={S.section}>
-              <div style={S.sectionTitle}>📋 既往歴</div>
-              <textarea value={form.medicalHistory} placeholder="過去の病気・手術・骨折など&#10;なければ「なし」とご記入ください"
-                rows={3} onChange={e=>setForm(f=>({...f,medicalHistory:e.target.value}))}
-                style={{...S.input,resize:"none",lineHeight:1.6}}/>
-            </div>
-
-            <div style={S.section}>
-              <div style={S.sectionTitle}>💭 今後について *</div>
-              <div style={{fontSize:13,color:"#555",marginBottom:10,lineHeight:1.7}}>お体の根本改善に向けて、今回の体験会で状態が良くなりそうであれば、今後も継続して通いたいですか？</div>
-              <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {["はい、通いたいです","まだわかりません","いいえ"].map(v=>(
-                  <button key={v} onClick={()=>setForm(f=>({...f,wantContinue:v}))}
-                    style={{padding:"11px 14px",borderRadius:8,border:`1.5px solid ${form.wantContinue===v?"#1e3a5f":"#ddd"}`,background:form.wantContinue===v?"#1e3a5f":"white",color:form.wantContinue===v?"white":"#444",fontWeight:form.wantContinue===v?700:400,cursor:"pointer",fontSize:14,textAlign:"left"}}>
-                    {v}
-                  </button>
-                ))}
-              </div>
-              {errors.wantContinue&&<div style={{color:"#ef4444",fontSize:12,marginTop:6}}>⚠ {errors.wantContinue}</div>}
-            </div>
-
-            <div style={S.section}>
-              <div style={S.sectionTitle}>📣 当院を何でお知りになりましたか？ *</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8}}>
-                {HOW_KNOW.map(v=>(
-                  <button key={v} onClick={()=>setForm(f=>({...f,howKnow:v}))}
-                    style={{padding:"10px 8px",borderRadius:8,border:`1.5px solid ${form.howKnow===v?"#1e3a5f":"#ddd"}`,background:form.howKnow===v?"#1e3a5f":"white",color:form.howKnow===v?"white":"#444",fontWeight:form.howKnow===v?700:400,cursor:"pointer",fontSize:13}}>
-                    {v}
-                  </button>
-                ))}
-              </div>
-              {form.howKnow==="その他"&&(
-                <input type="text" value={form.howKnowOther} placeholder="具体的に教えてください"
-                  onChange={e=>setForm(f=>({...f,howKnowOther:e.target.value}))} style={{...S.input,marginTop:10}}/>
-              )}
-              {errors.howKnow&&<div style={{color:"#ef4444",fontSize:12,marginTop:6}}>⚠ {errors.howKnow}</div>}
-            </div>
-
-            <div style={{display:"flex",gap:10}}>
-              <button onClick={()=>setStep(1)} style={S.btnBack}>← 戻る</button>
-              <button onClick={()=>{if(validate3())setStep(3);}} style={{...S.btn,flex:1}}>確認画面へ →</button>
-            </div>
-          </div>
-        )}
-
-        {/* STEP 3: 確認 */}
-        {step===3&&(
-          <div>
-            <div style={{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:16}}>予約内容を確認してください</div>
-            <div style={{...S.section,padding:0,overflow:"hidden"}}>
-              <div style={{background:"#1e3a5f",color:"white",padding:"12px 16px",fontSize:13,fontWeight:700}}>📅 予約情報</div>
-              {[
-                ["メニュー","🎁 無料施術体験会（60分）¥0"],
-                ["日付",selDate?fmtDateJP(selDate):""],
-                ["時間",selTime],
-                ["お名前",`${form.name} 様`],
-                ["電話番号",form.phone],
-              ].map(([l,v])=>(
-                <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"9px 16px",borderBottom:"1px solid #f0f0f0",gap:12}}>
-                  <span style={{fontSize:12,color:"#9ca3af",fontWeight:600,whiteSpace:"nowrap",minWidth:70}}>{l}</span>
-                  <span style={{fontSize:13,color:"#1e3a5f",fontWeight:600,textAlign:"right"}}>{v}</span>
-                </div>
-              ))}
-            </div>
-            <div style={{...S.section,padding:0,overflow:"hidden",marginTop:12}}>
-              <div style={{background:"#059669",color:"white",padding:"12px 16px",fontSize:13,fontWeight:700}}>🩺 問診情報</div>
-              {[
-                ["負傷部位",form.bodyParts.join("・")],
-                ["負傷原因",form.injuryCause],
-                ["いつから",form.painWhen],
-                ["痛みの強さ",form.painLevel?`${form.painLevel}/10`:"未記入"],
-                ["継続意思",form.wantContinue],
-                ["何で知った",form.howKnow==="その他"?`その他：${form.howKnowOther}`:form.howKnow],
-                ["LINE通知",form.lineNotify?"あり（前日17時）":"なし"],
-              ].map(([l,v])=>(
-                <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"9px 16px",borderBottom:"1px solid #f0f0f0",gap:12}}>
-                  <span style={{fontSize:12,color:"#9ca3af",fontWeight:600,whiteSpace:"nowrap",minWidth:80}}>{l}</span>
-                  <span style={{fontSize:13,color:"#1e3a5f",fontWeight:600,textAlign:"right"}}>{v}</span>
-                </div>
-              ))}
-            </div>
-            <div style={{background:"#fef9ec",border:"1px solid #fde68a",borderRadius:10,padding:"12px 14px",margin:"16px 0",fontSize:13,color:"#92400e"}}>
-              ⚠️ キャンセル・変更は前日18時までに<br/><strong>{CLINIC_TEL}</strong>までご連絡ください。
-            </div>
-            <div style={{display:"flex",gap:10}}>
-              <button onClick={()=>setStep(2)} style={S.btnBack}>← 戻る</button>
-              <button onClick={submit} disabled={submitting}
-                style={{...S.btn,flex:1,opacity:submitting?0.7:1,fontSize:15}}>
-                {submitting?"送信中...":"予約を確定する ✓"}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
+            ["日付",selDate?fmtDateJP(selDate):""],
+            ["時間",selTime],
+            ["お名前",form.name+" 様"],
+            ["電話番号",form.phone]
+          ].map(function(item){
+            return React.createElement("div",{key:item[0],style:{display:"flex",justifyContent:"space-between",padding:"9px 16px",borderBottom:"1px solid #f0f0f0",gap:12}},
+              React.createElement("span",{style:{fontSize:12,color:"#9ca3af",fontWeight:600,whiteSpace:"nowrap",minWidth:70}},item[0]),
+              React.createElement("span",{style:{fontSize:13,color:"#1e3a5f",fontWeight:600,textAlign:"right"}},item[1])
+            );
+          })
+        ),
+        React.createElement("div",{style:{background:"white",borderRadius:14,border:"2px solid #e5e7eb",overflow:"hidden",marginBottom:12}},
+          React.createElement("div",{style:{background:"#059669",color:"white",padding:"12px 16px",fontSize:13,fontWeight:700}},"🩺 問診情報"),
+          [
+            ["負傷部位",form.bodyParts.join("・")],
+            ["負傷原因",form.injuryCause],
+            ["いつから",form.painWhen],
+            ["継続意思",form.wantContinue],
+            ["何で知った",form.howKnow==="その他"?"その他："+form.howKnowOther:form.howKnow]
+          ].map(function(item){
+            return React.createElement("div",{key:item[0],style:{display:"flex",justifyContent:"space-between",padding:"9px 16px",borderBottom:"1px solid #f0f0f0",gap:12}},
+              React.createElement("span",{style:{fontSize:12,color:"#9ca3af",fontWeight:600,whiteSpace:"nowrap",minWidth:80}},item[0]),
+              React.createElement("span",{style:{fontSize:13,color:"#1e3a5f",fontWeight:600,textAlign:"right"}},item[1])
+            );
+          })
+        ),
+        React.createElement("div",{style:{background:"#fef9ec",border:"1px solid #fde68a",borderRadius:10,padding:"12px 14px",marginBottom:16,fontSize:13,color:"#92400e"}},
+          "⚠️ キャンセル・変更は前日18時までに",React.createElement("br"),
+          React.createElement("strong",null,CLINIC_TEL),"までご連絡ください。"
+        ),
+        React.createElement("div",{style:{display:"flex",gap:10}},
+          React.createElement("button",{onClick:function(){setStep(2);},style:H.btnB},"← 戻る"),
+          React.createElement("button",{onClick:submit,disabled:submitting,
+            style:Object.assign({},H.btn,{flex:1,width:"auto",opacity:submitting?0.7:1,fontSize:15})},
+            submitting?"送信中...":"予約を確定する ✓"
+          )
+        )
+      ):null
+    )
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(App));
+
 </script>
 </body>
 </html>
