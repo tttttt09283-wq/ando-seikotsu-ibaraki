@@ -278,7 +278,7 @@ function App(){
                      const full=isSlotFull(t);
                      // 当日の場合、現在時刻を過ぎたスロットは選択不可
                      const now=new Date();
-                     const isPast = selDate && fmtDate(selDate)===fmtDate(now) && toMin(t) <= toMin(`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`);
+                     const isPast = selDate && fmtDate(selDate)===fmtDate(now) && toMin(t) <= toMin(String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0"));
                      const disabled = full || isPast;
                      const isSel=selTime===t;
                      return <button key={t} disabled={disabled} onClick={()=>!disabled&&setSelTime(t)}
