@@ -58,6 +58,7 @@ const sb = {
 };
 
 function getDays(n){return Array.from({length:n},(_,i)=>{const d=new Date();d.setDate(d.getDate()+i);return d;});}
+function toMin(t){const[h,m]=t.split(":").map(Number);return h*60+m;}
 function fmtDate(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;}
 function fmtDateJP(d){return `${d.getMonth()+1}月${d.getDate()}日（${DAYS_JP[d.getDay()]}）`;}
 
@@ -273,17 +274,20 @@ function App(){
               <div style={{marginBottom:20}}>
                 <div style={{fontSize:13,fontWeight:700,color:"#555",marginBottom:8}}>🕐 時間</div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}}>
-                  {SLOTS.map(t=>{
-                    const full=isSlotFull(t);
-                    const isSel=selTime===t;
-                    return <button key={t} disabled={full} onClick={()=>setSelTime(t)}
-                      style={{padding:"9px 4px",borderRadius:8,border:isSel?"2px solid #1e3a5f":"1.5px solid #e5e7eb",background:full?"#f3f4f6":isSel?"#1e3a5f":"white",color:full?"#d1d5db":isSel?"white":"#333",cursor:full?"not-allowed":"pointer",fontSize:13,fontWeight:isSel?700:400,textDecoration:full?"line-through":"none"}}>
-                      {t}
-                    </button>;
-                  })}
-                </div>
-                <div style={{fontSize:11,color:"#9ca3af",marginTop:8}}>※ ×は満員または休憩中です</div>
-              </div>
+                   {SLOTS.map(t=>{
+                     const full=isSlotFull(t);
+                     // 当日の場合、現在時刻を過ぎたスロットは選択不可
+                     const now=new Date();
+                     const isPast = selDate && fmtDate(selDate)===fmtDate(now) && toMin(t) <= toMin(`${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`);
+                     const disabled = full || isPast;
+                     const isSel=selTime===t;
+                     return <button key={t} disabled={disabled} onClick={()=>!disabled&&setSelTime(t)}
+                       style={{padding:"9px 4px",borderRadius:8,border:isSel?"2px solid #1e3a5f":"1.5px solid #e5e7eb",background:isPast?"#fafafa":full?"#f3f4f6":isSel?"#1e3a5f":"white",color:disabled?"#d1d5db":isSel?"white":"#333",cursor:disabled?"not-allowed":"pointer",fontSize:13,fontWeight:isSel?700:400,textDecoration:disabled?"line-through":"none",opacity:isPast?0.4:1}}>
+                       {t}
+                     </button>;
+                   })}
+                 </div>
+                 <div style={{fontSize:11,color:"#9ca3af",marginTop:8}}>※ ×は満員・休憩中・受付終了です</div>
             )}
             <button onClick={()=>setStep(1)} disabled={!selDate||!selTime}
               style={{...S.btn,width:"100%",opacity:(!selDate||!selTime)?0.4:1}}>
