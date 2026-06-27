@@ -601,7 +601,7 @@ function Dashboard({user,onLogout}){
 }
 
 // ===== ルート =====
-export default function App(){
+function App(){
   const [user,setUser]=React.useState(null);
   if(!user)return <LoginScreen onLogin={setUser}/>;
   return <Dashboard user={user} onLogout={()=>setUser(null)}/>;
