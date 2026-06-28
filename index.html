@@ -62,6 +62,127 @@ function overlaps(a,b){
   return as<be&&bs<ae;
 }
 
+// ===== 患者履歴モーダル =====
+function PatientHistoryModal({patientName, bookings, onClose}){
+  const [treatments, setTreatments] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+
+  const patientBookings = bookings
+    .filter(b => b.patient_name === patientName)
+    .sort((a,b) => b.date.localeCompare(a.date));
+
+  React.useEffect(()=>{
+    async function fetch(){
+      if(patientBookings.length === 0){ setLoading(false); return; }
+      const ids = patientBookings.map(b=>b.id).join(",");
+      const data = await sb.select("treatments", `?booking_id=in.(${ids})&order=treated_at.desc`);
+      setTreatments(Array.isArray(data) ? data : []);
+      setLoading(false);
+    }
+    fetch();
+  },[]);
+
+  function resultBadge(r){
+    if(!r) return null;
+    const map = {"成約":["#dcfce7","#15803d","✅"],"持ち帰り":["#fef3c7","#92400e","🤔"],"バツ":["#fee2e2","#991b1b","❌"]};
+    const [bg,color,icon] = map[r]||["#f3f4f6","#666",""];
+    return <span style={{background:bg,color,borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:700}}>{icon} {r}</span>;
+  }
+
+  function jifeeText(t){
+    if(!t.jifee_type || t.jifee_type==="なし") return null;
+    if(t.jifee_type==="回数券") return `回数券 ${t.jifee_count||""}枚 ${t.jifee_amount?"¥"+Number(t.jifee_amount).toLocaleString():""}`;
+    if(t.jifee_type==="FP（フリーパス）") return `FP ¥${t.jifee_amount?Number(t.jifee_amount).toLocaleString():"—"}`;
+    return null;
+  }
+
+  const visitCount = patientBookings.length;
+  const treatCount = treatments.length;
+  const contracts = treatments.filter(t=>t.result==="成約").length;
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:500,padding:16}}>
+      <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:520,maxHeight:"90vh",overflowY:"auto"}}>
+        {/* ヘッダー */}
+        <div style={{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",color:"white",padding:"16px 20px",borderRadius:"16px 16px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,zIndex:10}}>
+          <div>
+            <div style={{fontWeight:800,fontSize:17}}>👤 {patientName} 様</div>
+            <div style={{fontSize:12,opacity:0.75,marginTop:2}}>施術・来院履歴</div>
+          </div>
+          <button onClick={onClose} style={{background:"none",border:"none",color:"white",fontSize:24,cursor:"pointer"}}>✕</button>
+        </div>
+
+        <div style={{padding:16}}>
+          {/* サマリー */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16}}>
+            {[
+              {label:"来院回数",value:`${visitCount}回`,icon:"📅",color:"#2563eb"},
+              {label:"施術記録",value:`${treatCount}件`,icon:"🩺",color:"#059669"},
+              {label:"成約数",value:`${contracts}件`,icon:"✅",color:"#d97706"},
+            ].map(item=>(
+              <div key={item.label} style={{background:"#f8fafc",borderRadius:10,padding:"12px 10px",textAlign:"center",borderTop:`3px solid ${item.color}`}}>
+                <div style={{fontSize:18}}>{item.icon}</div>
+                <div style={{fontSize:20,fontWeight:800,color:item.color,margin:"4px 0 2px"}}>{item.value}</div>
+                <div style={{fontSize:11,color:"#9ca3af"}}>{item.label}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* 履歴一覧 */}
+          {loading ? (
+            <div style={{textAlign:"center",padding:"30px",color:"#9ca3af"}}>読み込み中...</div>
+          ) : patientBookings.length === 0 ? (
+            <div style={{textAlign:"center",padding:"30px",color:"#9ca3af"}}>予約記録がありません</div>
+          ) : patientBookings.map((b,i)=>{
+            const staff = STAFF_ACCOUNTS.find(s=>s.id===b.staff_id)||{name:"不明",color:"#888",initial:"？"};
+            const treat = treatments.find(t=>t.booking_id===b.id);
+            const isFirst = i === patientBookings.length - 1;
+            return (
+              <div key={b.id} style={{marginBottom:12,borderLeft:"3px solid "+(treat?"#059669":"#e5e7eb"),borderRadius:8,overflow:"hidden"}}>
+                {/* 予約ヘッダー */}
+                <div style={{background:treat?"#f0fdf4":"#f8fafc",padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <span style={{fontWeight:700,fontSize:13,color:"#1e3a5f"}}>{b.date} {b.time}</span>
+                    {isFirst && <span style={{background:"#fef3c7",color:"#92400e",borderRadius:6,padding:"1px 7px",fontSize:11,fontWeight:700,marginLeft:8}}>初回</span>}
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>
+                    <div style={{width:22,height:22,borderRadius:"50%",background:staff.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:11}}>{staff.initial}</div>
+                    <span style={{fontSize:12,color:"#666",fontWeight:600}}>{staff.name}</span>
+                  </div>
+                </div>
+                {/* 予約情報 */}
+                <div style={{padding:"8px 14px",background:"white",borderBottom:treat?"1px solid #e5e7eb":"none"}}>
+                  <span style={{fontSize:12,color:"#9ca3af"}}>{b.menu}</span>
+                  {b.line_user_id && <span style={{marginLeft:8,background:"#dcfce7",color:"#15803d",borderRadius:6,padding:"1px 6px",fontSize:11,fontWeight:700}}>LINE✓</span>}
+                </div>
+                {/* 施術記録 */}
+                {treat && (
+                  <div style={{padding:"10px 14px",background:"white"}}>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:6}}>
+                      {treat.treatment_types && treat.treatment_types.split("・").map(t=>(
+                        <span key={t} style={{background:"#eff6ff",color:"#1e40af",borderRadius:6,padding:"2px 8px",fontSize:12,fontWeight:700}}>{t}</span>
+                      ))}
+                    </div>
+                    {treat.body_parts && <div style={{fontSize:12,color:"#666",marginBottom:4}}>🦴 {treat.body_parts}</div>}
+                    <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                      {resultBadge(treat.result)}
+                      {jifeeText(treat) && <span style={{background:"#fef3c7",color:"#92400e",borderRadius:6,padding:"2px 8px",fontSize:12,fontWeight:600}}>💴 {jifeeText(treat)}</span>}
+                    </div>
+                    {treat.memo && <div style={{marginTop:6,fontSize:12,color:"#9ca3af"}}>📝 {treat.memo}</div>}
+                  </div>
+                )}
+                {!treat && (
+                  <div style={{padding:"8px 14px",background:"white",fontSize:12,color:"#d1d5db"}}>施術記録なし</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ===== ログイン =====
 function LoginScreen({onLogin}){
   const [email,setEmail]=React.useState("");
@@ -145,14 +266,9 @@ function BreakModal({onClose, bookings, breaks, setBreaks}){
     try{
       const newBreaks=[];
       for(const t of selTimes){
-        const data = await sb.insert("staff_breaks",{
-          staff_id:selStaff, date:selDate, time:t, reason
-        });
-        if(Array.isArray(data)&&data.length>0){
-          newBreaks.push(...data);
-        } else {
-          newBreaks.push({id:Date.now()+Math.random(),staff_id:selStaff,date:selDate,time:t,reason});
-        }
+        const data = await sb.insert("staff_breaks",{staff_id:selStaff, date:selDate, time:t, reason});
+        if(Array.isArray(data)&&data.length>0) newBreaks.push(...data);
+        else newBreaks.push({id:Date.now()+Math.random(),staff_id:selStaff,date:selDate,time:t,reason});
       }
       setBreaks(prev=>[...prev,...newBreaks]);
       setSelTimes([]);
@@ -163,10 +279,8 @@ function BreakModal({onClose, bookings, breaks, setBreaks}){
   }
 
   async function delBreak(id){
-    try{
-      await sb.delete("staff_breaks",id);
-      setBreaks(prev=>prev.filter(b=>b.id!==id));
-    }catch{setBreaks(prev=>prev.filter(b=>b.id!==id));}
+    try{ await sb.delete("staff_breaks",id); }catch{}
+    setBreaks(prev=>prev.filter(b=>b.id!==id));
   }
 
   return(
@@ -179,73 +293,50 @@ function BreakModal({onClose, bookings, breaks, setBreaks}){
           </div>
           <button onClick={onClose} style={{background:"none",border:"none",color:"white",fontSize:22,cursor:"pointer"}}>✕</button>
         </div>
-
         <div style={{padding:20}}>
           {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#15803d",fontSize:13,fontWeight:600}}>✅ {toast}</div>}
-
-          {/* 登録フォーム */}
           <div style={{background:"#f8fafc",borderRadius:12,padding:16,marginBottom:20}}>
             <div style={{fontWeight:700,fontSize:14,color:"#1e3a5f",marginBottom:12}}>＋ 休憩を登録</div>
-
             <div style={{marginBottom:12}}>
               <label style={{display:"block",fontSize:13,fontWeight:600,color:"#555",marginBottom:4}}>日付</label>
-              <input type="date" value={selDate} onChange={e=>setSelDate(e.target.value)}
-                style={{width:"100%",padding:"9px 12px",border:"1.5px solid #ddd",borderRadius:8,fontSize:14,boxSizing:"border-box"}}/>
+              <input type="date" value={selDate} onChange={e=>setSelDate(e.target.value)} style={{width:"100%",padding:"9px 12px",border:"1.5px solid #ddd",borderRadius:8,fontSize:14,boxSizing:"border-box"}}/>
             </div>
-
             <div style={{marginBottom:12}}>
               <label style={{display:"block",fontSize:13,fontWeight:600,color:"#555",marginBottom:4}}>スタッフ</label>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                 {STAFF_ACCOUNTS.map(s=>(
-                  <button key={s.id} onClick={()=>setSelStaff(s.id)}
-                    style={{background:selStaff===s.id?s.color:"white",color:selStaff===s.id?"white":"#444",border:`1.5px solid ${s.color}`,borderRadius:20,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:600}}>
-                    {s.name}
-                  </button>
+                  <button key={s.id} onClick={()=>setSelStaff(s.id)} style={{background:selStaff===s.id?s.color:"white",color:selStaff===s.id?"white":"#444",border:`1.5px solid ${s.color}`,borderRadius:20,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:600}}>{s.name}</button>
                 ))}
               </div>
             </div>
-
             <div style={{marginBottom:12}}>
               <label style={{display:"block",fontSize:13,fontWeight:600,color:"#555",marginBottom:4}}>時間帯（複数選択可）</label>
               <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
                 {SLOTS.map(t=>{
                   const isSel=selTimes.includes(t);
-                  return <button key={t} onClick={()=>setSelTimes(prev=>prev.includes(t)?prev.filter(x=>x!==t):[...prev,t])}
-                    style={{padding:"7px 4px",borderRadius:8,border:`1.5px solid ${isSel?"#1e3a5f":"#e5e7eb"}`,background:isSel?"#1e3a5f":"white",color:isSel?"white":"#444",cursor:"pointer",fontSize:12,fontWeight:isSel?700:400}}>
-                    {t}
-                  </button>;
+                  return <button key={t} onClick={()=>setSelTimes(prev=>prev.includes(t)?prev.filter(x=>x!==t):[...prev,t])} style={{padding:"7px 4px",borderRadius:8,border:`1.5px solid ${isSel?"#1e3a5f":"#e5e7eb"}`,background:isSel?"#1e3a5f":"white",color:isSel?"white":"#444",cursor:"pointer",fontSize:12,fontWeight:isSel?700:400}}>{t}</button>;
                 })}
               </div>
               {selTimes.length>0&&<div style={{marginTop:8,fontSize:12,color:"#2563eb",fontWeight:600}}>選択中：{selTimes.join("　")}</div>}
             </div>
-
             <div style={{marginBottom:14}}>
               <label style={{display:"block",fontSize:13,fontWeight:600,color:"#555",marginBottom:4}}>理由（任意）</label>
               <div style={{display:"flex",gap:8}}>
                 {["休憩","昼休み","研修","外出","その他"].map(r=>(
-                  <button key={r} onClick={()=>setReason(r)}
-                    style={{padding:"6px 10px",borderRadius:8,border:`1.5px solid ${reason===r?"#1e3a5f":"#ddd"}`,background:reason===r?"#1e3a5f":"white",color:reason===r?"white":"#444",cursor:"pointer",fontSize:12,fontWeight:reason===r?700:400}}>
-                    {r}
-                  </button>
+                  <button key={r} onClick={()=>setReason(r)} style={{padding:"6px 10px",borderRadius:8,border:`1.5px solid ${reason===r?"#1e3a5f":"#ddd"}`,background:reason===r?"#1e3a5f":"white",color:reason===r?"white":"#444",cursor:"pointer",fontSize:12,fontWeight:reason===r?700:400}}>{r}</button>
                 ))}
               </div>
             </div>
-
-            <button onClick={addBreak} disabled={saving}
-              style={{width:"100%",background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",color:"white",border:"none",borderRadius:10,padding:12,fontWeight:700,cursor:"pointer",fontSize:14,opacity:saving?0.7:1}}>
+            <button onClick={addBreak} disabled={saving} style={{width:"100%",background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",color:"white",border:"none",borderRadius:10,padding:12,fontWeight:700,cursor:"pointer",fontSize:14,opacity:saving?0.7:1}}>
               {saving?"登録中...":"☕ 休憩を登録する"}
             </button>
           </div>
-
-          {/* 登録済み休憩一覧 */}
           <div>
-            <div style={{fontWeight:700,fontSize:14,color:"#1e3a5f",marginBottom:10}}>
-              📋 {selDate} の休憩一覧
-            </div>
+            <div style={{fontWeight:700,fontSize:14,color:"#1e3a5f",marginBottom:10}}>📋 {selDate} の休憩一覧</div>
             {todayBreaks.length===0?(
               <div style={{color:"#9ca3af",fontSize:13,padding:"12px 0",textAlign:"center"}}>登録された休憩はありません</div>
             ):todayBreaks.map(b=>{
-              const s=STAFF_ACCOUNTS.find(x=>x.id===b.staff_id)||{color:"#888",name:"不明"};
+              const s=STAFF_ACCOUNTS.find(x=>x.id===b.staff_id)||{color:"#888",name:"不明",initial:"？"};
               return(
                 <div key={b.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"#f8fafc",borderRadius:8,marginBottom:8,borderLeft:`3px solid ${s.color}`}}>
                   <div style={{width:28,height:28,borderRadius:"50%",background:s.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:12,flexShrink:0}}>{s.initial}</div>
@@ -280,6 +371,7 @@ function Dashboard({user,onLogout}){
   const [showMenu,setShowMenu]=React.useState(false);
   const [showBreakModal,setShowBreakModal]=React.useState(false);
   const [viewIntake,setViewIntake]=React.useState(null);
+  const [historyPatient,setHistoryPatient]=React.useState(null);
 
   const isAdmin=user.role==="admin";
   const weekDates=getWeekDates(baseDate);
@@ -305,6 +397,13 @@ function Dashboard({user,onLogout}){
     selStaff?bookings.filter(b=>b.staff_id===selStaff):(isAdmin?bookings:bookings.filter(b=>b.staff_id===user.id)),
     [bookings,selStaff,isAdmin,user.id]
   );
+
+  // 患者別来院回数
+  const visitCounts = React.useMemo(()=>{
+    const counts = {};
+    bookings.forEach(b=>{ counts[b.patient_name] = (counts[b.patient_name]||0)+1; });
+    return counts;
+  },[bookings]);
 
   function openAdd(date=null,time=null){
     setForm({patient_name:"",phone:"",staff_id:isAdmin?1:user.id,date:date||todayStr,time:time||"10:00",menu:MENUS[0],line_notify:true,reminded:false});
@@ -357,7 +456,6 @@ function Dashboard({user,onLogout}){
 
   return(
     <div style={{fontFamily:"'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif",background:"#f0f4f8",minHeight:"100vh"}}>
-      {/* ヘッダー */}
       <div style={{background:"linear-gradient(135deg,#1e3a5f,#2d5a8e)",color:"white"}}>
         <div style={{maxWidth:920,margin:"0 auto",padding:"12px 16px"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
@@ -366,9 +464,7 @@ function Dashboard({user,onLogout}){
               <div style={{fontSize:18,fontWeight:800}}>{CLINIC_NAME}</div>
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <button onClick={()=>setShowBreakModal(true)} style={{background:"rgba(255,255,255,0.2)",border:"none",borderRadius:8,padding:"7px 12px",color:"white",cursor:"pointer",fontWeight:600,fontSize:13}}>
-                ☕ 休憩
-              </button>
+              <button onClick={()=>setShowBreakModal(true)} style={{background:"rgba(255,255,255,0.2)",border:"none",borderRadius:8,padding:"7px 12px",color:"white",cursor:"pointer",fontWeight:600,fontSize:13}}>☕ 休憩</button>
               <button onClick={()=>openAdd()} style={{background:"white",color:"#1e3a5f",border:"none",borderRadius:8,padding:"7px 14px",fontWeight:700,cursor:"pointer",fontSize:13}}>＋ 新規予約</button>
               <div style={{position:"relative"}}>
                 <button onClick={()=>setShowMenu(v=>!v)} style={{background:"rgba(255,255,255,0.18)",border:"none",borderRadius:8,padding:"7px 10px",color:"white",cursor:"pointer",display:"flex",alignItems:"center",gap:6,fontSize:13}}>
@@ -386,7 +482,7 @@ function Dashboard({user,onLogout}){
             </div>
           </div>
           <div style={{display:"flex",gap:4,marginTop:10}}>
-            {[["calendar","📅 カレンダー"],["list","📋 一覧"],["stats","📊 サマリー"]].map(([v,label])=>(
+            {[["calendar","📅 カレンダー"],["list","📋 一覧"],["patients","👥 患者"],["stats","📊 サマリー"]].map(([v,label])=>(
               <button key={v} onClick={()=>{setView(v);setShowMenu(false);}} style={{background:view===v?"white":"transparent",color:view===v?"#1e3a5f":"rgba(255,255,255,0.8)",border:"none",borderRadius:"8px 8px 0 0",padding:"7px 12px",fontWeight:view===v?700:400,cursor:"pointer",fontSize:13}}>{label}</button>
             ))}
           </div>
@@ -395,7 +491,6 @@ function Dashboard({user,onLogout}){
 
       <div style={{maxWidth:920,margin:"0 auto",padding:16}} onClick={()=>setShowMenu(false)}>
 
-        {/* スタッフフィルター */}
         {(view==="calendar"||view==="list")&&(
           <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
             {isAdmin&&<button onClick={()=>setSelStaff(null)} style={{background:!selStaff?"#1e3a5f":"white",color:!selStaff?"white":"#444",border:"1.5px solid "+(!selStaff?"#1e3a5f":"#ddd"),borderRadius:20,padding:"5px 14px",cursor:"pointer",fontSize:13,fontWeight:600}}>全員</button>}
@@ -438,16 +533,16 @@ function Dashboard({user,onLogout}){
                           style={{verticalAlign:"top",padding:2,borderBottom:"1px solid #f5f5f5",borderLeft:"1px solid #f5f5f5",cursor:"pointer",background:isToday?"#fafcff":"white",minWidth:72}}>
                           {bks.map(b=>{
                             const st=STAFF_ACCOUNTS.find(x=>x.id===b.staff_id)||{color:"#888",initial:"？"};
+                            const cnt = visitCounts[b.patient_name]||1;
                             return <div key={b.id} onClick={e=>{e.stopPropagation();openEdit(b);}}
                               style={{background:st.color+"22",borderLeft:`3px solid ${st.color}`,borderRadius:4,padding:"2px 4px",marginBottom:2,fontSize:11,cursor:"pointer"}}>
                               <div style={{fontWeight:700,color:st.color,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.patient_name}</div>
-                              <div style={{color:"#666",fontSize:10}}>{b.time}</div>
+                              <div style={{color:"#666",fontSize:10}}>{b.time} {cnt>1?<span style={{color:"#d97706"}}>({cnt}回目)</span>:""}</div>
                             </div>;
                           })}
                           {brs.map(b=>{
                             const st=STAFF_ACCOUNTS.find(x=>x.id===b.staff_id)||{color:"#888",initial:"？"};
-                            return <div key={`br-${b.id}`}
-                              style={{background:"#f3f4f6",borderLeft:"3px solid #9ca3af",borderRadius:4,padding:"2px 4px",marginBottom:2,fontSize:11}}>
+                            return <div key={`br-${b.id}`} style={{background:"#f3f4f6",borderLeft:"3px solid #9ca3af",borderRadius:4,padding:"2px 4px",marginBottom:2,fontSize:11}}>
                               <div style={{color:"#9ca3af",fontWeight:600,fontSize:10}}>{st.initial} ☕{b.reason}</div>
                             </div>;
                           })}
@@ -468,47 +563,79 @@ function Dashboard({user,onLogout}){
             :[...filtered].sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map(b=>{
               const s=STAFF_ACCOUNTS.find(x=>x.id===b.staff_id)||{color:"#888",name:"不明"};
               const canEdit=isAdmin||b.staff_id===user.id;
-              return <div key={b.id} style={{marginBottom:9}}><div style={{background:"white",borderRadius:10,padding:"12px 16px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",borderLeft:`4px solid ${s.color}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:4}}>
-                    <span style={{background:s.color,color:"white",borderRadius:6,padding:"2px 8px",fontSize:11,fontWeight:700}}>{s.name}</span>
-                    {b.line_notify&&<span style={{background:"#fef9c3",color:"#a16207",borderRadius:6,padding:"2px 8px",fontSize:11}}>🔔 LINE</span>}
-                  </div>
-                  <div style={{fontWeight:700,fontSize:15}}>{b.patient_name}</div>
-                  <div style={{color:"#666",fontSize:13}}>{b.date} {b.time} ｜ {b.menu}</div>
-                  <div style={{color:"#aaa",fontSize:12}}>{b.phone}</div>
-                </div>
-                <div style={{display:"flex",gap:6,flexShrink:0}}>
-                  <button onClick={()=>setViewIntake(viewIntake===b.id?null:b.id)} style={{background:"#f0fdf4",color:"#15803d",border:"none",borderRadius:7,padding:"6px 12px",cursor:"pointer",fontWeight:600,fontSize:13}}>🩺問診</button>
-                  {canEdit&&<button onClick={()=>openEdit(b)} style={{background:"#eff6ff",color:"#2563eb",border:"none",borderRadius:7,padding:"6px 12px",cursor:"pointer",fontWeight:600,fontSize:13}}>編集</button>}
-                  {canEdit&&<button onClick={()=>setDelConfirm(b)} style={{background:"#fef2f2",color:"#ef4444",border:"none",borderRadius:7,padding:"6px 12px",cursor:"pointer",fontWeight:600,fontSize:13}}>削除</button>}
-                </div>
-              </div>
-              {viewIntake===b.id&&(b.body_parts||b.injury_cause||b.pain_when)&&(
-                <div style={{background:"#f0fdf4",borderRadius:8,padding:"12px 14px",margin:"8px 0 0",fontSize:13}}>
-                  <div style={{fontWeight:700,color:"#15803d",marginBottom:8}}>🩺 問診情報</div>
-                  {[
-                    ["負傷部位",b.body_parts],
-                    ["負傷原因",b.injury_cause],
-                    ["いつから",b.pain_when],
-                    ["痛みの強さ",b.pain_level?b.pain_level+"/10":null],
-                    ["症状",b.symptoms],
-                    ["他院受診",b.other_clinic],
-                    ["既往歴",b.medical_history],
-                    ["継続意思",b.want_continue],
-                    ["何で知った",b.how_know],
-                  ].filter(x=>x[1]).map(([l,v])=>(
-                    <div key={l} style={{display:"flex",gap:8,marginBottom:4}}>
-                      <span style={{color:"#9ca3af",minWidth:80,fontSize:12,fontWeight:600}}>{l}</span>
-                      <span style={{color:"#1e3a5f",fontSize:12,fontWeight:600}}>{v}</span>
+              const cnt=visitCounts[b.patient_name]||1;
+              return <div key={b.id} style={{marginBottom:9}}>
+                <div style={{background:"white",borderRadius:10,padding:"12px 16px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",borderLeft:`4px solid ${s.color}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:4}}>
+                      <span style={{background:s.color,color:"white",borderRadius:6,padding:"2px 8px",fontSize:11,fontWeight:700}}>{s.name}</span>
+                      {b.line_notify&&<span style={{background:"#fef9c3",color:"#a16207",borderRadius:6,padding:"2px 8px",fontSize:11}}>🔔 LINE</span>}
+                      {cnt>1&&<span style={{background:"#fef3c7",color:"#d97706",borderRadius:6,padding:"2px 8px",fontSize:11,fontWeight:700}}>{cnt}回目</span>}
                     </div>
-                  ))}
+                    <div style={{fontWeight:700,fontSize:15}}>{b.patient_name}</div>
+                    <div style={{color:"#666",fontSize:13}}>{b.date} {b.time} ｜ {b.menu}</div>
+                    <div style={{color:"#aaa",fontSize:12}}>{b.phone}</div>
+                  </div>
+                  <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                    <button onClick={()=>setHistoryPatient(b.patient_name)} style={{background:"#fef3c7",color:"#92400e",border:"none",borderRadius:7,padding:"6px 10px",cursor:"pointer",fontWeight:600,fontSize:12}}>📋履歴</button>
+                    <button onClick={()=>setViewIntake(viewIntake===b.id?null:b.id)} style={{background:"#f0fdf4",color:"#15803d",border:"none",borderRadius:7,padding:"6px 10px",cursor:"pointer",fontWeight:600,fontSize:12}}>🩺問診</button>
+                    {canEdit&&<button onClick={()=>openEdit(b)} style={{background:"#eff6ff",color:"#2563eb",border:"none",borderRadius:7,padding:"6px 10px",cursor:"pointer",fontWeight:600,fontSize:12}}>編集</button>}
+                    {canEdit&&<button onClick={()=>setDelConfirm(b)} style={{background:"#fef2f2",color:"#ef4444",border:"none",borderRadius:7,padding:"6px 10px",cursor:"pointer",fontWeight:600,fontSize:12}}>削除</button>}
+                  </div>
                 </div>
-              )}
+                {viewIntake===b.id&&(b.body_parts||b.injury_cause||b.pain_when)&&(
+                  <div style={{background:"#f0fdf4",borderRadius:8,padding:"12px 14px",margin:"8px 0 0",fontSize:13}}>
+                    <div style={{fontWeight:700,color:"#15803d",marginBottom:8}}>🩺 問診情報</div>
+                    {[["負傷部位",b.body_parts],["負傷原因",b.injury_cause],["いつから",b.pain_when],["痛みの強さ",b.pain_level?b.pain_level+"/10":null],["症状",b.symptoms],["他院受診",b.other_clinic],["既往歴",b.medical_history],["継続意思",b.want_continue],["何で知った",b.how_know]].filter(x=>x[1]).map(([l,v])=>(
+                      <div key={l} style={{display:"flex",gap:8,marginBottom:4}}>
+                        <span style={{color:"#9ca3af",minWidth:80,fontSize:12,fontWeight:600}}>{l}</span>
+                        <span style={{color:"#1e3a5f",fontSize:12,fontWeight:600}}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>;
             })}
           </div>
         )}
+
+        {/* 患者一覧 */}
+        {view==="patients"&&(()=>{
+          const patientMap = {};
+          bookings.forEach(b=>{
+            if(!patientMap[b.patient_name]) patientMap[b.patient_name]={name:b.patient_name,phone:b.phone,count:0,lastDate:"",lastStaff:null};
+            patientMap[b.patient_name].count++;
+            if(b.date > patientMap[b.patient_name].lastDate){
+              patientMap[b.patient_name].lastDate = b.date;
+              patientMap[b.patient_name].lastStaff = b.staff_id;
+            }
+          });
+          const patients = Object.values(patientMap).sort((a,b)=>b.count-a.count);
+          return (
+            <div>
+              <div style={{marginBottom:12,fontSize:13,color:"#9ca3af",fontWeight:600}}>患者数：{patients.length}名</div>
+              {patients.map(p=>{
+                const s = STAFF_ACCOUNTS.find(x=>x.id===p.lastStaff)||{color:"#888",name:"不明",initial:"？"};
+                return (
+                  <div key={p.name} style={{background:"white",borderRadius:10,padding:"14px 16px",marginBottom:8,boxShadow:"0 1px 6px rgba(0,0,0,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                    <div style={{flex:1}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                        <span style={{fontWeight:800,fontSize:15,color:"#1e3a5f"}}>{p.name}</span>
+                        {p.count>=2&&<span style={{background:"#fef3c7",color:"#d97706",borderRadius:6,padding:"2px 8px",fontSize:11,fontWeight:700}}>{p.count}回来院</span>}
+                        {p.count===1&&<span style={{background:"#f3f4f6",color:"#9ca3af",borderRadius:6,padding:"2px 8px",fontSize:11,fontWeight:600}}>初回</span>}
+                      </div>
+                      <div style={{fontSize:12,color:"#9ca3af"}}>最終来院：{p.lastDate}　前回担当：{s.name}</div>
+                      <div style={{fontSize:12,color:"#9ca3af"}}>{p.phone}</div>
+                    </div>
+                    <button onClick={()=>setHistoryPatient(p.name)} style={{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",color:"white",border:"none",borderRadius:8,padding:"8px 14px",cursor:"pointer",fontWeight:700,fontSize:13,whiteSpace:"nowrap"}}>
+                      📋 履歴を見る
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
 
         {/* サマリー */}
         {view==="stats"&&(
@@ -518,7 +645,7 @@ function Dashboard({user,onLogout}){
                 {label:"本日の予約",value:`${todayCount}件`,icon:"📅",color:"#2563eb"},
                 {label:"本日の休憩",value:`${todayBreakCount}件`,icon:"☕",color:"#9ca3af"},
                 {label:"総予約数",value:`${bookings.length}件`,icon:"📋",color:"#d97706"},
-                {label:"スタッフ数",value:"5名",icon:"👥",color:"#059669"},
+                {label:"患者数",value:`${Object.keys(bookings.reduce((a,b)=>{a[b.patient_name]=1;return a},{})).length}名`,icon:"👥",color:"#059669"},
               ].map(item=>(
                 <div key={item.label} style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 1px 6px rgba(0,0,0,0.06)",borderTop:`3px solid ${item.color}`}}>
                   <div style={{fontSize:22}}>{item.icon}</div>
@@ -537,10 +664,7 @@ function Dashboard({user,onLogout}){
                   <div style={{flex:1}}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
                       <span style={{fontSize:13,fontWeight:600}}>{s.name}</span>
-                      <span style={{fontSize:12}}>
-                        <span style={{color:s.color,fontWeight:700}}>{cnt}件</span>
-                        {bcnt>0&&<span style={{color:"#9ca3af",marginLeft:6}}>☕{bcnt}</span>}
-                      </span>
+                      <span style={{fontSize:12}}><span style={{color:s.color,fontWeight:700}}>{cnt}件</span>{bcnt>0&&<span style={{color:"#9ca3af",marginLeft:6}}>☕{bcnt}</span>}</span>
                     </div>
                     <div style={{height:6,background:"#f0f0f0",borderRadius:3}}>
                       <div style={{height:"100%",width:`${Math.min(cnt*20,100)}%`,background:s.color,borderRadius:3}}></div>
@@ -564,11 +688,11 @@ function Dashboard({user,onLogout}){
               {label:"患者名 *",key:"patient_name",type:"text",placeholder:"山本 花子"},
               {label:"電話番号",key:"phone",type:"tel",placeholder:"090-0000-0000"},
               {label:"日付",key:"date",type:"date"},
-              {label:"時間",key:"time",type:"time"},
-            ].map(({label,key,type,placeholder})=>(
+              {label:"時間",key:"time",type:"time",step:"600"},
+            ].map(({label,key,type,placeholder,step})=>(
               <div key={key} style={{marginBottom:12}}>
                 <label style={{display:"block",fontSize:13,color:"#555",marginBottom:4,fontWeight:600}}>{label}</label>
-                <input type={type} value={form[key]||""} placeholder={placeholder} onChange={e=>{setForm(f=>({...f,[key]:e.target.value}));setConflict(false);}} style={{width:"100%",padding:"9px 12px",border:"1.5px solid #ddd",borderRadius:8,fontSize:14,boxSizing:"border-box"}}/>
+                <input type={type} step={step} value={form[key]||""} placeholder={placeholder} onChange={e=>{setForm(f=>({...f,[key]:e.target.value}));setConflict(false);}} style={{width:"100%",padding:"9px 12px",border:"1.5px solid #ddd",borderRadius:8,fontSize:14,boxSizing:"border-box"}}/>
               </div>
             ))}
             {isAdmin&&(
@@ -576,10 +700,7 @@ function Dashboard({user,onLogout}){
                 <label style={{display:"block",fontSize:13,color:"#555",marginBottom:4,fontWeight:600}}>担当スタッフ</label>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                   {STAFF_ACCOUNTS.map(s=>(
-                    <button key={s.id} onClick={()=>{setForm(f=>({...f,staff_id:s.id}));setConflict(false);}}
-                      style={{background:form.staff_id===s.id?s.color:"white",color:form.staff_id===s.id?"white":"#444",border:`1.5px solid ${s.color}`,borderRadius:20,padding:"5px 10px",cursor:"pointer",fontSize:12,fontWeight:600}}>
-                      {s.name}
-                    </button>
+                    <button key={s.id} onClick={()=>{setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} style={{background:form.staff_id===s.id?s.color:"white",color:form.staff_id===s.id?"white":"#444",border:`1.5px solid ${s.color}`,borderRadius:20,padding:"5px 10px",cursor:"pointer",fontSize:12,fontWeight:600}}>{s.name}</button>
                   ))}
                 </div>
               </div>
@@ -596,18 +717,17 @@ function Dashboard({user,onLogout}){
             </div>
             <div style={{display:"flex",gap:10}}>
               {editId!==null&&<button onClick={()=>setDelConfirm(bookings.find(b=>b.id===editId))} style={{flex:1,background:"#fef2f2",color:"#ef4444",border:"none",borderRadius:8,padding:11,fontWeight:700,cursor:"pointer"}}>削除</button>}
-              <button onClick={save} style={{flex:2,background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",color:"white",border:"none",borderRadius:8,padding:11,fontWeight:700,cursor:"pointer",fontSize:14}}>
-                {editId!==null?"更新する":"予約を登録"}
-              </button>
+              <button onClick={save} style={{flex:2,background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",color:"white",border:"none",borderRadius:8,padding:11,fontWeight:700,cursor:"pointer",fontSize:14}}>{editId!==null?"更新する":"予約を登録"}</button>
             </div>
           </div>
         )}
       </div>
 
-      {/* 休憩モーダル */}
+      {/* 患者履歴モーダル */}
+      {historyPatient && <PatientHistoryModal patientName={historyPatient} bookings={bookings} onClose={()=>setHistoryPatient(null)}/>}
+
       {showBreakModal&&<BreakModal onClose={()=>setShowBreakModal(false)} bookings={bookings} breaks={breaks} setBreaks={setBreaks}/>}
 
-      {/* 削除確認 */}
       {delConfirm&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300,padding:16}}>
           <div style={{background:"white",borderRadius:14,padding:24,maxWidth:300,width:"100%"}}>
@@ -622,7 +742,6 @@ function Dashboard({user,onLogout}){
         </div>
       )}
 
-      {/* トースト */}
       {toast&&(
         <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:toast.type==="delete"?"#1f2937":"#059669",color:"white",padding:"12px 24px",borderRadius:10,fontWeight:600,fontSize:14,zIndex:400,boxShadow:"0 4px 20px rgba(0,0,0,0.2)",whiteSpace:"nowrap"}}>
           {toast.type==="delete"?"🗑️ ":"✅ "}{toast.msg}
@@ -632,7 +751,6 @@ function Dashboard({user,onLogout}){
   );
 }
 
-// ===== ルート =====
 function App(){
   const [user,setUser]=React.useState(null);
   if(!user)return <LoginScreen onLogin={setUser}/>;
