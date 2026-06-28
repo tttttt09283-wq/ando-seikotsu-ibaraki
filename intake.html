@@ -23,8 +23,9 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 .loading{text-align:center;padding:60px 20px;color:#9ca3af;font-size:15px;}
 .error{text-align:center;padding:60px 20px;color:#ef4444;}
 .badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;margin-right:4px;}
-.badge-blue{background:#dbeafe;color:#1e40af;}
 .badge-green{background:#dcfce7;color:#15803d;}
+.btn-start{display:block;width:100%;padding:16px;background:linear-gradient(135deg,#059669,#047857);color:white;border:none;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer;text-align:center;margin-bottom:12px;text-decoration:none;}
+.btn-back{display:block;width:100%;padding:12px;background:white;color:#666;border:1.5px solid #ddd;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;text-align:center;text-decoration:none;}
 </style>
 </head>
 <body>
@@ -39,7 +40,6 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 <script>
 const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
-
 const STAFF = {1:"岩永",2:"大皿",3:"定井",4:"細永",5:"広川"};
 
 async function load() {
@@ -93,11 +93,11 @@ async function load() {
           ${b.want_continue ? `<div class="row"><span class="label">継続意思</span><span class="value">${b.want_continue}</span></div>` : ''}
           ${b.how_know ? `<div class="row"><span class="label">来院経路</span><span class="value">${b.how_know}</span></div>` : ''}
         </div>
-      </div>` : '<div class="card"><div class="card-body" style="text-align:center;color:#9ca3af;padding:24px">問診情報なし</div></div>'}
+      </div>` : '<div class="card"><div class="card-body" style="text-align:center;color:#9ca3af;padding:24px;">問診情報なし</div></div>'}
 
-      <div style="text-align:center;margin-top:8px;">
-        <a href="/index.html" style="color:#2563eb;font-size:13px;font-weight:600;">← 管理画面へ戻る</a>
-      </div>
+      <a href="/treatment.html?id=${id}" class="btn-start">⚕️ 施術を開始する →</a>
+      <a href="/index.html" class="btn-back">← 管理画面へ戻る</a>
+      <div style="height:24px;"></div>
     `;
   } catch(e) {
     root.innerHTML = `<div class="error">❌ 読み込みエラー：${e.message}</div>`;
