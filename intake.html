@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>問診票 - あんど整骨院</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#f0f4f8;min-height:100vh;}
+.header{background:linear-gradient(135deg,#1e3a5f,#2d6a9f);color:white;padding:16px;text-align:center;}
+.header h1{font-size:18px;font-weight:800;}
+.header p{font-size:12px;opacity:0.75;margin-top:4px;}
+.container{max-width:480px;margin:0 auto;padding:20px 16px;}
+.card{background:white;border-radius:12px;overflow:hidden;margin-bottom:16px;box-shadow:0 2px 12px rgba(0,0,0,0.08);}
+.card-header{padding:12px 16px;font-size:13px;font-weight:700;color:white;}
+.card-header.blue{background:#1e3a5f;}
+.card-header.green{background:#059669;}
+.card-body{padding:14px 16px;}
+.row{display:flex;gap:8px;padding:8px 0;border-bottom:1px solid #f0f0f0;}
+.row:last-child{border-bottom:none;}
+.label{color:#9ca3af;font-size:12px;font-weight:600;min-width:90px;flex-shrink:0;}
+.value{color:#1e3a5f;font-size:13px;font-weight:600;}
+.loading{text-align:center;padding:60px 20px;color:#9ca3af;font-size:15px;}
+.error{text-align:center;padding:60px 20px;color:#ef4444;}
+.badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;margin-right:4px;}
+.badge-blue{background:#dbeafe;color:#1e40af;}
+.badge-green{background:#dcfce7;color:#15803d;}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🩺 あんど整骨院 問診票</h1>
+  <p>スタッフ専用ページ</p>
+</div>
+<div class="container" id="root">
+  <div class="loading">読み込み中...</div>
+</div>
+
+<script>
+const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
+
+const STAFF = {1:"岩永",2:"大皿",3:"定井",4:"細永",5:"広川"};
+
+async function load() {
+  const params = new URLSearchParams(location.search);
+  const id = params.get('id');
+  const root = document.getElementById('root');
+
+  if (!id) {
+    root.innerHTML = '<div class="error">❌ 予約IDが指定されていません</div>';
+    return;
+  }
+
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${id}`, {
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
+    });
+    const data = await res.json();
+
+    if (!data || data.length === 0) {
+      root.innerHTML = '<div class="error">❌ 予約が見つかりません</div>';
+      return;
+    }
+
+    const b = data[0];
+    const staffName = STAFF[b.staff_id] || '不明';
+
+    root.innerHTML = `
+      <div class="card">
+        <div class="card-header blue">📅 予約情報</div>
+        <div class="card-body">
+          <div class="row"><span class="label">患者名</span><span class="value">${b.patient_name} 様</span></div>
+          <div class="row"><span class="label">電話番号</span><span class="value">${b.phone || '—'}</span></div>
+          <div class="row"><span class="label">日時</span><span class="value">${b.date} ${b.time}</span></div>
+          <div class="row"><span class="label">メニュー</span><span class="value">${b.menu}</span></div>
+          <div class="row"><span class="label">担当</span><span class="value">${staffName} 先生</span></div>
+          <div class="row"><span class="label">LINE</span><span class="value">${b.line_user_id ? '<span class="badge badge-green">✅ 連携済み</span>' : '未連携'}</span></div>
+        </div>
+      </div>
+
+      ${(b.body_parts || b.injury_cause || b.pain_when) ? `
+      <div class="card">
+        <div class="card-header green">🩺 問診情報</div>
+        <div class="card-body">
+          ${b.body_parts ? `<div class="row"><span class="label">負傷部位</span><span class="value">${b.body_parts}</span></div>` : ''}
+          ${b.injury_cause ? `<div class="row"><span class="label">負傷原因</span><span class="value">${b.injury_cause}</span></div>` : ''}
+          ${b.pain_when ? `<div class="row"><span class="label">いつから</span><span class="value">${b.pain_when}</span></div>` : ''}
+          ${b.pain_level ? `<div class="row"><span class="label">痛みの強さ</span><span class="value">${b.pain_level} / 10</span></div>` : ''}
+          ${b.symptoms ? `<div class="row"><span class="label">症状</span><span class="value">${b.symptoms}</span></div>` : ''}
+          ${b.other_clinic ? `<div class="row"><span class="label">他院受診</span><span class="value">${b.other_clinic}</span></div>` : ''}
+          ${b.medical_history ? `<div class="row"><span class="label">既往歴</span><span class="value">${b.medical_history}</span></div>` : ''}
+          ${b.want_continue ? `<div class="row"><span class="label">継続意思</span><span class="value">${b.want_continue}</span></div>` : ''}
+          ${b.how_know ? `<div class="row"><span class="label">来院経路</span><span class="value">${b.how_know}</span></div>` : ''}
+        </div>
+      </div>` : '<div class="card"><div class="card-body" style="text-align:center;color:#9ca3af;padding:24px">問診情報なし</div></div>'}
+
+      <div style="text-align:center;margin-top:8px;">
+        <a href="/index.html" style="color:#2563eb;font-size:13px;font-weight:600;">← 管理画面へ戻る</a>
+      </div>
+    `;
+  } catch(e) {
+    root.innerHTML = `<div class="error">❌ 読み込みエラー：${e.message}</div>`;
+  }
+}
+
+load();
+</script>
+</body>
+</html>
