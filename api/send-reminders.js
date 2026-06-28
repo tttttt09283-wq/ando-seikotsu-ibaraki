@@ -30,7 +30,7 @@ module.exports = async (req, res) => {
       // 問診票URL（予約IDをパラメータに）
       const intakeUrl = `https://ando-seikotsu-ibaraki.vercel.app/intake.html?id=${booking.id}`;
       // QRコード画像URL（Google Charts API）
-      const qrUrl = `https://chart.googleapis.com/chart?chs=300x300&cht=qr&chl=${encodeURIComponent(intakeUrl)}&choe=UTF-8`;
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(intakeUrl)}`;
 
       const messages = [
         {
