@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>会計 - あんど整骨院</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#f0f4f8;min-height:100vh;}
+.header{background:linear-gradient(135deg,#1e3a5f,#2d6a9f);color:white;padding:16px;text-align:center;}
+.header h1{font-size:18px;font-weight:800;}
+.header p{font-size:12px;opacity:0.75;margin-top:4px;}
+.container{max-width:480px;margin:0 auto;padding:16px;}
+.card{background:white;border-radius:12px;overflow:hidden;margin-bottom:14px;box-shadow:0 2px 10px rgba(0,0,0,0.07);}
+.card-header{padding:11px 16px;font-size:13px;font-weight:800;color:white;}
+.card-header.blue{background:#1e3a5f;}
+.card-header.green{background:#059669;}
+.card-header.orange{background:#d97706;}
+.card-header.purple{background:#7c3aed;}
+.card-header.red{background:#dc2626;}
+.card-body{padding:14px 16px;}
+.row{display:flex;gap:8px;padding:7px 0;border-bottom:1px solid #f0f0f0;align-items:center;}
+.row:last-child{border-bottom:none;}
+.label{color:#9ca3af;font-size:12px;font-weight:600;min-width:90px;flex-shrink:0;}
+.value{color:#1e3a5f;font-size:13px;font-weight:600;flex:1;}
+.chips{display:flex;flex-wrap:wrap;gap:7px;}
+.chip{padding:9px 14px;border-radius:20px;border:1.5px solid #ddd;background:white;color:#444;cursor:pointer;font-size:13px;font-weight:500;}
+.chip.sel-blue{border-color:#1e3a5f;background:#1e3a5f;color:white;font-weight:700;}
+.chip.sel-green{border-color:#059669;background:#059669;color:white;font-weight:700;}
+.chip.sel-orange{border-color:#d97706;background:#d97706;color:white;font-weight:700;}
+.chip.sel-purple{border-color:#7c3aed;background:#7c3aed;color:white;font-weight:700;}
+.amount-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f0f0f0;}
+.amount-row:last-child{border-bottom:none;}
+.amount-label{font-size:13px;color:#666;}
+.amount-value{font-size:15px;font-weight:700;color:#1e3a5f;}
+.total-row{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-top:2px solid #1e3a5f;margin-top:4px;}
+.total-label{font-size:15px;font-weight:800;color:#1e3a5f;}
+.total-value{font-size:24px;font-weight:800;color:#1e3a5f;}
+input,select,textarea{width:100%;padding:10px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box;}
+.btn-primary{width:100%;padding:16px;background:linear-gradient(135deg,#059669,#047857);color:white;border:none;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer;margin-bottom:10px;}
+.btn-secondary{width:100%;padding:12px;background:white;color:#666;border:1.5px solid #ddd;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:10px;}
+.pass-card{border:1.5px solid #e5e7eb;border-radius:10px;padding:12px 14px;margin-bottom:8px;cursor:pointer;}
+.pass-card.sel{border-color:#059669;background:#f0fdf4;}
+.receipt-area{background:#fffbf0;border:1px dashed #d97706;border-radius:10px;padding:16px;font-size:13px;line-height:2;}
+.receipt-title{text-align:center;font-weight:800;font-size:15px;margin-bottom:8px;border-bottom:1px solid #ddd;padding-bottom:8px;}
+.receipt-row{display:flex;justify-content:space-between;}
+.receipt-total{display:flex;justify-content:space-between;font-weight:800;font-size:15px;border-top:1px solid #ddd;padding-top:8px;margin-top:4px;}
+.done-wrap{text-align:center;padding:40px 20px;}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>💴 会計</h1>
+  <p>あんど整骨院 香里園駅前院</p>
+</div>
+<div class="container" id="root">
+  <div style="text-align:center;padding:60px;color:#9ca3af;">読み込み中...</div>
+</div>
+
+<script>
+const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
+const STAFF = {1:"岩永",2:"大皿",3:"定井",4:"細永",5:"広川"};
+
+// メニュー別料金（保険窓口負担）
+const INSURANCE_PRICES = {
+  "無料施術体験会（60分）": 0,
+  "初診（60分）": 0,
+  "再診（30分）": 0,
+  "鍼灸（45分）": 580,
+  "骨盤矯正（40分）": 580,
+  "マッサージ（30分）": 380,
+};
+
+// 自費メニュー料金
+const JIFEE_PRICES = {
+  "矯正NE": 3300,
+  "矯正KO": 2200,
+  "ST": 1650,
+  "Hi": 5500,
+  "鍼": 3300,
+  "他": 0,
+};
+
+const PAYMENT_METHODS = [
+  {id:"現金", icon:"💴"},
+  {id:"カード", icon:"💳"},
+  {id:"PayPay", icon:"📱"},
+  {id:"回数券", icon:"🎫"},
+  {id:"FP", icon:"♾️"},
+];
+
+function sbGet(table, filter) {
+  return fetch(`${SUPABASE_URL}/rest/v1/${table}${filter||""}`, {
+    headers:{apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${SUPABASE_ANON_KEY}`}
+  }).then(r=>r.json());
+}
+function sbPost(table, data) {
+  return fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+    method:"POST",
+    headers:{apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${SUPABASE_ANON_KEY}`, "Content-Type":"application/json", Prefer:"return=representation"},
+    body:JSON.stringify(data)
+  }).then(r=>r.json());
+}
+function sbPatch(table, id, data) {
+  return fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
+    method:"PATCH",
+    headers:{apikey:SUPABASE_ANON_KEY, Authorization:`Bearer ${SUPABASE_ANON_KEY}`, "Content-Type":"application/json"},
+    body:JSON.stringify(data)
+  }).then(r=>r.json());
+}
+
+let booking = null;
+let treatment = null;
+let passes = [];
+
+let state = {
+  insuranceAmount: 0,
+  jifeeItems: [],   // [{label, amount}]
+  customJifee: "",
+  paymentMethod: "現金",
+  selectedPassId: null,
+  cashInput: "",
+  done: false,
+  saving: false,
+  showReceipt: false,
+  paymentId: null,
+};
+
+function calcTotal() {
+  const ins = parseInt(state.insuranceAmount)||0;
+  const jifee = state.jifeeItems.reduce((s,i)=>s+i.amount,0);
+  return ins + jifee;
+}
+
+function calcChange() {
+  const cash = parseInt(state.cashInput)||0;
+  return cash - calcTotal();
+}
+
+async function save() {
+  if(state.saving) return;
+  if(!state.paymentMethod) {alert("支払方法を選択してください");return;}
+  if(state.paymentMethod==="回数券"||state.paymentMethod==="FP") {
+    if(!state.selectedPassId){alert("使用する回数券/FPを選択してください");return;}
+  }
+  state.saving = true;
+  render();
+
+  try {
+    const total = calcTotal();
+    const jifeeTotal = state.jifeeItems.reduce((s,i)=>s+i.amount,0);
+
+    // 会計保存
+    const result = await sbPost("payments", {
+      booking_id: booking.id,
+      treatment_id: treatment ? treatment.id : null,
+      patient_name: booking.patient_name,
+      payment_date: booking.date,
+      insurance_amount: parseInt(state.insuranceAmount)||0,
+      jifee_amount: jifeeTotal,
+      total_amount: total,
+      payment_method: state.paymentMethod,
+      staff_id: booking.staff_id,
+      memo: state.jifeeItems.map(i=>i.label).join("・")||null,
+    });
+    if(Array.isArray(result)&&result.length>0) state.paymentId = result[0].id;
+
+    // 回数券/FP使用記録
+    if((state.paymentMethod==="回数券"||state.paymentMethod==="FP")&&state.selectedPassId) {
+      const pass = passes.find(p=>p.id===state.selectedPassId);
+      if(pass) {
+        await sbPost("pass_usages",{pass_id:pass.id, booking_id:booking.id, used_date:booking.date});
+        await sbPatch("passes", pass.id, {remaining_count: (pass.remaining_count||0)-1});
+      }
+    }
+
+    state.done = true;
+  } catch(e) {
+    alert("保存エラー："+e.message);
+    state.saving = false;
+  }
+  render();
+}
+
+function fmt(n) { return "¥"+Number(n||0).toLocaleString(); }
+
+function renderReceipt() {
+  const total = calcTotal();
+  const ins = parseInt(state.insuranceAmount)||0;
+  const jifee = state.jifeeItems.reduce((s,i)=>s+i.amount,0);
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日`;
+
+  return `
+    <div class="receipt-area">
+      <div class="receipt-title">領　収　書</div>
+      <div style="text-align:center;margin-bottom:8px;font-size:12px;color:#666;">${dateStr}</div>
+      <div class="receipt-row"><span>${booking.patient_name} 様</span></div>
+      <div style="border-top:1px solid #ddd;margin:8px 0;"></div>
+      ${ins>0?`<div class="receipt-row"><span>保険窓口負担</span><span>${fmt(ins)}</span></div>`:""}
+      ${state.jifeeItems.map(i=>`<div class="receipt-row"><span>${i.label}</span><span>${fmt(i.amount)}</span></div>`).join("")}
+      <div class="receipt-total"><span>合　計</span><span>${fmt(total)}</span></div>
+      ${state.paymentMethod==="現金"&&state.cashInput?`
+        <div style="border-top:1px dashed #ddd;margin-top:8px;padding-top:8px;">
+          <div class="receipt-row"><span>お預かり</span><span>${fmt(parseInt(state.cashInput))}</span></div>
+          <div class="receipt-row"><span>お釣り</span><span>${fmt(calcChange())}</span></div>
+        </div>`:""}
+      <div style="border-top:1px solid #ddd;margin-top:8px;padding-top:8px;font-size:11px;color:#9ca3af;text-align:center;">
+        支払方法：${state.paymentMethod}<br/>
+        あんど整骨院 香里園駅前院<br/>担当：${STAFF[booking.staff_id]||""}
+      </div>
+    </div>
+  `;
+}
+
+function render() {
+  const root = document.getElementById("root");
+  if(!booking) return;
+
+  if(state.done) {
+    const total = calcTotal();
+    const change = calcChange();
+    root.innerHTML = `
+      <div class="done-wrap">
+        <div style="font-size:64px;margin-bottom:16px;">✅</div>
+        <div style="font-size:22px;font-weight:800;color:#1e3a5f;margin-bottom:8px;">会計完了</div>
+        <div style="color:#666;font-size:14px;margin-bottom:24px;">${booking.patient_name} 様　${fmt(total)}</div>
+        ${state.paymentMethod==="現金"&&state.cashInput?`
+          <div style="background:#f0fdf4;border-radius:10px;padding:14px;margin-bottom:20px;text-align:left;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span style="color:#666;font-size:13px;">お預かり</span><span style="font-weight:700;">${fmt(parseInt(state.cashInput))}</span></div>
+            <div style="display:flex;justify-content:space-between;"><span style="color:#666;font-size:13px;">お釣り</span><span style="font-size:20px;font-weight:800;color:#059669;">${fmt(change)}</span></div>
+          </div>`:""}
+        ${renderReceipt()}
+        <div style="margin-top:20px;">
+          <button class="btn-primary" onclick="window.print()" style="background:linear-gradient(135deg,#d97706,#b45309);">🖨️ 領収書を印刷</button>
+          <button class="btn-secondary" onclick="location.href='/index.html'">← 管理画面へ戻る</button>
+          <button class="btn-secondary" onclick="location.href='/reports.html'">📊 売上レポートを見る</button>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  const total = calcTotal();
+  let html = `
+    <!-- 患者情報 -->
+    <div class="card">
+      <div class="card-header blue">👤 会計情報</div>
+      <div class="card-body">
+        <div class="row"><span class="label">患者名</span><span class="value">${booking.patient_name} 様</span></div>
+        <div class="row"><span class="label">日時</span><span class="value">${booking.date} ${booking.time}</span></div>
+        <div class="row"><span class="label">メニュー</span><span class="value">${booking.menu}</span></div>
+        <div class="row"><span class="label">担当</span><span class="value">${STAFF[booking.staff_id]||"不明"} 先生</span></div>
+        ${treatment?`<div class="row"><span class="label">施術種別</span><span class="value">${treatment.treatment_types||"—"}</span></div>`:""}
+      </div>
+    </div>
+
+    <!-- 保険窓口負担 -->
+    <div class="card">
+      <div class="card-header blue">🏥 保険窓口負担</div>
+      <div class="card-body">
+        <label style="display:block;font-size:13px;font-weight:700;color:#444;margin-bottom:6px;">金額（円）</label>
+        <input type="number" id="insuranceAmount" value="${state.insuranceAmount}" placeholder="0" oninput="state.insuranceAmount=this.value;renderSummary()"/>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;">
+          ${[0,380,580,880,1100].map(v=>`<button onclick="state.insuranceAmount=${v};document.getElementById('insuranceAmount').value=${v};renderSummary();" style="padding:7px 12px;border-radius:8px;border:1.5px solid #ddd;background:white;cursor:pointer;font-size:13px;">${fmt(v)}</button>`).join("")}
+        </div>
+      </div>
+    </div>
+
+    <!-- 自費項目 -->
+    <div class="card">
+      <div class="card-header green">💴 自費項目</div>
+      <div class="card-body">
+        <div style="display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px;">
+          ${Object.entries(JIFEE_PRICES).map(([label,amount])=>`
+            <button onclick="addJifee('${label}',${amount})" style="padding:8px 12px;border-radius:8px;border:1.5px solid #059669;background:white;color:#059669;cursor:pointer;font-size:12px;font-weight:700;">
+              ${label}<br/><span style="font-size:11px;color:#9ca3af;">${amount>0?fmt(amount):"金額入力"}</span>
+            </button>`).join("")}
+        </div>
+        <div id="jifeeItems">
+          ${state.jifeeItems.map((item,i)=>`
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#f0fdf4;border-radius:8px;margin-bottom:6px;">
+              <span style="font-size:13px;font-weight:600;color:#1e3a5f;">${item.label}</span>
+              <div style="display:flex;align-items:center;gap:8px;">
+                <input type="number" value="${item.amount}" onchange="updateJifee(${i},this.value)" style="width:90px;padding:5px 8px;border:1.5px solid #ddd;border-radius:6px;font-size:13px;text-align:right;"/>
+                <button onclick="removeJifee(${i})" style="background:#fef2f2;color:#ef4444;border:none;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px;">✕</button>
+              </div>
+            </div>`).join("")}
+        </div>
+        ${state.jifeeItems.length===0?`<div style="text-align:center;color:#d1d5db;font-size:13px;padding:8px;">自費項目なし</div>`:""}
+      </div>
+    </div>
+
+    <!-- 合計 -->
+    <div class="card">
+      <div class="card-header orange">💰 お会計</div>
+      <div class="card-body" id="summaryArea">
+        ${renderSummaryHtml()}
+      </div>
+    </div>
+
+    <!-- 支払方法 -->
+    <div class="card">
+      <div class="card-header purple">💳 支払方法</div>
+      <div class="card-body">
+        <div class="chips" style="margin-bottom:12px;">
+          ${PAYMENT_METHODS.map(m=>`
+            <button onclick="selectPayment('${m.id}')" class="chip${state.paymentMethod===m.id?' sel-purple':''}" >
+              ${m.icon} ${m.id}
+            </button>`).join("")}
+        </div>
+
+        ${state.paymentMethod==="現金"?`
+          <div style="margin-top:8px;">
+            <label style="display:block;font-size:13px;font-weight:700;color:#444;margin-bottom:6px;">お預かり金額</label>
+            <input type="number" id="cashInput" value="${state.cashInput}" placeholder="例：1000" oninput="state.cashInput=this.value;renderSummary()"/>
+            ${state.cashInput&&parseInt(state.cashInput)>=total?`
+              <div style="margin-top:8px;background:#f0fdf4;border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;">
+                <span style="font-size:13px;color:#059669;font-weight:700;">お釣り</span>
+                <span style="font-size:22px;font-weight:800;color:#059669;">${fmt(calcChange())}</span>
+              </div>`:""}
+          </div>`:""}
+
+        ${(state.paymentMethod==="回数券"||state.paymentMethod==="FP")?`
+          <div style="margin-top:8px;">
+            <div style="font-size:13px;font-weight:700;color:#444;margin-bottom:8px;">使用する券を選択</div>
+            ${passes.filter(p=>p.active&&p.remaining_count>0&&(
+              state.paymentMethod==="回数券"?p.pass_type==="回数券":p.pass_type==="FP（フリーパス）"
+            )).map(p=>`
+              <div class="pass-card${state.selectedPassId===p.id?' sel':" "}" onclick="state.selectedPassId=${p.id};render();">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                  <div>
+                    <div style="font-weight:700;font-size:13px;color:#1e3a5f;">${p.pass_type}</div>
+                    <div style="font-size:12px;color:#9ca3af;">残り ${p.remaining_count}回 ／ 購入：${fmt(p.amount)}</div>
+                    ${p.expiry_date?`<div style="font-size:11px;color:#d97706;">期限：${p.expiry_date}</div>`:""}
+                  </div>
+                  ${state.selectedPassId===p.id?`<span style="color:#059669;font-size:20px;">✓</span>`:""}
+                </div>
+              </div>`).join("")||`<div style="text-align:center;color:#9ca3af;font-size:13px;padding:12px;">利用可能な券がありません</div>`}
+          </div>`:""}
+      </div>
+    </div>
+
+    <button class="btn-primary" onclick="save()" ${state.saving?"disabled":""} style="opacity:${state.saving?0.7:1};">
+      ${state.saving?"処理中...":"✅ 会計を確定する"}
+    </button>
+    <button class="btn-secondary" onclick="history.back()">← 戻る</button>
+    <div style="height:40px;"></div>
+  `;
+
+  root.innerHTML = html;
+}
+
+function renderSummaryHtml() {
+  const ins = parseInt(state.insuranceAmount)||0;
+  const jifee = state.jifeeItems.reduce((s,i)=>s+i.amount,0);
+  const total = ins+jifee;
+  return `
+    ${ins>0?`<div class="amount-row"><span class="amount-label">保険窓口負担</span><span class="amount-value">${fmt(ins)}</span></div>`:""}
+    ${state.jifeeItems.map(i=>`<div class="amount-row"><span class="amount-label">${i.label}</span><span class="amount-value">${fmt(i.amount)}</span></div>`).join("")}
+    <div class="total-row"><span class="total-label">合　計</span><span class="total-value">${fmt(total)}</span></div>
+  `;
+}
+
+function renderSummary() {
+  const el = document.getElementById("summaryArea");
+  if(el) el.innerHTML = renderSummaryHtml();
+  // お釣り更新
+  const ins = parseInt(state.insuranceAmount)||0;
+  const jifee = state.jifeeItems.reduce((s,i)=>s+i.amount,0);
+  const total = ins+jifee;
+  const cashEl = document.getElementById("cashInput");
+  if(cashEl) state.cashInput = cashEl.value;
+}
+
+function addJifee(label, amount) {
+  if(amount===0) {
+    state.jifeeItems.push({label, amount:0});
+  } else {
+    state.jifeeItems.push({label, amount});
+  }
+  render();
+}
+
+function removeJifee(i) {
+  state.jifeeItems.splice(i,1);
+  render();
+}
+
+function updateJifee(i, val) {
+  state.jifeeItems[i].amount = parseInt(val)||0;
+  renderSummary();
+}
+
+function selectPayment(method) {
+  state.paymentMethod = method;
+  state.selectedPassId = null;
+  render();
+}
+
+async function init() {
+  const params = new URLSearchParams(location.search);
+  const id = params.get("id");
+  if(!id) {
+    document.getElementById("root").innerHTML = '<div style="text-align:center;padding:60px;color:#ef4444;">❌ 予約IDが指定されていません</div>';
+    return;
+  }
+
+  try {
+    const [bookings, treatments, passList] = await Promise.all([
+      sbGet("bookings", `?id=eq.${id}`),
+      sbGet("treatments", `?booking_id=eq.${id}&order=treated_at.desc&limit=1`),
+      sbGet("passes", `?active=eq.true&order=created_at.desc`),
+    ]);
+
+    booking = bookings[0];
+    treatment = treatments[0]||null;
+    passes = Array.isArray(passList)?passList:[];
+
+    // メニューから保険金額を初期設定
+    state.insuranceAmount = INSURANCE_PRICES[booking.menu]||0;
+
+    // 施術種別から自費を初期設定
+    if(treatment&&treatment.treatment_types) {
+      treatment.treatment_types.split("・").forEach(t=>{
+        if(JIFEE_PRICES[t]!==undefined&&t!=="保険") {
+          state.jifeeItems.push({label:t, amount:JIFEE_PRICES[t]});
+        }
+      });
+    }
+
+    render();
+  } catch(e) {
+    document.getElementById("root").innerHTML = `<div style="text-align:center;padding:60px;color:#ef4444;">❌ エラー：${e.message}</div>`;
+  }
+}
+
+init();
+</script>
+</body>
+</html>
