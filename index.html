@@ -598,8 +598,11 @@ function Dashboard({user,onLogout}){
         {/* タイムライン（横軸：時間、縦軸：スタッフ） */}
         {view==="calendar"&&(()=>{
           const ds = fmtDate(baseDate);
-          const MINS = [];
-          for(let h=9;h<=18;h++) for(let m=0;m<60;m+=10){if(h===18&&m>0)break;MINS.push({h,m,label:`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`)}
+          const MINS = Array.from({length:54},(_,i)=>{
+            const totalMin=i*10,h=9+Math.floor(totalMin/60),m=totalMin%60;
+            if(h>18||(h===18&&m>0)) return null;
+            return {h,m,label:`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`};
+          }).filter(Boolean);
           const CELL_W = 36; // px per 10min
           const HEADER_W = 90; // staff name column
           const staffList = isAdmin ? STAFF_ACCOUNTS : STAFF_ACCOUNTS.filter(s=>s.id===user.id);
