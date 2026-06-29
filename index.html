@@ -102,8 +102,86 @@ const STAFF_ACCOUNTS = [
   {id:4,name:"細永 先生",email:"hosonaga@ando.jp",password:"hosonaga123",role:"staff",color:"#7c3aed",initial:"細"},
   {id:5,name:"広川 先生",email:"hirokawa@ando.jp",password:"hirokawa123",role:"staff",color:"#dc2626",initial:"広"},
 ];
-const MENUS = ["無料施術体験会（60分）","初診（60分）","再診（30分）","鍼灸（45分）","骨盤矯正（40分）","マッサージ（30分）"];
-const DURATION = {"無料施術体験会（60分）":60,"初診（60分）":60,"再診（30分）":30,"鍼灸（45分）":45,"骨盤矯正（40分）":40,"マッサージ（30分）":30};
+// ===== メニューマスタ（改定後料金） =====
+const MENU_CATEGORIES = [
+  {
+    id:"insurance", label:"保険", color:"#2563eb",
+    items:[
+      {name:"初診",         duration:60, price:1200},
+      {name:"2回目",        duration:30, price:1200},
+      {name:"3回目以降",    duration:30, price:1200},
+      {name:"3回目以降追加", duration:30, price:150},
+      {name:"カルテ管理料", duration:10, price:150},
+      {name:"新患包帯",     duration:10, price:1500},
+      {name:"2割 初診",     duration:60, price:1200},
+      {name:"2割 2回目",    duration:30, price:1200},
+      {name:"2割 3回目以降",duration:30, price:700},
+      {name:"1割 初診",     duration:60, price:250},
+      {name:"1割 2回目",    duration:30, price:400},
+      {name:"1割 3回目以降",duration:30, price:1400},
+      {name:"1割 3回目追加",duration:10, price:50},
+      {name:"保険交通 初診",          duration:60, price:1100},
+      {name:"保険交通 2回目以降",     duration:30, price:1100},
+      {name:"保険交通 保健分子払い日", duration:10, price:200},
+      {name:"保険金3割 初診",         duration:60, price:1750},
+      {name:"保険金3割 2回目以降",    duration:30, price:1650},
+      {name:"保険金2割 初診",         duration:60, price:1750},
+      {name:"保険金2割 2回目以降",    duration:30, price:1650},
+      {name:"保険金1割 初診",         duration:60, price:1300},
+      {name:"保険金1割 2回目以降",    duration:30, price:1200},
+      {name:"保険金のみ2回目以降",    duration:30, price:1050},
+      {name:"保険金のみ400 2回目以降",duration:30, price:250},
+    ],
+  },
+  {
+    id:"jifee", label:"自費", color:"#059669",
+    items:[
+      {name:"整体",             duration:30, price:3830},
+      {name:"ハイボルテージ",   duration:30, price:3830},
+      {name:"スキャン",         duration:30, price:3830},
+      {name:"EMS",              duration:30, price:3830},
+      {name:"手技療法 1回行",   duration:30, price:3830},
+      {name:"手技療法 1ヶ月",   duration:30, price:3830},
+      {name:"美容鍼 小顔矯正",  duration:60, price:7230},
+      {name:"鍼灸",             duration:60, price:1110},
+      {name:"推拿",             duration:30, price:1110},
+      {name:"深層",             duration:30, price:5000},
+      {name:"筋膜",             duration:30, price:1100},
+      {name:"3ヶ月",            duration:30, price:1100},
+      {name:"フリーパス 1ヶ月", duration:30, price:12200},
+      {name:"フリーパス 3ヶ月", duration:30, price:27800},
+      {name:"フリーパス 3ヶ月2",duration:30, price:132000},
+      {name:"回数券 10回",       duration:30, price:28150},
+      {name:"回数券 24回",       duration:30, price:54350},
+    ],
+  },
+  {
+    id:"other", label:"その他・無料", color:"#6b7280",
+    items:[
+      {name:"体験施術",           duration:60, price:0},
+      {name:"初回特典",           duration:60, price:10800},
+      {name:"肩こり",             duration:30, price:8800},
+      {name:"片腕",               duration:30, price:6800},
+      {name:"不定愁訴",           duration:30, price:1100},
+      {name:"半身",               duration:30, price:7200},
+      {name:"全身",               duration:30, price:14400},
+      {name:"鍼 両足",            duration:30, price:14400},
+      {name:"鍼 肩",              duration:30, price:2200},
+      {name:"鍼 肩こり",          duration:30, price:7200},
+      {name:"不定愁訴2",          duration:30, price:1850},
+      {name:"顎",                 duration:30, price:7200},
+      {name:"増量 忠告なし",      duration:10, price:0},
+      {name:"無料カウンセリング", duration:60, price:0},
+    ],
+  },
+];
+
+// 後方互換：全メニュー名一覧・時間マップ
+const MENUS = MENU_CATEGORIES.flatMap(c=>c.items.map(i=>i.name));
+const DURATION = Object.fromEntries(MENU_CATEGORIES.flatMap(c=>c.items.map(i=>[i.name,i.duration])));
+const MENU_PRICE = Object.fromEntries(MENU_CATEGORIES.flatMap(c=>c.items.map(i=>[i.name,i.price])));
+const DURATION_OPTIONS = Array.from({length:12},(_,i)=>(i+1)*10); // 10〜120分
+
 const SLOTS = ["09:00","09:30","10:00","10:30","11:00","11:30","13:00","13:30","14:00","14:30","15:00","15:30","16:00","16:30","17:00","17:30","18:00"];
 
 const sb = {
@@ -129,7 +207,7 @@ function getWeekDates(base){
 }
 function toMin(t){const[h,m]=t.split(":").map(Number);return h*60+m;}
 function overlaps(a,b){
-  const as=toMin(a.time),ae=as+(DURATION[a.menu]||30),bs=toMin(b.time),be=bs+(DURATION[b.menu]||30);
+  const as=toMin(a.time),ae=as+(a.duration||DURATION[a.menu]||30),bs=toMin(b.time),be=bs+(b.duration||DURATION[b.menu]||30);
   return as<be&&bs<ae;
 }
 
@@ -741,6 +819,14 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
   const [searchResults,setSearchResults]=React.useState([]);
   const [searching,setSearching]=React.useState(false);
   const [showSearch,setShowSearch]=React.useState(editId===null);
+
+  // メニューの現在カテゴリを初期化
+  const initCat=()=>{
+    if(!form.menu) return MENU_CATEGORIES[0].id;
+    const cat=MENU_CATEGORIES.find(c=>c.items.some(i=>i.name===form.menu));
+    return cat?cat.id:MENU_CATEGORIES[0].id;
+  };
+  const [selCategory,setSelCategory]=React.useState(initCat);
   async function searchPatients(q){
     if(!q.trim()){setSearchResults([]);return;}
     setSearching(true);
@@ -806,7 +892,51 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
         <div><label className="form-label">時間</label><input type="time" step="600" className="form-input" value={form.time||""} onChange={e=>{setForm(f=>({...f,time:e.target.value}));setConflict(false);}}/></div>
       </div>
       {isAdmin&&(<div className="form-group"><label className="form-label">担当スタッフ</label><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{STAFF_ACCOUNTS.map(s=>(<button key={s.id} onClick={()=>{setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} className="btn" style={{background:form.staff_id===s.id?s.color:"white",color:form.staff_id===s.id?"white":"#374151",border:`2px solid ${s.color}`,borderRadius:20,padding:"5px 12px",fontSize:12,fontWeight:700,boxShadow:form.staff_id===s.id?`0 2px 8px ${s.color}55`:"none"}}>{s.name}</button>))}</div></div>)}
-      <div className="form-group"><label className="form-label">メニュー</label><select className="form-input" value={form.menu||""} onChange={e=>setForm(f=>({...f,menu:e.target.value}))}>{MENUS.map(m=><option key={m}>{m}</option>)}</select></div>
+      <div className="form-group">
+        <label className="form-label">メニュー分類</label>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+          {MENU_CATEGORIES.map(c=>(
+            <button key={c.id} onClick={()=>{
+              setSelCategory(c.id);
+              const first=c.items[0];
+              setForm(f=>({...f,menu:first.name,duration:first.duration}));
+            }} className="btn" style={{padding:"6px 14px",borderRadius:20,fontSize:12,fontWeight:700,background:selCategory===c.id?c.color:"white",color:selCategory===c.id?"white":"#374151",border:`2px solid ${selCategory===c.id?c.color:"#e2e8f0"}`,boxShadow:selCategory===c.id?`0 2px 8px ${c.color}55`:"none"}}>
+              {c.label}
+            </button>
+          ))}
+        </div>
+        <label className="form-label">メニュー選択</label>
+        {(()=>{
+          const cat=MENU_CATEGORIES.find(c=>c.id===selCategory)||MENU_CATEGORIES[0];
+          return(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,maxHeight:200,overflowY:"auto",padding:4}}>
+              {cat.items.map(item=>{
+                const isSelected=form.menu===item.name;
+                return(
+                  <button key={item.name} onClick={()=>setForm(f=>({...f,menu:item.name,duration:item.duration}))}
+                    className="btn" style={{padding:"7px 10px",borderRadius:8,fontSize:12,fontWeight:isSelected?700:500,textAlign:"left",justifyContent:"flex-start",background:isSelected?cat.color+"18":"#f8fafc",color:isSelected?cat.color:"#374151",border:`1.5px solid ${isSelected?cat.color:"#e2e8f0"}`,gap:6,flexDirection:"column",alignItems:"flex-start",height:"auto"}}>
+                    <span style={{fontWeight:700}}>{item.name}</span>
+                    <span style={{fontSize:10,color:isSelected?cat.color:"#94a3b8"}}>¥{item.price.toLocaleString()}　{item.duration}分</span>
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })()}
+      </div>
+      <div className="form-group">
+        <label className="form-label">施術時間</label>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {DURATION_OPTIONS.map(min=>{
+            const isSel=(form.duration||DURATION[form.menu]||30)===min;
+            return(
+              <button key={min} onClick={()=>setForm(f=>({...f,duration:min}))} className="btn" style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:isSel?700:500,background:isSel?"#1e3a5f":"white",color:isSel?"white":"#374151",border:`1.5px solid ${isSel?"#1e3a5f":"#e2e8f0"}`,minWidth:46,justifyContent:"center"}}>
+                {min}分
+              </button>
+            );
+          })}
+        </div>
+      </div>
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20,padding:"10px 12px",background:"#f0fdf4",borderRadius:8,border:"1px solid #bbf7d0"}}>
         <input type="checkbox" id="ln" checked={!!form.line_notify} onChange={e=>setForm(f=>({...f,line_notify:e.target.checked}))} style={{width:16,height:16,accentColor:"#059669"}}/>
         <label htmlFor="ln" style={{fontSize:13,color:"#059669",fontWeight:700,cursor:"pointer"}}>LINEリマインドを前日に送る</label>
@@ -1090,7 +1220,7 @@ function Dashboard({user,onLogout}){
             function getBookingsForStaff(staffId){return bookings.filter(b=>b.date===ds&&b.staff_id===staffId);}
             function getBreaksForStaff(staffId){return breaks.filter(b=>b.date===ds&&b.staff_id===staffId);}
             function timeToX(timeStr){const [h,m]=timeStr.split(":").map(Number);return ((h-9)*60+m)/10*CELL_W;}
-            function durationToW(menu){return (DURATION[menu]||30)/10*CELL_W;}
+            function durationToW(b){return ((b.duration||DURATION[b.menu]||30))/10*CELL_W;}
             const timeSlots30=[];
             for(let h=9;h<18;h++){for(let m=0;m<60;m+=30){const label=`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;const booked=bookings.filter(b=>{if(b.date!==ds) return false;const bs=toMin(b.time),be=bs+(DURATION[b.menu]||30),ss=toMin(label),se=ss+30;return bs<se&&ss<be;}).length;const resting=breaks.filter(b=>{if(b.date!==ds) return false;return b.time===label;}).length;const available=Math.max(0,filteredStaff.length-resting);timeSlots30.push({label,booked,available,resting,x:(h-9)*60/10*CELL_W+m/10*CELL_W,w:30/10*CELL_W});}}
             return (
@@ -1143,7 +1273,7 @@ function Dashboard({user,onLogout}){
                             {MINS.filter((_,i)=>i%3===0).map(({h,m,label})=>(<div key={label} style={{position:"absolute",left:(h-9)*60/10*CELL_W+m/10*CELL_W,top:0,bottom:0,borderLeft:"1px solid #f1f5f9",pointerEvents:"none"}}/>))}
                             {staffBreaks.map(br=>(<div key={`br-${br.id}`} style={{position:"absolute",left:timeToX(br.time),top:4,bottom:4,width:CELL_W*3,background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1}}><span style={{fontSize:9,color:"#94a3b8",fontWeight:600}}>{br.reason}</span></div>))}
                             {staffBookings.map(b=>{
-                              const x=timeToX(b.time);const w=durationToW(b.menu);const cnt=visitCounts[b.id]||1;
+                              const x=timeToX(b.time);const w=durationToW(b);const cnt=visitCounts[b.id]||1;
                               return (<div key={b.id} onClick={e=>{e.stopPropagation();openEdit(b);}} style={{position:"absolute",left:x,top:3,bottom:3,width:Math.max(w-2,20),background:`linear-gradient(135deg,${staff.color},${staff.color}bb)`,borderRadius:6,padding:"2px 4px",cursor:"pointer",boxShadow:`0 2px 6px ${staff.color}44`,display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden",zIndex:2}}>
                                 <div style={{fontWeight:800,fontSize:10,color:"white",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.patient_name}</div>
                                 <div style={{fontSize:9,color:"rgba(255,255,255,.8)"}}>{b.time}{cnt>1&&<span style={{marginLeft:2,background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}</div>
