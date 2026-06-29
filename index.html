@@ -595,59 +595,140 @@ function Dashboard({user,onLogout}){
           </div>
         )}
 
-        {/* カレンダー */}
-        {view==="calendar"&&(
-          <div className="card">
-            <div className="cal-nav">
-              <button className="cal-nav-btn" onClick={()=>{const d=new Date(baseDate);d.setDate(d.getDate()-7);setBaseDate(d);}}>◀</button>
-              <span style={{fontWeight:800,fontSize:15,color:"#1e3a5f"}}>{weekDates[0].getMonth()+1}月{weekDates[0].getDate()}日 〜 {weekDates[6].getMonth()+1}月{weekDates[6].getDate()}日</span>
-              <button className="cal-nav-btn" onClick={()=>{const d=new Date(baseDate);d.setDate(d.getDate()+7);setBaseDate(d);}}>▶</button>
-            </div>
-            <div className="scroll-x">
-              <table className="cal-table">
-                <thead>
-                  <tr>
-                    <th style={{width:40,background:"#f8fafc",borderBottom:"2px solid #e2e8f0",padding:"8px 2px"}}></th>
-                    {weekDates.map((d,i)=>{
-                      const isToday=fmtDate(d)===todayStr;
-                      return <th key={i} className={`cal-th${isToday?" today":""}`} style={{color:i>=5?"#ef4444":"inherit"}}>
-                        <div style={{fontSize:11,fontWeight:600,color:i>=5?"#ef4444":"#64748b"}}>{DAYS_JP[i]}</div>
-                        <div style={{fontSize:16,fontWeight:isToday?800:600,color:isToday?"#2563eb":i>=5?"#ef4444":"#1e293b",lineHeight:1.3}}>{d.getDate()}</div>
-                      </th>;
-                    })}
-                  </tr>
-                </thead>
-                <tbody>
-                  {HOURS.map(hour=>(
-                    <tr key={hour}>
-                      <td className="cal-time">{hour}:00</td>
-                      {weekDates.map((d,di)=>{
-                        const {bks,brs}=getCells(d,hour);
-                        const isToday=fmtDate(d)===todayStr;
-                        return <td key={di} className={`cal-td${isToday?" today":""}`} onClick={()=>openAdd(fmtDate(d),`${String(hour).padStart(2,"0")}:00`)}>
-                          {bks.map(b=>{
-                            const st=STAFF_ACCOUNTS.find(x=>x.id===b.staff_id)||{color:"#888"};
+        {/* タイムライン（横軸：時間、縦軸：スタッフ） */}
+        {view==="calendar"&&(()=>{
+          const ds = fmtDate(baseDate);
+          const MINS = [];
+          for(let h=9;h<=18;h++) for(let m=0;m<60;m+=10){if(h===18&&m>0)break;MINS.push({h,m,label:`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`)}
+          const CELL_W = 36; // px per 10min
+          const HEADER_W = 90; // staff name column
+          const staffList = isAdmin ? STAFF_ACCOUNTS : STAFF_ACCOUNTS.filter(s=>s.id===user.id);
+          const filteredStaff = selStaff ? staffList.filter(s=>s.id===selStaff) : staffList;
+
+          function getBookingsForStaff(staffId){
+            return bookings.filter(b=>b.date===ds&&b.staff_id===staffId);
+          }
+          function getBreaksForStaff(staffId){
+            return breaks.filter(b=>b.date===ds&&b.staff_id===staffId);
+          }
+          function timeToX(timeStr){
+            const [h,m]=timeStr.split(":").map(Number);
+            return ((h-9)*60+m)/10*CELL_W;
+          }
+          function durationToW(menu){
+            return (DURATION[menu]||30)/10*CELL_W;
+          }
+
+          const totalW = MINS.length * CELL_W;
+
+          return (
+            <div className="card" style={{overflowX:"auto"}}>
+              {/* 日付ナビ */}
+              <div className="cal-nav">
+                <button className="cal-nav-btn" onClick={()=>{const d=new Date(baseDate);d.setDate(d.getDate()-1);setBaseDate(d);}}>◀ 前日</button>
+                <div style={{textAlign:"center"}}>
+                  <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f"}}>
+                    {baseDate.getFullYear()}年{baseDate.getMonth()+1}月{baseDate.getDate()}日（{["日","月","火","水","木","金","土"][baseDate.getDay()]}）
+                  </div>
+                  {ds===todayStr&&<span className="badge badge-blue" style={{marginTop:4}}>本日</span>}
+                </div>
+                <button className="cal-nav-btn" onClick={()=>{const d=new Date(baseDate);d.setDate(d.getDate()+1);setBaseDate(d);}}>翌日 ▶</button>
+              </div>
+              {/* 今日ボタン */}
+              {ds!==todayStr&&(
+                <div style={{textAlign:"center",padding:"6px 0",borderBottom:"1px solid #f1f5f9"}}>
+                  <button className="btn btn-outline btn-sm" onClick={()=>setBaseDate(new Date())}>今日に戻る</button>
+                </div>
+              )}
+
+              <div style={{overflowX:"auto"}}>
+                <div style={{minWidth:HEADER_W+totalW+20}}>
+                  {/* 時間ヘッダー */}
+                  <div style={{display:"flex",borderBottom:"2px solid #e2e8f0",background:"#f8fafc",position:"sticky",top:0,zIndex:10}}>
+                    <div style={{width:HEADER_W,flexShrink:0,padding:"8px 10px",fontWeight:700,fontSize:12,color:"#64748b",borderRight:"1px solid #e2e8f0"}}>スタッフ</div>
+                    <div style={{position:"relative",height:36,flex:1}}>
+                      {MINS.filter((_,i)=>i%3===0).map(({h,m,label},i)=>(
+                        <div key={label} style={{position:"absolute",left:(h-9)*60/10*CELL_W+m/10*CELL_W,top:0,height:"100%",borderLeft:"1px solid #e2e8f0",paddingLeft:4,display:"flex",alignItems:"center"}}>
+                          <span style={{fontSize:11,fontWeight:600,color:"#94a3b8",whiteSpace:"nowrap"}}>{label}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* スタッフ行 */}
+                  {filteredStaff.map(staff=>{
+                    const staffBookings=getBookingsForStaff(staff.id);
+                    const staffBreaks=getBreaksForStaff(staff.id);
+                    const dayCount=staffBookings.length;
+                    return (
+                      <div key={staff.id} style={{display:"flex",borderBottom:"1px solid #f1f5f9",minHeight:60}}>
+                        {/* スタッフ名 */}
+                        <div style={{width:HEADER_W,flexShrink:0,padding:"8px 10px",borderRight:"1px solid #e2e8f0",background:"#fafbfc",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+                          <div style={{display:"flex",alignItems:"center",gap:6}}>
+                            <div style={{width:28,height:28,borderRadius:8,background:`linear-gradient(135deg,${staff.color},${staff.color}99)`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:12,flexShrink:0,boxShadow:`0 2px 6px ${staff.color}44`}}>{staff.initial}</div>
+                            <div>
+                              <div style={{fontWeight:700,fontSize:12,color:"#1e293b"}}>{staff.name}</div>
+                              <div style={{fontSize:10,color:staff.color,fontWeight:700}}>{dayCount}人</div>
+                            </div>
+                          </div>
+                        </div>
+                        {/* タイムライン */}
+                        <div style={{position:"relative",flex:1,height:60,cursor:"pointer"}} onClick={e=>{
+                          const rect=e.currentTarget.getBoundingClientRect();
+                          const x=e.clientX-rect.left;
+                          const totalMinFromStart=Math.round(x/CELL_W)*10;
+                          const h=9+Math.floor(totalMinFromStart/60);
+                          const m=totalMinFromStart%60;
+                          if(h>=9&&h<=17){
+                            const timeStr=`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
+                            openAdd(ds,timeStr);
+                          }
+                        }}>
+                          {/* グリッドライン */}
+                          {MINS.filter((_,i)=>i%3===0).map(({h,m,label})=>(
+                            <div key={label} style={{position:"absolute",left:(h-9)*60/10*CELL_W+m/10*CELL_W,top:0,bottom:0,borderLeft:"1px solid #f1f5f9",pointerEvents:"none"}}/>
+                          ))}
+                          {/* 休憩 */}
+                          {staffBreaks.map(br=>(
+                            <div key={`br-${br.id}`} style={{position:"absolute",left:timeToX(br.time),top:4,bottom:4,width:CELL_W*3,background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1}}>
+                              <span style={{fontSize:10,color:"#94a3b8",fontWeight:600}}>{br.reason}</span>
+                            </div>
+                          ))}
+                          {/* 予約ブロック */}
+                          {staffBookings.map(b=>{
+                            const x=timeToX(b.time);
+                            const w=durationToW(b.menu);
                             const cnt=visitCounts[b.id]||1;
-                            return <div key={b.id} className="cal-event" onClick={e=>{e.stopPropagation();openEdit(b);}} style={{background:`${st.color}18`,borderLeftColor:st.color}}>
-                              <div style={{fontWeight:700,color:st.color,fontSize:11,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.patient_name}</div>
-                              <div style={{color:"#64748b",fontSize:10}}>{b.time}{cnt>1&&<span style={{color:st.color,marginLeft:3,fontWeight:700}}>{cnt}回</span>}</div>
-                            </div>;
+                            return (
+                              <div key={b.id}
+                                onClick={e=>{e.stopPropagation();openEdit(b);}}
+                                style={{
+                                  position:"absolute",left:x,top:4,bottom:4,width:w-2,
+                                  background:`linear-gradient(135deg,${staff.color},${staff.color}cc)`,
+                                  borderRadius:8,padding:"3px 6px",cursor:"pointer",
+                                  boxShadow:`0 2px 8px ${staff.color}44`,
+                                  display:"flex",flexDirection:"column",justifyContent:"center",
+                                  overflow:"hidden",zIndex:2,
+                                  transition:"filter .1s",
+                                }}>
+                                <div style={{fontWeight:800,fontSize:11,color:"white",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.patient_name}</div>
+                                <div style={{fontSize:10,color:"rgba(255,255,255,.8)"}}>{b.time}{cnt>1&&<span style={{marginLeft:3,background:"rgba(255,255,255,.25)",borderRadius:3,padding:"0 3px"}}>{cnt}回</span>}</div>
+                              </div>
+                            );
                           })}
-                          {brs.map(b=>{
-                            const st=STAFF_ACCOUNTS.find(x=>x.id===b.staff_id)||{initial:"？"};
-                            return <div key={`br-${b.id}`} className="cal-break">
-                              <div style={{color:"#64748b",fontSize:10,fontWeight:600}}>{st.initial} {b.reason}</div>
-                            </div>;
-                          })}
-                        </td>;
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        </div>
+                        {/* 追加ボタン */}
+                        <div style={{width:36,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",borderLeft:"1px solid #f1f5f9"}}>
+                          <button onClick={()=>openAdd(ds,"10:00")} style={{width:24,height:24,borderRadius:"50%",background:staff.color,border:"none",color:"white",fontWeight:800,fontSize:16,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 2px 6px ${staff.color}55`,lineHeight:1}}>+</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* 一覧 */}
         {view==="list"&&(
