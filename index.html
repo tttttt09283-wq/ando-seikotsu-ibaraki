@@ -437,6 +437,175 @@ function BreakModal({onClose,bookings,breaks,setBreaks}){
   );
 }
 
+
+// ===== 予約フォーム（患者検索付き） =====
+function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,save,onClose,onDelete}){
+  const [searchQ,setSearchQ]=React.useState("");
+  const [searchResults,setSearchResults]=React.useState([]);
+  const [searching,setSearching]=React.useState(false);
+  const [showSearch,setShowSearch]=React.useState(editId===null);
+
+  async function searchPatients(q){
+    if(!q.trim()){setSearchResults([]);return;}
+    setSearching(true);
+    try{
+      const [byName,byKarte]=await Promise.all([
+        sb.select("bookings",`?patient_name=ilike.*${encodeURIComponent(q)}*&order=date.desc&limit=20`),
+        sb.select("bookings",`?karte_no=eq.${encodeURIComponent(q)}&order=date.desc&limit=10`),
+      ]);
+      const all=[...(Array.isArray(byName)?byName:[]),...(Array.isArray(byKarte)?byKarte:[])];
+      // 患者ごとにユニーク化（最新予約情報を使用）
+      const seen={};
+      const unique=[];
+      all.forEach(b=>{
+        const key=b.patient_name;
+        if(!seen[key]){seen[key]=true;unique.push(b);}
+      });
+      setSearchResults(unique.slice(0,10));
+    }catch(e){console.error(e);}
+    setSearching(false);
+  }
+
+  function selectPatient(b){
+    setForm(f=>({...f,
+      patient_name:b.patient_name,
+      phone:b.phone||"",
+      karte_no:b.karte_no||"",
+      line_user_id:b.line_user_id||null,
+      line_notify:!!b.line_user_id,
+    }));
+    setSearchQ("");
+    setSearchResults([]);
+    setShowSearch(false);
+  }
+
+  // 来院回数
+  const visitCount=React.useMemo(()=>{
+    if(!form.patient_name) return 0;
+    return bookings.filter(b=>b.patient_name===form.patient_name).length;
+  },[form.patient_name,bookings]);
+
+  return(
+    <div className="card" style={{maxWidth:520,padding:22}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+        <div style={{fontSize:17,fontWeight:800,color:"#1e3a5f"}}>{editId!==null?"予約を編集":"新規予約"}</div>
+        <button onClick={onClose} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#94a3b8",lineHeight:1}}>✕</button>
+      </div>
+
+      {conflict&&<div style={{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#dc2626",fontSize:13,fontWeight:700}}>ダブルブッキングになります</div>}
+
+      {/* 患者検索 */}
+      {showSearch?(
+        <div style={{background:"#f0f9ff",borderRadius:10,padding:14,marginBottom:16,border:"1px solid #bae6fd"}}>
+          <div style={{fontWeight:800,fontSize:13,color:"#0369a1",marginBottom:10}}>既存患者を検索</div>
+          <div style={{position:"relative",marginBottom:8}}>
+            <input
+              className="form-input"
+              placeholder="患者名またはカルテ番号で検索..."
+              value={searchQ}
+              onChange={e=>{setSearchQ(e.target.value);searchPatients(e.target.value);}}
+              style={{paddingRight:40}}
+              autoFocus
+            />
+            {searching&&<div style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",fontSize:12,color:"#94a3b8"}}>検索中...</div>}
+          </div>
+          {searchResults.length>0&&(
+            <div style={{background:"white",borderRadius:8,border:"1px solid #e2e8f0",overflow:"hidden",maxHeight:220,overflowY:"auto"}}>
+              {searchResults.map((b,i)=>(
+                <button key={i} onClick={()=>selectPatient(b)} style={{width:"100%",padding:"10px 14px",background:"none",border:"none",borderBottom:"1px solid #f1f5f9",cursor:"pointer",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <div style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{b.patient_name}</div>
+                    <div style={{fontSize:12,color:"#64748b"}}>{b.phone||"電話なし"}{b.karte_no?`　カルテ：${b.karte_no}`:""}</div>
+                  </div>
+                  <div style={{fontSize:11,color:"#94a3b8",textAlign:"right"}}>
+                    <div>{b.date}</div>
+                    {b.line_user_id&&<div style={{color:"#059669",fontWeight:700}}>LINE✓</div>}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+          {searchQ&&!searching&&searchResults.length===0&&(
+            <div style={{fontSize:13,color:"#94a3b8",textAlign:"center",padding:"8px 0"}}>該当患者なし → 下の「新規患者」タブから入力</div>
+          )}
+          <button onClick={()=>setShowSearch(false)} className="btn btn-outline btn-sm" style={{marginTop:8,width:"100%",justifyContent:"center"}}>新規患者として入力</button>
+        </div>
+      ):(
+        <div style={{marginBottom:14}}>
+          {form.patient_name&&(
+            <div style={{background:"#f0fdf4",borderRadius:10,padding:"10px 14px",marginBottom:10,border:"1px solid #bbf7d0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:15,color:"#1e293b"}}>{form.patient_name}</div>
+                <div style={{fontSize:12,color:"#64748b"}}>{form.phone}{form.karte_no?`　カルテ：${form.karte_no}`:""}</div>
+                {visitCount>0&&<div style={{fontSize:11,color:"#059669",fontWeight:700}}>来院{visitCount}回目</div>}
+              </div>
+              {editId===null&&<button onClick={()=>setShowSearch(true)} className="btn btn-outline btn-xs">変更</button>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* 患者名・カルテ番号 */}
+      {!showSearch&&(
+        <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:10,marginBottom:14}}>
+          <div>
+            <label className="form-label">患者名 *</label>
+            <input className="form-input" value={form.patient_name||""} placeholder="山本 花子" onChange={e=>{setForm(f=>({...f,patient_name:e.target.value}));setConflict(false);}}/>
+          </div>
+          <div style={{minWidth:110}}>
+            <label className="form-label">カルテ番号</label>
+            <input className="form-input" value={form.karte_no||""} placeholder="K-001" onChange={e=>setForm(f=>({...f,karte_no:e.target.value}))}/>
+          </div>
+        </div>
+      )}
+
+      <div className="form-group">
+        <label className="form-label">電話番号</label>
+        <input type="tel" className="form-input" value={form.phone||""} placeholder="090-0000-0000" onChange={e=>setForm(f=>({...f,phone:e.target.value}))}/>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+        <div>
+          <label className="form-label">日付</label>
+          <input type="date" className="form-input" value={form.date||""} onChange={e=>{setForm(f=>({...f,date:e.target.value}));setConflict(false);}}/>
+        </div>
+        <div>
+          <label className="form-label">時間</label>
+          <input type="time" step="600" className="form-input" value={form.time||""} onChange={e=>{setForm(f=>({...f,time:e.target.value}));setConflict(false);}}/>
+        </div>
+      </div>
+
+      {isAdmin&&(
+        <div className="form-group">
+          <label className="form-label">担当スタッフ</label>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {STAFF_ACCOUNTS.map(s=>(
+              <button key={s.id} onClick={()=>{setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} className="btn" style={{background:form.staff_id===s.id?s.color:"white",color:form.staff_id===s.id?"white":"#374151",border:`2px solid ${s.color}`,borderRadius:20,padding:"5px 12px",fontSize:12,fontWeight:700,boxShadow:form.staff_id===s.id?`0 2px 8px ${s.color}55`:"none"}}>{s.name}</button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="form-group">
+        <label className="form-label">メニュー</label>
+        <select className="form-input" value={form.menu||""} onChange={e=>setForm(f=>({...f,menu:e.target.value}))}>
+          {MENUS.map(m=><option key={m}>{m}</option>)}
+        </select>
+      </div>
+
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20,padding:"10px 12px",background:"#f0fdf4",borderRadius:8,border:"1px solid #bbf7d0"}}>
+        <input type="checkbox" id="ln" checked={!!form.line_notify} onChange={e=>setForm(f=>({...f,line_notify:e.target.checked}))} style={{width:16,height:16,accentColor:"#059669"}}/>
+        <label htmlFor="ln" style={{fontSize:13,color:"#059669",fontWeight:700,cursor:"pointer"}}>LINEリマインドを前日に送る</label>
+      </div>
+
+      <div style={{display:"flex",gap:10}}>
+        {editId!==null&&<button onClick={onDelete} className="btn btn-danger" style={{flex:1,justifyContent:"center",padding:11,fontSize:14}}>削除</button>}
+        <button onClick={save} className="btn btn-primary" style={{flex:2,justifyContent:"center",padding:11,fontSize:14}}>{editId!==null?"更新する":"予約を登録"}</button>
+      </div>
+    </div>
+  );
+}
+
 // ===== メイン管理画面 =====
 function Dashboard({user,onLogout}){
   const [bookings,setBookings]=React.useState([]);
@@ -918,48 +1087,12 @@ function Dashboard({user,onLogout}){
 
         {/* 予約フォーム */}
         {view==="form"&&form&&(
-          <div className="card" style={{maxWidth:480,padding:22}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
-              <div style={{fontSize:17,fontWeight:800,color:"#1e3a5f"}}>{editId!==null?"予約を編集":"新規予約"}</div>
-              <button onClick={()=>setView("calendar")} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#94a3b8",lineHeight:1}}>✕</button>
-            </div>
-            {conflict&&<div style={{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#dc2626",fontSize:13,fontWeight:700}}>ダブルブッキングになります</div>}
-            {[
-              {label:"患者名 *",key:"patient_name",type:"text",placeholder:"山本 花子"},
-              {label:"電話番号",key:"phone",type:"tel",placeholder:"090-0000-0000"},
-              {label:"日付",key:"date",type:"date"},
-              {label:"時間",key:"time",type:"time",step:"600"},
-            ].map(({label,key,type,placeholder,step})=>(
-              <div key={key} className="form-group">
-                <label className="form-label">{label}</label>
-                <input type={type} step={step} className="form-input" value={form[key]||""} placeholder={placeholder} onChange={e=>{setForm(f=>({...f,[key]:e.target.value}));setConflict(false);}}/>
-              </div>
-            ))}
-            {isAdmin&&(
-              <div className="form-group">
-                <label className="form-label">担当スタッフ</label>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                  {STAFF_ACCOUNTS.map(s=>(
-                    <button key={s.id} onClick={()=>{setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} className="btn" style={{background:form.staff_id===s.id?s.color:"white",color:form.staff_id===s.id?"white":"#374151",border:`2px solid ${s.color}`,borderRadius:20,padding:"5px 12px",fontSize:12,fontWeight:700,boxShadow:form.staff_id===s.id?`0 2px 8px ${s.color}55`:"none"}}>{s.name}</button>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className="form-group">
-              <label className="form-label">メニュー</label>
-              <select className="form-input" value={form.menu} onChange={e=>setForm(f=>({...f,menu:e.target.value}))}>
-                {MENUS.map(m=><option key={m}>{m}</option>)}
-              </select>
-            </div>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20,padding:"10px 12px",background:"#f0fdf4",borderRadius:8,border:"1px solid #bbf7d0"}}>
-              <input type="checkbox" id="ln" checked={!!form.line_notify} onChange={e=>setForm(f=>({...f,line_notify:e.target.checked}))} style={{width:16,height:16,accentColor:"#059669"}}/>
-              <label htmlFor="ln" style={{fontSize:13,color:"#059669",fontWeight:700,cursor:"pointer"}}>LINEリマインドを前日に送る</label>
-            </div>
-            <div style={{display:"flex",gap:10}}>
-              {editId!==null&&<button onClick={()=>setDelConfirm(bookings.find(b=>b.id===editId))} className="btn btn-danger" style={{flex:1,justifyContent:"center",padding:11,fontSize:14}}>削除</button>}
-              <button onClick={save} className="btn btn-primary" style={{flex:2,justifyContent:"center",padding:11,fontSize:14}}>{editId!==null?"更新する":"予約を登録"}</button>
-            </div>
-          </div>
+          <FormPanel
+            form={form} setForm={setForm} editId={editId} conflict={conflict} setConflict={setConflict}
+            isAdmin={isAdmin} bookings={bookings} save={save}
+            onClose={()=>setView("calendar")}
+            onDelete={()=>setDelConfirm(bookings.find(b=>b.id===editId))}
+          />
         )}
         </div>
       </div>
