@@ -7,7 +7,105 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-<style>*{box-sizing:border-box;margin:0;padding:0;}body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;}</style>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#eef2f7;}
+
+/* ===== ボタン共通 ===== */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;font-family:inherit;font-weight:700;cursor:pointer;border:none;transition:all .15s;}
+.btn-primary{background:linear-gradient(180deg,#2563eb,#1d4ed8);color:white;border-radius:8px;padding:9px 16px;font-size:13px;box-shadow:0 2px 0 #1e3a8a,0 4px 8px rgba(37,99,235,.3);}
+.btn-primary:hover{background:linear-gradient(180deg,#3b82f6,#2563eb);transform:translateY(-1px);box-shadow:0 3px 0 #1e3a8a,0 6px 12px rgba(37,99,235,.35);}
+.btn-primary:active{transform:translateY(1px);box-shadow:0 1px 0 #1e3a8a;}
+.btn-success{background:linear-gradient(180deg,#16a34a,#15803d);color:white;border-radius:8px;padding:9px 16px;font-size:13px;box-shadow:0 2px 0 #14532d,0 4px 8px rgba(22,163,74,.3);}
+.btn-success:hover{transform:translateY(-1px);box-shadow:0 3px 0 #14532d,0 6px 12px rgba(22,163,74,.35);}
+.btn-success:active{transform:translateY(1px);box-shadow:0 1px 0 #14532d;}
+.btn-danger{background:linear-gradient(180deg,#ef4444,#dc2626);color:white;border-radius:8px;padding:9px 16px;font-size:13px;box-shadow:0 2px 0 #991b1b,0 4px 8px rgba(239,68,68,.3);}
+.btn-danger:hover{transform:translateY(-1px);}
+.btn-danger:active{transform:translateY(1px);box-shadow:0 1px 0 #991b1b;}
+.btn-ghost{background:rgba(255,255,255,0.15);backdrop-filter:blur(4px);color:white;border-radius:8px;padding:8px 14px;font-size:13px;border:1px solid rgba(255,255,255,0.25);}
+.btn-ghost:hover{background:rgba(255,255,255,0.25);}
+.btn-outline{background:white;color:#374151;border:1.5px solid #d1d5db;border-radius:8px;padding:7px 14px;font-size:13px;box-shadow:0 1px 3px rgba(0,0,0,.08);}
+.btn-outline:hover{border-color:#6b7280;box-shadow:0 2px 6px rgba(0,0,0,.12);}
+.btn-sm{padding:5px 10px;font-size:12px;border-radius:6px;}
+.btn-xs{padding:3px 8px;font-size:11px;border-radius:5px;}
+.btn-icon{background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.2);color:white;border-radius:8px;padding:7px 10px;font-size:13px;cursor:pointer;}
+.btn-icon:hover{background:rgba(255,255,255,0.22);}
+
+/* ===== カード ===== */
+.card{background:white;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06),0 4px 16px rgba(0,0,0,.04);overflow:hidden;}
+.card-header{padding:12px 16px;font-size:13px;font-weight:800;color:white;letter-spacing:.5px;}
+.card-body{padding:14px 16px;}
+
+/* ===== バッジ ===== */
+.badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;white-space:nowrap;}
+.badge-blue{background:#dbeafe;color:#1e40af;}
+.badge-green{background:#dcfce7;color:#15803d;}
+.badge-yellow{background:#fef9c3;color:#854d0e;}
+.badge-orange{background:#ffedd5;color:#9a3412;}
+.badge-red{background:#fee2e2;color:#991b1b;}
+.badge-gray{background:#f3f4f6;color:#6b7280;}
+.badge-purple{background:#ede9fe;color:#5b21b6;}
+
+/* ===== タブ ===== */
+.tab-bar{display:flex;gap:2px;}
+.tab-btn{padding:8px 14px;border:none;background:transparent;color:rgba(255,255,255,.65);font-size:13px;font-weight:600;cursor:pointer;border-radius:8px 8px 0 0;transition:all .15s;font-family:inherit;}
+.tab-btn.active{background:white;color:#1e3a5f;font-weight:800;}
+.tab-btn:hover:not(.active){background:rgba(255,255,255,.12);color:white;}
+
+/* ===== スタッフフィルター ===== */
+.staff-filter{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;}
+.staff-chip{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:700;cursor:pointer;border:2px solid transparent;transition:all .15s;box-shadow:0 1px 3px rgba(0,0,0,.1);}
+
+/* ===== カレンダー ===== */
+.cal-nav{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #f1f5f9;}
+.cal-nav-btn{background:white;border:1.5px solid #e2e8f0;border-radius:8px;padding:6px 14px;cursor:pointer;font-size:14px;font-weight:700;color:#475569;box-shadow:0 1px 3px rgba(0,0,0,.06);}
+.cal-nav-btn:hover{border-color:#94a3b8;box-shadow:0 2px 6px rgba(0,0,0,.1);}
+.cal-table{width:100%;border-collapse:collapse;min-width:600px;}
+.cal-th{padding:8px 4px;font-size:12px;font-weight:700;color:#64748b;background:#f8fafc;border-bottom:2px solid #e2e8f0;}
+.cal-th.today{background:#eff6ff;color:#2563eb;}
+.cal-td{vertical-align:top;padding:2px;border-bottom:1px solid #f1f5f9;border-right:1px solid #f8fafc;cursor:pointer;transition:background .1s;min-width:76px;}
+.cal-td:hover{background:#f0f9ff;}
+.cal-td.today{background:#f0f9ff;}
+.cal-time{font-size:10px;color:#cbd5e1;text-align:right;padding-right:4px;padding-top:3px;vertical-align:top;white-space:nowrap;}
+.cal-event{border-radius:5px;padding:3px 5px;margin-bottom:2px;cursor:pointer;transition:filter .1s;border-left:3px solid;}
+.cal-event:hover{filter:brightness(.92);}
+.cal-break{background:#f1f5f9;border-left:3px solid #94a3b8;border-radius:5px;padding:3px 5px;margin-bottom:2px;}
+
+/* ===== 一覧 ===== */
+.list-item{background:white;border-radius:10px;margin-bottom:8px;box-shadow:0 1px 4px rgba(0,0,0,.06),0 2px 8px rgba(0,0,0,.04);overflow:hidden;border-left:4px solid;}
+.list-item-body{padding:12px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px;}
+.list-actions{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;}
+
+/* ===== フォーム ===== */
+.form-label{display:block;font-size:12px;font-weight:700;color:#374151;margin-bottom:5px;letter-spacing:.3px;}
+.form-input{width:100%;padding:9px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:14px;font-family:inherit;color:#111827;background:white;transition:border .15s,box-shadow .15s;}
+.form-input:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.15);}
+.form-group{margin-bottom:14px;}
+
+/* ===== サマリーカード ===== */
+.stat-card{background:white;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.06),0 4px 16px rgba(0,0,0,.04);border-top:3px solid;}
+
+/* ===== モーダル ===== */
+.modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:500;padding:16px;backdrop-filter:blur(2px);}
+.modal-box{background:white;border-radius:16px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;box-shadow:0 25px 60px rgba(0,0,0,.25);}
+.modal-header{padding:16px 20px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10;border-radius:16px 16px 0 0;}
+.modal-close{background:rgba(255,255,255,.15);border:none;color:white;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;}
+.modal-close:hover{background:rgba(255,255,255,.25);}
+
+/* ===== トースト ===== */
+.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);padding:12px 24px;border-radius:10px;font-weight:700;font-size:14px;z-index:600;box-shadow:0 8px 30px rgba(0,0,0,.2);white-space:nowrap;display:flex;align-items:center;gap:8px;}
+
+/* ===== ローディング ===== */
+.loading{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:#eef2f7;}
+.loading-spinner{width:40px;height:40px;border:3px solid #e2e8f0;border-top-color:#2563eb;border-radius:50%;animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* ===== 削除確認 ===== */
+.confirm-box{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:400;padding:16px;}
+
+/* ===== スクロール ===== */
+.scroll-x{overflow-x:auto;}
+</style>
 </head>
 <body>
 <div id="root"></div>
@@ -18,13 +116,12 @@ const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
 
 const STAFF_ACCOUNTS = [
-  { id:1, name:"岩永 先生", email:"iwanaga@ando.jp", password:"iwanaga123", role:"admin", color:"#2563eb", initial:"岩" },
-  { id:2, name:"大皿 先生", email:"osara@ando.jp",   password:"osara123",   role:"staff", color:"#059669", initial:"大" },
-  { id:3, name:"定井 先生", email:"sadai@ando.jp",   password:"sadai123",   role:"staff", color:"#d97706", initial:"定" },
-  { id:4, name:"細永 先生", email:"hosonaga@ando.jp",password:"hosonaga123",role:"staff", color:"#7c3aed", initial:"細" },
-  { id:5, name:"広川 先生", email:"hirokawa@ando.jp",password:"hirokawa123",role:"staff", color:"#dc2626", initial:"広" },
+  {id:1,name:"岩永 先生",email:"iwanaga@ando.jp",password:"iwanaga123",role:"admin",color:"#2563eb",initial:"岩"},
+  {id:2,name:"大皿 先生",email:"osara@ando.jp",password:"osara123",role:"staff",color:"#059669",initial:"大"},
+  {id:3,name:"定井 先生",email:"sadai@ando.jp",password:"sadai123",role:"staff",color:"#d97706",initial:"定"},
+  {id:4,name:"細永 先生",email:"hosonaga@ando.jp",password:"hosonaga123",role:"staff",color:"#7c3aed",initial:"細"},
+  {id:5,name:"広川 先生",email:"hirokawa@ando.jp",password:"hirokawa123",role:"staff",color:"#dc2626",initial:"広"},
 ];
-
 const MENUS = ["無料施術体験会（60分）","初診（60分）","再診（30分）","鍼灸（45分）","骨盤矯正（40分）","マッサージ（30分）"];
 const DURATION = {"無料施術体験会（60分）":60,"初診（60分）":60,"再診（30分）":30,"鍼灸（45分）":45,"骨盤矯正（40分）":40,"マッサージ（30分）":30};
 const HOURS = Array.from({length:11},(_,i)=>i+9);
@@ -32,25 +129,21 @@ const DAYS_JP = ["月","火","水","木","金","土","日"];
 const SLOTS = ["09:00","09:30","10:00","10:30","11:00","11:30","13:00","13:30","14:00","14:30","15:00","15:30","16:00","16:30","17:00","17:30","18:00"];
 
 const sb = {
-  async query(table, method="GET", body=null, filters="") {
-    const url = `${SUPABASE_URL}/rest/v1/${table}${filters}`;
-    const res = await fetch(url, {
-      method,
-      headers: {"apikey":SUPABASE_ANON_KEY,"Authorization":`Bearer ${SUPABASE_ANON_KEY}`,"Content-Type":"application/json","Prefer":"return=representation"},
-      body: body ? JSON.stringify(body) : null,
+  async query(table,method="GET",body=null,filters=""){
+    const res=await fetch(`${SUPABASE_URL}/rest/v1/${table}${filters}`,{
+      method,headers:{"apikey":SUPABASE_ANON_KEY,"Authorization":`Bearer ${SUPABASE_ANON_KEY}`,"Content-Type":"application/json","Prefer":"return=representation"},
+      body:body?JSON.stringify(body):null,
     });
-    const text = await res.text();
-    return text ? JSON.parse(text) : [];
+    const text=await res.text();return text?JSON.parse(text):[];
   },
-  select:(table,f="")=>sb.query(table,"GET",null,f),
-  insert:(table,data)=>sb.query(table,"POST",data),
-  update:(table,id,data)=>sb.query(table,"PATCH",data,`?id=eq.${id}`),
-  delete:(table,id)=>sb.query(table,"DELETE",null,`?id=eq.${id}`),
+  select:(t,f="")=>sb.query(t,"GET",null,f),
+  insert:(t,d)=>sb.query(t,"POST",d),
+  update:(t,id,d)=>sb.query(t,"PATCH",d,`?id=eq.${id}`),
+  delete:(t,id)=>sb.query(t,"DELETE",null,`?id=eq.${id}`),
 };
 
-const today = new Date();
+const today=new Date();
 function fmtDate(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;}
-function addDays(d,n){const x=new Date(d);x.setDate(x.getDate()+n);return x;}
 function getWeekDates(base){
   const day=base.getDay(),mon=new Date(base);
   mon.setDate(base.getDate()-(day===0?6:day-1));
@@ -58,122 +151,111 @@ function getWeekDates(base){
 }
 function toMin(t){const[h,m]=t.split(":").map(Number);return h*60+m;}
 function overlaps(a,b){
-  const as=toMin(a.time),ae=as+DURATION[a.menu],bs=toMin(b.time),be=bs+DURATION[b.menu];
+  const as=toMin(a.time),ae=as+(DURATION[a.menu]||30),bs=toMin(b.time),be=bs+(DURATION[b.menu]||30);
   return as<be&&bs<ae;
 }
 
 // ===== 患者履歴モーダル =====
-function PatientHistoryModal({patientName, bookings, onClose}){
-  const [treatments, setTreatments] = React.useState([]);
-  const [loading, setLoading] = React.useState(true);
+function PatientHistoryModal({patientName,bookings,onClose}){
+  const [treatments,setTreatments]=React.useState([]);
+  const [loading,setLoading]=React.useState(true);
 
-  const patientBookings = bookings
-    .filter(b => b.patient_name === patientName)
-    .sort((a,b) => b.date.localeCompare(a.date));
+  const patientBookings=bookings.filter(b=>b.patient_name===patientName).sort((a,b)=>b.date.localeCompare(a.date));
 
   React.useEffect(()=>{
-    async function fetch(){
-      if(patientBookings.length === 0){ setLoading(false); return; }
-      const ids = patientBookings.map(b=>b.id).join(",");
-      const data = await sb.select("treatments", `?booking_id=in.(${ids})&order=treated_at.desc`);
-      setTreatments(Array.isArray(data) ? data : []);
-      setLoading(false);
+    async function load(){
+      if(patientBookings.length===0){setLoading(false);return;}
+      const ids=patientBookings.map(b=>b.id).join(",");
+      const data=await sb.select("treatments",`?booking_id=in.(${ids})&order=treated_at.desc`);
+      setTreatments(Array.isArray(data)?data:[]);setLoading(false);
     }
-    fetch();
+    load();
   },[]);
+
+  const visitCount=patientBookings.length;
+  const treatCount=treatments.length;
+  const contracts=treatments.filter(t=>t.result==="成約").length;
 
   function resultBadge(r){
     if(!r) return null;
-    const map = {"成約":["#dcfce7","#15803d","✅"],"持ち帰り":["#fef3c7","#92400e","🤔"],"バツ":["#fee2e2","#991b1b","❌"]};
-    const [bg,color,icon] = map[r]||["#f3f4f6","#666",""];
-    return <span style={{background:bg,color,borderRadius:20,padding:"2px 10px",fontSize:12,fontWeight:700}}>{icon} {r}</span>;
+    const map={"成約":["badge-green","成約"],"持ち帰り":["badge-yellow","持ち帰り"],"バツ":["badge-red","バツ"]};
+    const[cls,label]=map[r]||["badge-gray",r];
+    return <span className={`badge ${cls}`}>{label}</span>;
   }
 
   function jifeeText(t){
-    if(!t.jifee_type || t.jifee_type==="なし") return null;
-    if(t.jifee_type==="回数券") return `回数券 ${t.jifee_count||""}枚 ${t.jifee_amount?"¥"+Number(t.jifee_amount).toLocaleString():""}`;
-    if(t.jifee_type==="FP（フリーパス）") return `FP ¥${t.jifee_amount?Number(t.jifee_amount).toLocaleString():"—"}`;
+    if(!t.jifee_type||t.jifee_type==="なし") return null;
+    if(t.jifee_type==="回数券") return `回数券 ${t.jifee_count||""}枚`;
+    if(t.jifee_type==="FP（フリーパス）") return `FP`;
     return null;
   }
 
-  const visitCount = patientBookings.length;
-  const treatCount = treatments.length;
-  const contracts = treatments.filter(t=>t.result==="成約").length;
-
   return (
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:500,padding:16}}>
-      <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:520,maxHeight:"90vh",overflowY:"auto"}}>
-        {/* ヘッダー */}
-        <div style={{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",color:"white",padding:"16px 20px",borderRadius:"16px 16px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,zIndex:10}}>
+    <div className="modal-overlay">
+      <div className="modal-box">
+        <div className="modal-header" style={{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)"}}>
           <div>
-            <div style={{fontWeight:800,fontSize:17}}>👤 {patientName} 様</div>
-            <div style={{fontSize:12,opacity:0.75,marginTop:2}}>施術・来院履歴</div>
+            <div style={{fontWeight:800,fontSize:17,color:"white"}}>{patientName} 様</div>
+            <div style={{fontSize:12,color:"rgba(255,255,255,.7)",marginTop:2}}>施術・来院履歴</div>
           </div>
-          <button onClick={onClose} style={{background:"none",border:"none",color:"white",fontSize:24,cursor:"pointer"}}>✕</button>
+          <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
         <div style={{padding:16}}>
           {/* サマリー */}
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16}}>
             {[
-              {label:"来院回数",value:`${visitCount}回`,icon:"📅",color:"#2563eb"},
-              {label:"施術記録",value:`${treatCount}件`,icon:"🩺",color:"#059669"},
-              {label:"成約数",value:`${contracts}件`,icon:"✅",color:"#d97706"},
+              {label:"来院回数",value:`${visitCount}回`,color:"#2563eb"},
+              {label:"施術記録",value:`${treatCount}件`,color:"#059669"},
+              {label:"成約数",value:`${contracts}件`,color:"#d97706"},
             ].map(item=>(
-              <div key={item.label} style={{background:"#f8fafc",borderRadius:10,padding:"12px 10px",textAlign:"center",borderTop:`3px solid ${item.color}`}}>
-                <div style={{fontSize:18}}>{item.icon}</div>
-                <div style={{fontSize:20,fontWeight:800,color:item.color,margin:"4px 0 2px"}}>{item.value}</div>
-                <div style={{fontSize:11,color:"#9ca3af"}}>{item.label}</div>
+              <div key={item.label} className="stat-card" style={{borderTopColor:item.color,textAlign:"center",padding:12}}>
+                <div style={{fontSize:22,fontWeight:800,color:item.color,margin:"4px 0 2px"}}>{item.value}</div>
+                <div style={{fontSize:11,color:"#9ca3af",fontWeight:600}}>{item.label}</div>
               </div>
             ))}
           </div>
 
-          {/* 履歴一覧 */}
-          {loading ? (
-            <div style={{textAlign:"center",padding:"30px",color:"#9ca3af"}}>読み込み中...</div>
-          ) : patientBookings.length === 0 ? (
-            <div style={{textAlign:"center",padding:"30px",color:"#9ca3af"}}>予約記録がありません</div>
-          ) : patientBookings.map((b,i)=>{
-            const staff = STAFF_ACCOUNTS.find(s=>s.id===b.staff_id)||{name:"不明",color:"#888",initial:"？"};
-            const treat = treatments.find(t=>t.booking_id===b.id);
-            const isFirst = i === patientBookings.length - 1;
+          {loading?(
+            <div style={{textAlign:"center",padding:30,color:"#9ca3af"}}>読み込み中...</div>
+          ):patientBookings.length===0?(
+            <div style={{textAlign:"center",padding:30,color:"#9ca3af"}}>予約記録がありません</div>
+          ):patientBookings.map((b,i)=>{
+            const staff=STAFF_ACCOUNTS.find(s=>s.id===b.staff_id)||{name:"不明",color:"#888",initial:"？"};
+            const treat=treatments.find(t=>t.booking_id===b.id);
+            const isFirst=i===patientBookings.length-1;
             return (
-              <div key={b.id} style={{marginBottom:12,borderLeft:"3px solid "+(treat?"#059669":"#e5e7eb"),borderRadius:8,overflow:"hidden"}}>
-                {/* 予約ヘッダー */}
-                <div style={{background:treat?"#f0fdf4":"#f8fafc",padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <div>
-                    <span style={{fontWeight:700,fontSize:13,color:"#1e3a5f"}}>{b.date} {b.time}</span>
-                    {isFirst && <span style={{background:"#fef3c7",color:"#92400e",borderRadius:6,padding:"1px 7px",fontSize:11,fontWeight:700,marginLeft:8}}>初回</span>}
+              <div key={b.id} style={{marginBottom:10,borderRadius:10,overflow:"hidden",border:`1px solid ${treat?"#bbf7d0":"#e2e8f0"}`,boxShadow:"0 1px 4px rgba(0,0,0,.05)"}}>
+                <div style={{background:treat?"#f0fdf4":"#f8fafc",padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid "+(treat?"#bbf7d0":"#e2e8f0")}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontWeight:800,fontSize:13,color:"#1e3a5f"}}>{b.date} {b.time}</span>
+                    {isFirst&&<span className="badge badge-orange">初回</span>}
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    <div style={{width:22,height:22,borderRadius:"50%",background:staff.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:11}}>{staff.initial}</div>
-                    <span style={{fontSize:12,color:"#666",fontWeight:600}}>{staff.name}</span>
+                    <div style={{width:24,height:24,borderRadius:"50%",background:staff.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:11,boxShadow:`0 0 0 2px white,0 0 0 3px ${staff.color}`}}>{staff.initial}</div>
+                    <span style={{fontSize:12,color:"#374151",fontWeight:600}}>{staff.name}</span>
                   </div>
                 </div>
-                {/* 予約情報 */}
-                <div style={{padding:"8px 14px",background:"white",borderBottom:treat?"1px solid #e5e7eb":"none"}}>
-                  <span style={{fontSize:12,color:"#9ca3af"}}>{b.menu}</span>
-                  {b.line_user_id && <span style={{marginLeft:8,background:"#dcfce7",color:"#15803d",borderRadius:6,padding:"1px 6px",fontSize:11,fontWeight:700}}>LINE✓</span>}
+                <div style={{padding:"8px 14px",background:"white"}}>
+                  <span className="badge badge-gray" style={{marginBottom:treat?6:0}}>{b.menu}</span>
+                  {b.line_user_id&&<span className="badge badge-green" style={{marginLeft:6}}>LINE連携</span>}
                 </div>
-                {/* 施術記録 */}
-                {treat && (
-                  <div style={{padding:"10px 14px",background:"white"}}>
-                    <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:6}}>
-                      {treat.treatment_types && treat.treatment_types.split("・").map(t=>(
-                        <span key={t} style={{background:"#eff6ff",color:"#1e40af",borderRadius:6,padding:"2px 8px",fontSize:12,fontWeight:700}}>{t}</span>
+                {treat&&(
+                  <div style={{padding:"8px 14px",background:"white",borderTop:"1px solid #f1f5f9"}}>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:6}}>
+                      {treat.treatment_types&&treat.treatment_types.split("・").map(t=>(
+                        <span key={t} className="badge badge-blue">{t}</span>
                       ))}
                     </div>
-                    {treat.body_parts && <div style={{fontSize:12,color:"#666",marginBottom:4}}>🦴 {treat.body_parts}</div>}
-                    <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                    {treat.body_parts&&<div style={{fontSize:12,color:"#6b7280",marginBottom:4}}>{treat.body_parts}</div>}
+                    <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
                       {resultBadge(treat.result)}
-                      {jifeeText(treat) && <span style={{background:"#fef3c7",color:"#92400e",borderRadius:6,padding:"2px 8px",fontSize:12,fontWeight:600}}>💴 {jifeeText(treat)}</span>}
+                      {jifeeText(treat)&&<span className="badge badge-yellow">{jifeeText(treat)}</span>}
                     </div>
-                    {treat.memo && <div style={{marginTop:6,fontSize:12,color:"#9ca3af"}}>📝 {treat.memo}</div>}
+                    {treat.memo&&<div style={{marginTop:5,fontSize:12,color:"#9ca3af"}}>{treat.memo}</div>}
                   </div>
                 )}
-                {!treat && (
-                  <div style={{padding:"8px 14px",background:"white",fontSize:12,color:"#d1d5db"}}>施術記録なし</div>
-                )}
+                {!treat&&<div style={{padding:"6px 14px",background:"white",fontSize:12,color:"#d1d5db",borderTop:"1px solid #f1f5f9"}}>施術記録なし</div>}
               </div>
             );
           })}
@@ -196,51 +278,56 @@ function LoginScreen({onLogin}){
     try{
       const users=await sb.select("clinic_staff",`?email=eq.${encodeURIComponent(email.trim())}&password=eq.${encodeURIComponent(pw)}`);
       if(users&&users.length>0){
-        const u=users[0];
-        const acc=STAFF_ACCOUNTS.find(s=>s.id===u.id)||STAFF_ACCOUNTS[0];
+        const u=users[0];const acc=STAFF_ACCOUNTS.find(s=>s.id===u.id)||STAFF_ACCOUNTS[0];
         onLogin({...u,color:acc.color,initial:acc.initial});
-      } else {
+      }else{
         const u=STAFF_ACCOUNTS.find(s=>s.email===email.trim()&&s.password===pw);
-        if(u)onLogin(u); else setErr("メールアドレスまたはパスワードが違います");
+        if(u)onLogin(u);else setErr("メールアドレスまたはパスワードが違います");
       }
     }catch{
       const u=STAFF_ACCOUNTS.find(s=>s.email===email.trim()&&s.password===pw);
-      if(u)onLogin(u); else setErr("ログインできませんでした");
+      if(u)onLogin(u);else setErr("ログインできませんでした");
     }
     setLoading(false);
   }
 
   return(
-    <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#0f2744,#1e5799 60%,#2d8ecf)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:16}}>
-      <div style={{marginBottom:28,textAlign:"center"}}>
-        <div style={{fontSize:48,marginBottom:8}}>🏥</div>
-        <div style={{color:"white",fontSize:22,fontWeight:800,letterSpacing:2}}>{CLINIC_NAME}</div>
-        <div style={{color:"rgba(255,255,255,0.6)",fontSize:13,marginTop:4}}>スタッフ管理システム</div>
-      </div>
-      <div style={{background:"white",borderRadius:18,padding:28,width:"100%",maxWidth:360,boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
-        <div style={{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:20,textAlign:"center"}}>ログイン</div>
-        {err&&<div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#dc2626",fontSize:13,textAlign:"center"}}>⚠️ {err}</div>}
-        <div style={{marginBottom:14}}>
-          <label style={{display:"block",fontSize:13,color:"#555",marginBottom:4,fontWeight:600}}>メールアドレス</label>
-          <input type="email" value={email} onChange={e=>{setEmail(e.target.value);setErr("");}} placeholder="iwanaga@ando.jp" onKeyDown={e=>e.key==="Enter"&&login()} style={{width:"100%",padding:"9px 12px",border:"1.5px solid #ddd",borderRadius:8,fontSize:14,boxSizing:"border-box"}}/>
+    <div style={{minHeight:"100vh",background:"linear-gradient(160deg,#0f2744,#1e4d8c 55%,#1e6bb0)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{marginBottom:32,textAlign:"center"}}>
+        <div style={{width:72,height:72,background:"rgba(255,255,255,.15)",borderRadius:20,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 16px",border:"2px solid rgba(255,255,255,.25)",boxShadow:"0 8px 32px rgba(0,0,0,.2)"}}>
+          <svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+          </svg>
         </div>
-        <div style={{marginBottom:20}}>
-          <label style={{display:"block",fontSize:13,color:"#555",marginBottom:4,fontWeight:600}}>パスワード</label>
+        <div style={{color:"white",fontSize:24,fontWeight:800,letterSpacing:1}}>{CLINIC_NAME}</div>
+        <div style={{color:"rgba(255,255,255,.6)",fontSize:13,marginTop:4}}>スタッフ管理システム</div>
+      </div>
+
+      <div style={{background:"white",borderRadius:16,padding:28,width:"100%",maxWidth:360,boxShadow:"0 24px 64px rgba(0,0,0,.25)"}}>
+        <div style={{fontSize:16,fontWeight:800,color:"#1e3a5f",marginBottom:20,textAlign:"center"}}>ログイン</div>
+        {err&&<div style={{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#dc2626",fontSize:13,textAlign:"center",fontWeight:600}}>{err}</div>}
+        <div className="form-group">
+          <label className="form-label">メールアドレス</label>
+          <input type="email" className="form-input" value={email} onChange={e=>{setEmail(e.target.value);setErr("");}} placeholder="iwanaga@ando.jp" onKeyDown={e=>e.key==="Enter"&&login()}/>
+        </div>
+        <div className="form-group">
+          <label className="form-label">パスワード</label>
           <div style={{position:"relative"}}>
-            <input type={showPw?"text":"password"} value={pw} onChange={e=>{setPw(e.target.value);setErr("");}} placeholder="パスワード" onKeyDown={e=>e.key==="Enter"&&login()} style={{width:"100%",padding:"9px 12px",border:"1.5px solid #ddd",borderRadius:8,fontSize:14,boxSizing:"border-box",paddingRight:44}}/>
-            <button onClick={()=>setShowPw(v=>!v)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:16}}>{showPw?"🙈":"👁"}</button>
+            <input type={showPw?"text":"password"} className="form-input" value={pw} onChange={e=>{setPw(e.target.value);setErr("");}} placeholder="パスワード" onKeyDown={e=>e.key==="Enter"&&login()} style={{paddingRight:44}}/>
+            <button onClick={()=>setShowPw(v=>!v)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#9ca3af",fontSize:16}}>{showPw?"○":"●"}</button>
           </div>
         </div>
-        <button onClick={login} disabled={loading} style={{width:"100%",background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",color:"white",border:"none",borderRadius:10,padding:14,fontWeight:800,fontSize:15,cursor:"pointer",opacity:loading?0.7:1}}>
-          {loading?"確認中...":"ログイン →"}
+        <button className="btn btn-primary" onClick={login} disabled={loading} style={{width:"100%",padding:13,fontSize:15,borderRadius:10,justifyContent:"center",opacity:loading?.7:1}}>
+          {loading?"確認中...":"ログイン"}
         </button>
-        <div style={{marginTop:18,background:"#f8fafc",borderRadius:10,padding:"12px 14px"}}>
-          <div style={{fontSize:11,color:"#9ca3af",fontWeight:700,marginBottom:8}}>🔑 デモ用アカウント（タップで入力）</div>
+        <div style={{marginTop:18,background:"#f8fafc",borderRadius:10,padding:"12px 14px",border:"1px solid #e2e8f0"}}>
+          <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:8,textTransform:"uppercase",letterSpacing:.5}}>スタッフアカウント</div>
           {STAFF_ACCOUNTS.map(s=>(
-            <button key={s.id} onClick={()=>{setEmail(s.email);setPw(s.password);}} style={{display:"block",width:"100%",textAlign:"left",background:"none",border:"none",padding:"3px 0",cursor:"pointer"}}>
+            <button key={s.id} onClick={()=>{setEmail(s.email);setPw(s.password);}} style={{display:"flex",width:"100%",alignItems:"center",gap:8,background:"none",border:"none",padding:"4px 0",cursor:"pointer",textAlign:"left"}}>
+              <div style={{width:20,height:20,borderRadius:"50%",background:s.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontSize:10,fontWeight:800,flexShrink:0}}>{s.initial}</div>
               <span style={{fontWeight:700,color:s.color,fontSize:12}}>{s.name}</span>
-              <span style={{color:"#9ca3af",fontSize:11,marginLeft:6}}>{s.email}</span>
-              {s.role==="admin"&&<span style={{background:"#fef3c7",color:"#d97706",borderRadius:4,padding:"1px 5px",fontSize:10,marginLeft:4}}>管理者</span>}
+              <span style={{color:"#9ca3af",fontSize:11}}>{s.email}</span>
+              {s.role==="admin"&&<span className="badge badge-yellow" style={{marginLeft:"auto"}}>管理者</span>}
             </button>
           ))}
         </div>
@@ -250,7 +337,7 @@ function LoginScreen({onLogin}){
 }
 
 // ===== 休憩管理モーダル =====
-function BreakModal({onClose, bookings, breaks, setBreaks}){
+function BreakModal({onClose,bookings,breaks,setBreaks}){
   const [selDate,setSelDate]=React.useState(fmtDate(today));
   const [selStaff,setSelStaff]=React.useState(1);
   const [selTimes,setSelTimes]=React.useState([]);
@@ -258,7 +345,7 @@ function BreakModal({onClose, bookings, breaks, setBreaks}){
   const [saving,setSaving]=React.useState(false);
   const [toast,setToast]=React.useState("");
 
-  const todayBreaks = breaks.filter(b=>b.date===selDate);
+  const todayBreaks=breaks.filter(b=>b.date===selDate);
 
   async function addBreak(){
     if(selTimes.length===0){setToast("時間帯を選択してください");setTimeout(()=>setToast(""),2500);return;}
@@ -266,89 +353,84 @@ function BreakModal({onClose, bookings, breaks, setBreaks}){
     try{
       const newBreaks=[];
       for(const t of selTimes){
-        const data = await sb.insert("staff_breaks",{staff_id:selStaff, date:selDate, time:t, reason});
-        if(Array.isArray(data)&&data.length>0) newBreaks.push(...data);
+        const data=await sb.insert("staff_breaks",{staff_id:selStaff,date:selDate,time:t,reason});
+        if(Array.isArray(data)&&data.length>0)newBreaks.push(...data);
         else newBreaks.push({id:Date.now()+Math.random(),staff_id:selStaff,date:selDate,time:t,reason});
       }
-      setBreaks(prev=>[...prev,...newBreaks]);
-      setSelTimes([]);
-      setToast(selTimes.length+"件の休憩を登録しました");
-      setTimeout(()=>setToast(""),2500);
-    }catch(e){setToast("エラー："+e.message);setTimeout(()=>setToast(""),3000);}
+      setBreaks(prev=>[...prev,...newBreaks]);setSelTimes([]);
+      setToast(selTimes.length+"件登録しました");setTimeout(()=>setToast(""),2500);
+    }catch(e){setToast("エラー");setTimeout(()=>setToast(""),3000);}
     setSaving(false);
   }
 
   async function delBreak(id){
-    try{ await sb.delete("staff_breaks",id); }catch{}
+    try{await sb.delete("staff_breaks",id);}catch{}
     setBreaks(prev=>prev.filter(b=>b.id!==id));
   }
 
   return(
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:400,padding:16}}>
-      <div style={{background:"white",borderRadius:16,width:"100%",maxWidth:480,maxHeight:"90vh",overflowY:"auto"}}>
-        <div style={{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",color:"white",padding:"16px 20px",borderRadius:"16px 16px 0 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+    <div className="modal-overlay">
+      <div className="modal-box">
+        <div className="modal-header" style={{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)"}}>
           <div>
-            <div style={{fontWeight:800,fontSize:16}}>☕ 休憩・不在の管理</div>
-            <div style={{fontSize:12,opacity:0.75,marginTop:2}}>スタッフの休憩時間を登録すると患者予約に反映されます</div>
+            <div style={{fontWeight:800,fontSize:16,color:"white"}}>休憩・不在管理</div>
+            <div style={{fontSize:12,color:"rgba(255,255,255,.7)",marginTop:2}}>登録すると患者予約に反映されます</div>
           </div>
-          <button onClick={onClose} style={{background:"none",border:"none",color:"white",fontSize:22,cursor:"pointer"}}>✕</button>
+          <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div style={{padding:20}}>
-          {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#15803d",fontSize:13,fontWeight:600}}>✅ {toast}</div>}
-          <div style={{background:"#f8fafc",borderRadius:12,padding:16,marginBottom:20}}>
-            <div style={{fontWeight:700,fontSize:14,color:"#1e3a5f",marginBottom:12}}>＋ 休憩を登録</div>
-            <div style={{marginBottom:12}}>
-              <label style={{display:"block",fontSize:13,fontWeight:600,color:"#555",marginBottom:4}}>日付</label>
-              <input type="date" value={selDate} onChange={e=>setSelDate(e.target.value)} style={{width:"100%",padding:"9px 12px",border:"1.5px solid #ddd",borderRadius:8,fontSize:14,boxSizing:"border-box"}}/>
+          {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#15803d",fontSize:13,fontWeight:700}}>{toast}</div>}
+          <div style={{background:"#f8fafc",borderRadius:10,padding:14,marginBottom:18,border:"1px solid #e2e8f0"}}>
+            <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:12}}>休憩を登録</div>
+            <div className="form-group">
+              <label className="form-label">日付</label>
+              <input type="date" className="form-input" value={selDate} onChange={e=>setSelDate(e.target.value)}/>
             </div>
-            <div style={{marginBottom:12}}>
-              <label style={{display:"block",fontSize:13,fontWeight:600,color:"#555",marginBottom:4}}>スタッフ</label>
+            <div className="form-group">
+              <label className="form-label">スタッフ</label>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                 {STAFF_ACCOUNTS.map(s=>(
-                  <button key={s.id} onClick={()=>setSelStaff(s.id)} style={{background:selStaff===s.id?s.color:"white",color:selStaff===s.id?"white":"#444",border:`1.5px solid ${s.color}`,borderRadius:20,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:600}}>{s.name}</button>
+                  <button key={s.id} onClick={()=>setSelStaff(s.id)} className="btn" style={{background:selStaff===s.id?s.color:"white",color:selStaff===s.id?"white":"#374151",border:`2px solid ${s.color}`,borderRadius:20,padding:"5px 12px",fontSize:12,boxShadow:selStaff===s.id?`0 2px 8px ${s.color}66`:"none"}}>{s.name}</button>
                 ))}
               </div>
             </div>
-            <div style={{marginBottom:12}}>
-              <label style={{display:"block",fontSize:13,fontWeight:600,color:"#555",marginBottom:4}}>時間帯（複数選択可）</label>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+            <div className="form-group">
+              <label className="form-label">時間帯（複数選択可）</label>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:5}}>
                 {SLOTS.map(t=>{
                   const isSel=selTimes.includes(t);
-                  return <button key={t} onClick={()=>setSelTimes(prev=>prev.includes(t)?prev.filter(x=>x!==t):[...prev,t])} style={{padding:"7px 4px",borderRadius:8,border:`1.5px solid ${isSel?"#1e3a5f":"#e5e7eb"}`,background:isSel?"#1e3a5f":"white",color:isSel?"white":"#444",cursor:"pointer",fontSize:12,fontWeight:isSel?700:400}}>{t}</button>;
+                  return <button key={t} onClick={()=>setSelTimes(prev=>prev.includes(t)?prev.filter(x=>x!==t):[...prev,t])} className="btn" style={{padding:"7px 4px",borderRadius:7,border:`2px solid ${isSel?"#1e3a5f":"#e2e8f0"}`,background:isSel?"#1e3a5f":"white",color:isSel?"white":"#374151",fontSize:12,fontWeight:isSel?700:400,boxShadow:isSel?"0 2px 6px rgba(30,58,95,.3)":"none"}}>{t}</button>;
                 })}
               </div>
-              {selTimes.length>0&&<div style={{marginTop:8,fontSize:12,color:"#2563eb",fontWeight:600}}>選択中：{selTimes.join("　")}</div>}
+              {selTimes.length>0&&<div style={{marginTop:8,fontSize:12,color:"#2563eb",fontWeight:600}}>選択：{selTimes.join("　")}</div>}
             </div>
-            <div style={{marginBottom:14}}>
-              <label style={{display:"block",fontSize:13,fontWeight:600,color:"#555",marginBottom:4}}>理由（任意）</label>
-              <div style={{display:"flex",gap:8}}>
+            <div className="form-group" style={{marginBottom:14}}>
+              <label className="form-label">理由</label>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                 {["休憩","昼休み","研修","外出","その他"].map(r=>(
-                  <button key={r} onClick={()=>setReason(r)} style={{padding:"6px 10px",borderRadius:8,border:`1.5px solid ${reason===r?"#1e3a5f":"#ddd"}`,background:reason===r?"#1e3a5f":"white",color:reason===r?"white":"#444",cursor:"pointer",fontSize:12,fontWeight:reason===r?700:400}}>{r}</button>
+                  <button key={r} onClick={()=>setReason(r)} className="btn" style={{padding:"5px 10px",borderRadius:7,border:`2px solid ${reason===r?"#1e3a5f":"#e2e8f0"}`,background:reason===r?"#1e3a5f":"white",color:reason===r?"white":"#374151",fontSize:12,fontWeight:reason===r?700:400}}>{r}</button>
                 ))}
               </div>
             </div>
-            <button onClick={addBreak} disabled={saving} style={{width:"100%",background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",color:"white",border:"none",borderRadius:10,padding:12,fontWeight:700,cursor:"pointer",fontSize:14,opacity:saving?0.7:1}}>
-              {saving?"登録中...":"☕ 休憩を登録する"}
-            </button>
+            <button onClick={addBreak} disabled={saving} className="btn btn-primary" style={{width:"100%",justifyContent:"center",padding:11,fontSize:14,borderRadius:9,opacity:saving?.7:1}}>{saving?"登録中...":"休憩を登録する"}</button>
           </div>
-          <div>
-            <div style={{fontWeight:700,fontSize:14,color:"#1e3a5f",marginBottom:10}}>📋 {selDate} の休憩一覧</div>
-            {todayBreaks.length===0?(
-              <div style={{color:"#9ca3af",fontSize:13,padding:"12px 0",textAlign:"center"}}>登録された休憩はありません</div>
-            ):todayBreaks.map(b=>{
-              const s=STAFF_ACCOUNTS.find(x=>x.id===b.staff_id)||{color:"#888",name:"不明",initial:"？"};
-              return(
-                <div key={b.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"#f8fafc",borderRadius:8,marginBottom:8,borderLeft:`3px solid ${s.color}`}}>
-                  <div style={{width:28,height:28,borderRadius:"50%",background:s.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700,fontSize:12,flexShrink:0}}>{s.initial}</div>
-                  <div style={{flex:1}}>
-                    <div style={{fontWeight:600,fontSize:13}}>{s.name}</div>
-                    <div style={{fontSize:12,color:"#9ca3af"}}>{b.time}　{b.reason}</div>
-                  </div>
-                  <button onClick={()=>delBreak(b.id)} style={{background:"#fef2f2",color:"#ef4444",border:"none",borderRadius:6,padding:"4px 10px",cursor:"pointer",fontSize:12,fontWeight:600}}>削除</button>
+
+          <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:10}}>{selDate} の休憩一覧</div>
+          {todayBreaks.length===0?(
+            <div style={{color:"#9ca3af",fontSize:13,padding:"12px 0",textAlign:"center"}}>登録なし</div>
+          ):todayBreaks.map(b=>{
+            const s=STAFF_ACCOUNTS.find(x=>x.id===b.staff_id)||{color:"#888",name:"不明",initial:"？"};
+            return(
+              <div key={b.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"#f8fafc",borderRadius:8,marginBottom:6,borderLeft:`3px solid ${s.color}`,border:`1px solid #e2e8f0`,borderLeftWidth:3}}>
+                <div style={{width:28,height:28,borderRadius:"50%",background:s.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:12,boxShadow:`0 2px 6px ${s.color}66`}}>{s.initial}</div>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,fontSize:13,color:"#1e3a5f"}}>{s.name}</div>
+                  <div style={{fontSize:12,color:"#6b7280"}}>{b.time}　{b.reason}</div>
                 </div>
-              );
-            })}
-          </div>
+                <button onClick={()=>delBreak(b.id)} className="btn btn-danger btn-xs">削除</button>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -381,7 +463,7 @@ function Dashboard({user,onLogout}){
     try{
       const [b,br]=await Promise.all([
         sb.select("bookings","?order=date.asc,time.asc"),
-        sb.select("staff_breaks","?order=date.asc,time.asc")
+        sb.select("staff_breaks","?order=date.asc,time.asc"),
       ]);
       setBookings(Array.isArray(b)?b:[]);
       setBreaks(Array.isArray(br)?br:[]);
@@ -398,18 +480,13 @@ function Dashboard({user,onLogout}){
     [bookings,selStaff,isAdmin,user.id]
   );
 
-  // 患者別来院回数
-  // 各予約の通算来院回数（患者ごとに日付順で1,2,3...）
-  const visitCounts = React.useMemo(()=>{
-    const patientBookings = {};
-    bookings.forEach(b=>{
-      if(!patientBookings[b.patient_name]) patientBookings[b.patient_name]=[];
-      patientBookings[b.patient_name].push(b);
-    });
-    const result = {};
-    Object.values(patientBookings).forEach(list=>{
-      const sorted = [...list].sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time));
-      sorted.forEach((b,i)=>{ result[b.id] = i+1; });
+  const visitCounts=React.useMemo(()=>{
+    const pb={};
+    bookings.forEach(b=>{if(!pb[b.patient_name])pb[b.patient_name]=[];pb[b.patient_name].push(b);});
+    const result={};
+    Object.values(pb).forEach(list=>{
+      const sorted=[...list].sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time));
+      sorted.forEach((b,i)=>{result[b.id]=i+1;});
     });
     return result;
   },[bookings]);
@@ -422,7 +499,6 @@ function Dashboard({user,onLogout}){
     if(!isAdmin&&b.staff_id!==user.id)return;
     setForm({...b});setEditId(b.id);setConflict(false);setView("form");
   }
-
   async function save(){
     if(!form.patient_name.trim())return;
     if(bookings.some(b=>b.id!==editId&&b.staff_id===form.staff_id&&b.date===form.date&&overlaps(b,form))){setConflict(true);return;}
@@ -438,7 +514,6 @@ function Dashboard({user,onLogout}){
       setView("calendar");
     }catch{showToast("保存しました");}
   }
-
   async function del(id){
     try{await sb.delete("bookings",id);}catch{}
     setBookings(prev=>prev.filter(b=>b.id!==id));
@@ -450,83 +525,94 @@ function Dashboard({user,onLogout}){
     const sids=selStaff?[selStaff]:(isAdmin?STAFF_ACCOUNTS:STAFF_ACCOUNTS.filter(s=>s.id===user.id)).map(s=>s.id);
     const bks=sids.flatMap(sid=>bookings.filter(b=>b.date===ds&&b.staff_id===sid&&parseInt(b.time.split(":")[0])===hour));
     const brs=sids.flatMap(sid=>breaks.filter(b=>b.date===ds&&b.staff_id===sid&&b.time===`${String(hour).padStart(2,"0")}:00`));
-    return {bks, brs};
+    return {bks,brs};
   }
 
   const todayCount=bookings.filter(b=>b.date===todayStr).length;
   const todayBreakCount=breaks.filter(b=>b.date===todayStr).length;
 
   if(loading)return(
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#f0f4f8",flexDirection:"column",gap:16}}>
-      <div style={{fontSize:40}}>🏥</div>
-      <div style={{fontWeight:700,color:"#1e3a5f"}}>読み込み中...</div>
+    <div className="loading">
+      <div className="loading-spinner"></div>
+      <div style={{fontWeight:700,color:"#1e3a5f",fontSize:14}}>読み込み中...</div>
     </div>
   );
 
   return(
-    <div style={{fontFamily:"'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif",background:"#f0f4f8",minHeight:"100vh"}}>
-      <div style={{background:"linear-gradient(135deg,#1e3a5f,#2d5a8e)",color:"white"}}>
-        <div style={{maxWidth:920,margin:"0 auto",padding:"12px 16px"}}>
+    <div style={{background:"#eef2f7",minHeight:"100vh"}}>
+      {/* ヘッダー */}
+      <div style={{background:"linear-gradient(135deg,#0f2744,#1e4d8c)"}}>
+        <div style={{maxWidth:960,margin:"0 auto",padding:"14px 16px"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-            <div>
-              <div style={{fontSize:11,opacity:0.6,letterSpacing:2}}>スタッフ管理</div>
-              <div style={{fontSize:18,fontWeight:800}}>{CLINIC_NAME}</div>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <div style={{width:36,height:36,background:"rgba(255,255,255,.12)",borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",border:"1px solid rgba(255,255,255,.2)"}}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+                </svg>
+              </div>
+              <div>
+                <div style={{fontSize:10,color:"rgba(255,255,255,.5)",letterSpacing:2,textTransform:"uppercase"}}>Staff System</div>
+                <div style={{fontSize:17,fontWeight:800,color:"white"}}>{CLINIC_NAME}</div>
+              </div>
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <button onClick={()=>setShowBreakModal(true)} style={{background:"rgba(255,255,255,0.2)",border:"none",borderRadius:8,padding:"7px 12px",color:"white",cursor:"pointer",fontWeight:600,fontSize:13}}>☕ 休憩</button>
-              <button onClick={()=>openAdd()} style={{background:"white",color:"#1e3a5f",border:"none",borderRadius:8,padding:"7px 14px",fontWeight:700,cursor:"pointer",fontSize:13}}>＋ 新規予約</button>
+              <button onClick={()=>setShowBreakModal(true)} className="btn btn-ghost" style={{fontSize:12}}>休憩管理</button>
+              <button onClick={()=>openAdd()} className="btn btn-primary" style={{fontSize:13}}>新規予約</button>
               <div style={{position:"relative"}}>
-                <button onClick={()=>setShowMenu(v=>!v)} style={{background:"rgba(255,255,255,0.18)",border:"none",borderRadius:8,padding:"7px 10px",color:"white",cursor:"pointer",display:"flex",alignItems:"center",gap:6,fontSize:13}}>
-                  <div style={{width:26,height:26,borderRadius:"50%",background:user.color,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:13}}>{user.initial}</div>
-                  <span style={{fontWeight:600}}>{user.name}</span>
-                  {isAdmin&&<span style={{background:"#fbbf24",color:"#78350f",borderRadius:4,padding:"1px 5px",fontSize:10,fontWeight:700}}>管理者</span>}
+                <button onClick={()=>setShowMenu(v=>!v)} className="btn btn-icon" style={{display:"flex",alignItems:"center",gap:6}}>
+                  <div style={{width:24,height:24,borderRadius:"50%",background:user.color,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:12,color:"white",boxShadow:`0 0 0 2px rgba(255,255,255,.3)`}}>{user.initial}</div>
+                  <span style={{fontSize:13,fontWeight:600,color:"white"}}>{user.name}</span>
+                  {isAdmin&&<span className="badge badge-yellow" style={{fontSize:9,padding:"1px 5px"}}>管理者</span>}
                 </button>
                 {showMenu&&(
-                  <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",background:"white",borderRadius:10,boxShadow:"0 8px 30px rgba(0,0,0,0.18)",minWidth:160,zIndex:200,overflow:"hidden"}}>
-                    <button onClick={fetchAll} style={{width:"100%",padding:"10px 14px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontSize:13,color:"#2563eb",fontWeight:600}}>🔄 今すぐ同期</button>
-                    <button onClick={onLogout} style={{width:"100%",padding:"10px 14px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontSize:13,color:"#ef4444",fontWeight:700,borderTop:"1px solid #f5f5f5"}}>🚪 ログアウト</button>
+                  <div style={{position:"absolute",right:0,top:"calc(100% + 8px)",background:"white",borderRadius:10,boxShadow:"0 8px 32px rgba(0,0,0,.18)",minWidth:160,zIndex:200,overflow:"hidden",border:"1px solid #e2e8f0"}}>
+                    <button onClick={()=>{fetchAll();setShowMenu(false);}} style={{width:"100%",padding:"10px 14px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontSize:13,color:"#2563eb",fontWeight:700,borderBottom:"1px solid #f1f5f9"}}>同期</button>
+                    <button onClick={onLogout} style={{width:"100%",padding:"10px 14px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontSize:13,color:"#ef4444",fontWeight:700}}>ログアウト</button>
                   </div>
                 )}
               </div>
             </div>
           </div>
-          <div style={{display:"flex",gap:4,marginTop:10}}>
-            {[["calendar","📅 カレンダー"],["list","📋 一覧"],["patients","👥 患者"],["stats","📊 サマリー"]].map(([v,label])=>(
-              <button key={v} onClick={()=>{setView(v);setShowMenu(false);}} style={{background:view===v?"white":"transparent",color:view===v?"#1e3a5f":"rgba(255,255,255,0.8)",border:"none",borderRadius:"8px 8px 0 0",padding:"7px 12px",fontWeight:view===v?700:400,cursor:"pointer",fontSize:13}}>{label}</button>
+          <div className="tab-bar" style={{marginTop:12}}>
+            {[["calendar","カレンダー"],["list","一覧"],["patients","患者管理"],["stats","サマリー"]].map(([v,label])=>(
+              <button key={v} className={`tab-btn${view===v?" active":""}`} onClick={()=>{setView(v);setShowMenu(false);}}>{label}</button>
             ))}
           </div>
         </div>
       </div>
 
-      <div style={{maxWidth:920,margin:"0 auto",padding:16}} onClick={()=>setShowMenu(false)}>
+      <div style={{maxWidth:960,margin:"0 auto",padding:16}} onClick={()=>setShowMenu(false)}>
 
+        {/* スタッフフィルター */}
         {(view==="calendar"||view==="list")&&(
-          <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
-            {isAdmin&&<button onClick={()=>setSelStaff(null)} style={{background:!selStaff?"#1e3a5f":"white",color:!selStaff?"white":"#444",border:"1.5px solid "+(!selStaff?"#1e3a5f":"#ddd"),borderRadius:20,padding:"5px 14px",cursor:"pointer",fontSize:13,fontWeight:600}}>全員</button>}
+          <div className="staff-filter">
+            {isAdmin&&(
+              <button onClick={()=>setSelStaff(null)} className="staff-chip" style={{background:!selStaff?"#1e3a5f":"white",color:!selStaff?"white":"#374151",borderColor:!selStaff?"#1e3a5f":"#e2e8f0",boxShadow:!selStaff?"0 2px 8px rgba(30,58,95,.35)":"0 1px 3px rgba(0,0,0,.08)"}}>全員</button>
+            )}
             {STAFF_ACCOUNTS.map(s=>(
-              <button key={s.id} onClick={()=>setSelStaff(s.id)} style={{background:selStaff===s.id?s.color:"white",color:selStaff===s.id?"white":"#444",border:"1.5px solid "+(selStaff===s.id?s.color:"#ddd"),borderRadius:20,padding:"5px 14px",cursor:"pointer",fontSize:13,fontWeight:600}}>{s.name}</button>
+              <button key={s.id} onClick={()=>setSelStaff(s.id)} className="staff-chip" style={{background:selStaff===s.id?s.color:"white",color:selStaff===s.id?"white":"#374151",borderColor:selStaff===s.id?s.color:"#e2e8f0",boxShadow:selStaff===s.id?`0 2px 8px ${s.color}55`:"0 1px 3px rgba(0,0,0,.08)"}}>{s.name}</button>
             ))}
           </div>
         )}
 
         {/* カレンダー */}
         {view==="calendar"&&(
-          <div style={{background:"white",borderRadius:12,boxShadow:"0 2px 12px rgba(0,0,0,0.07)",overflow:"hidden"}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 16px",borderBottom:"1px solid #eee"}}>
-              <button onClick={()=>{const d=new Date(baseDate);d.setDate(d.getDate()-7);setBaseDate(d);}} style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"4px 12px",cursor:"pointer"}}>◀</button>
-              <span style={{fontWeight:700,fontSize:15}}>{weekDates[0].getMonth()+1}月{weekDates[0].getDate()}日 〜 {weekDates[6].getMonth()+1}月{weekDates[6].getDate()}日</span>
-              <button onClick={()=>{const d=new Date(baseDate);d.setDate(d.getDate()+7);setBaseDate(d);}} style={{background:"none",border:"1px solid #ddd",borderRadius:6,padding:"4px 12px",cursor:"pointer"}}>▶</button>
+          <div className="card">
+            <div className="cal-nav">
+              <button className="cal-nav-btn" onClick={()=>{const d=new Date(baseDate);d.setDate(d.getDate()-7);setBaseDate(d);}}>◀</button>
+              <span style={{fontWeight:800,fontSize:15,color:"#1e3a5f"}}>{weekDates[0].getMonth()+1}月{weekDates[0].getDate()}日 〜 {weekDates[6].getMonth()+1}月{weekDates[6].getDate()}日</span>
+              <button className="cal-nav-btn" onClick={()=>{const d=new Date(baseDate);d.setDate(d.getDate()+7);setBaseDate(d);}}>▶</button>
             </div>
-            <div style={{overflowX:"auto"}}>
-              <table style={{width:"100%",borderCollapse:"collapse",minWidth:580}}>
+            <div className="scroll-x">
+              <table className="cal-table">
                 <thead>
                   <tr>
-                    <th style={{width:40,background:"#f8fafc",borderBottom:"1px solid #eee",padding:"8px 2px"}}></th>
+                    <th style={{width:40,background:"#f8fafc",borderBottom:"2px solid #e2e8f0",padding:"8px 2px"}}></th>
                     {weekDates.map((d,i)=>{
                       const isToday=fmtDate(d)===todayStr;
-                      return <th key={i} style={{padding:"8px 3px",background:isToday?"#eff6ff":"#f8fafc",borderBottom:"1px solid #eee",fontSize:12}}>
-                        <div style={{color:i>=5?"#ef4444":"#666"}}>{DAYS_JP[i]}</div>
-                        <div style={{fontSize:15,fontWeight:isToday?800:500,color:isToday?"#2563eb":i>=5?"#ef4444":"#222"}}>{d.getDate()}</div>
+                      return <th key={i} className={`cal-th${isToday?" today":""}`} style={{color:i>=5?"#ef4444":"inherit"}}>
+                        <div style={{fontSize:11,fontWeight:600,color:i>=5?"#ef4444":"#64748b"}}>{DAYS_JP[i]}</div>
+                        <div style={{fontSize:16,fontWeight:isToday?800:600,color:isToday?"#2563eb":i>=5?"#ef4444":"#1e293b",lineHeight:1.3}}>{d.getDate()}</div>
                       </th>;
                     })}
                   </tr>
@@ -534,25 +620,23 @@ function Dashboard({user,onLogout}){
                 <tbody>
                   {HOURS.map(hour=>(
                     <tr key={hour}>
-                      <td style={{fontSize:10,color:"#bbb",textAlign:"right",paddingRight:4,paddingTop:3,borderBottom:"1px solid #f5f5f5",verticalAlign:"top"}}>{hour}:00</td>
+                      <td className="cal-time">{hour}:00</td>
                       {weekDates.map((d,di)=>{
                         const {bks,brs}=getCells(d,hour);
                         const isToday=fmtDate(d)===todayStr;
-                        return <td key={di} onClick={()=>openAdd(fmtDate(d),`${String(hour).padStart(2,"0")}:00`)}
-                          style={{verticalAlign:"top",padding:2,borderBottom:"1px solid #f5f5f5",borderLeft:"1px solid #f5f5f5",cursor:"pointer",background:isToday?"#fafcff":"white",minWidth:72}}>
+                        return <td key={di} className={`cal-td${isToday?" today":""}`} onClick={()=>openAdd(fmtDate(d),`${String(hour).padStart(2,"0")}:00`)}>
                           {bks.map(b=>{
-                            const st=STAFF_ACCOUNTS.find(x=>x.id===b.staff_id)||{color:"#888",initial:"？"};
-                            const cnt = visitCounts[b.id]||1;
-                            return <div key={b.id} onClick={e=>{e.stopPropagation();openEdit(b);}}
-                              style={{background:st.color+"22",borderLeft:`3px solid ${st.color}`,borderRadius:4,padding:"2px 4px",marginBottom:2,fontSize:11,cursor:"pointer"}}>
-                              <div style={{fontWeight:700,color:st.color,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.patient_name}</div>
-                              <div style={{color:"#666",fontSize:10}}>{b.time} {cnt>1?<span style={{color:"#d97706"}}>({cnt}回目)</span>:""}</div>
+                            const st=STAFF_ACCOUNTS.find(x=>x.id===b.staff_id)||{color:"#888"};
+                            const cnt=visitCounts[b.id]||1;
+                            return <div key={b.id} className="cal-event" onClick={e=>{e.stopPropagation();openEdit(b);}} style={{background:`${st.color}18`,borderLeftColor:st.color}}>
+                              <div style={{fontWeight:700,color:st.color,fontSize:11,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.patient_name}</div>
+                              <div style={{color:"#64748b",fontSize:10}}>{b.time}{cnt>1&&<span style={{color:st.color,marginLeft:3,fontWeight:700}}>{cnt}回</span>}</div>
                             </div>;
                           })}
                           {brs.map(b=>{
-                            const st=STAFF_ACCOUNTS.find(x=>x.id===b.staff_id)||{color:"#888",initial:"？"};
-                            return <div key={`br-${b.id}`} style={{background:"#f3f4f6",borderLeft:"3px solid #9ca3af",borderRadius:4,padding:"2px 4px",marginBottom:2,fontSize:11}}>
-                              <div style={{color:"#9ca3af",fontWeight:600,fontSize:10}}>{st.initial} ☕{b.reason}</div>
+                            const st=STAFF_ACCOUNTS.find(x=>x.id===b.staff_id)||{initial:"？"};
+                            return <div key={`br-${b.id}`} className="cal-break">
+                              <div style={{color:"#64748b",fontSize:10,fontWeight:600}}>{st.initial} {b.reason}</div>
                             </div>;
                           })}
                         </td>;
@@ -568,36 +652,39 @@ function Dashboard({user,onLogout}){
         {/* 一覧 */}
         {view==="list"&&(
           <div>
-            {filtered.length===0?<div style={{background:"white",borderRadius:12,padding:40,textAlign:"center",color:"#aaa"}}>予約がありません</div>
-            :[...filtered].sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map(b=>{
+            {filtered.length===0?(
+              <div className="card" style={{padding:40,textAlign:"center",color:"#94a3b8"}}>予約がありません</div>
+            ):[...filtered].sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).map(b=>{
               const s=STAFF_ACCOUNTS.find(x=>x.id===b.staff_id)||{color:"#888",name:"不明"};
               const canEdit=isAdmin||b.staff_id===user.id;
               const cnt=visitCounts[b.id]||1;
-              return <div key={b.id} style={{marginBottom:9}}>
-                <div style={{background:"white",borderRadius:10,padding:"12px 16px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",borderLeft:`4px solid ${s.color}`,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:4}}>
-                      <span style={{background:s.color,color:"white",borderRadius:6,padding:"2px 8px",fontSize:11,fontWeight:700}}>{s.name}</span>
-                      {b.line_notify&&<span style={{background:"#fef9c3",color:"#a16207",borderRadius:6,padding:"2px 8px",fontSize:11}}>🔔 LINE</span>}
-                      {cnt>1&&<span style={{background:"#fef3c7",color:"#d97706",borderRadius:6,padding:"2px 8px",fontSize:11,fontWeight:700}}>{cnt}回目</span>}
+              return <div key={b.id} style={{marginBottom:8}}>
+                <div className="list-item" style={{borderLeftColor:s.color}}>
+                  <div className="list-item-body">
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:5}}>
+                        <span className="badge" style={{background:s.color,color:"white"}}>{s.name}</span>
+                        {b.line_notify&&<span className="badge badge-green">LINE</span>}
+                        {cnt>1&&<span className="badge badge-yellow">{cnt}回目</span>}
+                      </div>
+                      <div style={{fontWeight:800,fontSize:15,color:"#1e293b"}}>{b.patient_name}</div>
+                      <div style={{color:"#64748b",fontSize:13,marginTop:2}}>{b.date} {b.time} ｜ {b.menu}</div>
+                      <div style={{color:"#94a3b8",fontSize:12}}>{b.phone}</div>
                     </div>
-                    <div style={{fontWeight:700,fontSize:15}}>{b.patient_name}</div>
-                    <div style={{color:"#666",fontSize:13}}>{b.date} {b.time} ｜ {b.menu}</div>
-                    <div style={{color:"#aaa",fontSize:12}}>{b.phone}</div>
-                  </div>
-                  <div style={{display:"flex",gap:6,flexShrink:0,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                    <button onClick={()=>setHistoryPatient(b.patient_name)} style={{background:"#fef3c7",color:"#92400e",border:"none",borderRadius:7,padding:"6px 10px",cursor:"pointer",fontWeight:600,fontSize:12}}>📋履歴</button>
-                    <button onClick={()=>setViewIntake(viewIntake===b.id?null:b.id)} style={{background:"#f0fdf4",color:"#15803d",border:"none",borderRadius:7,padding:"6px 10px",cursor:"pointer",fontWeight:600,fontSize:12}}>🩺問診</button>
-                    {canEdit&&<button onClick={()=>openEdit(b)} style={{background:"#eff6ff",color:"#2563eb",border:"none",borderRadius:7,padding:"6px 10px",cursor:"pointer",fontWeight:600,fontSize:12}}>編集</button>}
-                    {canEdit&&<button onClick={()=>setDelConfirm(b)} style={{background:"#fef2f2",color:"#ef4444",border:"none",borderRadius:7,padding:"6px 10px",cursor:"pointer",fontWeight:600,fontSize:12}}>削除</button>}
+                    <div className="list-actions">
+                      <button onClick={()=>setHistoryPatient(b.patient_name)} className="btn btn-outline btn-sm" style={{color:"#d97706",borderColor:"#fde68a"}}>履歴</button>
+                      <button onClick={()=>setViewIntake(viewIntake===b.id?null:b.id)} className="btn btn-outline btn-sm" style={{color:"#059669",borderColor:"#a7f3d0"}}>問診</button>
+                      {canEdit&&<button onClick={()=>openEdit(b)} className="btn btn-outline btn-sm" style={{color:"#2563eb",borderColor:"#bfdbfe"}}>編集</button>}
+                      {canEdit&&<button onClick={()=>setDelConfirm(b)} className="btn btn-danger btn-sm">削除</button>}
+                    </div>
                   </div>
                 </div>
                 {viewIntake===b.id&&(b.body_parts||b.injury_cause||b.pain_when)&&(
-                  <div style={{background:"#f0fdf4",borderRadius:8,padding:"12px 14px",margin:"8px 0 0",fontSize:13}}>
-                    <div style={{fontWeight:700,color:"#15803d",marginBottom:8}}>🩺 問診情報</div>
+                  <div style={{background:"white",borderRadius:"0 0 10px 10px",padding:"12px 14px",marginTop:-2,borderLeft:`4px solid ${s.color}`,borderRight:"1px solid #e2e8f0",borderBottom:"1px solid #e2e8f0",boxShadow:"0 4px 10px rgba(0,0,0,.06)"}}>
+                    <div style={{fontWeight:700,color:"#059669",marginBottom:8,fontSize:13}}>問診情報</div>
                     {[["負傷部位",b.body_parts],["負傷原因",b.injury_cause],["いつから",b.pain_when],["痛みの強さ",b.pain_level?b.pain_level+"/10":null],["症状",b.symptoms],["他院受診",b.other_clinic],["既往歴",b.medical_history],["継続意思",b.want_continue],["何で知った",b.how_know]].filter(x=>x[1]).map(([l,v])=>(
                       <div key={l} style={{display:"flex",gap:8,marginBottom:4}}>
-                        <span style={{color:"#9ca3af",minWidth:80,fontSize:12,fontWeight:600}}>{l}</span>
+                        <span style={{color:"#94a3b8",minWidth:80,fontSize:12,fontWeight:600}}>{l}</span>
                         <span style={{color:"#1e3a5f",fontSize:12,fontWeight:600}}>{v}</span>
                       </div>
                     ))}
@@ -608,37 +695,36 @@ function Dashboard({user,onLogout}){
           </div>
         )}
 
-        {/* 患者一覧 */}
+        {/* 患者管理 */}
         {view==="patients"&&(()=>{
-          const patientMap = {};
+          const pm={};
           bookings.forEach(b=>{
-            if(!patientMap[b.patient_name]) patientMap[b.patient_name]={name:b.patient_name,phone:b.phone,count:0,lastDate:"",lastStaff:null};
-            patientMap[b.patient_name].count++;
-            if(b.date > patientMap[b.patient_name].lastDate){
-              patientMap[b.patient_name].lastDate = b.date;
-              patientMap[b.patient_name].lastStaff = b.staff_id;
-            }
+            if(!pm[b.patient_name])pm[b.patient_name]={name:b.patient_name,phone:b.phone,count:0,lastDate:"",lastStaff:null};
+            pm[b.patient_name].count++;
+            if(b.date>pm[b.patient_name].lastDate){pm[b.patient_name].lastDate=b.date;pm[b.patient_name].lastStaff=b.staff_id;}
           });
-          const patients = Object.values(patientMap).sort((a,b)=>b.count-a.count);
-          return (
+          const patients=Object.values(pm).sort((a,b)=>b.count-a.count);
+          return(
             <div>
-              <div style={{marginBottom:12,fontSize:13,color:"#9ca3af",fontWeight:600}}>患者数：{patients.length}名</div>
+              <div style={{marginBottom:12,fontSize:13,color:"#64748b",fontWeight:700}}>患者数：{patients.length}名</div>
               {patients.map(p=>{
-                const s = STAFF_ACCOUNTS.find(x=>x.id===p.lastStaff)||{color:"#888",name:"不明",initial:"？"};
-                return (
-                  <div key={p.name} style={{background:"white",borderRadius:10,padding:"14px 16px",marginBottom:8,boxShadow:"0 1px 6px rgba(0,0,0,0.06)",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
-                    <div style={{flex:1}}>
-                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                        <span style={{fontWeight:800,fontSize:15,color:"#1e3a5f"}}>{p.name}</span>
-                        {p.count>=2&&<span style={{background:"#fef3c7",color:"#d97706",borderRadius:6,padding:"2px 8px",fontSize:11,fontWeight:700}}>{p.count}回来院</span>}
-                        {p.count===1&&<span style={{background:"#f3f4f6",color:"#9ca3af",borderRadius:6,padding:"2px 8px",fontSize:11,fontWeight:600}}>初回</span>}
+                const s=STAFF_ACCOUNTS.find(x=>x.id===p.lastStaff)||{color:"#888",name:"不明",initial:"？"};
+                return(
+                  <div key={p.name} className="card" style={{marginBottom:8}}>
+                    <div style={{padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                      <div style={{display:"flex",alignItems:"center",gap:12,flex:1}}>
+                        <div style={{width:42,height:42,borderRadius:12,background:`linear-gradient(135deg,${s.color},${s.color}99)`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:16,flexShrink:0,boxShadow:`0 3px 8px ${s.color}44`}}>{p.name.charAt(0)}</div>
+                        <div>
+                          <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
+                            <span style={{fontWeight:800,fontSize:15,color:"#1e293b"}}>{p.name}</span>
+                            {p.count>=2?<span className="badge badge-yellow">{p.count}回来院</span>:<span className="badge badge-gray">初回</span>}
+                          </div>
+                          <div style={{fontSize:12,color:"#64748b"}}>最終：{p.lastDate}　前回担当：{s.name}</div>
+                          {p.phone&&<div style={{fontSize:12,color:"#94a3b8"}}>{p.phone}</div>}
+                        </div>
                       </div>
-                      <div style={{fontSize:12,color:"#9ca3af"}}>最終来院：{p.lastDate}　前回担当：{s.name}</div>
-                      <div style={{fontSize:12,color:"#9ca3af"}}>{p.phone}</div>
+                      <button onClick={()=>setHistoryPatient(p.name)} className="btn btn-primary btn-sm" style={{whiteSpace:"nowrap",flexShrink:0}}>履歴を見る</button>
                     </div>
-                    <button onClick={()=>setHistoryPatient(p.name)} style={{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",color:"white",border:"none",borderRadius:8,padding:"8px 14px",cursor:"pointer",fontWeight:700,fontSize:13,whiteSpace:"nowrap"}}>
-                      📋 履歴を見る
-                    </button>
                   </div>
                 );
               })}
@@ -651,109 +737,108 @@ function Dashboard({user,onLogout}){
           <div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12,marginBottom:16}}>
               {[
-                {label:"本日の予約",value:`${todayCount}件`,icon:"📅",color:"#2563eb"},
-                {label:"本日の休憩",value:`${todayBreakCount}件`,icon:"☕",color:"#9ca3af"},
-                {label:"総予約数",value:`${bookings.length}件`,icon:"📋",color:"#d97706"},
-                {label:"患者数",value:`${Object.keys(bookings.reduce((a,b)=>{a[b.patient_name]=1;return a},{})).length}名`,icon:"👥",color:"#059669"},
+                {label:"本日の予約",value:`${todayCount}件`,color:"#2563eb"},
+                {label:"本日の休憩",value:`${todayBreakCount}件`,color:"#64748b"},
+                {label:"総予約数",value:`${bookings.length}件`,color:"#d97706"},
+                {label:"患者数",value:`${Object.keys(bookings.reduce((a,b)=>{a[b.patient_name]=1;return a},{})).length}名`,color:"#059669"},
               ].map(item=>(
-                <div key={item.label} style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 1px 6px rgba(0,0,0,0.06)",borderTop:`3px solid ${item.color}`}}>
-                  <div style={{fontSize:22}}>{item.icon}</div>
-                  <div style={{fontSize:26,fontWeight:800,color:item.color,margin:"6px 0 2px"}}>{item.value}</div>
-                  <div style={{fontSize:12,color:"#9ca3af"}}>{item.label}</div>
+                <div key={item.label} className="stat-card" style={{borderTopColor:item.color}}>
+                  <div style={{fontSize:28,fontWeight:800,color:item.color,margin:"4px 0 4px"}}>{item.value}</div>
+                  <div style={{fontSize:12,color:"#94a3b8",fontWeight:600}}>{item.label}</div>
                 </div>
               ))}
             </div>
-            <div style={{background:"white",borderRadius:12,padding:16,boxShadow:"0 1px 6px rgba(0,0,0,0.06)"}}>
-              <div style={{fontWeight:700,fontSize:14,color:"#1e3a5f",marginBottom:14}}>スタッフ別 本日の予約数</div>
-              {STAFF_ACCOUNTS.map(s=>{
-                const cnt=bookings.filter(b=>b.date===todayStr&&b.staff_id===s.id).length;
-                const bcnt=breaks.filter(b=>b.date===todayStr&&b.staff_id===s.id).length;
-                return <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-                  <div style={{width:32,height:32,borderRadius:"50%",background:s.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:13,flexShrink:0}}>{s.initial}</div>
-                  <div style={{flex:1}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                      <span style={{fontSize:13,fontWeight:600}}>{s.name}</span>
-                      <span style={{fontSize:12}}><span style={{color:s.color,fontWeight:700}}>{cnt}件</span>{bcnt>0&&<span style={{color:"#9ca3af",marginLeft:6}}>☕{bcnt}</span>}</span>
+            <div className="card">
+              <div style={{padding:"14px 16px"}}>
+                <div style={{fontWeight:800,fontSize:14,color:"#1e3a5f",marginBottom:14}}>スタッフ別 本日の予約数</div>
+                {STAFF_ACCOUNTS.map(s=>{
+                  const cnt=bookings.filter(b=>b.date===todayStr&&b.staff_id===s.id).length;
+                  const bcnt=breaks.filter(b=>b.date===todayStr&&b.staff_id===s.id).length;
+                  return <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+                    <div style={{width:34,height:34,borderRadius:10,background:`linear-gradient(135deg,${s.color},${s.color}99)`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:13,flexShrink:0,boxShadow:`0 2px 8px ${s.color}44`}}>{s.initial}</div>
+                    <div style={{flex:1}}>
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                        <span style={{fontSize:13,fontWeight:700,color:"#1e293b"}}>{s.name}</span>
+                        <span style={{fontSize:13}}><span style={{color:s.color,fontWeight:800}}>{cnt}件</span>{bcnt>0&&<span style={{color:"#94a3b8",marginLeft:6,fontSize:12}}>休憩{bcnt}</span>}</span>
+                      </div>
+                      <div style={{height:8,background:"#f1f5f9",borderRadius:4,overflow:"hidden"}}>
+                        <div style={{height:"100%",width:`${Math.min(cnt*20,100)}%`,background:`linear-gradient(90deg,${s.color},${s.color}99)`,borderRadius:4,transition:"width .3s"}}></div>
+                      </div>
                     </div>
-                    <div style={{height:6,background:"#f0f0f0",borderRadius:3}}>
-                      <div style={{height:"100%",width:`${Math.min(cnt*20,100)}%`,background:s.color,borderRadius:3}}></div>
-                    </div>
-                  </div>
-                </div>;
-              })}
+                  </div>;
+                })}
+              </div>
             </div>
           </div>
         )}
 
         {/* 予約フォーム */}
         {view==="form"&&form&&(
-          <div style={{background:"white",borderRadius:12,padding:22,boxShadow:"0 2px 12px rgba(0,0,0,0.08)",maxWidth:480}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
-              <h2 style={{margin:0,fontSize:17,color:"#1e3a5f"}}>{editId!==null?"予約を編集":"新規予約"}</h2>
-              <button onClick={()=>setView("calendar")} style={{background:"none",border:"none",fontSize:20,cursor:"pointer",color:"#aaa"}}>✕</button>
+          <div className="card" style={{maxWidth:480,padding:22}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+              <div style={{fontSize:17,fontWeight:800,color:"#1e3a5f"}}>{editId!==null?"予約を編集":"新規予約"}</div>
+              <button onClick={()=>setView("calendar")} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#94a3b8",lineHeight:1}}>✕</button>
             </div>
-            {conflict&&<div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#dc2626",fontSize:13,fontWeight:600}}>⚠️ ダブルブッキングになります</div>}
+            {conflict&&<div style={{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#dc2626",fontSize:13,fontWeight:700}}>ダブルブッキングになります</div>}
             {[
               {label:"患者名 *",key:"patient_name",type:"text",placeholder:"山本 花子"},
               {label:"電話番号",key:"phone",type:"tel",placeholder:"090-0000-0000"},
               {label:"日付",key:"date",type:"date"},
               {label:"時間",key:"time",type:"time",step:"600"},
             ].map(({label,key,type,placeholder,step})=>(
-              <div key={key} style={{marginBottom:12}}>
-                <label style={{display:"block",fontSize:13,color:"#555",marginBottom:4,fontWeight:600}}>{label}</label>
-                <input type={type} step={step} value={form[key]||""} placeholder={placeholder} onChange={e=>{setForm(f=>({...f,[key]:e.target.value}));setConflict(false);}} style={{width:"100%",padding:"9px 12px",border:"1.5px solid #ddd",borderRadius:8,fontSize:14,boxSizing:"border-box"}}/>
+              <div key={key} className="form-group">
+                <label className="form-label">{label}</label>
+                <input type={type} step={step} className="form-input" value={form[key]||""} placeholder={placeholder} onChange={e=>{setForm(f=>({...f,[key]:e.target.value}));setConflict(false);}}/>
               </div>
             ))}
             {isAdmin&&(
-              <div style={{marginBottom:12}}>
-                <label style={{display:"block",fontSize:13,color:"#555",marginBottom:4,fontWeight:600}}>担当スタッフ</label>
+              <div className="form-group">
+                <label className="form-label">担当スタッフ</label>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                   {STAFF_ACCOUNTS.map(s=>(
-                    <button key={s.id} onClick={()=>{setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} style={{background:form.staff_id===s.id?s.color:"white",color:form.staff_id===s.id?"white":"#444",border:`1.5px solid ${s.color}`,borderRadius:20,padding:"5px 10px",cursor:"pointer",fontSize:12,fontWeight:600}}>{s.name}</button>
+                    <button key={s.id} onClick={()=>{setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} className="btn" style={{background:form.staff_id===s.id?s.color:"white",color:form.staff_id===s.id?"white":"#374151",border:`2px solid ${s.color}`,borderRadius:20,padding:"5px 12px",fontSize:12,fontWeight:700,boxShadow:form.staff_id===s.id?`0 2px 8px ${s.color}55`:"none"}}>{s.name}</button>
                   ))}
                 </div>
               </div>
             )}
-            <div style={{marginBottom:12}}>
-              <label style={{display:"block",fontSize:13,color:"#555",marginBottom:4,fontWeight:600}}>メニュー</label>
-              <select value={form.menu} onChange={e=>setForm(f=>({...f,menu:e.target.value}))} style={{width:"100%",padding:"9px 12px",border:"1.5px solid #ddd",borderRadius:8,fontSize:14}}>
+            <div className="form-group">
+              <label className="form-label">メニュー</label>
+              <select className="form-input" value={form.menu} onChange={e=>setForm(f=>({...f,menu:e.target.value}))}>
                 {MENUS.map(m=><option key={m}>{m}</option>)}
               </select>
             </div>
-            <div style={{marginBottom:18,display:"flex",alignItems:"center",gap:8}}>
-              <input type="checkbox" id="ln" checked={!!form.line_notify} onChange={e=>setForm(f=>({...f,line_notify:e.target.checked}))} style={{width:16,height:16}}/>
-              <label htmlFor="ln" style={{fontSize:13,color:"#555",fontWeight:600}}>🟢 LINEリマインドを前日に送る</label>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20,padding:"10px 12px",background:"#f0fdf4",borderRadius:8,border:"1px solid #bbf7d0"}}>
+              <input type="checkbox" id="ln" checked={!!form.line_notify} onChange={e=>setForm(f=>({...f,line_notify:e.target.checked}))} style={{width:16,height:16,accentColor:"#059669"}}/>
+              <label htmlFor="ln" style={{fontSize:13,color:"#059669",fontWeight:700,cursor:"pointer"}}>LINEリマインドを前日に送る</label>
             </div>
             <div style={{display:"flex",gap:10}}>
-              {editId!==null&&<button onClick={()=>setDelConfirm(bookings.find(b=>b.id===editId))} style={{flex:1,background:"#fef2f2",color:"#ef4444",border:"none",borderRadius:8,padding:11,fontWeight:700,cursor:"pointer"}}>削除</button>}
-              <button onClick={save} style={{flex:2,background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",color:"white",border:"none",borderRadius:8,padding:11,fontWeight:700,cursor:"pointer",fontSize:14}}>{editId!==null?"更新する":"予約を登録"}</button>
+              {editId!==null&&<button onClick={()=>setDelConfirm(bookings.find(b=>b.id===editId))} className="btn btn-danger" style={{flex:1,justifyContent:"center",padding:11,fontSize:14}}>削除</button>}
+              <button onClick={save} className="btn btn-primary" style={{flex:2,justifyContent:"center",padding:11,fontSize:14}}>{editId!==null?"更新する":"予約を登録"}</button>
             </div>
           </div>
         )}
       </div>
 
-      {/* 患者履歴モーダル */}
-      {historyPatient && <PatientHistoryModal patientName={historyPatient} bookings={bookings} onClose={()=>setHistoryPatient(null)}/>}
-
+      {historyPatient&&<PatientHistoryModal patientName={historyPatient} bookings={bookings} onClose={()=>setHistoryPatient(null)}/>}
       {showBreakModal&&<BreakModal onClose={()=>setShowBreakModal(false)} bookings={bookings} breaks={breaks} setBreaks={setBreaks}/>}
 
       {delConfirm&&(
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:300,padding:16}}>
-          <div style={{background:"white",borderRadius:14,padding:24,maxWidth:300,width:"100%"}}>
-            <div style={{textAlign:"center",fontSize:36,marginBottom:8}}>🗑️</div>
-            <div style={{fontWeight:700,fontSize:16,textAlign:"center",marginBottom:6}}>削除しますか？</div>
-            <div style={{color:"#666",fontSize:13,textAlign:"center",marginBottom:18}}>{delConfirm.patient_name}さん<br/>{delConfirm.date} {delConfirm.time}</div>
+        <div className="confirm-box">
+          <div style={{background:"white",borderRadius:14,padding:24,maxWidth:300,width:"100%",boxShadow:"0 16px 48px rgba(0,0,0,.2)"}}>
+            <div style={{width:52,height:52,background:"#fef2f2",borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 12px",fontSize:24}}>🗑</div>
+            <div style={{fontWeight:800,fontSize:16,textAlign:"center",marginBottom:6,color:"#1e293b"}}>削除しますか？</div>
+            <div style={{color:"#64748b",fontSize:13,textAlign:"center",marginBottom:20,lineHeight:1.6}}>{delConfirm.patient_name}さん<br/>{delConfirm.date} {delConfirm.time}</div>
             <div style={{display:"flex",gap:10}}>
-              <button onClick={()=>setDelConfirm(null)} style={{flex:1,background:"#f3f4f6",border:"none",borderRadius:8,padding:11,cursor:"pointer",fontWeight:600}}>キャンセル</button>
-              <button onClick={()=>del(delConfirm.id)} style={{flex:1,background:"#ef4444",color:"white",border:"none",borderRadius:8,padding:11,cursor:"pointer",fontWeight:700}}>削除する</button>
+              <button onClick={()=>setDelConfirm(null)} className="btn btn-outline" style={{flex:1,justifyContent:"center",padding:11}}>キャンセル</button>
+              <button onClick={()=>del(delConfirm.id)} className="btn btn-danger" style={{flex:1,justifyContent:"center",padding:11}}>削除する</button>
             </div>
           </div>
         </div>
       )}
 
       {toast&&(
-        <div style={{position:"fixed",bottom:24,left:"50%",transform:"translateX(-50%)",background:toast.type==="delete"?"#1f2937":"#059669",color:"white",padding:"12px 24px",borderRadius:10,fontWeight:600,fontSize:14,zIndex:400,boxShadow:"0 4px 20px rgba(0,0,0,0.2)",whiteSpace:"nowrap"}}>
-          {toast.type==="delete"?"🗑️ ":"✅ "}{toast.msg}
+        <div className="toast" style={{background:toast.type==="delete"?"#1e293b":"#059669",color:"white"}}>
+          {toast.type==="delete"?"削除しました":"✓ "}{toast.msg}
         </div>
       )}
     </div>
