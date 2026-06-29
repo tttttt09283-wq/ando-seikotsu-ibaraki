@@ -1300,152 +1300,140 @@ function Dashboard({user,onLogout}){
             function getWeekStart(d){const day=d.getDay();const mon=new Date(d);mon.setDate(d.getDate()-(day===0?6:day-1));mon.setHours(0,0,0,0);return mon;}
             const weekStart=getWeekStart(baseDate);
             const weekDates=Array.from({length:7},(_,i)=>{const d=new Date(weekStart);d.setDate(weekStart.getDate()+i);return d;});
-            const weekDateStrs=weekDates.map(fmtDate);
-            const isCurrentWeek=weekDateStrs.includes(todayStr);
+            const ds=fmtDate(baseDate);
 
-            function prevWeek(){const d=new Date(baseDate);d.setDate(d.getDate()-7);setBaseDate(d);}
-            function nextWeek(){const d=new Date(baseDate);d.setDate(d.getDate()+7);setBaseDate(d);}
+            function prevWeek(){const d=new Date(weekStart);d.setDate(d.getDate()-7);setBaseDate(d);}
+            function nextWeek(){const d=new Date(weekStart);d.setDate(d.getDate()+7);setBaseDate(d);}
+
+            const MINS=Array.from({length:54},(_,i)=>{const totalMin=i*10,h=9+Math.floor(totalMin/60),m=totalMin%60;if(h>18||(h===18&&m>0))return null;return{h,m,label:`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`};}).filter(Boolean);
+            const TOTAL_MINS=MINS.length;
+            const HEADER_W=100;
+            const screenW=Math.max(window.innerWidth-130-48,600);
+            const CELL_W=Math.max(Math.floor((screenW-HEADER_W)/TOTAL_MINS),12);
 
             const staffList=isAdmin?STAFF_ACCOUNTS:STAFF_ACCOUNTS.filter(s=>s.id===user.id);
             const filteredStaff=selStaff?staffList.filter(s=>s.id===selStaff):staffList;
 
-            // レイアウト定数
-            const TIME_COL_W=44;   // 左端の時間ラベル列
-            const STAFF_ROW_H=56;  // 1スタッフあたりの行高さ
-            const HOURS=Array.from({length:10},(_,i)=>i+9); // 9〜18時
-            const TOTAL_MINS=540;  // 9:00〜18:00
+            function timeToX(timeStr){const[h,m]=timeStr.split(":").map(Number);return((h-9)*60+m)/10*CELL_W;}
+            function durationToW(b){return(b.duration||DURATION[b.menu]||30)/10*CELL_W;}
 
-            // 画面幅から日付列の幅を計算
-            const screenW=Math.max(window.innerWidth-130-48,500);
-            const DAY_COL_W=Math.max(Math.floor((screenW-TIME_COL_W)/7),80);
-
-            // 時間→Y座標（%）
-            function timeToY(timeStr){
-              const[h,m]=timeStr.split(":").map(Number);
-              return ((h-9)*60+m)/TOTAL_MINS*100;
-            }
-            function durationToH(b){
-              return (b.duration||DURATION[b.menu]||30)/TOTAL_MINS*100;
-            }
+            // 30分スロット集計
+            const timeSlots30=[];
+            for(let h=9;h<18;h++){for(let m=0;m<60;m+=30){
+              const label=`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
+              const booked=bookings.filter(b=>{if(b.date!==ds)return false;const bs=toMin(b.time),be=bs+(b.duration||DURATION[b.menu]||30),ss=toMin(label),se=ss+30;return bs<se&&ss<be;}).length;
+              const resting=breaks.filter(b=>b.date===ds&&b.time===label).length;
+              const available=Math.max(0,filteredStaff.length-resting);
+              timeSlots30.push({label,booked,available,x:(h-9)*60/10*CELL_W+m/10*CELL_W,w:30/10*CELL_W});
+            }}
 
             return(
               <div className="card">
-                {/* 週ナビ */}
-                <div style={{padding:"10px 12px",borderBottom:"1px solid #e2e8f0",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                  <button className="cal-nav-btn" onClick={prevWeek}>◀ 前週</button>
-                  <div style={{flex:1,display:"flex",gap:8,alignItems:"center",justifyContent:"center",flexWrap:"wrap"}}>
-                    <span style={{fontWeight:800,fontSize:14,color:"#1e3a5f"}}>
-                      {weekDates[0].getFullYear()}年{weekDates[0].getMonth()+1}月{weekDates[0].getDate()}日 〜 {weekDates[6].getMonth()+1}月{weekDates[6].getDate()}日
-                    </span>
-                    {!isCurrentWeek&&<button className="btn btn-outline btn-xs" onClick={()=>setBaseDate(new Date())}>今週</button>}
-                    <input type="date" value={fmtDate(baseDate)} onChange={e=>{if(e.target.value)setBaseDate(new Date(e.target.value+"T00:00:00"));}}
-                      style={{padding:"3px 8px",border:"1.5px solid #e2e8f0",borderRadius:7,fontSize:12,color:"#374151",cursor:"pointer"}}/>
-                  </div>
-                  <button className="cal-nav-btn" onClick={nextWeek}>翌週 ▶</button>
+                {/* 曜日タブナビ */}
+                <div style={{display:"flex",alignItems:"center",background:"linear-gradient(135deg,#0f2744,#1e4d8c)",padding:"8px 10px",gap:4,overflowX:"auto"}}>
+                  <button onClick={prevWeek} style={{background:"rgba(255,255,255,.15)",border:"none",color:"white",borderRadius:8,width:32,height:32,cursor:"pointer",fontWeight:800,fontSize:14,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>◀</button>
+                  {weekDates.map(d=>{
+                    const dStr=fmtDate(d);
+                    const isSelected=dStr===ds;
+                    const isToday=dStr===todayStr;
+                    const isSun=d.getDay()===0,isSat=d.getDay()===6;
+                    const cnt=bookings.filter(b=>b.date===dStr).length;
+                    return(
+                      <button key={dStr} onClick={()=>setBaseDate(new Date(dStr+"T00:00:00"))}
+                        style={{flex:1,minWidth:72,padding:"6px 4px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:800,fontSize:12,textAlign:"center",transition:"all .15s",
+                          background:isSelected?"#d97706":isToday?"rgba(255,255,255,.25)":"rgba(255,255,255,.1)",
+                          color:"white",boxShadow:isSelected?"0 2px 8px rgba(217,119,6,.5)":"none"}}>
+                        <div>{d.getMonth()+1}/{d.getDate()}({DAYS_JP[d.getDay()]})</div>
+                        {cnt>0&&<div style={{fontSize:10,opacity:.8,marginTop:1}}>{cnt}件</div>}
+                      </button>
+                    );
+                  })}
+                  <button onClick={nextWeek} style={{background:"rgba(255,255,255,.15)",border:"none",color:"white",borderRadius:8,width:32,height:32,cursor:"pointer",fontWeight:800,fontSize:14,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>▶</button>
+                </div>
+
+                {/* 日付ピッカー */}
+                <div style={{padding:"6px 12px",borderBottom:"1px solid #e2e8f0",display:"flex",alignItems:"center",gap:8,background:"#f8fafc"}}>
+                  <span style={{fontSize:13,fontWeight:800,color:"#1e3a5f"}}>{baseDate.getFullYear()}年{baseDate.getMonth()+1}月{baseDate.getDate()}日（{DAYS_JP[baseDate.getDay()]}）</span>
+                  {ds!==todayStr&&<button className="btn btn-outline btn-xs" onClick={()=>setBaseDate(new Date())}>今日</button>}
+                  <input type="date" value={ds} onChange={e=>{if(e.target.value)setBaseDate(new Date(e.target.value+"T00:00:00"));}}
+                    style={{marginLeft:"auto",padding:"3px 8px",border:"1.5px solid #e2e8f0",borderRadius:7,fontSize:12,color:"#374151",cursor:"pointer"}}/>
                 </div>
 
                 <div style={{overflowX:"auto"}}>
-                  <div style={{minWidth:TIME_COL_W+DAY_COL_W*7}}>
+                  <div style={{minWidth:HEADER_W+TOTAL_MINS*CELL_W+20}}>
 
-                    {/* 曜日ヘッダー */}
-                    <div style={{display:"flex",borderBottom:"2px solid #e2e8f0",background:"#f8fafc",position:"sticky",top:0,zIndex:10}}>
-                      <div style={{width:TIME_COL_W,flexShrink:0,borderRight:"1px solid #e2e8f0"}}/>
-                      {weekDates.map(d=>{
-                        const ds=fmtDate(d);
-                        const isToday=ds===todayStr;
-                        const isSun=d.getDay()===0,isSat=d.getDay()===6;
-                        const cnt=bookings.filter(b=>b.date===ds).length;
-                        return(
-                          <div key={ds} style={{width:DAY_COL_W,flexShrink:0,borderRight:"1px solid #e2e8f0",padding:"6px 4px",textAlign:"center",background:isToday?"#eff6ff":"white",cursor:"pointer"}}
-                            onClick={()=>setBaseDate(d)}>
-                            <div style={{fontWeight:800,fontSize:12,color:isToday?"#2563eb":isSun?"#ef4444":isSat?"#7c3aed":"#374151"}}>
-                              {d.getMonth()+1}/{d.getDate()}（{DAYS_JP[d.getDay()]}）
-                            </div>
-                            {cnt>0&&<div style={{fontSize:10,color:isToday?"#2563eb":"#94a3b8",fontWeight:600}}>{cnt}件</div>}
-                            {isToday&&<div style={{width:6,height:6,borderRadius:"50%",background:"#2563eb",margin:"2px auto 0"}}/>}
+                    {/* 対応可能 / 予約数 行 */}
+                    <div style={{display:"flex",borderBottom:"1px solid #e2e8f0"}}>
+                      <div style={{width:HEADER_W,flexShrink:0,borderRight:"1px solid #e2e8f0",background:"#f8fafc",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",padding:"3px 4px",gap:1}}>
+                        <div style={{display:"flex",alignItems:"center",gap:3}}><div style={{width:8,height:8,borderRadius:2,background:"#2563eb"}}></div><span style={{fontSize:9,color:"#64748b",fontWeight:700}}>対応可能</span></div>
+                        <div style={{display:"flex",alignItems:"center",gap:3}}><div style={{width:8,height:8,borderRadius:2,background:"#059669"}}></div><span style={{fontSize:9,color:"#64748b",fontWeight:700}}>予約数</span></div>
+                      </div>
+                      <div style={{position:"relative",flex:1,height:34}}>
+                        {timeSlots30.map(slot=>(
+                          <div key={slot.label} style={{position:"absolute",left:slot.x,top:0,width:slot.w-1,height:"100%",display:"flex",flexDirection:"column",borderRight:"1px solid #e2e8f0"}}>
+                            <div style={{flex:1,background:"#2563eb",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:10,fontWeight:800,color:"white"}}>{slot.available}</span></div>
+                            <div style={{flex:1,background:"#059669",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:10,fontWeight:800,color:"white"}}>{slot.booked}</span></div>
                           </div>
-                        );
-                      })}
+                        ))}
+                      </div>
                     </div>
 
-                    {/* スタッフごとのブロック */}
-                    {filteredStaff.map(staff=>(
-                      <div key={staff.id} style={{display:"flex",borderBottom:"3px solid #e2e8f0"}}>
-
-                        {/* 左：スタッフ名＋時間ラベル */}
-                        <div style={{width:TIME_COL_W,flexShrink:0,borderRight:"1px solid #e2e8f0",background:"#fafbfc",position:"relative"}}>
-                          {/* スタッフバッジ */}
-                          <div style={{padding:"6px 4px",borderBottom:"1px solid #f1f5f9",textAlign:"center",background:"white",position:"sticky",top:36,zIndex:5}}>
-                            <div style={{width:28,height:28,borderRadius:8,background:`linear-gradient(135deg,${staff.color},${staff.color}99)`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:12,margin:"0 auto 2px",boxShadow:`0 2px 5px ${staff.color}44`}}>{staff.initial}</div>
-                            <div style={{fontSize:8,fontWeight:700,color:"#475569"}}>{staff.name.replace(" 先生","")}</div>
+                    {/* 時間ヘッダー */}
+                    <div style={{display:"flex",borderBottom:"2px solid #e2e8f0",background:"#f8fafc"}}>
+                      <div style={{width:HEADER_W,flexShrink:0,padding:"5px 8px",fontWeight:700,fontSize:11,color:"#64748b",borderRight:"1px solid #e2e8f0"}}>スタッフ</div>
+                      <div style={{position:"relative",height:24,flex:1}}>
+                        {MINS.filter((_,i)=>i%3===0).map(({h,m,label})=>(
+                          <div key={label} style={{position:"absolute",left:(h-9)*60/10*CELL_W+m/10*CELL_W,top:0,height:"100%",borderLeft:"1px solid #e2e8f0",paddingLeft:2,display:"flex",alignItems:"center"}}>
+                            <span style={{fontSize:9,fontWeight:600,color:"#94a3b8",whiteSpace:"nowrap"}}>{label}</span>
                           </div>
-                          {/* 時間ラベル */}
-                          <div style={{position:"relative",height:HOURS.length*STAFF_ROW_H}}>
-                            {HOURS.map(h=>(
-                              <div key={h} style={{position:"absolute",top:(h-9)*STAFF_ROW_H,left:0,right:0,height:STAFF_ROW_H,borderTop:"1px solid #e2e8f0",display:"flex",alignItems:"flex-start",justifyContent:"center",paddingTop:2}}>
-                                <span style={{fontSize:9,color:"#94a3b8",fontWeight:600}}>{h}:00</span>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* スタッフ行 */}
+                    {filteredStaff.map(staff=>{
+                      const staffBookings=bookings.filter(b=>b.date===ds&&b.staff_id===staff.id);
+                      const staffBreaks=breaks.filter(b=>b.date===ds&&b.staff_id===staff.id);
+                      return(
+                        <div key={staff.id} style={{display:"flex",borderBottom:"1px solid #f1f5f9",minHeight:52}}>
+                          <div style={{width:HEADER_W,flexShrink:0,padding:"6px 8px",borderRight:"1px solid #e2e8f0",background:"#fafbfc",display:"flex",alignItems:"center",gap:6}}>
+                            <div style={{width:26,height:26,borderRadius:7,background:`linear-gradient(135deg,${staff.color},${staff.color}99)`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:11,flexShrink:0,boxShadow:`0 2px 5px ${staff.color}44`}}>{staff.initial}</div>
+                            <div>
+                              <div style={{fontWeight:700,fontSize:11,color:"#1e293b",lineHeight:1.2}}>{staff.name}</div>
+                              <div style={{fontSize:10,color:staff.color,fontWeight:700}}>{staffBookings.length}件</div>
+                            </div>
+                          </div>
+                          <div style={{position:"relative",flex:1,minHeight:52,cursor:"pointer",background:ds===todayStr?"#fafeff":"white"}}
+                            onClick={e=>{
+                              const rect=e.currentTarget.getBoundingClientRect();
+                              const x=e.clientX-rect.left;
+                              const totalMinFromStart=Math.round(x/CELL_W)*10;
+                              const h=9+Math.floor(totalMinFromStart/60);
+                              const m=totalMinFromStart%60;
+                              if(h>=9&&h<=17){openAdd(ds,`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`);setForm(f=>f?{...f,staff_id:staff.id}:f);}
+                            }}>
+                            {MINS.filter((_,i)=>i%3===0).map(({h,m,label})=>(
+                              <div key={label} style={{position:"absolute",left:(h-9)*60/10*CELL_W+m/10*CELL_W,top:0,bottom:0,borderLeft:"1px solid #f1f5f9",pointerEvents:"none"}}/>
+                            ))}
+                            {staffBreaks.map(br=>(
+                              <div key={`br-${br.id}`} style={{position:"absolute",left:timeToX(br.time),top:4,bottom:4,width:CELL_W*3,background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1,pointerEvents:"none"}}>
+                                <span style={{fontSize:9,color:"#94a3b8",fontWeight:600}}>{br.reason}</span>
                               </div>
                             ))}
+                            {staffBookings.map(b=>{
+                              const x=timeToX(b.time);const w=durationToW(b);const cnt=visitCounts[b.id]||1;
+                              return(
+                                <div key={b.id} onClick={e=>{e.stopPropagation();setBookingPopup({booking:b,x:e.clientX,y:e.clientY});}}
+                                  style={{position:"absolute",left:x,top:3,bottom:3,width:Math.max(w-2,20),background:`linear-gradient(135deg,${staff.color},${staff.color}bb)`,borderRadius:6,padding:"2px 5px",cursor:"pointer",boxShadow:`0 2px 6px ${staff.color}44`,display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden",zIndex:2}}>
+                                  <div style={{fontWeight:800,fontSize:10,color:"white",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.patient_name}</div>
+                                  <div style={{fontSize:9,color:"rgba(255,255,255,.85)"}}>{b.time}{cnt>1&&<span style={{marginLeft:2,background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}</div>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
-
-                        {/* 右：7日分の列 */}
-                        <div style={{display:"flex",flex:1}}>
-                          {weekDates.map(d=>{
-                            const ds=fmtDate(d);
-                            const isToday=ds===todayStr;
-                            const dayBookings=bookings.filter(b=>b.date===ds&&b.staff_id===staff.id);
-                            const dayBreaks=breaks.filter(b=>b.date===ds&&b.staff_id===staff.id);
-                            const totalH=HOURS.length*STAFF_ROW_H;
-                            return(
-                              <div key={ds} style={{width:DAY_COL_W,flexShrink:0,borderRight:"1px solid #e2e8f0",position:"relative",height:totalH,background:isToday?"#fafeff":"white",cursor:"pointer"}}
-                                onClick={e=>{
-                                  const rect=e.currentTarget.getBoundingClientRect();
-                                  const y=e.clientY-rect.top;
-                                  const totalMin=Math.round((y/totalH)*TOTAL_MINS/10)*10;
-                                  const h=9+Math.floor(totalMin/60);
-                                  const m=totalMin%60;
-                                  if(h>=9&&h<=17){openAdd(ds,`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`);setForm(f=>f?{...f,staff_id:staff.id}:f);}
-                                }}>
-                                {/* グリッド線 */}
-                                {HOURS.map(h=>(
-                                  <div key={h} style={{position:"absolute",top:(h-9)*STAFF_ROW_H,left:0,right:0,borderTop:`1px solid ${isToday?"#e8f0fe":"#f1f5f9"}`,pointerEvents:"none"}}/>
-                                ))}
-                                {/* 30分破線 */}
-                                {HOURS.map(h=>(
-                                  <div key={`${h}h`} style={{position:"absolute",top:(h-9)*STAFF_ROW_H+STAFF_ROW_H/2,left:0,right:0,borderTop:"1px dashed #f1f5f9",pointerEvents:"none"}}/>
-                                ))}
-                                {/* 休憩 */}
-                                {dayBreaks.map(br=>{
-                                  const[bh,bm]=br.time.split(":").map(Number);
-                                  const top=((bh-9)*60+bm)/TOTAL_MINS*totalH;
-                                  return(
-                                    <div key={br.id} style={{position:"absolute",top,left:2,right:2,height:STAFF_ROW_H/2,background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1,pointerEvents:"none"}}>
-                                      <span style={{fontSize:8,color:"#94a3b8",fontWeight:600}}>{br.reason}</span>
-                                    </div>
-                                  );
-                                })}
-                                {/* 予約ブロック */}
-                                {dayBookings.map(b=>{
-                                  const[bh,bm]=b.time.split(":").map(Number);
-                                  const top=((bh-9)*60+bm)/TOTAL_MINS*totalH;
-                                  const dur=b.duration||DURATION[b.menu]||30;
-                                  const height=Math.max(dur/TOTAL_MINS*totalH,18);
-                                  const cnt=visitCounts[b.id]||1;
-                                  return(
-                                    <div key={b.id} onClick={e=>{e.stopPropagation();setBookingPopup({booking:b,x:e.clientX,y:e.clientY});}}
-                                      style={{position:"absolute",top,left:2,right:2,height,background:`linear-gradient(135deg,${staff.color},${staff.color}cc)`,borderRadius:5,padding:"2px 4px",cursor:"pointer",boxShadow:`0 1px 4px ${staff.color}44`,zIndex:2,overflow:"hidden"}}>
-                                      <div style={{fontWeight:800,fontSize:9,color:"white",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.patient_name}</div>
-                                      <div style={{fontSize:8,color:"rgba(255,255,255,.85)"}}>{b.time}{cnt>1&&<span style={{marginLeft:2,background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}</div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               </div>
