@@ -85,6 +85,17 @@ const STAFF_LIST=[{id:1,name:"岩永",color:"#2563eb"},{id:2,name:"大皿",color
 const STAFF={1:"岩永",2:"大皿",3:"定井",4:"細永",5:"広川"};
 const INSURANCE_PRICES={"無料施術体験会（60分）":0,"初診（60分）":0,"再診（30分）":0,"鍼灸（45分）":580,"骨盤矯正（40分）":580,"マッサージ（30分）":380};
 const JIFEE_PRICES={"矯正NE":3300,"矯正KO":2200,"ST":1650,"Hi":5500,"鍼":3300,"他":0};
+
+const TIME_OPTS = (()=>{
+  const opts=[];
+  for(let h=9;h<=18;h++){
+    for(let m=0;m<60;m+=10){
+      if(h===18&&m>0) break;
+      opts.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
+    }
+  }
+  return opts;
+})();
 const PAY_METHODS=[{id:"現金",icon:"💴"},{id:"カード",icon:"💳"},{id:"PayPay",icon:"📱"}];
 const INSURANCE_RATES={"3割":0.3,"2割":0.2,"1割":0.1};
 
@@ -327,7 +338,10 @@ function renderNextBookings(){
               </div>
               <div>
                 <span class="nb-label">🕐 時間</span>
-                <input type="time" class="nb-input" step="600" value="${nb.time}" onchange="updateNB(${i},'time',this.value)"/>
+                <select class="nb-input" onchange="updateNB(${i},'time',this.value)">
+                  <option value="">選択</option>
+                  ${TIME_OPTS.map(t=>`<option value="${t}" ${nb.time===t?'selected':''}>${t}</option>`).join('')}
+                </select>
               </div>
             </div>
 
