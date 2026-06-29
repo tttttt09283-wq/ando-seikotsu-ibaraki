@@ -200,7 +200,7 @@ function render() {
     const btn = document.createElement("button");
     btn.className = "btn-primary";
     btn.textContent = "← 管理画面へ戻る";
-    btn.onclick = () => { location.href = "/index.html"; };
+    btn.onclick = () => { location.href = "/pos.html?id=" + booking.id; };
     wrap.appendChild(btn);
 
     root.appendChild(wrap);
