@@ -491,33 +491,246 @@ function StatsPanel({bookings,payments,todayStr}){
           </div>
         </div>
       )}
-      {tab==="retention"&&(
-        <div>
-          <div style={{marginBottom:14}}><input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)} style={{padding:"8px 12px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontWeight:700}}/></div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16}}>
-            {[{label:"新患数",value:`${monthRetention.newPatients}名`,color:"#2563eb"},{label:"継続数",value:`${monthRetention.retained}名`,color:"#059669"},{label:"継続率",value:`${monthRetention.rate}%`,color:"#d97706"}].map(item=>(<div key={item.label} className="stat-card" style={{borderTopColor:item.color,padding:14,textAlign:"center"}}><div style={{fontSize:24,fontWeight:800,color:item.color}}>{item.value}</div><div style={{fontSize:11,color:"#94a3b8",fontWeight:600,marginTop:2}}>{item.label}</div></div>))}
-          </div>
-          <div className="card" style={{marginBottom:12}}>
-            <div style={{padding:"14px 16px"}}>
-              <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:4}}>{selMonth} 新患継続状況</div>
-              <div style={{fontSize:12,color:"#64748b",marginBottom:16}}>新患：初回来院した患者　継続：2回以上来院した患者</div>
-              <div style={{marginBottom:16}}>
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><span style={{fontSize:13,fontWeight:700}}>継続率</span><span style={{fontSize:18,fontWeight:800,color:"#d97706"}}>{monthRetention.rate}%</span></div>
-                <div style={{height:12,background:"#f1f5f9",borderRadius:6,overflow:"hidden"}}><div style={{height:"100%",width:`${monthRetention.rate}%`,background:"linear-gradient(90deg,#d97706,#f59e0b)",borderRadius:6,transition:"width .5s"}}></div></div>
+      {tab==="retention"&&(()=>{
+        const todayD=new Date();
+        // 全予約から患者ごとの来院履歴を構築（全期間）
+        function buildPatientMap(bks){
+          const pm={};
+          bks.forEach(b=>{
+            if(!pm[b.patient_name]) pm[b.patient_name]={dates:[],staffIds:[]};
+            pm[b.patient_name].dates.push(b.date);
+            pm[b.patient_name].staffIds.push(b.staff_id);
+          });
+          Object.values(pm).forEach(p=>{
+            const combined=p.dates.map((d,i)=>({date:d,staff:p.staffIds[i]})).sort((a,b)=>a.date.localeCompare(b.date));
+            p.sorted=combined;
+            p.totalVisits=combined.length;
+            p.lastDate=combined[combined.length-1].date;
+            p.lastStaff=combined[combined.length-1].staff;
+            // 初回担当
+            p.firstStaff=combined[0].staff;
+          });
+          return pm;
+        }
+
+        const allPM=buildPatientMap(bookings);
+        const monthPM=buildPatientMap(monthBookings);
+
+        // 離反判定：最終来院から30日以上
+        function isChurned(lastDate){
+          const last=new Date(lastDate+"T00:00:00");
+          const diffDays=Math.floor((todayD-last)/(1000*60*60*24));
+          return diffDays>=30;
+        }
+
+        // スタッフ別集計（全期間の担当ベース：初回担当スタッフで分類）
+        function calcStaffRetention(pm){
+          return STAFF_ACCOUNTS.map(s=>{
+            // 初回担当が自分の患者
+            const myPatients=Object.values(pm).filter(p=>p.firstStaff===s.id);
+            const total=myPatients.length;
+            const retained2=myPatients.filter(p=>p.totalVisits>=2).length;
+            const retained8=myPatients.filter(p=>p.totalVisits>=8).length;
+            const churned=myPatients.filter(p=>isChurned(p.lastDate)).length;
+            // 2〜8回ごとの継続数
+            const visitDist={};
+            for(let v=1;v<=8;v++) visitDist[v]=myPatients.filter(p=>p.totalVisits>=v).length;
+            // 2→3, 3→4...の継続率
+            const stepRates={};
+            for(let v=2;v<=8;v++){
+              const prev=visitDist[v-1];
+              stepRates[v]=prev>0?Math.round(visitDist[v]/prev*100):0;
+            }
+            return {
+              ...s, total, retained2, retained8, churned,
+              rate2:total>0?Math.round(retained2/total*100):0,
+              churnRate:total>0?Math.round(churned/total*100):0,
+              visitDist, stepRates,
+            };
+          });
+        }
+
+        const staffStats=calcStaffRetention(allPM);
+        const staffStatsMonth=calcStaffRetention(monthPM);
+
+        // 全体サマリー（月次）
+        const totalNew=Object.values(monthPM).length;
+        const totalRetained=Object.values(monthPM).filter(p=>p.totalVisits>=2).length;
+        const totalRate=totalNew>0?Math.round(totalRetained/totalNew*100):0;
+        const totalChurned=Object.values(allPM).filter(p=>isChurned(p.lastDate)).length;
+
+        return(
+          <div>
+            <div style={{marginBottom:14}}>
+              <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)} style={{padding:"8px 12px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontWeight:700}}/>
+              <span style={{fontSize:11,color:"#94a3b8",marginLeft:10}}>※月次は選択月に初来院した患者が対象。離反は全期間集計。</span>
+            </div>
+
+            {/* 全体サマリー */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
+              {[
+                {label:"新患数",value:`${totalNew}名`,color:"#2563eb"},
+                {label:"2回目継続",value:`${totalRetained}名`,color:"#059669"},
+                {label:"継続率",value:`${totalRate}%`,color:"#d97706"},
+                {label:"離反患者(全期間)",value:`${totalChurned}名`,color:"#ef4444"},
+              ].map(item=>(
+                <div key={item.label} className="stat-card" style={{borderTopColor:item.color,padding:12,textAlign:"center"}}>
+                  <div style={{fontSize:20,fontWeight:800,color:item.color}}>{item.value}</div>
+                  <div style={{fontSize:10,color:"#94a3b8",fontWeight:600,marginTop:2}}>{item.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* スタッフ別カード */}
+            <div style={{fontWeight:800,fontSize:14,color:"#1e3a5f",marginBottom:10}}>スタッフ別 新患継続分析（{selMonth}・初回担当ベース）</div>
+            {staffStatsMonth.map(s=>(
+              <div key={s.id} className="card" style={{marginBottom:14}}>
+                <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",display:"flex",alignItems:"center",gap:10,background:`linear-gradient(135deg,${s.color}11,white)`}}>
+                  <div style={{width:36,height:36,borderRadius:10,background:`linear-gradient(135deg,${s.color},${s.color}99)`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:15,boxShadow:`0 2px 8px ${s.color}44`}}>{s.initial}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:800,fontSize:15,color:"#1e293b"}}>{s.name}</div>
+                    <div style={{fontSize:12,color:"#64748b"}}>担当新患：{s.total}名</div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{fontSize:22,fontWeight:800,color:s.total>0?s.color:"#d1d5db"}}>{s.rate2}%</div>
+                    <div style={{fontSize:10,color:"#94a3b8"}}>2回目継続率</div>
+                  </div>
+                </div>
+                <div style={{padding:"12px 16px"}}>
+                  {/* 基本指標 */}
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
+                    {[
+                      {label:"新患数",val:`${s.total}名`,color:"#2563eb"},
+                      {label:"2回継続",val:`${s.retained2}名`,color:"#059669"},
+                      {label:"離反数",val:`${s.churned}名`,color:"#ef4444"},
+                    ].map(item=>(
+                      <div key={item.label} style={{background:"#f8fafc",borderRadius:8,padding:"8px 10px",textAlign:"center",borderTop:`2px solid ${item.color}`}}>
+                        <div style={{fontSize:16,fontWeight:800,color:item.color}}>{item.val}</div>
+                        <div style={{fontSize:10,color:"#94a3b8",fontWeight:600}}>{item.label}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* 2〜8回目の継続ファネル */}
+                  <div style={{fontWeight:700,fontSize:12,color:"#475569",marginBottom:8}}>来院回数別 継続ファネル（2〜8回目）</div>
+                  <div style={{overflowX:"auto"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                      <thead>
+                        <tr style={{background:"#f8fafc"}}>
+                          <th style={{padding:"6px 8px",textAlign:"left",color:"#64748b",fontWeight:700,borderBottom:"1px solid #e2e8f0"}}>回数</th>
+                          {[2,3,4,5,6,7,8].map(v=>(<th key={v} style={{padding:"6px 8px",textAlign:"center",color:"#64748b",fontWeight:700,borderBottom:"1px solid #e2e8f0"}}>{v}回目</th>))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td style={{padding:"6px 8px",fontWeight:700,color:"#374151",borderBottom:"1px solid #f1f5f9"}}>継続数</td>
+                          {[2,3,4,5,6,7,8].map(v=>(
+                            <td key={v} style={{padding:"6px 8px",textAlign:"center",fontWeight:800,color:s.color,borderBottom:"1px solid #f1f5f9"}}>
+                              {s.visitDist[v]||0}名
+                            </td>
+                          ))}
+                        </tr>
+                        <tr>
+                          <td style={{padding:"6px 8px",fontWeight:700,color:"#374151",borderBottom:"1px solid #f1f5f9"}}>前回比</td>
+                          {[2,3,4,5,6,7,8].map(v=>{
+                            const rate=s.stepRates[v]||0;
+                            const color=rate>=70?"#059669":rate>=50?"#d97706":"#ef4444";
+                            return(
+                              <td key={v} style={{padding:"6px 8px",textAlign:"center",borderBottom:"1px solid #f1f5f9"}}>
+                                <span style={{fontWeight:700,color,background:color+"18",borderRadius:4,padding:"1px 5px"}}>{rate}%</span>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                        <tr>
+                          <td style={{padding:"6px 4px",fontWeight:600,color:"#94a3b8",fontSize:10}}>バー</td>
+                          {[2,3,4,5,6,7,8].map(v=>{
+                            const pct=s.total>0?Math.round((s.visitDist[v]||0)/Math.max(s.total,1)*100):0;
+                            return(
+                              <td key={v} style={{padding:"4px 8px",verticalAlign:"middle"}}>
+                                <div style={{height:6,background:"#f1f5f9",borderRadius:3,overflow:"hidden"}}>
+                                  <div style={{height:"100%",width:`${pct}%`,background:s.color,borderRadius:3}}/>
+                                </div>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* 離反詳細 */}
+                  {s.churned>0&&(()=>{
+                    const churnedPatients=Object.entries(allPM).filter(([,p])=>p.firstStaff===s.id&&isChurned(p.lastDate));
+                    return(
+                      <div style={{marginTop:12,background:"#fef2f2",borderRadius:8,padding:"10px 12px",border:"1px solid #fecaca"}}>
+                        <div style={{fontWeight:700,fontSize:12,color:"#991b1b",marginBottom:6}}>
+                          ⚠️ 離反患者 {s.churned}名（最終来院から30日以上）
+                        </div>
+                        <div style={{maxHeight:120,overflowY:"auto"}}>
+                          {churnedPatients.map(([name,p])=>{
+                            const last=new Date(p.lastDate+"T00:00:00");
+                            const days=Math.floor((todayD-last)/(1000*60*60*24));
+                            return(
+                              <div key={name} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 0",borderBottom:"1px solid #fee2e2",fontSize:12}}>
+                                <span style={{fontWeight:600,color:"#374151"}}>{name}</span>
+                                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                                  <span style={{color:"#64748b"}}>{p.totalVisits}回来院</span>
+                                  <span style={{color:"#ef4444",fontWeight:700}}>{days}日経過</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
               </div>
-              {(()=>{const pm={};monthBookings.forEach(b=>{if(!pm[b.patient_name]) pm[b.patient_name]=0;pm[b.patient_name]++;});return Object.entries(pm).sort((a,b)=>b[1]-a[1]).map(([name,cnt])=>(<div key={name} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid #f1f5f9"}}><span style={{fontSize:13,fontWeight:600,color:"#1e293b"}}>{name}</span><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:12,color:"#64748b"}}>{cnt}回来院</span><span className={`badge ${cnt>=2?"badge-green":"badge-orange"}`}>{cnt>=2?"継続":"単発"}</span></div></div>));})()}
+            ))}
+
+            {/* 来院回数分布（全スタッフ比較） */}
+            <div className="card" style={{marginTop:4}}>
+              <div style={{padding:"14px 16px"}}>
+                <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:12}}>スタッフ別 来院回数分布（全期間）</div>
+                <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                    <thead>
+                      <tr style={{background:"#f8fafc"}}>
+                        <th style={{padding:"8px 10px",textAlign:"left",color:"#64748b",fontWeight:700,borderBottom:"2px solid #e2e8f0"}}>スタッフ</th>
+                        {[1,2,3,4,5,6,7,"8+"].map(v=>(<th key={v} style={{padding:"8px 6px",textAlign:"center",color:"#64748b",fontWeight:700,borderBottom:"2px solid #e2e8f0"}}>{v}回</th>))}
+                        <th style={{padding:"8px 6px",textAlign:"center",color:"#ef4444",fontWeight:700,borderBottom:"2px solid #e2e8f0"}}>離反</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {staffStats.map(s=>(
+                        <tr key={s.id}>
+                          <td style={{padding:"8px 10px",borderBottom:"1px solid #f1f5f9"}}>
+                            <div style={{display:"flex",alignItems:"center",gap:6}}>
+                              <div style={{width:22,height:22,borderRadius:6,background:s.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:10}}>{s.initial}</div>
+                              <span style={{fontWeight:700,fontSize:12,color:"#1e293b"}}>{s.name.replace(" 先生","")}</span>
+                            </div>
+                          </td>
+                          {[1,2,3,4,5,6,7].map(v=>{
+                            const count=Object.values(allPM).filter(p=>p.firstStaff===s.id&&p.totalVisits===v).length;
+                            return(<td key={v} style={{padding:"8px 6px",textAlign:"center",fontWeight:count>0?700:400,color:count>0?s.color:"#d1d5db",borderBottom:"1px solid #f1f5f9"}}>{count>0?count:"-"}</td>);
+                          })}
+                          <td style={{padding:"8px 6px",textAlign:"center",borderBottom:"1px solid #f1f5f9"}}>
+                            {(()=>{const count=Object.values(allPM).filter(p=>p.firstStaff===s.id&&p.totalVisits>=8).length;return <span style={{fontWeight:count>0?700:400,color:count>0?s.color:"#d1d5db"}}>{count>0?count:"-"}</span>;})()} 
+                          </td>
+                          <td style={{padding:"8px 6px",textAlign:"center",borderBottom:"1px solid #f1f5f9"}}>
+                            <span style={{fontWeight:s.churned>0?700:400,color:s.churned>0?"#ef4444":"#d1d5db"}}>{s.churned>0?s.churned:"-"}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </div>
-          <div className="card">
-            <div style={{padding:"14px 16px"}}>
-              <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:12}}>累計継続率（全期間）</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
-                {[{label:"総新患数",value:`${allRetention.newPatients}名`,color:"#2563eb"},{label:"継続患者数",value:`${allRetention.retained}名`,color:"#059669"},{label:"累計継続率",value:`${allRetention.rate}%`,color:"#d97706"}].map(item=>(<div key={item.label} style={{background:"#f8fafc",borderRadius:10,padding:"12px 10px",textAlign:"center",borderTop:`3px solid ${item.color}`}}><div style={{fontSize:20,fontWeight:800,color:item.color}}>{item.value}</div><div style={{fontSize:10,color:"#94a3b8",fontWeight:600,marginTop:2}}>{item.label}</div></div>))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
