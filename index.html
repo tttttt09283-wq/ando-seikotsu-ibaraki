@@ -603,8 +603,14 @@ function Dashboard({user,onLogout}){
             if(h>18||(h===18&&m>0)) return null;
             return {h,m,label:`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`};
           }).filter(Boolean);
-          const CELL_W = 36; // px per 10min
-          const HEADER_W = 90; // staff name column
+          // 画面幅に合わせてセル幅を自動計算
+          const HEADER_W_CALC = 90;
+          const PLUS_BTN_W = 36;
+          const screenW = Math.max(window.innerWidth, 800);
+          const availW = screenW - HEADER_W_CALC - PLUS_BTN_W - 32; // padding
+          const TOTAL_MINS = 54; // 9:00-18:00 in 10min slots
+          const CELL_W = Math.floor(availW / TOTAL_MINS);
+          const HEADER_W = HEADER_W_CALC;
           const staffList = isAdmin ? STAFF_ACCOUNTS : STAFF_ACCOUNTS.filter(s=>s.id===user.id);
           const filteredStaff = selStaff ? staffList.filter(s=>s.id===selStaff) : staffList;
 
@@ -625,7 +631,7 @@ function Dashboard({user,onLogout}){
           const totalW = MINS.length * CELL_W;
 
           return (
-            <div className="card" style={{overflowX:"auto"}}>
+            <div className="card">
               {/* 日付ナビ */}
               <div className="cal-nav">
                 <button className="cal-nav-btn" onClick={()=>{const d=new Date(baseDate);d.setDate(d.getDate()-1);setBaseDate(d);}}>◀ 前日</button>
@@ -644,7 +650,7 @@ function Dashboard({user,onLogout}){
                 </div>
               )}
 
-              <div style={{overflowX:"auto"}}>
+              <div>
                 <div style={{minWidth:HEADER_W+totalW+20}}>
                   {/* 時間ヘッダー */}
                   <div style={{display:"flex",borderBottom:"2px solid #e2e8f0",background:"#f8fafc",position:"sticky",top:0,zIndex:10}}>
