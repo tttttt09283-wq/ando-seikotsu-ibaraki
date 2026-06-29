@@ -950,7 +950,7 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
               return(
                 <span key={m} style={{display:"inline-flex",alignItems:"center",gap:4,background:cat.color,color:"white",borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700}}>
                   {m}
-                  {item&&<span style={{opacity:.8}}>¥{item.price.toLocaleString()}</span>}
+                  {item&&<span style={{opacity:.8,fontSize:10}}>¥{item.price.toLocaleString()}</span>}
                   <button onClick={()=>toggleMenu(m,item?.duration||30)} style={{background:"rgba(255,255,255,.3)",border:"none",color:"white",borderRadius:"50%",width:14,height:14,cursor:"pointer",fontSize:10,lineHeight:1,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
                 </span>
               );
@@ -1000,7 +1000,7 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
                     className="btn" style={{padding:"8px 10px",borderRadius:8,fontSize:12,fontWeight:isSel?700:500,textAlign:"left",justifyContent:"flex-start",flexDirection:"column",alignItems:"flex-start",height:"auto",background:isSel?cat.color+"18":"#f8fafc",color:isSel?cat.color:"#374151",border:`1.5px solid ${isSel?cat.color:"#e2e8f0"}`,position:"relative"}}>
                     {isSel&&<span style={{position:"absolute",top:5,right:6,fontSize:10,fontWeight:800,color:cat.color}}>✓</span>}
                     <span style={{fontWeight:700,paddingRight:14}}>{item.name}</span>
-                    <span style={{fontSize:10,color:isSel?cat.color:"#94a3b8",marginTop:2}}>¥{item.price.toLocaleString()}　{item.duration}分</span>
+                    <span style={{fontSize:10,color:isSel?cat.color:"#94a3b8",marginTop:2}}>¥{item.price.toLocaleString()}</span>
                   </button>
                 );
               })}
