@@ -106,80 +106,99 @@ const STAFF_ACCOUNTS = [
 const MENU_CATEGORIES = [
   {
     id:"insurance", label:"保険", color:"#2563eb",
-    items:[
-      {name:"初診",         duration:60, price:1200},
-      {name:"2回目",        duration:30, price:1200},
-      {name:"3回目以降",    duration:30, price:1200},
-      {name:"3回目以降追加", duration:30, price:150},
-      {name:"カルテ管理料", duration:10, price:150},
-      {name:"新患包帯",     duration:10, price:1500},
-      {name:"2割 初診",     duration:60, price:1200},
-      {name:"2割 2回目",    duration:30, price:1200},
-      {name:"2割 3回目以降",duration:30, price:700},
-      {name:"1割 初診",     duration:60, price:250},
-      {name:"1割 2回目",    duration:30, price:400},
-      {name:"1割 3回目以降",duration:30, price:1400},
-      {name:"1割 3回目追加",duration:10, price:50},
-      {name:"保険交通 初診",          duration:60, price:1100},
-      {name:"保険交通 2回目以降",     duration:30, price:1100},
-      {name:"保険交通 保健分子払い日", duration:10, price:200},
-      {name:"保険金3割 初診",         duration:60, price:1750},
-      {name:"保険金3割 2回目以降",    duration:30, price:1650},
-      {name:"保険金2割 初診",         duration:60, price:1750},
-      {name:"保険金2割 2回目以降",    duration:30, price:1650},
-      {name:"保険金1割 初診",         duration:60, price:1300},
-      {name:"保険金1割 2回目以降",    duration:30, price:1200},
-      {name:"保険金のみ2回目以降",    duration:30, price:1050},
-      {name:"保険金のみ400 2回目以降",duration:30, price:250},
+    subs:[
+      {id:"ins_3", label:"3割",
+        items:[
+          {name:"初診",            duration:60, price:1200},
+          {name:"2回目",           duration:30, price:1200},
+          {name:"3回目以降",       duration:30, price:1200},
+          {name:"3回目以降追加",   duration:10, price:150},
+          {name:"カルテ管理料",    duration:10, price:150},
+          {name:"新患包帯",        duration:10, price:1500},
+          {name:"保険交通 初診",          duration:60, price:1100},
+          {name:"保険交通 2回目以降",     duration:30, price:1100},
+          {name:"保険交通 窓口払い",      duration:10, price:200},
+          {name:"保険金3割 初診",         duration:60, price:1750},
+          {name:"保険金3割 2回目以降",    duration:30, price:1650},
+          {name:"保険金のみ 2回目以降",   duration:30, price:1050},
+          {name:"保険金のみ400 2回目以降",duration:30, price:250},
+        ]},
+      {id:"ins_2", label:"2割",
+        items:[
+          {name:"2割 初診",        duration:60, price:1200},
+          {name:"2割 2回目",       duration:30, price:1200},
+          {name:"2割 3回目以降",   duration:30, price:700},
+          {name:"保険金2割 初診",       duration:60, price:1750},
+          {name:"保険金2割 2回目以降",  duration:30, price:1650},
+        ]},
+      {id:"ins_1", label:"1割",
+        items:[
+          {name:"1割 初診",        duration:60, price:250},
+          {name:"1割 2回目",       duration:30, price:400},
+          {name:"1割 3回目以降",   duration:30, price:1400},
+          {name:"1割 3回目追加",   duration:10, price:50},
+          {name:"保険金1割 初診",       duration:60, price:1300},
+          {name:"保険金1割 2回目以降",  duration:30, price:1200},
+        ]},
     ],
   },
   {
     id:"jifee", label:"自費", color:"#059669",
-    items:[
-      {name:"整体",             duration:30, price:3830},
-      {name:"ハイボルテージ",   duration:30, price:3830},
-      {name:"スキャン",         duration:30, price:3830},
-      {name:"EMS",              duration:30, price:3830},
-      {name:"手技療法 1回行",   duration:30, price:3830},
-      {name:"手技療法 1ヶ月",   duration:30, price:3830},
-      {name:"美容鍼 小顔矯正",  duration:60, price:7230},
-      {name:"鍼灸",             duration:60, price:1110},
-      {name:"推拿",             duration:30, price:1110},
-      {name:"深層",             duration:30, price:5000},
-      {name:"筋膜",             duration:30, price:1100},
-      {name:"3ヶ月",            duration:30, price:1100},
-      {name:"フリーパス 1ヶ月", duration:30, price:12200},
-      {name:"フリーパス 3ヶ月", duration:30, price:27800},
-      {name:"フリーパス 3ヶ月2",duration:30, price:132000},
-      {name:"回数券 10回",       duration:30, price:28150},
-      {name:"回数券 24回",       duration:30, price:54350},
+    subs:[
+      {id:"jifee_single", label:"1回メニュー",
+        items:[
+          {name:"整体",            duration:30, price:3830},
+          {name:"ハイボルテージ",  duration:30, price:3830},
+          {name:"スキャン",        duration:30, price:3830},
+          {name:"EMS",             duration:30, price:3830},
+          {name:"手技療法 1回",    duration:30, price:3830},
+          {name:"美容鍼 小顔矯正", duration:60, price:7230},
+          {name:"鍼灸",            duration:60, price:1110},
+          {name:"推拿",            duration:30, price:1110},
+          {name:"深層",            duration:30, price:5000},
+          {name:"筋膜",            duration:30, price:1100},
+        ]},
+      {id:"jifee_pass", label:"回数券・FP",
+        items:[
+          {name:"手技療法 1ヶ月",  duration:30, price:3830},
+          {name:"フリーパス 1ヶ月",duration:30, price:12200},
+          {name:"フリーパス 3ヶ月",duration:30, price:27800},
+          {name:"フリーパス 3ヶ月（特別）",duration:30, price:132000},
+          {name:"回数券 10回",     duration:30, price:28150},
+          {name:"回数券 24回",     duration:30, price:54350},
+        ]},
     ],
   },
   {
     id:"other", label:"その他・無料", color:"#6b7280",
-    items:[
-      {name:"体験施術",           duration:60, price:0},
-      {name:"初回特典",           duration:60, price:10800},
-      {name:"肩こり",             duration:30, price:8800},
-      {name:"片腕",               duration:30, price:6800},
-      {name:"不定愁訴",           duration:30, price:1100},
-      {name:"半身",               duration:30, price:7200},
-      {name:"全身",               duration:30, price:14400},
-      {name:"鍼 両足",            duration:30, price:14400},
-      {name:"鍼 肩",              duration:30, price:2200},
-      {name:"鍼 肩こり",          duration:30, price:7200},
-      {name:"不定愁訴2",          duration:30, price:1850},
-      {name:"顎",                 duration:30, price:7200},
-      {name:"増量 忠告なし",      duration:10, price:0},
-      {name:"無料カウンセリング", duration:60, price:0},
+    subs:[
+      {id:"other_all", label:"すべて",
+        items:[
+          {name:"無料カウンセリング", duration:60, price:0},
+          {name:"体験施術",           duration:60, price:0},
+          {name:"初回特典",           duration:60, price:10800},
+          {name:"肩こり",             duration:30, price:8800},
+          {name:"片腕",               duration:30, price:6800},
+          {name:"不定愁訴",           duration:30, price:1100},
+          {name:"不定愁訴2",          duration:30, price:1850},
+          {name:"半身",               duration:30, price:7200},
+          {name:"全身",               duration:30, price:14400},
+          {name:"鍼 両足",            duration:30, price:14400},
+          {name:"鍼 肩",              duration:30, price:2200},
+          {name:"鍼 肩こり",          duration:30, price:7200},
+          {name:"顎",                 duration:30, price:7200},
+          {name:"増量 忠告なし",      duration:10, price:0},
+        ]},
     ],
   },
 ];
+// 全itemsをフラット化するヘルパー
+function allCatItems(cat){ return cat.subs.flatMap(s=>s.items); }
 
 // 後方互換：全メニュー名一覧・時間マップ
-const MENUS = MENU_CATEGORIES.flatMap(c=>c.items.map(i=>i.name));
-const DURATION = Object.fromEntries(MENU_CATEGORIES.flatMap(c=>c.items.map(i=>[i.name,i.duration])));
-const MENU_PRICE = Object.fromEntries(MENU_CATEGORIES.flatMap(c=>c.items.map(i=>[i.name,i.price])));
+const MENUS = MENU_CATEGORIES.flatMap(c=>allCatItems(c).map(i=>i.name));
+const DURATION = Object.fromEntries(MENU_CATEGORIES.flatMap(c=>allCatItems(c).map(i=>[i.name,i.duration])));
+const MENU_PRICE = Object.fromEntries(MENU_CATEGORIES.flatMap(c=>allCatItems(c).map(i=>[i.name,i.price])));
 const DURATION_OPTIONS = Array.from({length:12},(_,i)=>(i+1)*10); // 10〜120分
 
 const SLOTS = ["09:00","09:30","10:00","10:30","11:00","11:30","13:00","13:30","14:00","14:30","15:00","15:30","16:00","16:30","17:00","17:30","18:00"];
@@ -820,13 +839,34 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
   const [searching,setSearching]=React.useState(false);
   const [showSearch,setShowSearch]=React.useState(editId===null);
 
-  // メニューの現在カテゴリを初期化
+  // メニューの現在カテゴリ・サブカテゴリを初期化
   const initCat=()=>{
-    if(!form.menu) return MENU_CATEGORIES[0].id;
-    const cat=MENU_CATEGORIES.find(c=>c.items.some(i=>i.name===form.menu));
+    const menus=Array.isArray(form.menus)&&form.menus.length>0?form.menus:[form.menu].filter(Boolean);
+    if(!menus.length) return MENU_CATEGORIES[0].id;
+    const cat=MENU_CATEGORIES.find(c=>allCatItems(c).some(i=>menus.includes(i.name)));
     return cat?cat.id:MENU_CATEGORIES[0].id;
   };
+  const initSub=(catId)=>{
+    const cat=MENU_CATEGORIES.find(c=>c.id===catId)||MENU_CATEGORIES[0];
+    const menus=Array.isArray(form.menus)&&form.menus.length>0?form.menus:[form.menu].filter(Boolean);
+    if(!menus.length) return cat.subs[0].id;
+    const sub=cat.subs.find(s=>s.items.some(i=>menus.includes(i.name)));
+    return sub?sub.id:cat.subs[0].id;
+  };
   const [selCategory,setSelCategory]=React.useState(initCat);
+  const [selSub,setSelSub]=React.useState(()=>initSub(initCat()));
+
+  // 選択中メニュー一覧（配列）
+  const selectedMenus=Array.isArray(form.menus)&&form.menus.length>0?form.menus:(form.menu?[form.menu]:[]);
+  function toggleMenu(itemName, itemDuration){
+    const cur=selectedMenus;
+    const next=cur.includes(itemName)?cur.filter(m=>m!==itemName):[...cur,itemName];
+    // durationは選択メニューの最大値
+    const maxDur=next.length>0?Math.max(...next.map(m=>DURATION[m]||30)):itemDuration;
+    setForm(f=>({...f,menus:next,menu:next[0]||"",duration:maxDur}));
+  }
+  function clearMenus(){setForm(f=>({...f,menus:[],menu:"",duration:30}));}
+
   async function searchPatients(q){
     if(!q.trim()){setSearchResults([]);return;}
     setSearching(true);
@@ -892,31 +932,75 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
         <div><label className="form-label">時間</label><input type="time" step="600" className="form-input" value={form.time||""} onChange={e=>{setForm(f=>({...f,time:e.target.value}));setConflict(false);}}/></div>
       </div>
       {isAdmin&&(<div className="form-group"><label className="form-label">担当スタッフ</label><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{STAFF_ACCOUNTS.map(s=>(<button key={s.id} onClick={()=>{setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} className="btn" style={{background:form.staff_id===s.id?s.color:"white",color:form.staff_id===s.id?"white":"#374151",border:`2px solid ${s.color}`,borderRadius:20,padding:"5px 12px",fontSize:12,fontWeight:700,boxShadow:form.staff_id===s.id?`0 2px 8px ${s.color}55`:"none"}}>{s.name}</button>))}</div></div>)}
+      {/* ===== メニュー選択 ===== */}
       <div className="form-group">
-        <label className="form-label">メニュー分類</label>
-        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <label className="form-label" style={{marginBottom:0}}>メニュー（複数選択可）</label>
+          {selectedMenus.length>0&&(
+            <button onClick={clearMenus} style={{fontSize:11,color:"#ef4444",background:"none",border:"none",cursor:"pointer",fontWeight:700}}>クリア</button>
+          )}
+        </div>
+
+        {/* 選択済みバッジ */}
+        {selectedMenus.length>0&&(
+          <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10,padding:"8px 10px",background:"#f0fdf4",borderRadius:8,border:"1px solid #bbf7d0"}}>
+            {selectedMenus.map(m=>{
+              const cat=MENU_CATEGORIES.find(c=>allCatItems(c).some(i=>i.name===m))||MENU_CATEGORIES[0];
+              const item=allCatItems(cat).find(i=>i.name===m);
+              return(
+                <span key={m} style={{display:"inline-flex",alignItems:"center",gap:4,background:cat.color,color:"white",borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700}}>
+                  {m}
+                  {item&&<span style={{opacity:.8}}>¥{item.price.toLocaleString()}</span>}
+                  <button onClick={()=>toggleMenu(m,item?.duration||30)} style={{background:"rgba(255,255,255,.3)",border:"none",color:"white",borderRadius:"50%",width:14,height:14,cursor:"pointer",fontSize:10,lineHeight:1,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                </span>
+              );
+            })}
+            <span style={{fontSize:11,color:"#059669",fontWeight:700,alignSelf:"center"}}>
+              合計 ¥{selectedMenus.reduce((s,m)=>{const cat=MENU_CATEGORIES.find(c=>allCatItems(c).some(i=>i.name===m));const item=allCatItems(cat||MENU_CATEGORIES[0]).find(i=>i.name===m);return s+(item?.price||0);},0).toLocaleString()}
+            </span>
+          </div>
+        )}
+
+        {/* Lv1: 大分類 */}
+        <div style={{display:"flex",gap:5,marginBottom:8}}>
           {MENU_CATEGORIES.map(c=>(
-            <button key={c.id} onClick={()=>{
-              setSelCategory(c.id);
-              const first=c.items[0];
-              setForm(f=>({...f,menu:first.name,duration:first.duration}));
-            }} className="btn" style={{padding:"6px 14px",borderRadius:20,fontSize:12,fontWeight:700,background:selCategory===c.id?c.color:"white",color:selCategory===c.id?"white":"#374151",border:`2px solid ${selCategory===c.id?c.color:"#e2e8f0"}`,boxShadow:selCategory===c.id?`0 2px 8px ${c.color}55`:"none"}}>
+            <button key={c.id} onClick={()=>{setSelCategory(c.id);setSelSub(c.subs[0].id);}}
+              className="btn" style={{flex:1,padding:"7px 4px",borderRadius:8,fontSize:12,fontWeight:700,background:selCategory===c.id?c.color:"white",color:selCategory===c.id?"white":"#374151",border:`2px solid ${selCategory===c.id?c.color:"#e2e8f0"}`,boxShadow:selCategory===c.id?`0 2px 8px ${c.color}44`:"none",justifyContent:"center"}}>
               {c.label}
             </button>
           ))}
         </div>
-        <label className="form-label">メニュー選択</label>
+
+        {/* Lv2: サブ分類（保険→3割/2割/1割、自費→1回/回数券FP） */}
         {(()=>{
           const cat=MENU_CATEGORIES.find(c=>c.id===selCategory)||MENU_CATEGORIES[0];
+          if(cat.subs.length<=1) return null;
           return(
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,maxHeight:200,overflowY:"auto",padding:4}}>
-              {cat.items.map(item=>{
-                const isSelected=form.menu===item.name;
+            <div style={{display:"flex",gap:5,marginBottom:8}}>
+              {cat.subs.map(sub=>(
+                <button key={sub.id} onClick={()=>setSelSub(sub.id)}
+                  className="btn" style={{flex:1,padding:"6px 4px",borderRadius:8,fontSize:12,fontWeight:700,background:selSub===sub.id?"#1e3a5f":"#f1f5f9",color:selSub===sub.id?"white":"#475569",border:`1.5px solid ${selSub===sub.id?"#1e3a5f":"#e2e8f0"}`,justifyContent:"center"}}>
+                  {sub.label}
+                </button>
+              ))}
+            </div>
+          );
+        })()}
+
+        {/* Lv3: メニュー一覧（複数選択） */}
+        {(()=>{
+          const cat=MENU_CATEGORIES.find(c=>c.id===selCategory)||MENU_CATEGORIES[0];
+          const sub=cat.subs.find(s=>s.id===selSub)||cat.subs[0];
+          return(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,maxHeight:220,overflowY:"auto",padding:2}}>
+              {sub.items.map(item=>{
+                const isSel=selectedMenus.includes(item.name);
                 return(
-                  <button key={item.name} onClick={()=>setForm(f=>({...f,menu:item.name,duration:item.duration}))}
-                    className="btn" style={{padding:"7px 10px",borderRadius:8,fontSize:12,fontWeight:isSelected?700:500,textAlign:"left",justifyContent:"flex-start",background:isSelected?cat.color+"18":"#f8fafc",color:isSelected?cat.color:"#374151",border:`1.5px solid ${isSelected?cat.color:"#e2e8f0"}`,gap:6,flexDirection:"column",alignItems:"flex-start",height:"auto"}}>
-                    <span style={{fontWeight:700}}>{item.name}</span>
-                    <span style={{fontSize:10,color:isSelected?cat.color:"#94a3b8"}}>¥{item.price.toLocaleString()}　{item.duration}分</span>
+                  <button key={item.name} onClick={()=>toggleMenu(item.name,item.duration)}
+                    className="btn" style={{padding:"8px 10px",borderRadius:8,fontSize:12,fontWeight:isSel?700:500,textAlign:"left",justifyContent:"flex-start",flexDirection:"column",alignItems:"flex-start",height:"auto",background:isSel?cat.color+"18":"#f8fafc",color:isSel?cat.color:"#374151",border:`1.5px solid ${isSel?cat.color:"#e2e8f0"}`,position:"relative"}}>
+                    {isSel&&<span style={{position:"absolute",top:5,right:6,fontSize:10,fontWeight:800,color:cat.color}}>✓</span>}
+                    <span style={{fontWeight:700,paddingRight:14}}>{item.name}</span>
+                    <span style={{fontSize:10,color:isSel?cat.color:"#94a3b8",marginTop:2}}>¥{item.price.toLocaleString()}　{item.duration}分</span>
                   </button>
                 );
               })}
@@ -924,13 +1008,16 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
           );
         })()}
       </div>
+
+      {/* 施術時間 */}
       <div className="form-group">
         <label className="form-label">施術時間</label>
-        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
           {DURATION_OPTIONS.map(min=>{
             const isSel=(form.duration||DURATION[form.menu]||30)===min;
             return(
-              <button key={min} onClick={()=>setForm(f=>({...f,duration:min}))} className="btn" style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:isSel?700:500,background:isSel?"#1e3a5f":"white",color:isSel?"white":"#374151",border:`1.5px solid ${isSel?"#1e3a5f":"#e2e8f0"}`,minWidth:46,justifyContent:"center"}}>
+              <button key={min} onClick={()=>setForm(f=>({...f,duration:min}))} className="btn"
+                style={{padding:"6px 8px",borderRadius:8,fontSize:12,fontWeight:isSel?700:500,background:isSel?"#1e3a5f":"white",color:isSel?"white":"#374151",border:`1.5px solid ${isSel?"#1e3a5f":"#e2e8f0"}`,minWidth:44,justifyContent:"center"}}>
                 {min}分
               </button>
             );
