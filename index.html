@@ -1297,161 +1297,153 @@ function Dashboard({user,onLogout}){
           {/* カレンダービュー */}
           {view==="calendar"&&(()=>{
             const DAYS_JP=["日","月","火","水","木","金","土"];
-            // baseDate を含む週の月曜〜日曜
-            function getWeekStart(d){
-              const day=d.getDay();
-              const mon=new Date(d);
-              mon.setDate(d.getDate()-(day===0?6:day-1));
-              mon.setHours(0,0,0,0);
-              return mon;
-            }
+            function getWeekStart(d){const day=d.getDay();const mon=new Date(d);mon.setDate(d.getDate()-(day===0?6:day-1));mon.setHours(0,0,0,0);return mon;}
             const weekStart=getWeekStart(baseDate);
             const weekDates=Array.from({length:7},(_,i)=>{const d=new Date(weekStart);d.setDate(weekStart.getDate()+i);return d;});
             const weekDateStrs=weekDates.map(fmtDate);
+            const isCurrentWeek=weekDateStrs.includes(todayStr);
 
-            // 週ナビ
             function prevWeek(){const d=new Date(baseDate);d.setDate(d.getDate()-7);setBaseDate(d);}
             function nextWeek(){const d=new Date(baseDate);d.setDate(d.getDate()+7);setBaseDate(d);}
-            function goToday(){setBaseDate(new Date());}
-
-            const MINS=Array.from({length:54},(_,i)=>{const totalMin=i*10,h=9+Math.floor(totalMin/60),m=totalMin%60;if(h>18||(h===18&&m>0)) return null;return {h,m,label:`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`};}).filter(Boolean);
-            const TOTAL_MINS=MINS.length;
-            const STAFF_COL_W=70;
-            const TIME_COL_W=44;
-            const DAY_COL_W=Math.max(Math.floor((Math.max(window.innerWidth-130-STAFF_COL_W-TIME_COL_W-48,500))/7),90);
 
             const staffList=isAdmin?STAFF_ACCOUNTS:STAFF_ACCOUNTS.filter(s=>s.id===user.id);
             const filteredStaff=selStaff?staffList.filter(s=>s.id===selStaff):staffList;
 
-            function timeToX(timeStr){const[h,m]=timeStr.split(":").map(Number);return ((h-9)*60+m)/10*(DAY_COL_W/TOTAL_MINS*MINS.length/TOTAL_MINS);}
-            // 週表示用: 時間→X座標（DAY_COL_Wの中での相対位置）
-            function timeToXInDay(timeStr){
+            // レイアウト定数
+            const TIME_COL_W=44;   // 左端の時間ラベル列
+            const STAFF_ROW_H=56;  // 1スタッフあたりの行高さ
+            const HOURS=Array.from({length:10},(_,i)=>i+9); // 9〜18時
+            const TOTAL_MINS=540;  // 9:00〜18:00
+
+            // 画面幅から日付列の幅を計算
+            const screenW=Math.max(window.innerWidth-130-48,500);
+            const DAY_COL_W=Math.max(Math.floor((screenW-TIME_COL_W)/7),80);
+
+            // 時間→Y座標（%）
+            function timeToY(timeStr){
               const[h,m]=timeStr.split(":").map(Number);
-              const totalMin=(h-9)*60+m;
-              return (totalMin/(9*60))*DAY_COL_W; // 9時〜18時=540分
+              return ((h-9)*60+m)/TOTAL_MINS*100;
             }
-            function durationToWInDay(b){
-              const dur=b.duration||DURATION[b.menu]||30;
-              return (dur/(9*60))*DAY_COL_W;
+            function durationToH(b){
+              return (b.duration||DURATION[b.menu]||30)/TOTAL_MINS*100;
             }
 
-            const isCurrentWeek=weekDateStrs.includes(todayStr);
-
-            return (
-              <div className="card" style={{overflow:"hidden"}}>
-                {/* ナビゲーション */}
-                <div className="cal-nav" style={{flexWrap:"wrap",gap:8}}>
+            return(
+              <div className="card">
+                {/* 週ナビ */}
+                <div style={{padding:"10px 12px",borderBottom:"1px solid #e2e8f0",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                   <button className="cal-nav-btn" onClick={prevWeek}>◀ 前週</button>
-                  <div style={{textAlign:"center",flex:1}}>
-                    <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f"}}>
-                      {weekDates[0].getFullYear()}年{weekDates[0].getMonth()+1}月{weekDates[0].getDate()}日
-                      　〜　
-                      {weekDates[6].getMonth()+1}月{weekDates[6].getDate()}日
-                    </div>
-                    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginTop:4}}>
-                      {!isCurrentWeek&&<button className="btn btn-outline btn-xs" onClick={goToday}>今週に戻る</button>}
-                      <input type="date" value={fmtDate(baseDate)} onChange={e=>{if(e.target.value)setBaseDate(new Date(e.target.value+"T00:00:00"));}}
-                        style={{padding:"3px 8px",border:"1.5px solid #e2e8f0",borderRadius:7,fontSize:12,color:"#374151",cursor:"pointer"}}/>
-                    </div>
+                  <div style={{flex:1,display:"flex",gap:8,alignItems:"center",justifyContent:"center",flexWrap:"wrap"}}>
+                    <span style={{fontWeight:800,fontSize:14,color:"#1e3a5f"}}>
+                      {weekDates[0].getFullYear()}年{weekDates[0].getMonth()+1}月{weekDates[0].getDate()}日 〜 {weekDates[6].getMonth()+1}月{weekDates[6].getDate()}日
+                    </span>
+                    {!isCurrentWeek&&<button className="btn btn-outline btn-xs" onClick={()=>setBaseDate(new Date())}>今週</button>}
+                    <input type="date" value={fmtDate(baseDate)} onChange={e=>{if(e.target.value)setBaseDate(new Date(e.target.value+"T00:00:00"));}}
+                      style={{padding:"3px 8px",border:"1.5px solid #e2e8f0",borderRadius:7,fontSize:12,color:"#374151",cursor:"pointer"}}/>
                   </div>
                   <button className="cal-nav-btn" onClick={nextWeek}>翌週 ▶</button>
                 </div>
 
                 <div style={{overflowX:"auto"}}>
-                  <div style={{minWidth:STAFF_COL_W+TIME_COL_W+DAY_COL_W*7}}>
+                  <div style={{minWidth:TIME_COL_W+DAY_COL_W*7}}>
 
                     {/* 曜日ヘッダー */}
                     <div style={{display:"flex",borderBottom:"2px solid #e2e8f0",background:"#f8fafc",position:"sticky",top:0,zIndex:10}}>
-                      <div style={{width:STAFF_COL_W,flexShrink:0,borderRight:"1px solid #e2e8f0",padding:"8px 6px",fontSize:11,fontWeight:700,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>スタッフ</div>
-                      <div style={{width:TIME_COL_W,flexShrink:0,borderRight:"1px solid #e2e8f0",padding:"8px 4px",fontSize:11,fontWeight:700,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>時間</div>
-                      {weekDates.map((d,i)=>{
+                      <div style={{width:TIME_COL_W,flexShrink:0,borderRight:"1px solid #e2e8f0"}}/>
+                      {weekDates.map(d=>{
                         const ds=fmtDate(d);
                         const isToday=ds===todayStr;
                         const isSun=d.getDay()===0,isSat=d.getDay()===6;
-                        const dayCount=bookings.filter(b=>b.date===ds).length;
+                        const cnt=bookings.filter(b=>b.date===ds).length;
                         return(
-                          <div key={ds} style={{width:DAY_COL_W,flexShrink:0,borderRight:"1px solid #e2e8f0",padding:"6px 4px",textAlign:"center",background:isToday?"#eff6ff":"white"}}>
-                            <div style={{fontSize:12,fontWeight:800,color:isToday?"#2563eb":isSun?"#ef4444":isSat?"#7c3aed":"#374151"}}>
+                          <div key={ds} style={{width:DAY_COL_W,flexShrink:0,borderRight:"1px solid #e2e8f0",padding:"6px 4px",textAlign:"center",background:isToday?"#eff6ff":"white",cursor:"pointer"}}
+                            onClick={()=>setBaseDate(d)}>
+                            <div style={{fontWeight:800,fontSize:12,color:isToday?"#2563eb":isSun?"#ef4444":isSat?"#7c3aed":"#374151"}}>
                               {d.getMonth()+1}/{d.getDate()}（{DAYS_JP[d.getDay()]}）
                             </div>
-                            <div style={{fontSize:10,color:isToday?"#2563eb":"#94a3b8",fontWeight:600,marginTop:1}}>{dayCount>0?`${dayCount}件`:""}</div>
+                            {cnt>0&&<div style={{fontSize:10,color:isToday?"#2563eb":"#94a3b8",fontWeight:600}}>{cnt}件</div>}
+                            {isToday&&<div style={{width:6,height:6,borderRadius:"50%",background:"#2563eb",margin:"2px auto 0"}}/>}
                           </div>
                         );
                       })}
                     </div>
 
-                    {/* スタッフ行 */}
+                    {/* スタッフごとのブロック */}
                     {filteredStaff.map(staff=>(
-                      <div key={staff.id} style={{display:"flex",borderBottom:"2px solid #e2e8f0"}}>
-                        {/* スタッフ名 */}
-                        <div style={{width:STAFF_COL_W,flexShrink:0,borderRight:"1px solid #e2e8f0",background:"#fafbfc",display:"flex",alignItems:"center",justifyContent:"center",padding:"6px 4px"}}>
-                          <div style={{textAlign:"center"}}>
-                            <div style={{width:28,height:28,borderRadius:8,background:`linear-gradient(135deg,${staff.color},${staff.color}99)`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:12,margin:"0 auto 3px",boxShadow:`0 2px 5px ${staff.color}44`}}>{staff.initial}</div>
-                            <div style={{fontSize:9,fontWeight:700,color:"#1e293b",lineHeight:1.2}}>{staff.name.replace(" 先生","")}</div>
+                      <div key={staff.id} style={{display:"flex",borderBottom:"3px solid #e2e8f0"}}>
+
+                        {/* 左：スタッフ名＋時間ラベル */}
+                        <div style={{width:TIME_COL_W,flexShrink:0,borderRight:"1px solid #e2e8f0",background:"#fafbfc",position:"relative"}}>
+                          {/* スタッフバッジ */}
+                          <div style={{padding:"6px 4px",borderBottom:"1px solid #f1f5f9",textAlign:"center",background:"white",position:"sticky",top:36,zIndex:5}}>
+                            <div style={{width:28,height:28,borderRadius:8,background:`linear-gradient(135deg,${staff.color},${staff.color}99)`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:12,margin:"0 auto 2px",boxShadow:`0 2px 5px ${staff.color}44`}}>{staff.initial}</div>
+                            <div style={{fontSize:8,fontWeight:700,color:"#475569"}}>{staff.name.replace(" 先生","")}</div>
+                          </div>
+                          {/* 時間ラベル */}
+                          <div style={{position:"relative",height:HOURS.length*STAFF_ROW_H}}>
+                            {HOURS.map(h=>(
+                              <div key={h} style={{position:"absolute",top:(h-9)*STAFF_ROW_H,left:0,right:0,height:STAFF_ROW_H,borderTop:"1px solid #e2e8f0",display:"flex",alignItems:"flex-start",justifyContent:"center",paddingTop:2}}>
+                                <span style={{fontSize:9,color:"#94a3b8",fontWeight:600}}>{h}:00</span>
+                              </div>
+                            ))}
                           </div>
                         </div>
 
-                        {/* 時間軸ラベル */}
-                        <div style={{width:TIME_COL_W,flexShrink:0,borderRight:"1px solid #e2e8f0",background:"#f8fafc",position:"relative",minHeight:180}}>
-                          {[9,10,11,12,13,14,15,16,17,18].map(h=>(
-                            <div key={h} style={{position:"absolute",top:`${((h-9)/9)*100}%`,left:0,right:0,borderTop:"1px solid #e2e8f0",paddingLeft:4}}>
-                              <span style={{fontSize:9,color:"#94a3b8",fontWeight:600}}>{h}:00</span>
-                            </div>
-                          ))}
+                        {/* 右：7日分の列 */}
+                        <div style={{display:"flex",flex:1}}>
+                          {weekDates.map(d=>{
+                            const ds=fmtDate(d);
+                            const isToday=ds===todayStr;
+                            const dayBookings=bookings.filter(b=>b.date===ds&&b.staff_id===staff.id);
+                            const dayBreaks=breaks.filter(b=>b.date===ds&&b.staff_id===staff.id);
+                            const totalH=HOURS.length*STAFF_ROW_H;
+                            return(
+                              <div key={ds} style={{width:DAY_COL_W,flexShrink:0,borderRight:"1px solid #e2e8f0",position:"relative",height:totalH,background:isToday?"#fafeff":"white",cursor:"pointer"}}
+                                onClick={e=>{
+                                  const rect=e.currentTarget.getBoundingClientRect();
+                                  const y=e.clientY-rect.top;
+                                  const totalMin=Math.round((y/totalH)*TOTAL_MINS/10)*10;
+                                  const h=9+Math.floor(totalMin/60);
+                                  const m=totalMin%60;
+                                  if(h>=9&&h<=17){openAdd(ds,`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`);setForm(f=>f?{...f,staff_id:staff.id}:f);}
+                                }}>
+                                {/* グリッド線 */}
+                                {HOURS.map(h=>(
+                                  <div key={h} style={{position:"absolute",top:(h-9)*STAFF_ROW_H,left:0,right:0,borderTop:`1px solid ${isToday?"#e8f0fe":"#f1f5f9"}`,pointerEvents:"none"}}/>
+                                ))}
+                                {/* 30分破線 */}
+                                {HOURS.map(h=>(
+                                  <div key={`${h}h`} style={{position:"absolute",top:(h-9)*STAFF_ROW_H+STAFF_ROW_H/2,left:0,right:0,borderTop:"1px dashed #f1f5f9",pointerEvents:"none"}}/>
+                                ))}
+                                {/* 休憩 */}
+                                {dayBreaks.map(br=>{
+                                  const[bh,bm]=br.time.split(":").map(Number);
+                                  const top=((bh-9)*60+bm)/TOTAL_MINS*totalH;
+                                  return(
+                                    <div key={br.id} style={{position:"absolute",top,left:2,right:2,height:STAFF_ROW_H/2,background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1,pointerEvents:"none"}}>
+                                      <span style={{fontSize:8,color:"#94a3b8",fontWeight:600}}>{br.reason}</span>
+                                    </div>
+                                  );
+                                })}
+                                {/* 予約ブロック */}
+                                {dayBookings.map(b=>{
+                                  const[bh,bm]=b.time.split(":").map(Number);
+                                  const top=((bh-9)*60+bm)/TOTAL_MINS*totalH;
+                                  const dur=b.duration||DURATION[b.menu]||30;
+                                  const height=Math.max(dur/TOTAL_MINS*totalH,18);
+                                  const cnt=visitCounts[b.id]||1;
+                                  return(
+                                    <div key={b.id} onClick={e=>{e.stopPropagation();setBookingPopup({booking:b,x:e.clientX,y:e.clientY});}}
+                                      style={{position:"absolute",top,left:2,right:2,height,background:`linear-gradient(135deg,${staff.color},${staff.color}cc)`,borderRadius:5,padding:"2px 4px",cursor:"pointer",boxShadow:`0 1px 4px ${staff.color}44`,zIndex:2,overflow:"hidden"}}>
+                                      <div style={{fontWeight:800,fontSize:9,color:"white",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.patient_name}</div>
+                                      <div style={{fontSize:8,color:"rgba(255,255,255,.85)"}}>{b.time}{cnt>1&&<span style={{marginLeft:2,background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}</div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })}
                         </div>
-
-                        {/* 日付列 */}
-                        {weekDates.map((d,di)=>{
-                          const ds=fmtDate(d);
-                          const isToday=ds===todayStr;
-                          const dayBookings=bookings.filter(b=>b.date===ds&&b.staff_id===staff.id);
-                          const dayBreaks=breaks.filter(b=>b.date===ds&&b.staff_id===staff.id);
-                          return(
-                            <div key={ds} style={{width:DAY_COL_W,flexShrink:0,borderRight:"1px solid #e2e8f0",position:"relative",minHeight:180,background:isToday?"#f8fbff":"white",cursor:"pointer"}}
-                              onClick={e=>{
-                                const rect=e.currentTarget.getBoundingClientRect();
-                                const y=e.clientY-rect.top;
-                                const totalMin=Math.round((y/rect.height)*540/10)*10;
-                                const h=9+Math.floor(totalMin/60);
-                                const m=totalMin%60;
-                                if(h>=9&&h<=17){openAdd(ds,`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`);setForm(f=>f?{...f,staff_id:staff.id}:f);}
-                              }}>
-                              {/* 時間グリッド線 */}
-                              {[9,10,11,12,13,14,15,16,17,18].map(h=>(
-                                <div key={h} style={{position:"absolute",top:`${((h-9)/9)*100}%`,left:0,right:0,borderTop:`1px solid ${h===9?"transparent":"#f1f5f9"}`,pointerEvents:"none"}}/>
-                              ))}
-                              {/* 30分線 */}
-                              {[9.5,10.5,11.5,12.5,13.5,14.5,15.5,16.5,17.5].map(h=>(
-                                <div key={h} style={{position:"absolute",top:`${((h-9)/9)*100}%`,left:0,right:0,borderTop:"1px dashed #f1f5f9",pointerEvents:"none"}}/>
-                              ))}
-                              {/* 休憩ブロック */}
-                              {dayBreaks.map(br=>{
-                                const[bh,bm]=br.time.split(":").map(Number);
-                                const top=((bh-9)*60+bm)/540*100;
-                                return(
-                                  <div key={br.id} style={{position:"absolute",top:`${top}%`,left:1,right:1,height:"5.5%",background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:4,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1,pointerEvents:"none"}}>
-                                    <span style={{fontSize:8,color:"#94a3b8",fontWeight:600}}>{br.reason}</span>
-                                  </div>
-                                );
-                              })}
-                              {/* 予約ブロック */}
-                              {dayBookings.map(b=>{
-                                const[bh,bm]=b.time.split(":").map(Number);
-                                const top=((bh-9)*60+bm)/540*100;
-                                const dur=b.duration||DURATION[b.menu]||30;
-                                const height=dur/540*100;
-                                const cnt=visitCounts[b.id]||1;
-                                return(
-                                  <div key={b.id} onClick={e=>{e.stopPropagation();setBookingPopup({booking:b,x:e.clientX,y:e.clientY});}}
-                                    style={{position:"absolute",top:`${top}%`,left:2,right:2,height:`${Math.max(height,4)}%`,background:`linear-gradient(135deg,${staff.color},${staff.color}cc)`,borderRadius:5,padding:"2px 4px",cursor:"pointer",boxShadow:`0 1px 4px ${staff.color}44`,zIndex:2,overflow:"hidden",display:"flex",flexDirection:"column",justifyContent:"flex-start"}}>
-                                    <div style={{fontWeight:800,fontSize:9,color:"white",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.patient_name}</div>
-                                    <div style={{fontSize:8,color:"rgba(255,255,255,.8)"}}>{b.time}{cnt>1&&<span style={{marginLeft:1,background:"rgba(255,255,255,.2)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}</div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          );
-                        })}
                       </div>
                     ))}
                   </div>
