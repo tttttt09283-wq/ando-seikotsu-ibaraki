@@ -912,24 +912,82 @@ function Dashboard({user,onLogout}){
           {view==="patients"&&(()=>{
             const pm={};
             bookings.forEach(b=>{if(!pm[b.patient_name])pm[b.patient_name]={name:b.patient_name,phone:b.phone,count:0,lastDate:"",lastStaff:null};pm[b.patient_name].count++;if(b.date>pm[b.patient_name].lastDate){pm[b.patient_name].lastDate=b.date;pm[b.patient_name].lastStaff=b.staff_id;}});
-            const patients=Object.values(pm).sort((a,b)=>b.count-a.count);
+            const allPatients=Object.values(pm).sort((a,b)=>b.count-a.count);
+            const [patientQ,setPatientQ]=React.useState("");
+            const [sortBy,setSortBy]=React.useState("count"); // count | name | lastDate
+            const q=patientQ.trim().toLowerCase();
+            const filtered=allPatients.filter(p=>{
+              if(!q) return true;
+              return p.name.toLowerCase().includes(q)||(p.phone&&p.phone.replace(/-/g,"").includes(q.replace(/-/g,"")));
+            });
+            const sorted=[...filtered].sort((a,b)=>{
+              if(sortBy==="name") return a.name.localeCompare(b.name,"ja");
+              if(sortBy==="lastDate") return b.lastDate.localeCompare(a.lastDate);
+              return b.count-a.count;
+            });
             return(
               <div>
-                <div style={{marginBottom:12,fontSize:13,color:"#64748b",fontWeight:700}}>患者数：{patients.length}名</div>
-                {patients.map(p=>{
+                {/* 検索・フィルターバー */}
+                <div style={{background:"white",borderRadius:12,padding:"14px 16px",marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
+                  <div style={{position:"relative",marginBottom:10}}>
+                    <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:16,color:"#94a3b8",pointerEvents:"none"}}>🔍</span>
+                    <input
+                      className="form-input"
+                      placeholder="患者名・電話番号で検索..."
+                      value={patientQ}
+                      onChange={e=>setPatientQ(e.target.value)}
+                      style={{paddingLeft:38,paddingRight:patientQ?36:12}}
+                      autoFocus
+                    />
+                    {patientQ&&(
+                      <button onClick={()=>setPatientQ("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"#e2e8f0",border:"none",borderRadius:"50%",width:22,height:22,cursor:"pointer",fontSize:12,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                    )}
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:12,color:"#94a3b8",fontWeight:600,whiteSpace:"nowrap"}}>並び替え：</span>
+                    {[["count","来院回数"],["lastDate","最終来院日"],["name","患者名"]].map(([val,label])=>(
+                      <button key={val} onClick={()=>setSortBy(val)} className="btn" style={{padding:"5px 12px",borderRadius:20,fontSize:12,fontWeight:700,background:sortBy===val?"#1e3a5f":"white",color:sortBy===val?"white":"#64748b",border:`1.5px solid ${sortBy===val?"#1e3a5f":"#e2e8f0"}`,boxShadow:sortBy===val?"0 2px 6px rgba(30,58,95,.25)":"none"}}>{label}</button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 件数表示 */}
+                <div style={{marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:13,color:"#64748b",fontWeight:700}}>
+                    {q?`「${patientQ}」の検索結果：${sorted.length}名`:`患者数：${allPatients.length}名`}
+                  </span>
+                  {q&&sorted.length===0&&<span className="badge badge-red">該当なし</span>}
+                </div>
+
+                {/* 患者一覧 */}
+                {sorted.length===0&&q?(
+                  <div className="card" style={{padding:40,textAlign:"center"}}>
+                    <div style={{fontSize:32,marginBottom:12}}>🔍</div>
+                    <div style={{fontWeight:700,color:"#374151",marginBottom:6}}>「{patientQ}」に一致する患者が見つかりません</div>
+                    <div style={{fontSize:13,color:"#94a3b8"}}>患者名または電話番号で検索してください</div>
+                    <button onClick={()=>setPatientQ("")} className="btn btn-outline btn-sm" style={{marginTop:14}}>検索をクリア</button>
+                  </div>
+                ):sorted.map(p=>{
                   const s=STAFF_ACCOUNTS.find(x=>x.id===p.lastStaff)||{color:"#888",name:"不明",initial:"？"};
+                  // 検索キーワードをハイライト
+                  function highlight(text){
+                    if(!q||!text) return text;
+                    const idx=text.toLowerCase().indexOf(q);
+                    if(idx===-1) return text;
+                    return <span>{text.slice(0,idx)}<mark style={{background:"#fef08a",borderRadius:2,padding:"0 1px"}}>{text.slice(idx,idx+q.length)}</mark>{text.slice(idx+q.length)}</span>;
+                  }
                   return(
-                    <div key={p.name} className="card" style={{marginBottom:8}}>
+                    <div key={p.name} className="card" style={{marginBottom:8,transition:"box-shadow .15s"}}>
                       <div style={{padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
                         <div style={{display:"flex",alignItems:"center",gap:12,flex:1}}>
                           <div style={{width:42,height:42,borderRadius:12,background:`linear-gradient(135deg,${s.color},${s.color}99)`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:16,flexShrink:0,boxShadow:`0 3px 8px ${s.color}44`}}>{p.name.charAt(0)}</div>
                           <div>
                             <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
-                              <span style={{fontWeight:800,fontSize:15,color:"#1e293b"}}>{p.name}</span>
+                              <span style={{fontWeight:800,fontSize:15,color:"#1e293b"}}>{highlight(p.name)}</span>
                               {p.count>=2?<span className="badge badge-yellow">{p.count}回来院</span>:<span className="badge badge-gray">初回</span>}
                             </div>
                             <div style={{fontSize:12,color:"#64748b"}}>最終：{p.lastDate}　前回担当：{s.name}</div>
-                            {p.phone&&<div style={{fontSize:12,color:"#94a3b8"}}>{p.phone}</div>}
+                            {p.phone&&<div style={{fontSize:12,color:"#94a3b8"}}>{highlight(p.phone)}</div>}
                           </div>
                         </div>
                         <button onClick={()=>setHistoryPatient(p.name)} className="btn btn-primary btn-sm" style={{whiteSpace:"nowrap",flexShrink:0}}>履歴を見る</button>
