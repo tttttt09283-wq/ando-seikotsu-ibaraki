@@ -4,6 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>施術記録 - あんど整骨院</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#f0f4f8;min-height:100vh;}
@@ -42,6 +43,7 @@ input,select,textarea{width:100%;padding:10px 12px;border:1.5px solid #ddd;borde
 .done-sub{color:#666;font-size:14px;line-height:1.8;margin-bottom:28px;}
 .next-box{background:#f0f7ff;border-radius:12px;padding:16px;text-align:left;margin-bottom:20px;}
 .section-title{font-size:13px;font-weight:700;color:#1e3a5f;margin-bottom:10px;}
+.auth-wait{text-align:center;padding:60px 20px;color:#9ca3af;}
 </style>
 </head>
 <body>
@@ -56,6 +58,11 @@ input,select,textarea{width:100%;padding:10px 12px;border:1.5px solid #ddd;borde
 <script>
 const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
+
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
+});
+
 const STAFF = {1:"岩永",2:"大皿",3:"定井",4:"細永",5:"広川"};
 
 const BODY_PARTS = ["頸部（首）","肩","上腕","肘","前腕","手首・手","胸部","腰部","臀部","大腿","膝","下腿","足首・足","その他"];
@@ -77,7 +84,6 @@ const JIFEE_TYPES = ["なし","回数券","FP（フリーパス）"];
 
 let booking = null;
 
-// 状態
 let state = {
   bodyParts: [],
   treatmentTypes: [],
@@ -93,17 +99,25 @@ let state = {
   nextBookingId: null,
 };
 
-function sb_get(table, filter) {
-  return fetch(`${SUPABASE_URL}/rest/v1/${table}${filter||""}`, {
-    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
-  }).then(r => r.json());
+async function getAuthToken(){
+  const {data:{session}} = await supabaseClient.auth.getSession();
+  return session ? session.access_token : SUPABASE_ANON_KEY;
 }
-function sb_post(table, data) {
-  return fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+async function sb_get(table, filter) {
+  const token = await getAuthToken();
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}${filter||""}`, {
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` }
+  });
+  return res.json();
+}
+async function sb_post(table, data) {
+  const token = await getAuthToken();
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
     method: "POST",
-    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type": "application/json", Prefer: "return=representation" },
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=representation" },
     body: JSON.stringify(data)
-  }).then(r => r.json());
+  });
+  return res.json();
 }
 
 function toggle(arr, val) {
@@ -128,7 +142,6 @@ async function save() {
   render();
 
   try {
-    // 施術記録を保存
     const treatData = {
       booking_id: booking.id,
       body_parts: state.bodyParts.join("・"),
@@ -142,9 +155,11 @@ async function save() {
       next_time: state.nextTime || null,
       memo: state.memo || null,
     };
-    await sb_post("treatments", treatData);
+    const treatResult = await sb_post("treatments", treatData);
+    if (treatResult && treatResult.error) {
+      throw new Error(treatResult.message || treatResult.error || "保存に失敗しました");
+    }
 
-    // 次回予約を登録
     if (state.nextDate && state.nextTime) {
       const nextBooking = await sb_post("bookings", {
         patient_name: booking.patient_name,
@@ -164,7 +179,7 @@ async function save() {
 
     state.done = true;
   } catch(e) {
-    alert("保存エラー：" + e.message);
+    alert("保存エラー：" + e.message + "\n\nログイン状態が切れている可能性があります。お手数ですが管理画面に戻って再ログインしてから、もう一度お試しください。");
     state.saving = false;
   }
   render();
@@ -199,9 +214,15 @@ function render() {
 
     const btn = document.createElement("button");
     btn.className = "btn-primary";
-    btn.textContent = "← 管理画面へ戻る";
+    btn.textContent = "💴 会計へ進む";
     btn.onclick = () => { location.href = "/pos.html?id=" + booking.id; };
     wrap.appendChild(btn);
+
+    const btn2 = document.createElement("button");
+    btn2.className = "btn-secondary";
+    btn2.textContent = "← カレンダーへ戻る";
+    btn2.onclick = () => { location.href = "/index.html"; };
+    wrap.appendChild(btn2);
 
     root.appendChild(wrap);
     return;
@@ -209,7 +230,6 @@ function render() {
 
   root.innerHTML = "";
 
-  // 患者情報カード
   const infoCard = document.createElement("div");
   infoCard.className = "card";
   infoCard.innerHTML = `
@@ -223,7 +243,6 @@ function render() {
   `;
   root.appendChild(infoCard);
 
-  // 施術部位
   const partsCard = document.createElement("div");
   partsCard.className = "card";
   const partsHeader = document.createElement("div");
@@ -250,7 +269,6 @@ function render() {
   partsCard.appendChild(partsBody);
   root.appendChild(partsCard);
 
-  // 施術種別
   const typeCard = document.createElement("div");
   typeCard.className = "card";
   const typeHeader = document.createElement("div");
@@ -271,7 +289,6 @@ function render() {
   typeCard.appendChild(typeBody);
   root.appendChild(typeCard);
 
-  // 自費
   const jifeeCard = document.createElement("div");
   jifeeCard.className = "card";
   jifeeCard.innerHTML = `<div class="card-header orange">💴 自費</div>`;
@@ -293,14 +310,8 @@ function render() {
     const row = document.createElement("div");
     row.className = "row2";
     row.innerHTML = `
-      <div>
-        <label>枚数</label>
-        <input type="number" placeholder="例：10" value="${state.jifeeCount}" id="jifeeCount"/>
-      </div>
-      <div>
-        <label>金額（円）</label>
-        <input type="number" placeholder="例：30000" value="${state.jifeeAmount}" id="jifeeAmount"/>
-      </div>
+      <div><label>枚数</label><input type="number" placeholder="例：10" value="${state.jifeeCount}" id="jifeeCount"/></div>
+      <div><label>金額（円）</label><input type="number" placeholder="例：30000" value="${state.jifeeAmount}" id="jifeeAmount"/></div>
     `;
     jifeeBody.appendChild(row);
     setTimeout(() => {
@@ -311,10 +322,7 @@ function render() {
     }, 0);
   } else if (state.jifeeType === "FP（フリーパス）") {
     const row = document.createElement("div");
-    row.innerHTML = `
-      <label>金額（円）</label>
-      <input type="number" placeholder="例：50000" value="${state.jifeeAmount}" id="jifeeAmount"/>
-    `;
+    row.innerHTML = `<label>金額（円）</label><input type="number" placeholder="例：50000" value="${state.jifeeAmount}" id="jifeeAmount"/>`;
     jifeeBody.appendChild(row);
     setTimeout(() => {
       const a = document.getElementById("jifeeAmount");
@@ -325,7 +333,6 @@ function render() {
   jifeeCard.appendChild(jifeeBody);
   root.appendChild(jifeeCard);
 
-  // 結果
   const resultCard = document.createElement("div");
   resultCard.className = "card";
   const resultHeader = document.createElement("div");
@@ -349,7 +356,6 @@ function render() {
   resultCard.appendChild(resultBody);
   root.appendChild(resultCard);
 
-  // 次回予約
   const nextCard = document.createElement("div");
   nextCard.className = "card";
   nextCard.innerHTML = `<div class="card-header blue">📅 次回予約</div>`;
@@ -357,19 +363,10 @@ function render() {
   nextBody.className = "card-body";
   nextBody.innerHTML = `
     <div class="row2" style="margin-bottom:12px;">
-      <div>
-        <label>日付</label>
-        <input type="date" id="nextDate" value="${state.nextDate}"/>
-      </div>
-      <div>
-        <label>時間</label>
-        <input type="time" step="600" id="nextTime" value="${state.nextTime}"/>
-      </div>
+      <div><label>日付</label><input type="date" id="nextDate" value="${state.nextDate}"/></div>
+      <div><label>時間</label><input type="time" step="600" id="nextTime" value="${state.nextTime}"/></div>
     </div>
-    <div>
-      <label>メモ（任意）</label>
-      <textarea id="memo" rows="2" placeholder="気になる点など">${state.memo}</textarea>
-    </div>
+    <div><label>メモ（任意）</label><textarea id="memo" rows="2" placeholder="気になる点など">${state.memo}</textarea></div>
   `;
   nextCard.appendChild(nextBody);
   root.appendChild(nextCard);
@@ -383,7 +380,6 @@ function render() {
     if(mo) mo.oninput = e => { state.memo = e.target.value; };
   }, 0);
 
-  // 保存ボタン
   const saveBtn = document.createElement("button");
   saveBtn.className = "btn-primary";
   saveBtn.textContent = state.saving ? "保存中..." : "✅ 施術記録を保存する";
@@ -394,8 +390,8 @@ function render() {
 
   const backBtn = document.createElement("button");
   backBtn.className = "btn-secondary";
-  backBtn.textContent = "← 問診票に戻る";
-  backBtn.onclick = () => { history.back(); };
+  backBtn.textContent = "← カレンダーへ戻る";
+  backBtn.onclick = () => { location.href = "/index.html"; };
   root.appendChild(backBtn);
 
   const spacer = document.createElement("div");
@@ -404,6 +400,18 @@ function render() {
 }
 
 async function init() {
+  const {data:{session}} = await supabaseClient.auth.getSession();
+  if (!session) {
+    document.getElementById("root").innerHTML = `
+      <div class="auth-wait">
+        <div style="font-size:40px;margin-bottom:12px;">🔒</div>
+        <div style="font-weight:700;color:#374151;margin-bottom:10px;">ログインが必要です</div>
+        <div style="font-size:13px;color:#9ca3af;margin-bottom:20px;">管理画面からログインした状態でこのページを開いてください。</div>
+        <button class="btn-secondary" onclick="location.href='/index.html'">管理画面へ</button>
+      </div>`;
+    return;
+  }
+
   const params = new URLSearchParams(location.search);
   const id = params.get("id");
   if (!id) {
