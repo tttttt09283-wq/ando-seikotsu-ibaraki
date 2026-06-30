@@ -4,6 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>問診票 - あんど整骨院</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#f0f4f8;min-height:100vh;}
@@ -38,6 +39,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 .result-成約{background:#dcfce7;color:#15803d;}
 .result-持ち帰り{background:#fef3c7;color:#92400e;}
 .result-バツ{background:#fee2e2;color:#991b1b;}
+.auth-wait{text-align:center;padding:60px 20px;color:#9ca3af;}
 </style>
 </head>
 <body>
@@ -54,10 +56,20 @@ const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
 const STAFF = {1:"岩永",2:"大皿",3:"定井",4:"細永",5:"広川"};
 
-function sbGet(table, filter) {
-  return fetch(`${SUPABASE_URL}/rest/v1/${table}${filter||""}`, {
-    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
-  }).then(r => r.json());
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
+});
+
+async function getAuthToken(){
+  const {data:{session}} = await supabaseClient.auth.getSession();
+  return session ? session.access_token : SUPABASE_ANON_KEY;
+}
+async function sbGet(table, filter) {
+  const token = await getAuthToken();
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}${filter||""}`, {
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` }
+  });
+  return res.json();
 }
 
 function resultBadge(result) {
@@ -73,9 +85,23 @@ function jifeeText(t) {
 }
 
 async function load() {
+  const root = document.getElementById('root');
+
+  // ログイン確認（スタッフ専用ページのため必須）
+  const {data:{session}} = await supabaseClient.auth.getSession();
+  if (!session) {
+    root.innerHTML = `
+      <div class="auth-wait">
+        <div style="font-size:40px;margin-bottom:12px;">🔒</div>
+        <div style="font-weight:700;color:#374151;margin-bottom:10px;">ログインが必要です</div>
+        <div style="font-size:13px;color:#9ca3af;margin-bottom:20px;">管理画面からログインした状態でこのページを開いてください。</div>
+        <a href="/index.html" class="btn-back">管理画面へ</a>
+      </div>`;
+    return;
+  }
+
   const params = new URLSearchParams(location.search);
   const id = params.get('id');
-  const root = document.getElementById('root');
 
   if (!id) {
     root.innerHTML = '<div style="text-align:center;padding:60px;color:#ef4444;">❌ 予約IDが指定されていません</div>';
@@ -83,7 +109,6 @@ async function load() {
   }
 
   try {
-    // 現在の予約を取得
     const bookings = await sbGet("bookings", `?id=eq.${id}`);
     if (!bookings || bookings.length === 0) {
       root.innerHTML = '<div style="text-align:center;padding:60px;color:#ef4444;">❌ 予約が見つかりません</div>';
@@ -92,11 +117,9 @@ async function load() {
     const b = bookings[0];
     const staffName = STAFF[b.staff_id] || '不明';
 
-    // 同じ患者名の過去予約IDを取得
     const pastBookings = await sbGet("bookings", `?patient_name=eq.${encodeURIComponent(b.patient_name)}&id=neq.${id}&order=date.desc`);
     const pastIds = (pastBookings || []).map(pb => pb.id);
 
-    // 過去の施術記録を取得
     let historyHtml = "";
     if (pastIds.length > 0) {
       const treatments = await sbGet("treatments", `?booking_id=in.(${pastIds.join(",")})&order=treated_at.desc&limit=5`);
