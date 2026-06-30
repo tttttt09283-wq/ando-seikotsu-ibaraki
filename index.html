@@ -7,6 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#eef2f7;}
@@ -203,10 +204,19 @@ const DURATION_OPTIONS = Array.from({length:12},(_,i)=>(i+1)*10); // 10〜120分
 
 const SLOTS = ["09:00","09:30","10:00","10:30","11:00","11:30","13:00","13:30","14:00","14:30","15:00","15:30","16:00","16:30","17:00","17:30","18:00"];
 
+// Supabase公式クライアント（Authセッション管理付き）
+// storage を sessionStorage にすることで「タブを閉じるまでログイン維持」を実現
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
+});
+
 const sb = {
   async query(table,method="GET",body=null,filters=""){
+    // ログイン中ならセッショントークンを、未ログインならanonキーを使う
+    const {data:{session}} = await supabaseClient.auth.getSession();
+    const token = session ? session.access_token : SUPABASE_ANON_KEY;
     const res=await fetch(`${SUPABASE_URL}/rest/v1/${table}${filters}`,{
-      method,headers:{"apikey":SUPABASE_ANON_KEY,"Authorization":`Bearer ${SUPABASE_ANON_KEY}`,"Content-Type":"application/json","Prefer":"return=representation"},
+      method,headers:{"apikey":SUPABASE_ANON_KEY,"Authorization":`Bearer ${token}`,"Content-Type":"application/json","Prefer":"return=representation"},
       body:body?JSON.stringify(body):null,
     });
     const text=await res.text();return text?JSON.parse(text):[];
@@ -215,6 +225,20 @@ const sb = {
   insert:(t,d)=>sb.query(t,"POST",d),
   update:(t,id,d)=>sb.query(t,"PATCH",d,`?id=eq.${id}`),
   delete:(t,id)=>sb.query(t,"DELETE",null,`?id=eq.${id}`),
+
+  // ===== Auth関連 =====
+  async login(email,password){
+    const {data,error}=await supabaseClient.auth.signInWithPassword({email,password});
+    if(error) throw error;
+    return data;
+  },
+  async logout(){
+    await supabaseClient.auth.signOut();
+  },
+  async getSession(){
+    const {data:{session}}=await supabaseClient.auth.getSession();
+    return session;
+  },
 };
 
 const today=new Date();
@@ -331,17 +355,19 @@ function LoginScreen({onLogin}){
   async function login(){
     setLoading(true);setErr("");
     try{
-      const users=await sb.select("clinic_staff",`?email=eq.${encodeURIComponent(email.trim())}&password=eq.${encodeURIComponent(pw)}`);
+      // Supabase Authでログイン
+      await sb.login(email.trim(),pw);
+      // ログイン後、clinic_staffから対応するスタッフ情報を取得（RLSにより自分の分だけ見える）
+      const users=await sb.select("clinic_staff",`?email=eq.${encodeURIComponent(email.trim())}`);
       if(users&&users.length>0){
-        const u=users[0];const acc=STAFF_ACCOUNTS.find(s=>s.id===u.id)||STAFF_ACCOUNTS[0];
+        const u=users[0];
+        const acc=STAFF_ACCOUNTS.find(s=>s.id===u.id)||STAFF_ACCOUNTS.find(s=>s.email===u.email)||STAFF_ACCOUNTS[0];
         onLogin({...u,color:acc.color,initial:acc.initial});
       }else{
-        const u=STAFF_ACCOUNTS.find(s=>s.email===email.trim()&&s.password===pw);
-        if(u)onLogin(u);else setErr("メールアドレスまたはパスワードが違います");
+        setErr("スタッフ情報が見つかりませんでした");
       }
-    }catch{
-      const u=STAFF_ACCOUNTS.find(s=>s.email===email.trim()&&s.password===pw);
-      if(u)onLogin(u);else setErr("ログインできませんでした");
+    }catch(e){
+      setErr("メールアドレスまたはパスワードが違います");
     }
     setLoading(false);
   }
@@ -1822,8 +1848,35 @@ function Dashboard({user,onLogout}){
 
 function App(){
   const [user,setUser]=React.useState(null);
-  if(!user)return <LoginScreen onLogin={setUser}/>;
-  return <Dashboard user={user} onLogout={()=>setUser(null)}/>;
+  const [checking,setChecking]=React.useState(true);
+
+  React.useEffect(()=>{
+    async function restoreSession(){
+      try{
+        const session=await sb.getSession();
+        const saved=sessionStorage.getItem("ando_user");
+        if(session&&saved){
+          setUser(JSON.parse(saved));
+        }
+      }catch{}
+      setChecking(false);
+    }
+    restoreSession();
+  },[]);
+
+  function handleLogin(u){
+    try{sessionStorage.setItem("ando_user",JSON.stringify(u));}catch{}
+    setUser(u);
+  }
+  function handleLogout(){
+    try{sessionStorage.removeItem("ando_user");}catch{}
+    sb.logout();
+    setUser(null);
+  }
+
+  if(checking)return(<div className="loading"><div className="loading-spinner"></div><div style={{fontWeight:700,color:"#1e3a5f",fontSize:14}}>確認中...</div></div>);
+  if(!user)return <LoginScreen onLogin={handleLogin}/>;
+  return <Dashboard user={user} onLogout={handleLogout}/>;
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
