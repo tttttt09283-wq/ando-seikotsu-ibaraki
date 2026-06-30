@@ -1414,7 +1414,7 @@ function Dashboard({user,onLogout}){
 
   function showToast(msg,type="success"){setToast({msg,type});setTimeout(()=>setToast(null),3000);}
 
-  const filtered=React.useMemo(()=>selStaff?bookings.filter(b=>b.staff_id===selStaff):(isAdmin?bookings:bookings.filter(b=>b.staff_id===user.id)),[bookings,selStaff,isAdmin,user.id]);
+  const filtered=React.useMemo(()=>selStaff?bookings.filter(b=>b.staff_id===selStaff):bookings,[bookings,selStaff]);
 
   const visitCounts=React.useMemo(()=>{
     const pb={};
@@ -1562,7 +1562,7 @@ function Dashboard({user,onLogout}){
             const screenW=Math.max(window.innerWidth-130-48,600);
             const CELL_W=Math.max(Math.floor((screenW-HEADER_W)/TOTAL_MINS),12);
 
-            const staffList=isAdmin?STAFF_ACCOUNTS:STAFF_ACCOUNTS.filter(s=>s.id===user.id);
+            const staffList=STAFF_ACCOUNTS;
             const filteredStaff=selStaff?staffList.filter(s=>s.id===selStaff):staffList;
 
             function timeToX(timeStr){const[h,m]=timeStr.split(":").map(Number);return((h-9)*60+m)/10*CELL_W;}
