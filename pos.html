@@ -4,6 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>会計 - あんど整骨院</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#f0f4f8;min-height:100vh;}
@@ -50,8 +51,6 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 .receipt-title{text-align:center;font-weight:800;font-size:14px;margin-bottom:6px;border-bottom:1px solid #ddd;padding-bottom:6px;}
 .receipt-row{display:flex;justify-content:space-between;}
 .receipt-total{display:flex;justify-content:space-between;font-weight:800;font-size:14px;border-top:1px solid #ddd;padding-top:6px;margin-top:4px;}
-
-/* 次回予約 */
 .next-booking-item{background:#f0f9ff;border:1.5px solid #bae6fd;border-radius:10px;padding:12px 14px;margin-bottom:8px;position:relative;}
 .next-booking-item .remove-btn{position:absolute;top:10px;right:10px;background:#fef2f2;color:#ef4444;border:none;border-radius:6px;padding:3px 8px;cursor:pointer;font-size:11px;}
 .nb-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;}
@@ -67,6 +66,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 .staff-btn{padding:5px 9px;border-radius:6px;border:1.5px solid #ddd;background:white;cursor:pointer;font-size:11px;font-weight:600;}
 .add-booking-btn{width:100%;padding:11px;background:white;color:#0891b2;border:1.5px solid #0891b2;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px;}
 .save-bookings-btn{width:100%;padding:14px;background:linear-gradient(135deg,#0891b2,#0e7490);color:white;border:none;border-radius:10px;font-size:15px;font-weight:800;cursor:pointer;margin-bottom:8px;}
+.auth-wait{text-align:center;padding:60px 20px;color:#9ca3af;}
 </style>
 </head>
 <body>
@@ -81,6 +81,11 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 <script>
 const SUPABASE_URL="https://dctlirxcwitcupaewiyt.supabase.co";
 const SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
+
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
+});
+
 const STAFF_LIST=[{id:1,name:"岩永",color:"#2563eb"},{id:2,name:"大皿",color:"#059669"},{id:3,name:"定井",color:"#d97706"},{id:4,name:"細永",color:"#7c3aed"},{id:5,name:"広川",color:"#dc2626"}];
 const STAFF={1:"岩永",2:"大皿",3:"定井",4:"細永",5:"広川"};
 const INSURANCE_PRICES={"無料施術体験会（60分）":0,"初診（60分）":0,"再診（30分）":0,"鍼灸（45分）":580,"骨盤矯正（40分）":580,"マッサージ（30分）":380};
@@ -98,135 +103,68 @@ const TIME_OPTS = (()=>{
 })();
 const PAY_METHODS=[{id:"現金",icon:"💴"},{id:"カード",icon:"💳"},{id:"PayPay",icon:"📱"}];
 const INSURANCE_RATES={"3割":0.3,"2割":0.2,"1割":0.1};
+const BASE_PRICES={"無料施術体験会（60分）":0,"初診（60分）":1530,"再診（30分）":1130,"3回目以降":980};
 
-// メニュー基本点数（10円単位）
-const BASE_PRICES={
-  "無料施術体験会（60分）":0,
-  "初診（60分）":1530,
-  "再診（30分）":1130,
-  "3回目以降":980,
-};
-
-function sbGet(t,f){return fetch(`${SUPABASE_URL}/rest/v1/${t}${f||""}`,{headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`}}).then(r=>r.json());}
-function sbPost(t,d){return fetch(`${SUPABASE_URL}/rest/v1/${t}`,{method:"POST",headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`,"Content-Type":"application/json",Prefer:"return=representation"},body:JSON.stringify(d)}).then(r=>r.json());}
-function sbPatch(t,id,d){return fetch(`${SUPABASE_URL}/rest/v1/${t}?id=eq.${id}`,{method:"PATCH",headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`,"Content-Type":"application/json"},body:JSON.stringify(d)}).then(r=>r.json());}
+async function getAuthToken(){
+  const {data:{session}} = await supabaseClient.auth.getSession();
+  return session ? session.access_token : SUPABASE_ANON_KEY;
+}
+async function sbGet(t,f){
+  const token=await getAuthToken();
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}${f||""}`,{headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`}});
+  return res.json();
+}
+async function sbPost(t,d){
+  const token=await getAuthToken();
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}`,{method:"POST",headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},body:JSON.stringify(d)});
+  return res.json();
+}
 function fmt(n){return"¥"+Number(n||0).toLocaleString();}
 
 let booking=null,treatment=null,visitCount=1;
-let state={
-  insuranceAmount:0,
-  jifeeItems:[],
-  payments:[],
-  done:false,
-  saving:false,
-  // 次回予約リスト
-  nextBookings:[],
-  savingBookings:false,
-  bookingsSaved:false,
-};
+let state={insuranceAmount:0,jifeeItems:[],payments:[],done:false,saving:false,nextBookings:[],savingBookings:false,bookingsSaved:false};
 
-// 来院回数からメニューを決定
-function getMenuByVisit(visit){
-  if(visit===1) return "初診（60分）";
-  if(visit===2) return "初診（60分）";
-  return "再診（30分）";
-}
+function getMenuByVisit(visit){if(visit===1) return "初診（60分）";if(visit===2) return "初診（60分）";return "再診（30分）";}
+function getInsMenuByVisit(visit){if(visit===1) return "初診（60分）";if(visit===2) return "初診（60分）";if(visit===3) return "再診（30分）";return "3回目以降";}
+function calcInsuranceAmount(menuName, rate){const base = BASE_PRICES[menuName]||0;return Math.ceil(base * INSURANCE_RATES[rate]);}
 
-// 来院回数から保険メニュー名
-function getInsMenuByVisit(visit){
-  if(visit===1) return "初診（60分）";
-  if(visit===2) return "初診（60分）";
-  if(visit===3) return "再診（30分）";
-  return "3回目以降";
-}
-
-// 保険金額計算
-function calcInsuranceAmount(menuName, rate){
-  const base = BASE_PRICES[menuName]||0;
-  return Math.ceil(base * INSURANCE_RATES[rate]);
-}
-
-// 次回予約の追加
 function addNextBooking(){
   const nextVisit = visitCount + state.nextBookings.length + 1;
   const insMenu = getInsMenuByVisit(nextVisit);
   const rate = "3割";
-  // 前回自費を自動セット
   const autoJifee = treatment&&treatment.treatment_types
     ? treatment.treatment_types.split("・").filter(t=>t!=="保険"&&JIFEE_PRICES[t]!==undefined)
     : [];
-
-  state.nextBookings.push({
-    date:"",
-    time:"",
-    staffId: booking.staff_id,
-    menu: getMenuByVisit(nextVisit),
-    insMenu,
-    insRate: rate,
-    insAmount: calcInsuranceAmount(insMenu, rate),
-    jifeeTypes: [...autoJifee],
-    visitNum: nextVisit,
-  });
+  state.nextBookings.push({date:"",time:"",staffId: booking.staff_id,menu: getMenuByVisit(nextVisit),insMenu,insRate: rate,insAmount: calcInsuranceAmount(insMenu, rate),jifeeTypes: [...autoJifee],visitNum: nextVisit});
   render();
 }
-
 function removeNextBooking(i){
   state.nextBookings.splice(i,1);
-  // visitNumを再計算
-  state.nextBookings.forEach((nb,idx)=>{
-    nb.visitNum = visitCount + idx + 1;
-    nb.insMenu = getInsMenuByVisit(nb.visitNum);
-    nb.menu = getMenuByVisit(nb.visitNum);
-  });
+  state.nextBookings.forEach((nb,idx)=>{nb.visitNum = visitCount + idx + 1;nb.insMenu = getInsMenuByVisit(nb.visitNum);nb.menu = getMenuByVisit(nb.visitNum);});
   render();
 }
-
 function updateNB(i, key, val){
   state.nextBookings[i][key]=val;
-  if(key==="insRate"||key==="insMenu"){
-    state.nextBookings[i].insAmount = calcInsuranceAmount(
-      state.nextBookings[i].insMenu,
-      state.nextBookings[i].insRate
-    );
-  }
+  if(key==="insRate"||key==="insMenu"){state.nextBookings[i].insAmount = calcInsuranceAmount(state.nextBookings[i].insMenu,state.nextBookings[i].insRate);}
   render();
 }
-
 function toggleNBJifee(i, label){
   const nb=state.nextBookings[i];
-  if(nb.jifeeTypes.includes(label)){
-    nb.jifeeTypes=nb.jifeeTypes.filter(j=>j!==label);
-  } else {
-    nb.jifeeTypes.push(label);
-  }
+  if(nb.jifeeTypes.includes(label)){nb.jifeeTypes=nb.jifeeTypes.filter(j=>j!==label);}else{nb.jifeeTypes.push(label);}
   render();
 }
-
 async function saveNextBookings(){
   if(state.savingBookings) return;
   const valid = state.nextBookings.filter(nb=>nb.date&&nb.time);
   if(valid.length===0){alert("日付と時間を入力してください");return;}
-  state.savingBookings=true;
-  render();
+  state.savingBookings=true;render();
   try{
     for(const nb of valid){
-      await sbPost("bookings",{
-        patient_name: booking.patient_name,
-        phone: booking.phone,
-        staff_id: nb.staffId,
-        date: nb.date,
-        time: nb.time,
-        menu: nb.menu,
-        insurance_rate: nb.insRate,
-        line_notify: !!booking.line_user_id,
-        line_user_id: booking.line_user_id||null,
-        reminded: false,
-      });
+      await sbPost("bookings",{patient_name: booking.patient_name,phone: booking.phone,staff_id: nb.staffId,date: nb.date,time: nb.time,menu: nb.menu,insurance_rate: nb.insRate,line_notify: !!booking.line_user_id,line_user_id: booking.line_user_id||null,reminded: false});
     }
     state.bookingsSaved=true;
   }catch(e){alert("予約保存エラー："+e.message);}
-  state.savingBookings=false;
-  render();
+  state.savingBookings=false;render();
 }
 
 function calcTotal(){return(parseInt(state.insuranceAmount)||0)+state.jifeeItems.reduce((s,i)=>s+i.amount,0);}
@@ -239,12 +177,7 @@ function calcChange(){
   if(!cashPay) return 0;
   return (parseInt(cashPay.amount)||0)-Math.max(0,total-nonCash);
 }
-
-function addPayment(method){
-  if(state.payments.find(p=>p.method===method)) return;
-  state.payments.push({method,amount:Math.max(0,calcRemaining())});
-  render();
-}
+function addPayment(method){if(state.payments.find(p=>p.method===method)) return;state.payments.push({method,amount:Math.max(0,calcRemaining())});render();}
 function removePayment(i){state.payments.splice(i,1);render();}
 function updatePaymentAmount(i,val){state.payments[i].amount=parseInt(val)||0;renderSummary();}
 function addJifee(label,amount){state.jifeeItems.push({label,amount});render();}
@@ -253,10 +186,7 @@ function updateJifee(i,val){state.jifeeItems[i].amount=parseInt(val)||0;renderSu
 
 function renderSummaryHtml(){
   const ins=parseInt(state.insuranceAmount)||0;
-  const total=calcTotal();
-  const paid=calcPaid();
-  const remaining=calcRemaining();
-  const change=calcChange();
+  const total=calcTotal();const paid=calcPaid();const remaining=calcRemaining();const change=calcChange();
   return`
     ${ins>0?`<div class="summary-row"><span style="color:#666;">保険窓口負担</span><span style="font-weight:700;">${fmt(ins)}</span></div>`:""}
     ${state.jifeeItems.map(i=>`<div class="summary-row"><span style="color:#666;">${i.label}</span><span style="font-weight:700;">${fmt(i.amount)}</span></div>`).join("")}
@@ -269,16 +199,10 @@ function renderSummaryHtml(){
       </div>`:""}
   `;
 }
-function renderSummary(){
-  const el=document.getElementById("summaryArea");
-  if(el) el.innerHTML=renderSummaryHtml();
-}
+function renderSummary(){const el=document.getElementById("summaryArea");if(el) el.innerHTML=renderSummaryHtml();}
 
 function renderReceipt(){
-  const total=calcTotal();
-  const ins=parseInt(state.insuranceAmount)||0;
-  const now=new Date();
-  const change=calcChange();
+  const total=calcTotal();const ins=parseInt(state.insuranceAmount)||0;const now=new Date();const change=calcChange();
   return`
     <div class="receipt-area">
       <div class="receipt-title">領　収　書</div>
@@ -317,7 +241,6 @@ function renderNextBookings(){
         </div>
       </div>`;
   }
-
   return`
     <div class="card">
       <div class="card-header teal">📅 次回予約を取る</div>
@@ -329,100 +252,71 @@ function renderNextBookings(){
               ${nb.visitNum}回目来院
               <span style="background:#dbeafe;color:#1e40af;border-radius:4px;padding:1px 6px;font-size:10px;margin-left:6px;">${nb.insMenu}</span>
             </div>
-
-            <!-- 日時 -->
             <div class="nb-grid">
-              <div>
-                <span class="nb-label">📅 日付</span>
-                <input type="date" class="nb-input" value="${nb.date}" onchange="updateNB(${i},'date',this.value)"/>
-              </div>
-              <div>
-                <span class="nb-label">🕐 時間</span>
+              <div><span class="nb-label">📅 日付</span><input type="date" class="nb-input" value="${nb.date}" onchange="updateNB(${i},'date',this.value)"/></div>
+              <div><span class="nb-label">🕐 時間</span>
                 <select class="nb-input" onchange="updateNB(${i},'time',this.value)">
                   <option value="">選択</option>
                   ${TIME_OPTS.map(t=>`<option value="${t}" ${nb.time===t?'selected':''}>${t}</option>`).join('')}
                 </select>
               </div>
             </div>
-
-            <!-- 担当スタッフ -->
             <div style="margin-bottom:8px;">
               <span class="nb-label">👤 担当スタッフ</span>
               <div class="staff-btns">
-                ${STAFF_LIST.map(s=>`
-                  <button class="staff-btn" onclick="updateNB(${i},'staffId',${s.id})"
-                    style="border-color:${nb.staffId===s.id?s.color:"#ddd"};background:${nb.staffId===s.id?s.color:"white"};color:${nb.staffId===s.id?"white":"#444"};">
-                    ${s.name}
-                  </button>`).join("")}
+                ${STAFF_LIST.map(s=>`<button class="staff-btn" onclick="updateNB(${i},'staffId',${s.id})" style="border-color:${nb.staffId===s.id?s.color:"#ddd"};background:${nb.staffId===s.id?s.color:"white"};color:${nb.staffId===s.id?"white":"#444"};">${s.name}</button>`).join("")}
               </div>
             </div>
-
-            <!-- 保険割合 -->
             <div style="margin-bottom:8px;">
               <span class="nb-label">🏥 保険負担割合</span>
               <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
                 <div class="rate-btns">
-                  ${["3割","2割","1割"].map(r=>`
-                    <button class="rate-btn${nb.insRate===r?" sel":""}" onclick="updateNB(${i},'insRate','${r}')">${r}</button>`).join("")}
+                  ${["3割","2割","1割"].map(r=>`<button class="rate-btn${nb.insRate===r?" sel":""}" onclick="updateNB(${i},'insRate','${r}')">${r}</button>`).join("")}
                 </div>
                 <div style="font-size:13px;font-weight:700;color:#1e3a5f;">→ ${fmt(nb.insAmount)}</div>
               </div>
             </div>
-
-            <!-- 自費メニュー -->
             <div>
               <span class="nb-label">💴 自費メニュー（タップで選択）</span>
               <div class="nb-jifee">
-                ${Object.keys(JIFEE_PRICES).map(label=>`
-                  <button class="nb-jifee-btn${nb.jifeeTypes.includes(label)?" sel":""}" onclick="toggleNBJifee(${i},'${label}')">
-                    ${label}
-                  </button>`).join("")}
+                ${Object.keys(JIFEE_PRICES).map(label=>`<button class="nb-jifee-btn${nb.jifeeTypes.includes(label)?" sel":""}" onclick="toggleNBJifee(${i},'${label}')">${label}</button>`).join("")}
               </div>
               ${nb.jifeeTypes.length>0?`<div style="margin-top:6px;font-size:11px;color:#0891b2;font-weight:600;">選択中：${nb.jifeeTypes.join("・")}</div>`:""}
             </div>
           </div>`).join("")}
-
         <button class="add-booking-btn" onclick="addNextBooking()">＋ 次回予約を追加</button>
-
-        ${state.nextBookings.length>0?`
-          <button class="save-bookings-btn" onclick="saveNextBookings()" ${state.savingBookings?"disabled":""} style="opacity:${state.savingBookings?0.7:1};">
-            ${state.savingBookings?"登録中...":"📅 次回予約を登録する"}
-          </button>`:""}
+        ${state.nextBookings.length>0?`<button class="save-bookings-btn" onclick="saveNextBookings()" ${state.savingBookings?"disabled":""} style="opacity:${state.savingBookings?0.7:1};">${state.savingBookings?"登録中...":"📅 次回予約を登録する"}</button>`:""}
       </div>
     </div>`;
 }
 
 async function save(){
   if(state.saving) return;
-  const total=calcTotal();
-  const paid=calcPaid();
+  const total=calcTotal();const paid=calcPaid();
   if(state.payments.length===0){alert("支払方法を追加してください");return;}
   if(paid<total&&!confirm(`支払合計(${fmt(paid)})が請求額(${fmt(total)})より少ないですが確定しますか？`)) return;
   state.saving=true;render();
   try{
     const methodStr=state.payments.map(p=>`${p.method}:${fmt(p.amount)}`).join("・");
     const jifeeTotal=state.jifeeItems.reduce((s,i)=>s+i.amount,0);
-    await sbPost("payments",{
-      booking_id:booking.id,
-      treatment_id:treatment?treatment.id:null,
-      patient_name:booking.patient_name,
-      payment_date:booking.date,
-      insurance_amount:parseInt(state.insuranceAmount)||0,
-      jifee_amount:jifeeTotal,
-      total_amount:total,
-      payment_method:methodStr,
-      staff_id:booking.staff_id,
+    const result=await sbPost("payments",{
+      booking_id:booking.id,treatment_id:treatment?treatment.id:null,patient_name:booking.patient_name,
+      payment_date:booking.date,insurance_amount:parseInt(state.insuranceAmount)||0,jifee_amount:jifeeTotal,
+      total_amount:total,payment_method:methodStr,staff_id:booking.staff_id,
       memo:state.jifeeItems.map(i=>i.label).join("・")||null,
     });
+    if(result&&result.error){throw new Error(result.message||result.error||"保存に失敗しました");}
     state.done=true;
-  }catch(e){alert("保存エラー："+e.message);state.saving=false;}
+  }catch(e){
+    alert("保存エラー："+e.message+"\n\nログイン状態が切れている可能性があります。お手数ですが管理画面に戻って再ログインしてから、もう一度お試しください。");
+    state.saving=false;
+  }
   render();
 }
 
 function render(){
   const root=document.getElementById("root");
   if(!booking) return;
-
   if(state.done){
     const change=calcChange();
     root.innerHTML=`
@@ -435,22 +329,16 @@ function render(){
         </div>
         ${renderReceipt()}
         <button class="btn-back" onclick="window.print()" style="border-color:#d97706;color:#d97706;">🖨️ 領収書を印刷</button>
-
         ${renderNextBookings()}
-
-       <button class="btn-back" onclick="location.href='/index.html'" style="margin-top:8px;">← カレンダーへ戻る</button>
+        <button class="btn-back" onclick="location.href='/index.html'" style="margin-top:8px;">← カレンダーへ戻る</button>
       </div>`;
     return;
   }
-
   root.innerHTML=`
     <div class="container" style="padding:12px 0;">
-      <!-- 患者情報 -->
       <div class="card">
         <div class="card-header blue">👤 ${booking.patient_name} 様　${booking.date} ${booking.time}　${STAFF[booking.staff_id]||""}先生　${visitCount}回目来院</div>
       </div>
-
-      <!-- 保険＋合計 2カラム -->
       <div class="two-col">
         <div class="card" style="margin-bottom:0;">
           <div class="card-header blue">🏥 保険窓口負担</div>
@@ -470,76 +358,62 @@ function render(){
         </div>
       </div>
       <div style="height:10px;"></div>
-
-      <!-- 自費 -->
       <div class="card">
         <div class="card-header green">💴 自費項目</div>
         <div class="card-body">
           <div class="jifee-grid">
-            ${Object.entries(JIFEE_PRICES).map(([label,amount])=>`
-              <button class="jifee-btn" onclick="addJifee('${label}',${amount})">
-                ${label}<br/><span style="font-size:10px;color:#9ca3af;font-weight:400;">${amount>0?fmt(amount):"金額入力"}</span>
-              </button>`).join("")}
+            ${Object.entries(JIFEE_PRICES).map(([label,amount])=>`<button class="jifee-btn" onclick="addJifee('${label}',${amount})">${label}<br/><span style="font-size:10px;color:#9ca3af;font-weight:400;">${amount>0?fmt(amount):"金額入力"}</span></button>`).join("")}
           </div>
-          ${state.jifeeItems.map((item,i)=>`
-            <div class="jifee-item">
-              <span>${item.label}</span>
-              <input type="number" value="${item.amount}" onchange="updateJifee(${i},this.value)"/>
-              <button onclick="removeJifee(${i})">✕</button>
-            </div>`).join("")}
+          ${state.jifeeItems.map((item,i)=>`<div class="jifee-item"><span>${item.label}</span><input type="number" value="${item.amount}" onchange="updateJifee(${i},this.value)"/><button onclick="removeJifee(${i})">✕</button></div>`).join("")}
           ${state.jifeeItems.length===0?`<div style="text-align:center;color:#d1d5db;font-size:12px;">なし</div>`:""}
         </div>
       </div>
-
-      <!-- 支払方法 -->
       <div class="card">
         <div class="card-header purple">💳 支払方法（複数可）</div>
         <div class="card-body">
           <div class="pay-methods">
-            ${PAY_METHODS.map(m=>`
-              <button class="pay-method-btn${state.payments.find(p=>p.method===m.id)?" active":""}" onclick="addPayment('${m.id}')">
-                ${m.icon} ${m.id}
-              </button>`).join("")}
+            ${PAY_METHODS.map(m=>`<button class="pay-method-btn${state.payments.find(p=>p.method===m.id)?" active":""}" onclick="addPayment('${m.id}')">${m.icon} ${m.id}</button>`).join("")}
           </div>
-          ${state.payments.map((p,i)=>`
-            <div class="pay-row">
-              <span>${p.method==="現金"?"💴":p.method==="カード"?"💳":"📱"} ${p.method}</span>
-              <input type="number" value="${p.amount}" onchange="updatePaymentAmount(${i},this.value)" placeholder="金額"/>
-              <button onclick="removePayment(${i})">✕</button>
-            </div>`).join("")}
+          ${state.payments.map((p,i)=>`<div class="pay-row"><span>${p.method==="現金"?"💴":p.method==="カード"?"💳":"📱"} ${p.method}</span><input type="number" value="${p.amount}" onchange="updatePaymentAmount(${i},this.value)" placeholder="金額"/><button onclick="removePayment(${i})">✕</button></div>`).join("")}
           ${state.payments.length===0?`<div style="text-align:center;color:#d1d5db;font-size:12px;padding:6px;">上のボタンから追加</div>`:""}
         </div>
       </div>
-
-      <button class="btn-confirm" onclick="save()" ${state.saving?"disabled":""} style="opacity:${state.saving?0.7:1};">
-        ${state.saving?"処理中...":"✅ 会計を確定する"}
-      </button>
+      <button class="btn-confirm" onclick="save()" ${state.saving?"disabled":""} style="opacity:${state.saving?0.7:1};">${state.saving?"処理中...":"✅ 会計を確定する"}</button>
       <button class="btn-back" onclick="history.back()">← 戻る</button>
       <div style="height:40px;"></div>
     </div>`;
 }
 
 async function init(){
+  const {data:{session}} = await supabaseClient.auth.getSession();
+  if(!session){
+    document.getElementById("root").innerHTML=`
+      <div class="auth-wait">
+        <div style="font-size:40px;margin-bottom:12px;">🔒</div>
+        <div style="font-weight:700;color:#374151;margin-bottom:10px;">ログインが必要です</div>
+        <div style="font-size:13px;color:#9ca3af;margin-bottom:20px;">管理画面からログインした状態でこのページを開いてください。</div>
+        <button class="btn-back" onclick="location.href='/index.html'">管理画面へ</button>
+      </div>`;
+    return;
+  }
   const params=new URLSearchParams(location.search);
   const id=params.get("id");
   if(!id){document.getElementById("root").innerHTML='<div style="text-align:center;padding:60px;color:#ef4444;">❌ 予約IDが指定されていません</div>';return;}
   try{
-    const[bookings,treatments,allBookings]=await Promise.all([
+    const[bookings,treatments]=await Promise.all([
       sbGet("bookings",`?id=eq.${id}`),
       sbGet("treatments",`?booking_id=eq.${id}&order=treated_at.desc&limit=1`),
-      sbGet("bookings",`?patient_name=eq.placeholder`), // 後で上書き
     ]);
     booking=bookings[0];
+    if(!booking){
+      document.getElementById("root").innerHTML='<div style="text-align:center;padding:60px;color:#ef4444;">❌ 予約が見つかりません</div>';
+      return;
+    }
     treatment=treatments[0]||null;
-
-    // 来院回数を取得
     const samePatient=await sbGet("bookings",`?patient_name=eq.${encodeURIComponent(booking.patient_name)}&order=date.asc`);
     visitCount=Array.isArray(samePatient)?samePatient.length:1;
-
     document.getElementById("patientBadge").textContent=booking.patient_name+" 様";
     state.insuranceAmount=INSURANCE_PRICES[booking.menu]||0;
-
-    // 施術記録から自費を自動セット
     if(treatment&&treatment.treatment_types){
       treatment.treatment_types.split("・").forEach(t=>{
         if(JIFEE_PRICES[t]!==undefined&&t!=="保険") state.jifeeItems.push({label:t,amount:JIFEE_PRICES[t]});
