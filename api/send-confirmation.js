@@ -16,8 +16,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    // intake.htmlへのURL
-    const intakeUrl = `${BASE_URL}/intake.html?id=${bookingId}`;
+    // マイページへのURL（予約確認・変更・回数券残高などが確認できる）
+    const mypageUrl = `${BASE_URL}/mypage.html`;
 
     // LINEメッセージ（テキスト＋QRコードはLIFFのURLスキームで代替）
     const messages = [
@@ -31,8 +31,8 @@ export default async function handler(req, res) {
           actions: [
             {
               type: "uri",
-              label: "📋 予約内容・QRを確認する",
-              uri: intakeUrl
+              label: "📋 マイページで予約を確認する",
+              uri: mypageUrl
             }
           ]
         }
