@@ -66,30 +66,33 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 const STAFF = {1:"岩永",2:"大皿",3:"定井",4:"細永",5:"広川"};
 
 const BODY_PARTS = ["頸部（首）","肩","上腕","肘","前腕","手首・手","胸部","腰部","臀部","大腿","膝","下腿","足首・足","その他"];
-const TREATMENT_TYPES = [
-  {id:"保険", color:"blue"},
-  {id:"矯正NE", color:"green"},
-  {id:"矯正KO", color:"green"},
-  {id:"ST", color:"orange"},
-  {id:"鍼", color:"purple"},
-  {id:"Hi", color:"red"},
-  {id:"他", color:"blue"},
+
+// 施術種別カテゴリ
+const TREATMENT_CATEGORIES = [
+  {
+    id:"hoken", label:"保険", color:"#1e3a5f",
+    items:["保険"]
+  },
+  {
+    id:"spot", label:"スポット", color:"#059669",
+    items:["矯正NE","矯正KO","ST","Hi","鍼","EMS","その他"]
+  },
 ];
+
 const RESULTS = [
   {id:"成約", icon:"✅", color:"green"},
   {id:"持ち帰り", icon:"🤔", color:"orange"},
   {id:"バツ", icon:"❌", color:"red"},
 ];
-const JIFEE_TYPES = ["なし","回数券","FP（フリーパス）"];
 
 let booking = null;
+let patientPasses = []; // その患者のアクティブなpass一覧
 
 let state = {
   bodyParts: [],
   treatmentTypes: [],
-  jifeeType: "なし",
-  jifeeCount: "",
-  jifeeAmount: "",
+  treatTab: "hoken",
+  usePassId: null,    // 今回使用するpass.id
   result: "",
   nextDate: "",
   nextTime: "",
@@ -119,6 +122,14 @@ async function sb_post(table, data) {
   });
   return res.json();
 }
+async function sb_patch(table, id, data) {
+  const token = await getAuthToken();
+  await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(data)
+  });
+}
 
 function toggle(arr, val) {
   return arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val];
@@ -142,14 +153,17 @@ async function save() {
   render();
 
   try {
+    // 使用中のpass情報
+    const selPass = state.usePassId ? patientPasses.find(p=>p.id===state.usePassId) : null;
+
     const treatData = {
       booking_id: booking.id,
       body_parts: state.bodyParts.join("・"),
       treatment_types: state.treatmentTypes.join("・"),
-      jifee_type: state.jifeeType,
-      jifee_detail: state.jifeeType !== "なし" ? state.jifeeType : null,
-      jifee_amount: state.jifeeAmount ? parseInt(state.jifeeAmount) : null,
-      jifee_count: state.jifeeCount ? parseInt(state.jifeeCount) : null,
+      jifee_type: selPass ? selPass.pass_type : "なし",
+      jifee_detail: selPass ? selPass.pass_type : null,
+      jifee_amount: null,
+      jifee_count: selPass ? selPass.remaining_count - 1 : null,
       result: state.result,
       next_date: state.nextDate || null,
       next_time: state.nextTime || null,
@@ -158,6 +172,18 @@ async function save() {
     const treatResult = await sb_post("treatments", treatData);
     if (treatResult && treatResult.error) {
       throw new Error(treatResult.message || treatResult.error || "保存に失敗しました");
+    }
+
+    // passを使用した場合、残数を1減らす
+    if (selPass) {
+      const newRemaining = Math.max(0, selPass.remaining_count - 1);
+      await sb_patch("passes", selPass.id, {
+        remaining_count: newRemaining,
+        active: newRemaining > 0,
+      });
+      // ローカルも更新
+      selPass.remaining_count = newRemaining;
+      selPass.active = newRemaining > 0;
     }
 
     if (state.nextDate && state.nextTime) {
@@ -271,67 +297,81 @@ function render() {
 
   const typeCard = document.createElement("div");
   typeCard.className = "card";
-  const typeHeader = document.createElement("div");
-  typeHeader.className = "card-header green";
-  typeHeader.textContent = "⚕️ 施術種別（複数選択可）*";
-  const typeBody = document.createElement("div");
-  typeBody.className = "card-body";
-  const typeChips = document.createElement("div");
-  typeChips.className = "chips";
-  TREATMENT_TYPES.forEach(t => {
-    typeChips.appendChild(chip(t.id, t.color, state.treatmentTypes.includes(t.id), () => {
-      state.treatmentTypes = toggle(state.treatmentTypes, t.id);
-      render();
-    }));
-  });
-  typeBody.appendChild(typeChips);
-  typeCard.appendChild(typeHeader);
-  typeCard.appendChild(typeBody);
+  typeCard.innerHTML = `
+    <div class="card-header green">⚕️ 施術種別（複数選択可）*</div>
+    <div class="card-body">
+      <!-- カテゴリタブ -->
+      <div style="display:flex;gap:6px;margin-bottom:12px;">
+        ${TREATMENT_CATEGORIES.map(cat=>`
+          <button onclick="state.treatTab='${cat.id}';render();"
+            style="flex:1;padding:8px 4px;border-radius:8px;border:2px solid ${state.treatTab===cat.id?cat.color:'#e2e8f0'};background:${state.treatTab===cat.id?cat.color:'white'};color:${state.treatTab===cat.id?'white':'#374151'};font-size:13px;font-weight:700;cursor:pointer;">
+            ${cat.label}
+          </button>`).join("")}
+      </div>
+      <!-- 選択中カテゴリの施術種別 -->
+      <div style="display:flex;flex-wrap:wrap;gap:7px;">
+        ${(()=>{
+          const cat=TREATMENT_CATEGORIES.find(c=>c.id===state.treatTab)||TREATMENT_CATEGORIES[0];
+          return cat.items.map(item=>{
+            const sel=state.treatmentTypes.includes(item);
+            return `<button onclick="state.treatmentTypes=${JSON.stringify(toggle(state.treatmentTypes,item))};render();"
+              style="padding:8px 14px;border-radius:20px;border:1.5px solid ${sel?cat.color:'#ddd'};background:${sel?cat.color:'white'};color:${sel?'white':'#444'};font-size:13px;font-weight:${sel?700:400};cursor:pointer;">${item}</button>`;
+          }).join("");
+        })()}
+      </div>
+      ${state.treatmentTypes.length>0?`<div style="margin-top:10px;padding:8px 12px;background:#eff6ff;border-radius:8px;font-size:13px;color:#1e3a5f;font-weight:600;">選択中：${state.treatmentTypes.join("・")}</div>`:""}
+    </div>
+  `;
   root.appendChild(typeCard);
 
-  const jifeeCard = document.createElement("div");
-  jifeeCard.className = "card";
-  jifeeCard.innerHTML = `<div class="card-header orange">💴 自費</div>`;
-  const jifeeBody = document.createElement("div");
-  jifeeBody.className = "card-body";
-
-  const jifeeChips = document.createElement("div");
-  jifeeChips.className = "chips";
-  jifeeChips.style.marginBottom = "14px";
-  JIFEE_TYPES.forEach(j => {
-    jifeeChips.appendChild(chip(j, "orange", state.jifeeType === j, () => {
-      state.jifeeType = j;
-      render();
-    }));
-  });
-  jifeeBody.appendChild(jifeeChips);
-
-  if (state.jifeeType === "回数券") {
-    const row = document.createElement("div");
-    row.className = "row2";
-    row.innerHTML = `
-      <div><label>枚数</label><input type="number" placeholder="例：10" value="${state.jifeeCount}" id="jifeeCount"/></div>
-      <div><label>金額（円）</label><input type="number" placeholder="例：30000" value="${state.jifeeAmount}" id="jifeeAmount"/></div>
-    `;
-    jifeeBody.appendChild(row);
-    setTimeout(() => {
-      const c = document.getElementById("jifeeCount");
-      const a = document.getElementById("jifeeAmount");
-      if(c) c.oninput = e => { state.jifeeCount = e.target.value; };
-      if(a) a.oninput = e => { state.jifeeAmount = e.target.value; };
-    }, 0);
-  } else if (state.jifeeType === "FP（フリーパス）") {
-    const row = document.createElement("div");
-    row.innerHTML = `<label>金額（円）</label><input type="number" placeholder="例：50000" value="${state.jifeeAmount}" id="jifeeAmount"/>`;
-    jifeeBody.appendChild(row);
-    setTimeout(() => {
-      const a = document.getElementById("jifeeAmount");
-      if(a) a.oninput = e => { state.jifeeAmount = e.target.value; };
-    }, 0);
+  // ===== 回数券・FP使用セクション =====
+  const passCard = document.createElement("div");
+  passCard.className = "card";
+  if(patientPasses.length===0){
+    passCard.innerHTML=`
+      <div class="card-header orange">🎫 回数券・フリーパス</div>
+      <div class="card-body" style="text-align:center;color:#9ca3af;font-size:13px;padding:20px;">
+        この患者様の有効な回数券・FPはありません
+      </div>`;
+  }else{
+    const isFP=(p)=>p.pass_type&&p.pass_type.includes("FP");
+    passCard.innerHTML=`
+      <div class="card-header orange">🎫 回数券・フリーパス使用</div>
+      <div class="card-body">
+        <div style="font-size:12px;color:#64748b;margin-bottom:10px;">今回使用する券・パスを選択してください（任意）</div>
+        <!-- 使用しない -->
+        <button onclick="state.usePassId=null;render();"
+          style="width:100%;padding:10px;border-radius:8px;border:2px solid ${state.usePassId===null?'#6b7280':'#e2e8f0'};background:${state.usePassId===null?'#6b7280':'white'};color:${state.usePassId===null?'white':'#374151'};font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px;">
+          使用しない
+        </button>
+        ${patientPasses.map(p=>{
+          const sel=state.usePassId===p.id;
+          const fp=isFP(p);
+          const today=new Date().toISOString().split("T")[0];
+          const isExpired=p.expiry_date&&p.expiry_date<today;
+          const expLabel=p.expiry_date?`期限：${p.expiry_date}`:"期限なし";
+          const remainLabel=fp?`残り${p.remaining_count}日`:`残り${p.remaining_count}回 / ${p.total_count}回`;
+          const color=fp?"#7c3aed":"#2563eb";
+          return `
+            <button onclick="state.usePassId=${p.id};render();" ${isExpired?"disabled":""}
+              style="width:100%;padding:12px 14px;border-radius:10px;border:2px solid ${sel?color:'#e2e8f0'};background:${sel?color+'18':'#f8fafc'};cursor:${isExpired?'not-allowed':'pointer'};text-align:left;margin-bottom:8px;opacity:${isExpired?.5:1};">
+              <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div>
+                  <div style="font-size:13px;font-weight:800;color:${sel?color:'#1e293b'};">${fp?"🎟️":"🎫"} ${p.pass_type}</div>
+                  <div style="font-size:11px;color:#64748b;margin-top:3px;">${expLabel}</div>
+                </div>
+                <div style="text-align:right;">
+                  <div style="font-size:18px;font-weight:800;color:${isExpired?'#ef4444':color};">${fp?p.remaining_count+"日":p.remaining_count+"回"}</div>
+                  <div style="font-size:10px;color:#94a3b8;">${isExpired?"期限切れ":"残り"}</div>
+                </div>
+              </div>
+              ${sel&&!fp?`<div style="margin-top:8px;padding:6px 10px;background:${color}22;border-radius:6px;font-size:12px;color:${color};font-weight:700;">✓ 今回使用 → 残り${Math.max(0,p.remaining_count-1)}回になります</div>`:""}
+              ${sel&&fp?`<div style="margin-top:8px;padding:6px 10px;background:${color}22;border-radius:6px;font-size:12px;color:${color};font-weight:700;">✓ 今回使用 → 残り${Math.max(0,p.remaining_count-1)}日になります</div>`:""}
+            </button>`;
+        }).join("")}
+      </div>`;
   }
-
-  jifeeCard.appendChild(jifeeBody);
-  root.appendChild(jifeeCard);
+  root.appendChild(passCard);
 
   const resultCard = document.createElement("div");
   resultCard.className = "card";
@@ -425,6 +465,11 @@ async function init() {
       return;
     }
     booking = data[0];
+
+    // その患者のアクティブな回数券・FPを取得
+    const passes = await sb_get("passes", `?patient_name=eq.${encodeURIComponent(booking.patient_name)}&active=eq.true&order=purchased_date.desc`);
+    patientPasses = Array.isArray(passes) ? passes : [];
+
     render();
   } catch(e) {
     document.getElementById("root").innerHTML = `<div style="text-align:center;padding:60px;color:#ef4444;">❌ エラー：${e.message}</div>`;
