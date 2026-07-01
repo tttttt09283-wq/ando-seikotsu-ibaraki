@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<title>マイページ - あんど整骨院</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+:root{
+  --primary:#1e3a5f;
+  --primary-light:#2d6a9f;
+  --accent:#d97706;
+  --accent-light:#fbbf24;
+  --green:#059669;
+  --green-light:#34d399;
+  --red:#ef4444;
+  --bg:#f0f4f8;
+  --card:#ffffff;
+  --text:#1e293b;
+  --sub:#64748b;
+  --border:#e2e8f0;
+  --radius:16px;
+  --radius-sm:10px;
+}
+body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:var(--bg);min-height:100vh;color:var(--text);}
+
+/* ヘッダー */
+.header{
+  background:linear-gradient(135deg,var(--primary),var(--primary-light));
+  padding:20px 16px 24px;
+  position:relative;
+  overflow:hidden;
+}
+.header::after{
+  content:"";position:absolute;bottom:-20px;left:0;right:0;height:40px;
+  background:var(--bg);border-radius:50% 50% 0 0/40px 40px 0 0;
+}
+.header-logo{display:flex;align-items:center;gap:10px;margin-bottom:16px;}
+.header-icon{width:36px;height:36px;background:rgba(255,255,255,.15);border-radius:10px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,.25);}
+.header-name{color:white;font-size:15px;font-weight:800;letter-spacing:.5px;}
+.header-sub{color:rgba(255,255,255,.6);font-size:11px;}
+.profile-card{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:var(--radius);padding:14px 16px;display:flex;align-items:center;gap:12px;}
+.profile-avatar{width:48px;height:48px;border-radius:50%;border:2px solid rgba(255,255,255,.4);background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:20px;overflow:hidden;flex-shrink:0;}
+.profile-avatar img{width:100%;height:100%;object-fit:cover;}
+.profile-info{flex:1;}
+.profile-hello{color:rgba(255,255,255,.7);font-size:11px;font-weight:600;}
+.profile-patient-name{color:white;font-size:17px;font-weight:800;margin-top:2px;}
+.profile-visit{color:rgba(255,255,255,.8);font-size:11px;margin-top:2px;}
+
+/* メインコンテンツ */
+.main{padding:8px 16px 100px;max-width:480px;margin:0 auto;}
+
+/* セクションタイトル */
+.section-title{font-size:12px;font-weight:800;color:var(--sub);letter-spacing:1px;text-transform:uppercase;margin:20px 0 10px;padding-left:4px;}
+
+/* カード */
+.card{background:var(--card);border-radius:var(--radius);box-shadow:0 2px 12px rgba(0,0,0,.06),0 1px 3px rgba(0,0,0,.04);overflow:hidden;margin-bottom:12px;}
+.card-header{padding:14px 16px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);}
+.card-header-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;}
+.card-header-title{font-size:14px;font-weight:800;color:var(--text);}
+.card-header-sub{font-size:11px;color:var(--sub);margin-top:1px;}
+.card-body{padding:14px 16px;}
+
+/* 立体ボタン */
+.btn{
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  width:100%;padding:16px;border:none;border-radius:var(--radius-sm);
+  font-family:inherit;font-size:15px;font-weight:800;cursor:pointer;
+  position:relative;text-decoration:none;
+  transition:transform .1s,box-shadow .1s;
+  -webkit-user-select:none;user-select:none;
+}
+.btn:active{transform:translateY(3px);}
+
+.btn-primary{
+  background:linear-gradient(180deg,#2563eb,#1d4ed8);
+  color:white;
+  box-shadow:0 4px 0 #1e3a8a,0 6px 16px rgba(37,99,235,.35);
+}
+.btn-primary:active{box-shadow:0 1px 0 #1e3a8a,0 2px 8px rgba(37,99,235,.2);}
+
+.btn-green{
+  background:linear-gradient(180deg,#059669,#047857);
+  color:white;
+  box-shadow:0 4px 0 #065f46,0 6px 16px rgba(5,150,105,.35);
+}
+.btn-green:active{box-shadow:0 1px 0 #065f46;}
+
+.btn-orange{
+  background:linear-gradient(180deg,#d97706,#b45309);
+  color:white;
+  box-shadow:0 4px 0 #92400e,0 6px 16px rgba(217,119,6,.35);
+}
+.btn-orange:active{box-shadow:0 1px 0 #92400e;}
+
+.btn-purple{
+  background:linear-gradient(180deg,#7c3aed,#6d28d9);
+  color:white;
+  box-shadow:0 4px 0 #4c1d95,0 6px 16px rgba(124,58,237,.35);
+}
+.btn-purple:active{box-shadow:0 1px 0 #4c1d95;}
+
+.btn-line{
+  background:linear-gradient(180deg,#06C755,#05A847);
+  color:white;
+  box-shadow:0 4px 0 #038a3a,0 6px 16px rgba(6,199,85,.35);
+}
+.btn-line:active{box-shadow:0 1px 0 #038a3a;}
+
+.btn-outline{
+  background:white;color:var(--text);
+  border:2px solid var(--border);
+  box-shadow:0 4px 0 #cbd5e1,0 6px 12px rgba(0,0,0,.06);
+}
+.btn-outline:active{box-shadow:0 1px 0 #cbd5e1;}
+
+.btn-icon{font-size:20px;flex-shrink:0;}
+.btn-label{flex:1;text-align:left;}
+.btn-arrow{color:rgba(255,255,255,.6);font-size:14px;}
+.btn-arrow-dark{color:var(--sub);font-size:14px;}
+
+/* グリッドボタン */
+.btn-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+
+/* 予約カード */
+.booking-item{
+  background:var(--bg);border-radius:var(--radius-sm);
+  padding:14px;margin-bottom:10px;
+  border-left:4px solid var(--primary);
+}
+.booking-item:last-child{margin-bottom:0;}
+.booking-date{font-size:13px;font-weight:800;color:var(--primary);margin-bottom:6px;}
+.booking-info{font-size:12px;color:var(--sub);line-height:1.8;}
+.booking-badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;margin-right:4px;}
+.badge-upcoming{background:#dbeafe;color:#1e40af;}
+.badge-today{background:#dcfce7;color:#15803d;}
+.booking-actions{display:flex;gap:6px;margin-top:10px;}
+.booking-btn{flex:1;padding:8px;border-radius:8px;border:none;font-family:inherit;font-size:12px;font-weight:700;cursor:pointer;transition:transform .1s;}
+.booking-btn:active{transform:translateY(2px);}
+.booking-btn-change{background:#eff6ff;color:#2563eb;box-shadow:0 2px 0 #bfdbfe;}
+.booking-btn-cancel{background:#fef2f2;color:#ef4444;box-shadow:0 2px 0 #fecaca;}
+
+/* パス残高 */
+.pass-item{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);}
+.pass-item:last-child{border-bottom:none;}
+.pass-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;}
+.pass-info{flex:1;}
+.pass-name{font-size:13px;font-weight:700;color:var(--text);}
+.pass-expiry{font-size:11px;color:var(--sub);margin-top:2px;}
+.pass-count{text-align:right;}
+.pass-num{font-size:24px;font-weight:800;color:var(--accent);}
+.pass-unit{font-size:11px;color:var(--sub);font-weight:600;}
+
+/* プログレスバー */
+.progress-bar{height:6px;background:var(--border);border-radius:3px;margin-top:6px;overflow:hidden;}
+.progress-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--accent),var(--accent-light));}
+
+/* 紹介カード */
+.referral-card{background:linear-gradient(135deg,#fef9ec,#fffbf0);border:1px solid #fde68a;border-radius:var(--radius);padding:16px;margin-bottom:10px;text-align:center;}
+.referral-emoji{font-size:36px;margin-bottom:8px;}
+.referral-title{font-size:15px;font-weight:800;color:#92400e;margin-bottom:4px;}
+.referral-desc{font-size:12px;color:#a16207;line-height:1.7;}
+
+/* ローディング */
+.loading{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:var(--bg);}
+.spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+/* ログイン画面 */
+.login-wrap{min-height:100vh;display:flex;flex-direction:column;background:linear-gradient(160deg,var(--primary),var(--primary-light));}
+.login-hero{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;}
+.login-logo{width:80px;height:80px;background:rgba(255,255,255,.15);border-radius:24px;display:flex;align-items:center;justify-content:center;font-size:36px;margin:0 auto 20px;border:2px solid rgba(255,255,255,.25);}
+.login-title{font-size:24px;font-weight:800;color:white;text-align:center;margin-bottom:8px;}
+.login-sub{font-size:14px;color:rgba(255,255,255,.7);text-align:center;line-height:1.7;margin-bottom:32px;}
+.login-features{display:flex;flex-direction:column;gap:10px;margin-bottom:32px;width:100%;}
+.login-feature{display:flex;align-items:center;gap:10px;background:rgba(255,255,255,.1);border-radius:12px;padding:12px 14px;}
+.login-feature-icon{font-size:20px;flex-shrink:0;}
+.login-feature-text{font-size:13px;color:rgba(255,255,255,.9);font-weight:600;}
+.login-bottom{padding:24px;background:white;border-radius:24px 24px 0 0;}
+
+/* モーダル */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;display:flex;align-items:flex-end;}
+.modal-sheet{background:white;border-radius:24px 24px 0 0;width:100%;max-height:85vh;overflow-y:auto;padding:24px 16px 40px;}
+.modal-handle{width:40px;height:4px;background:var(--border);border-radius:2px;margin:0 auto 20px;}
+.modal-title{font-size:17px;font-weight:800;color:var(--text);margin-bottom:16px;}
+.modal-close{position:absolute;top:16px;right:16px;background:var(--bg);border:none;border-radius:50%;width:32px;height:32px;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+
+/* フォーム */
+.form-group{margin-bottom:16px;}
+.form-label{display:block;font-size:12px;font-weight:700;color:var(--sub);margin-bottom:6px;letter-spacing:.3px;}
+.form-input{width:100%;padding:12px 14px;border:2px solid var(--border);border-radius:var(--radius-sm);font-size:15px;font-family:inherit;color:var(--text);background:white;transition:border .15s;}
+.form-input:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.1);}
+select.form-input{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 14px center;}
+
+/* トースト */
+.toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1e293b;color:white;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:700;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.2);white-space:nowrap;}
+
+/* 空状態 */
+.empty{text-align:center;padding:32px 16px;}
+.empty-icon{font-size:40px;margin-bottom:12px;}
+.empty-title{font-size:14px;font-weight:700;color:var(--sub);margin-bottom:4px;}
+.empty-desc{font-size:12px;color:#94a3b8;}
+</style>
+</head>
+<body>
+<div id="root">
+  <div class="loading">
+    <div class="spinner"></div>
+    <div style="font-size:13px;font-weight:700;color:#1e3a5f;">読み込み中...</div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL="https://dctlirxcwitcupaewiyt.supabase.co";
+const SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
+const LIFF_ID="2010529910-NlBCzfsM";
+const LINE_OFFICIAL_URL="https://lin.ee/UmNuuyy";
+const BOOKING_URL="/booking.html";
+const DAYS_JP=["日","月","火","水","木","金","土"];
+
+let lineUserId=null;
+let lineProfile=null;
+let state={
+  bookings:[],
+  passes:[],
+  loading:true,
+  modal:null, // null | "change" | "cancel" | "contact"
+  selBooking:null,
+  changeForm:{date:"",time:""},
+  toast:null,
+};
+
+// ===== Supabase =====
+async function sbGet(t,f){
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}${f||""}`,{headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`}});
+  return res.json();
+}
+async function sbPatch(t,id,d){
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}?id=eq.${id}`,{method:"PATCH",headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`,"Content-Type":"application/json"},body:JSON.stringify(d)});
+  return res.json();
+}
+
+// ===== ユーティリティ =====
+function fmtDate(ds){
+  const d=new Date(ds+"T00:00:00");
+  return `${d.getMonth()+1}月${d.getDate()}日（${DAYS_JP[d.getDay()]}）`;
+}
+function isToday(ds){return ds===new Date().toISOString().split("T")[0];}
+function isFuture(ds){return ds>=new Date().toISOString().split("T")[0];}
+function showToast(msg){
+  state.toast=msg;render();
+  setTimeout(()=>{state.toast=null;render();},2500);
+}
+
+// ===== データ取得 =====
+async function loadData(){
+  if(!lineUserId) return;
+  try{
+    const[bk,ps]=await Promise.all([
+      sbGet("bookings",`?line_user_id=eq.${encodeURIComponent(lineUserId)}&order=date.asc,time.asc`),
+      sbGet("passes",`?line_user_id=eq.${encodeURIComponent(lineUserId)}&active=eq.true`),
+    ]);
+    state.bookings=Array.isArray(bk)?bk:[];
+    state.passes=Array.isArray(ps)?ps:[];
+  }catch(e){console.error(e);}
+  state.loading=false;
+  render();
+}
+
+// ===== 予約変更 =====
+async function changeBooking(){
+  if(!state.selBooking||!state.changeForm.date||!state.changeForm.time) return;
+  try{
+    await sbPatch("bookings",state.selBooking.id,{date:state.changeForm.date,time:state.changeForm.time,reminded:false});
+    state.bookings=state.bookings.map(b=>b.id===state.selBooking.id?{...b,...state.changeForm}:b);
+    state.modal=null;state.selBooking=null;state.changeForm={date:"",time:""};
+    showToast("✅ 予約を変更しました");
+  }catch(e){showToast("❌ 変更に失敗しました");}
+}
+
+// ===== 予約キャンセル =====
+async function cancelBooking(){
+  if(!state.selBooking) return;
+  try{
+    await sbPatch("bookings",state.selBooking.id,{cancelled:true});
+    state.bookings=state.bookings.filter(b=>b.id!==state.selBooking.id);
+    state.modal=null;state.selBooking=null;
+    showToast("予約をキャンセルしました");
+  }catch(e){showToast("❌ キャンセルに失敗しました");}
+}
+
+// ===== 時間スロット =====
+const SLOTS=["09:00","09:30","10:00","10:30","11:00","11:30","13:00","13:30","14:00","14:30","15:00","15:30","16:00","16:30","17:00","17:30","18:00"];
+
+// ===== 日付候補（14日分）=====
+function getDays(){
+  return Array.from({length:14},(_,i)=>{const d=new Date();d.setDate(d.getDate()+i+1);return d.toISOString().split("T")[0];});
+}
+
+// ===== レンダリング =====
+function render(){
+  const root=document.getElementById("root");
+
+  if(state.toast){
+    // トーストは既存のDOMに追加
+    let t=document.getElementById("toast-el");
+    if(!t){t=document.createElement("div");t.id="toast-el";t.className="toast";document.body.appendChild(t);}
+    t.textContent=state.toast;t.style.display="block";
+  }else{
+    const t=document.getElementById("toast-el");
+    if(t) t.style.display="none";
+  }
+
+  if(!lineUserId){
+    root.innerHTML=renderLogin();return;
+  }
+  if(state.loading){
+    root.innerHTML=`<div class="loading"><div class="spinner"></div><div style="font-size:13px;font-weight:700;color:#1e3a5f;">データ読み込み中...</div></div>`;return;
+  }
+
+  root.innerHTML=`
+    ${renderHeader()}
+    <div class="main">
+      ${renderUpcomingBookings()}
+      ${renderPasses()}
+      ${renderActions()}
+      ${renderReferral()}
+    </div>
+    ${state.modal?renderModal():""}
+  `;
+
+  // イベントバインド
+  bindEvents();
+}
+
+function renderLogin(){
+  return`
+    <div class="login-wrap">
+      <div class="login-hero">
+        <div class="login-logo">🏥</div>
+        <div class="login-title">あんど整骨院<br>マイページ</div>
+        <div class="login-sub">LINEでかんたんログインして<br>予約・回数券をかんたん管理</div>
+        <div class="login-features">
+          <div class="login-feature"><span class="login-feature-icon">📅</span><span class="login-feature-text">予約確認・変更がワンタップ</span></div>
+          <div class="login-feature"><span class="login-feature-icon">🎫</span><span class="login-feature-text">回数券・フリーパスの残高確認</span></div>
+          <div class="login-feature"><span class="login-feature-icon">🔔</span><span class="login-feature-text">前日リマインドを自動でお届け</span></div>
+          <div class="login-feature"><span class="login-feature-icon">👥</span><span class="login-feature-text">お友達紹介でお得な特典</span></div>
+        </div>
+      </div>
+      <div class="login-bottom">
+        <button class="btn btn-line" onclick="handleLineLogin()" style="margin-bottom:12px;">
+          <span class="btn-icon">💬</span>
+          <span class="btn-label">LINEでログイン</span>
+          <span class="btn-arrow">›</span>
+        </button>
+        <div style="text-align:center;font-size:11px;color:#94a3b8;line-height:1.6;">LINEアカウントでログインします。<br>個人情報は安全に保護されています。</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderHeader(){
+  const futureCount=state.bookings.filter(b=>isFuture(b.date)&&!b.cancelled).length;
+  return`
+    <div class="header">
+      <div class="header-logo">
+        <div class="header-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>
+          </svg>
+        </div>
+        <div>
+          <div class="header-name">あんど整骨院</div>
+          <div class="header-sub">マイページ</div>
+        </div>
+      </div>
+      <div class="profile-card">
+        ${lineProfile?.pictureUrl?`<div class="profile-avatar"><img src="${lineProfile.pictureUrl}" alt=""/></div>`:`<div class="profile-avatar">👤</div>`}
+        <div class="profile-info">
+          <div class="profile-hello">ようこそ</div>
+          <div class="profile-patient-name">${lineProfile?.displayName||"ゲスト"} 様</div>
+          <div class="profile-visit">${futureCount>0?`次回予約：${futureCount}件`:"現在予約はありません"}</div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderUpcomingBookings(){
+  const upcoming=state.bookings.filter(b=>isFuture(b.date)&&!b.cancelled).slice(0,3);
+  return`
+    <div class="section-title">予約状況</div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-header-icon" style="background:#eff6ff;">📅</div>
+        <div>
+          <div class="card-header-title">予約確認</div>
+          <div class="card-header-sub">今後の予約一覧</div>
+        </div>
+      </div>
+      <div class="card-body">
+        ${upcoming.length===0?`
+          <div class="empty">
+            <div class="empty-icon">📭</div>
+            <div class="empty-title">予約がありません</div>
+            <div class="empty-desc">下のボタンから新規予約ができます</div>
+          </div>
+        `:upcoming.map(b=>`
+          <div class="booking-item" style="border-left-color:${isToday(b.date)?'#059669':'#2563eb'}">
+            <div class="booking-date">
+              <span class="booking-badge ${isToday(b.date)?'badge-today':'badge-upcoming'}">${isToday(b.date)?'本日':'予定'}</span>
+              ${fmtDate(b.date)} ${b.time}
+            </div>
+            <div class="booking-info">
+              🩺 ${b.menu||"メニュー未設定"}<br>
+              👨‍⚕️ 担当：${b.staff_id?['','岩永','大皿','定井','細永','広川'][b.staff_id]||'未定':'未定'}先生
+            </div>
+            ${isFuture(b.date)&&!isToday(b.date)?`
+              <div class="booking-actions">
+                <button class="booking-btn booking-btn-change" onclick="openChangeModal(${b.id})">📝 変更する</button>
+                <button class="booking-btn booking-btn-cancel" onclick="openCancelModal(${b.id})">✕ キャンセル</button>
+              </div>
+            `:""}
+          </div>
+        `).join("")}
+        <button class="btn btn-primary" onclick="location.href='${BOOKING_URL}'" style="margin-top:${upcoming.length>0?'12':'0'}px;">
+          <span class="btn-icon">➕</span>
+          <span class="btn-label">新しく予約する</span>
+          <span class="btn-arrow">›</span>
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function renderPasses(){
+  if(state.passes.length===0) return`
+    <div class="section-title">回数券・フリーパス</div>
+    <div class="card">
+      <div class="card-body">
+        <div class="empty">
+          <div class="empty-icon">🎫</div>
+          <div class="empty-title">回数券・フリーパスなし</div>
+          <div class="empty-desc">スタッフにお気軽にご相談ください</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  return`
+    <div class="section-title">回数券・フリーパス</div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-header-icon" style="background:#fef9ec;">🎫</div>
+        <div>
+          <div class="card-header-title">残高確認</div>
+          <div class="card-header-sub">ご利用可能な券・パス</div>
+        </div>
+      </div>
+      <div class="card-body">
+        ${state.passes.map(p=>{
+          const isPass=p.pass_type==="FP（フリーパス）";
+          const pct=p.total_count>0?Math.round(p.remaining_count/p.total_count*100):0;
+          return`
+            <div class="pass-item">
+              <div class="pass-icon" style="background:${isPass?'#f5f3ff':'#fff7ed'};">${isPass?'🎟️':'🎫'}</div>
+              <div class="pass-info">
+                <div class="pass-name">${p.pass_type}</div>
+                <div class="pass-expiry">${p.expiry_date?`有効期限：${fmtDate(p.expiry_date)}`:'期限なし'}</div>
+                <div class="progress-bar"><div class="progress-fill" style="width:${pct}%;"></div></div>
+              </div>
+              <div class="pass-count">
+                <div class="pass-num">${p.remaining_count}</div>
+                <div class="pass-unit">${isPass?'日残':'枚残'}</div>
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderActions(){
+  return`
+    <div class="section-title">メニュー</div>
+    <div class="btn-grid" style="margin-bottom:12px;">
+      <button class="btn btn-green" onclick="location.href='${BOOKING_URL}'" style="flex-direction:column;gap:6px;padding:20px 12px;">
+        <span style="font-size:28px;">📅</span>
+        <span style="font-size:13px;">予約する</span>
+      </button>
+      <button class="btn btn-orange" onclick="openContactModal()" style="flex-direction:column;gap:6px;padding:20px 12px;">
+        <span style="font-size:28px;">💬</span>
+        <span style="font-size:13px;">お問い合わせ</span>
+      </button>
+    </div>
+  `;
+}
+
+function renderReferral(){
+  return`
+    <div class="section-title">お友達紹介</div>
+    <div class="referral-card">
+      <div class="referral-emoji">🎁</div>
+      <div class="referral-title">お友達紹介でお得な特典！</div>
+      <div class="referral-desc">ご家族・お友達をご紹介いただくと<br>紹介者様・ご紹介された方ともに<br><strong>特別割引をプレゼント</strong>いたします🌸</div>
+    </div>
+    <button class="btn btn-purple" onclick="shareReferral()">
+      <span class="btn-icon">👥</span>
+      <span class="btn-label">LINEでお友達に紹介する</span>
+      <span class="btn-arrow">›</span>
+    </button>
+  `;
+}
+
+function renderModal(){
+  if(state.modal==="change"){
+    return`
+      <div class="modal-overlay" onclick="closeModal(event)">
+        <div class="modal-sheet" onclick="event.stopPropagation()">
+          <div class="modal-handle"></div>
+          <div class="modal-title">予約を変更する</div>
+          <div class="form-group">
+            <label class="form-label">新しい日付</label>
+            <select class="form-input" id="change-date">
+              <option value="">選択してください</option>
+              ${getDays().map(d=>{const dt=new Date(d+"T00:00:00");return`<option value="${d}">${fmtDate(d)}</option>`}).join("")}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">新しい時間</label>
+            <select class="form-input" id="change-time">
+              <option value="">選択してください</option>
+              ${SLOTS.map(t=>`<option value="${t}">${t}</option>`).join("")}
+            </select>
+          </div>
+          <div style="background:#fef9ec;border:1px solid #fde68a;border-radius:10px;padding:12px;margin-bottom:16px;font-size:12px;color:#92400e;">
+            ⚠️ 変更は来院前日18時まで受け付けています。
+          </div>
+          <button class="btn btn-primary" onclick="submitChange()">
+            <span class="btn-icon">✅</span>
+            <span class="btn-label">変更を確定する</span>
+          </button>
+          <button class="btn btn-outline" onclick="closeModal()" style="margin-top:10px;">キャンセル</button>
+        </div>
+      </div>
+    `;
+  }
+  if(state.modal==="cancel"){
+    const b=state.selBooking;
+    return`
+      <div class="modal-overlay" onclick="closeModal(event)">
+        <div class="modal-sheet" onclick="event.stopPropagation()">
+          <div class="modal-handle"></div>
+          <div class="modal-title">予約をキャンセルしますか？</div>
+          <div style="background:#f8fafc;border-radius:12px;padding:14px;margin-bottom:16px;">
+            <div style="font-size:14px;font-weight:700;color:#1e293b;margin-bottom:6px;">${b?fmtDate(b.date):""} ${b?.time||""}</div>
+            <div style="font-size:13px;color:#64748b;">${b?.menu||""}</div>
+          </div>
+          <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px;margin-bottom:16px;font-size:12px;color:#991b1b;">
+            ⚠️ キャンセルは前日18時まで。<br>当日キャンセルはお電話にてご連絡ください。
+          </div>
+          <button class="btn" style="background:linear-gradient(180deg,#ef4444,#dc2626);color:white;box-shadow:0 4px 0 #991b1b;margin-bottom:10px;" onclick="submitCancel()">
+            <span class="btn-icon">🗑</span>
+            <span class="btn-label">キャンセルする</span>
+          </button>
+          <button class="btn btn-outline" onclick="closeModal()">戻る</button>
+        </div>
+      </div>
+    `;
+  }
+  if(state.modal==="contact"){
+    return`
+      <div class="modal-overlay" onclick="closeModal(event)">
+        <div class="modal-sheet" onclick="event.stopPropagation()">
+          <div class="modal-handle"></div>
+          <div class="modal-title">お問い合わせ</div>
+          <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px;">
+            <button class="btn btn-line" onclick="location.href='${LINE_OFFICIAL_URL}'">
+              <span class="btn-icon">💬</span>
+              <span class="btn-label">公式LINEでチャット</span>
+              <span class="btn-arrow">›</span>
+            </button>
+            <button class="btn btn-outline" onclick="location.href='tel:0000-00-0000'">
+              <span class="btn-icon" style="color:#1e3a5f;">📞</span>
+              <span class="btn-label" style="color:#1e3a5f;">電話でお問い合わせ</span>
+              <span class="btn-arrow-dark">›</span>
+            </button>
+          </div>
+          <div style="text-align:center;font-size:12px;color:#94a3b8;">受付時間：9:00〜18:00（日曜除く）</div>
+          <button class="btn btn-outline" onclick="closeModal()" style="margin-top:16px;">閉じる</button>
+        </div>
+      </div>
+    `;
+  }
+  return"";
+}
+
+// ===== イベント =====
+function bindEvents(){
+  // モーダル内のselect変更
+  const cd=document.getElementById("change-date");
+  const ct=document.getElementById("change-time");
+  if(cd) cd.onchange=e=>{state.changeForm.date=e.target.value;};
+  if(ct) ct.onchange=e=>{state.changeForm.time=e.target.value;};
+}
+
+function openChangeModal(id){
+  state.selBooking=state.bookings.find(b=>b.id===id)||null;
+  state.changeForm={date:"",time:""};
+  state.modal="change";render();
+}
+function openCancelModal(id){
+  state.selBooking=state.bookings.find(b=>b.id===id)||null;
+  state.modal="cancel";render();
+}
+function openContactModal(){state.modal="contact";render();}
+function closeModal(e){
+  if(e&&e.target!==e.currentTarget) return;
+  state.modal=null;state.selBooking=null;render();
+}
+function submitChange(){changeBooking();}
+function submitCancel(){cancelBooking();}
+
+function shareReferral(){
+  const msg=`あんど整骨院でお体のケアをしています！初回無料体験会もあるのでぜひ👇\nhttps://ando-seikotsu-ibaraki.vercel.app/booking.html`;
+  if(liff.isInClient()){
+    liff.shareTargetPicker([{type:"text",text:msg}]).catch(()=>{});
+  }else{
+    navigator.clipboard.writeText(msg).then(()=>showToast("リンクをコピーしました！")).catch(()=>{});
+  }
+}
+
+function handleLineLogin(){
+  if(liff.isLoggedIn()){
+    liff.getProfile().then(p=>{lineProfile=p;lineUserId=p.userId;loadData();}).catch(()=>{});
+  }else{
+    liff.login();
+  }
+}
+
+// ===== 初期化 =====
+async function init(){
+  try{
+    await liff.init({liffId:LIFF_ID});
+    if(liff.isLoggedIn()){
+      lineProfile=await liff.getProfile();
+      lineUserId=lineProfile.userId;
+      await loadData();
+    }else{
+      state.loading=false;
+      render();
+    }
+  }catch(e){
+    console.error("LIFF init error:",e);
+    state.loading=false;
+    render();
+  }
+}
+
+init();
+</script>
+</body>
+</html>
