@@ -2,9 +2,7 @@
 // 予約完了直後にLINEでQRコードを送信するAPI
 
 const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN;
-const BASE_URL = process.env.VERCEL_URL
-  ? `https://${process.env.VERCEL_URL}`
-  : "https://ando-seikotsu-ibaraki.vercel.app";
+const BASE_URL = "https://ando-seikotsu-ibaraki.vercel.app";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -18,48 +16,50 @@ export default async function handler(req, res) {
   }
 
   try {
-    // QRコードのURL（intake.htmlへのリンク）
-    const qrTargetUrl = `${BASE_URL}/intake.html?id=${bookingId}`;
+    // intake.htmlへのURL
+    const intakeUrl = `${BASE_URL}/intake.html?id=${bookingId}`;
 
-    // QRコード画像URL（Google Charts API）
-    const qrImageUrl = `https://chart.googleapis.com/chart?chs=300x300&cht=qr&chl=${encodeURIComponent(qrTargetUrl)}&choe=UTF-8`;
-
-    // LINEメッセージ（テキスト＋QRコード画像）
+    // LINEメッセージ（テキスト＋QRコードはLIFFのURLスキームで代替）
     const messages = [
       {
-        type: "text",
-        text: `✅ ご予約ありがとうございます！\n\nあんど整骨院 香里園駅前院\n\n📅 ${date} ${time}\n👤 ${patientName} 様\n\n来院時に下記のQRコードをスタッフにご提示ください。`
-      },
-      {
-        type: "image",
-        originalContentUrl: qrImageUrl,
-        previewImageUrl: qrImageUrl
+        type: "template",
+        altText: `【あんど整骨院】ご予約確認 ${date} ${time}`,
+        template: {
+          type: "buttons",
+          title: "✅ ご予約ありがとうございます",
+          text: `${patientName} 様\n📅 ${date} ${time}\n\n来院時にQRを提示してください`,
+          actions: [
+            {
+              type: "uri",
+              label: "📋 予約内容・QRを確認する",
+              uri: intakeUrl
+            }
+          ]
+        }
       }
     ];
 
-    // LINE Messaging API でプッシュメッセージ送信
     const lineRes = await fetch("https://api.line.me/v2/bot/message/push", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${LINE_CHANNEL_ACCESS_TOKEN}`
       },
-      body: JSON.stringify({
-        to: userId,
-        messages: messages
-      })
+      body: JSON.stringify({ to: userId, messages })
     });
 
+    const lineData = await lineRes.json();
+
     if (!lineRes.ok) {
-      const errText = await lineRes.text();
-      console.error("LINE API error:", errText);
-      return res.status(500).json({ error: "LINE送信失敗", detail: errText });
+      console.error("LINE API error:", JSON.stringify(lineData));
+      return res.status(500).json({ error: "LINE送信失敗", detail: lineData });
     }
 
+    console.log("LINE送信成功:", userId, bookingId);
     return res.status(200).json({ success: true });
 
   } catch (e) {
-    console.error("send-confirmation error:", e);
+    console.error("send-confirmation error:", e.message);
     return res.status(500).json({ error: e.message });
   }
 }
