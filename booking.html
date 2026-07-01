@@ -23,6 +23,7 @@ const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
 const LINE_GROUP_ID = "Cfd9d54fedc95bbe4ce1a7ac64ec97fa0";
 const LIFF_ID = "2010529910-NlBCzfsM";
+const LINE_OFFICIAL_URL = "https://lin.ee/UmNuuyy";
 
 const STAFF = [
   {id:1,name:"岩永"},{id:2,name:"大皿"},
@@ -293,6 +294,7 @@ function App(){
 
       // LINE連携済みの患者へ予約確認QRを送信
       if(form.lineNotify && lineUserId && newBookingId){
+        console.log("send-confirmation呼び出し:", {userId: lineUserId, bookingId: newBookingId});
         fetch("/api/send-confirmation",{
           method:"POST",
           headers:{"Content-Type":"application/json"},
@@ -303,7 +305,16 @@ function App(){
             date: fmtDateJP(selDate),
             time: selTime
           })
-        }).catch(function(){});
+        }).then(function(r){
+          console.log("send-confirmation response:", r.status);
+          return r.json();
+        }).then(function(d){
+          console.log("send-confirmation result:", JSON.stringify(d));
+        }).catch(function(e){
+          console.error("send-confirmation error:", e);
+        });
+      } else {
+        console.log("QR送信スキップ:", {lineNotify: form.lineNotify, lineUserId: lineUserId, bookingId: newBookingId});
       }
     }).catch(function(){}).finally(function(){
       setDone(true);
@@ -407,7 +418,13 @@ function App(){
         React.createElement("strong",null,CLINIC_TEL),"までご連絡ください。"
       ),
 
-      React.createElement("button",{onClick:reset,style:H.btn},"別の予約をする")
+      React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:10}},
+        React.createElement("button",{onClick:reset,style:H.btn},"📅 別の予約をする"),
+        React.createElement("a",{href:LINE_OFFICIAL_URL,style:Object.assign({},H.btn,{background:"#06C755",display:"flex",alignItems:"center",justifyContent:"center",gap:8,textDecoration:"none",borderRadius:10,padding:"12px 20px",fontWeight:800,fontSize:14,color:"white",cursor:"pointer"})},
+          React.createElement("span",{style:{fontSize:18}},"💬"),
+          "公式LINEに戻る"
+        )
+      )
     )
   );
 
