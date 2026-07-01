@@ -297,80 +297,132 @@ function render() {
 
   const typeCard = document.createElement("div");
   typeCard.className = "card";
-  typeCard.innerHTML = `
-    <div class="card-header green">⚕️ 施術種別（複数選択可）*</div>
-    <div class="card-body">
-      <!-- カテゴリタブ -->
-      <div style="display:flex;gap:6px;margin-bottom:12px;">
-        ${TREATMENT_CATEGORIES.map(cat=>`
-          <button onclick="state.treatTab='${cat.id}';render();"
-            style="flex:1;padding:8px 4px;border-radius:8px;border:2px solid ${state.treatTab===cat.id?cat.color:'#e2e8f0'};background:${state.treatTab===cat.id?cat.color:'white'};color:${state.treatTab===cat.id?'white':'#374151'};font-size:13px;font-weight:700;cursor:pointer;">
-            ${cat.label}
-          </button>`).join("")}
-      </div>
-      <!-- 選択中カテゴリの施術種別 -->
-      <div style="display:flex;flex-wrap:wrap;gap:7px;">
-        ${(()=>{
-          const cat=TREATMENT_CATEGORIES.find(c=>c.id===state.treatTab)||TREATMENT_CATEGORIES[0];
-          return cat.items.map(item=>{
-            const sel=state.treatmentTypes.includes(item);
-            return `<button onclick="state.treatmentTypes=${JSON.stringify(toggle(state.treatmentTypes,item))};render();"
-              style="padding:8px 14px;border-radius:20px;border:1.5px solid ${sel?cat.color:'#ddd'};background:${sel?cat.color:'white'};color:${sel?'white':'#444'};font-size:13px;font-weight:${sel?700:400};cursor:pointer;">${item}</button>`;
-          }).join("");
-        })()}
-      </div>
-      ${state.treatmentTypes.length>0?`<div style="margin-top:10px;padding:8px 12px;background:#eff6ff;border-radius:8px;font-size:13px;color:#1e3a5f;font-weight:600;">選択中：${state.treatmentTypes.join("・")}</div>`:""}
-    </div>
-  `;
+  const typeHeader = document.createElement("div");
+  typeHeader.className = "card-header green";
+  typeHeader.textContent = "⚕️ 施術種別（複数選択可）*";
+  const typeBody = document.createElement("div");
+  typeBody.className = "card-body";
+
+  // カテゴリタブ
+  const tabRow = document.createElement("div");
+  tabRow.style.cssText = "display:flex;gap:6px;margin-bottom:12px;";
+  TREATMENT_CATEGORIES.forEach(cat => {
+    const btn = document.createElement("button");
+    btn.textContent = cat.label;
+    btn.style.cssText = `flex:1;padding:8px 4px;border-radius:8px;border:2px solid ${state.treatTab===cat.id?cat.color:'#e2e8f0'};background:${state.treatTab===cat.id?cat.color:'white'};color:${state.treatTab===cat.id?'white':'#374151'};font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;`;
+    btn.onclick = () => { state.treatTab = cat.id; render(); };
+    tabRow.appendChild(btn);
+  });
+  typeBody.appendChild(tabRow);
+
+  // 選択中カテゴリのアイテム
+  const itemRow = document.createElement("div");
+  itemRow.style.cssText = "display:flex;flex-wrap:wrap;gap:7px;";
+  const currentCat = TREATMENT_CATEGORIES.find(c=>c.id===state.treatTab)||TREATMENT_CATEGORIES[0];
+  currentCat.items.forEach(item => {
+    const sel = state.treatmentTypes.includes(item);
+    const btn = document.createElement("button");
+    btn.textContent = item;
+    btn.style.cssText = `padding:8px 14px;border-radius:20px;border:1.5px solid ${sel?currentCat.color:'#ddd'};background:${sel?currentCat.color:'white'};color:${sel?'white':'#444'};font-size:13px;font-weight:${sel?700:400};cursor:pointer;font-family:inherit;`;
+    btn.onclick = () => {
+      state.treatmentTypes = toggle(state.treatmentTypes, item);
+      render();
+    };
+    itemRow.appendChild(btn);
+  });
+  typeBody.appendChild(itemRow);
+
+  if (state.treatmentTypes.length > 0) {
+    const sel = document.createElement("div");
+    sel.style.cssText = "margin-top:10px;padding:8px 12px;background:#eff6ff;border-radius:8px;font-size:13px;color:#1e3a5f;font-weight:600;";
+    sel.textContent = "選択中：" + state.treatmentTypes.join("・");
+    typeBody.appendChild(sel);
+  }
+
+  typeCard.appendChild(typeHeader);
+  typeCard.appendChild(typeBody);
   root.appendChild(typeCard);
 
   // ===== 回数券・FP使用セクション =====
   const passCard = document.createElement("div");
   passCard.className = "card";
-  if(patientPasses.length===0){
-    passCard.innerHTML=`
-      <div class="card-header orange">🎫 回数券・フリーパス</div>
-      <div class="card-body" style="text-align:center;color:#9ca3af;font-size:13px;padding:20px;">
-        この患者様の有効な回数券・FPはありません
-      </div>`;
-  }else{
-    const isFP=(p)=>p.pass_type&&p.pass_type.includes("FP");
-    passCard.innerHTML=`
-      <div class="card-header orange">🎫 回数券・フリーパス使用</div>
-      <div class="card-body">
-        <div style="font-size:12px;color:#64748b;margin-bottom:10px;">今回使用する券・パスを選択してください（任意）</div>
-        <!-- 使用しない -->
-        <button onclick="state.usePassId=null;render();"
-          style="width:100%;padding:10px;border-radius:8px;border:2px solid ${state.usePassId===null?'#6b7280':'#e2e8f0'};background:${state.usePassId===null?'#6b7280':'white'};color:${state.usePassId===null?'white':'#374151'};font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px;">
-          使用しない
-        </button>
-        ${patientPasses.map(p=>{
-          const sel=state.usePassId===p.id;
-          const fp=isFP(p);
-          const today=new Date().toISOString().split("T")[0];
-          const isExpired=p.expiry_date&&p.expiry_date<today;
-          const expLabel=p.expiry_date?`期限：${p.expiry_date}`:"期限なし";
-          const remainLabel=fp?`残り${p.remaining_count}日`:`残り${p.remaining_count}回 / ${p.total_count}回`;
-          const color=fp?"#7c3aed":"#2563eb";
-          return `
-            <button onclick="state.usePassId=${p.id};render();" ${isExpired?"disabled":""}
-              style="width:100%;padding:12px 14px;border-radius:10px;border:2px solid ${sel?color:'#e2e8f0'};background:${sel?color+'18':'#f8fafc'};cursor:${isExpired?'not-allowed':'pointer'};text-align:left;margin-bottom:8px;opacity:${isExpired?.5:1};">
-              <div style="display:flex;justify-content:space-between;align-items:center;">
-                <div>
-                  <div style="font-size:13px;font-weight:800;color:${sel?color:'#1e293b'};">${fp?"🎟️":"🎫"} ${p.pass_type}</div>
-                  <div style="font-size:11px;color:#64748b;margin-top:3px;">${expLabel}</div>
-                </div>
-                <div style="text-align:right;">
-                  <div style="font-size:18px;font-weight:800;color:${isExpired?'#ef4444':color};">${fp?p.remaining_count+"日":p.remaining_count+"回"}</div>
-                  <div style="font-size:10px;color:#94a3b8;">${isExpired?"期限切れ":"残り"}</div>
-                </div>
-              </div>
-              ${sel&&!fp?`<div style="margin-top:8px;padding:6px 10px;background:${color}22;border-radius:6px;font-size:12px;color:${color};font-weight:700;">✓ 今回使用 → 残り${Math.max(0,p.remaining_count-1)}回になります</div>`:""}
-              ${sel&&fp?`<div style="margin-top:8px;padding:6px 10px;background:${color}22;border-radius:6px;font-size:12px;color:${color};font-weight:700;">✓ 今回使用 → 残り${Math.max(0,p.remaining_count-1)}日になります</div>`:""}
-            </button>`;
-        }).join("")}
-      </div>`;
+  const passHeader = document.createElement("div");
+  passHeader.className = "card-header orange";
+  passHeader.textContent = "🎫 回数券・フリーパス使用";
+  passCard.appendChild(passHeader);
+  const passBody = document.createElement("div");
+  passBody.className = "card-body";
+
+  if(patientPasses.length === 0){
+    const empty = document.createElement("div");
+    empty.style.cssText = "text-align:center;color:#9ca3af;font-size:13px;padding:20px;";
+    empty.textContent = "この患者様の有効な回数券・FPはありません";
+    passBody.appendChild(empty);
+  } else {
+    const desc = document.createElement("div");
+    desc.style.cssText = "font-size:12px;color:#64748b;margin-bottom:10px;";
+    desc.textContent = "今回使用する券・パスを選択してください（任意）";
+    passBody.appendChild(desc);
+
+    // 「使用しない」ボタン
+    const noneBtn = document.createElement("button");
+    noneBtn.textContent = "使用しない";
+    noneBtn.style.cssText = `width:100%;padding:10px;border-radius:8px;border:2px solid ${state.usePassId===null?'#6b7280':'#e2e8f0'};background:${state.usePassId===null?'#6b7280':'white'};color:${state.usePassId===null?'white':'#374151'};font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px;font-family:inherit;`;
+    noneBtn.onclick = () => { state.usePassId = null; render(); };
+    passBody.appendChild(noneBtn);
+
+    const today = new Date().toISOString().split("T")[0];
+    patientPasses.forEach(p => {
+      const sel = state.usePassId === p.id;
+      const isFP = p.pass_type && p.pass_type.includes("FP");
+      const isExpired = p.expiry_date && p.expiry_date < today;
+      const color = isFP ? "#7c3aed" : "#2563eb";
+
+      const btn = document.createElement("button");
+      btn.disabled = isExpired;
+      btn.style.cssText = `width:100%;padding:12px 14px;border-radius:10px;border:2px solid ${sel?color:'#e2e8f0'};background:${sel?color+'18':'#f8fafc'};cursor:${isExpired?'not-allowed':'pointer'};text-align:left;margin-bottom:8px;opacity:${isExpired?.5:1};font-family:inherit;display:block;`;
+      btn.onclick = () => { state.usePassId = p.id; render(); };
+
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;justify-content:space-between;align-items:center;";
+
+      const left = document.createElement("div");
+      const name = document.createElement("div");
+      name.style.cssText = `font-size:13px;font-weight:800;color:${sel?color:'#1e293b'};`;
+      name.textContent = (isFP?"🎟️":"🎫") + " " + p.pass_type;
+      const expiry = document.createElement("div");
+      expiry.style.cssText = "font-size:11px;color:#64748b;margin-top:3px;";
+      expiry.textContent = p.expiry_date ? `期限：${p.expiry_date}` : "期限なし";
+      left.appendChild(name);
+      left.appendChild(expiry);
+
+      const right = document.createElement("div");
+      right.style.cssText = "text-align:right;";
+      const count = document.createElement("div");
+      count.style.cssText = `font-size:18px;font-weight:800;color:${isExpired?'#ef4444':color};`;
+      count.textContent = isFP ? p.remaining_count+"日" : p.remaining_count+"回";
+      const countLabel = document.createElement("div");
+      countLabel.style.cssText = "font-size:10px;color:#94a3b8;";
+      countLabel.textContent = isExpired ? "期限切れ" : "残り";
+      right.appendChild(count);
+      right.appendChild(countLabel);
+
+      row.appendChild(left);
+      row.appendChild(right);
+      btn.appendChild(row);
+
+      if(sel){
+        const notice = document.createElement("div");
+        notice.style.cssText = `margin-top:8px;padding:6px 10px;background:${color}22;border-radius:6px;font-size:12px;color:${color};font-weight:700;`;
+        notice.textContent = `✓ 今回使用 → 残り${Math.max(0,p.remaining_count-1)}${isFP?"日":"回"}になります`;
+        btn.appendChild(notice);
+      }
+
+      passBody.appendChild(btn);
+    });
   }
+
+  passCard.appendChild(passBody);
   root.appendChild(passCard);
 
   const resultCard = document.createElement("div");
