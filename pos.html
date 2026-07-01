@@ -346,6 +346,50 @@ async function save(){
       memo:state.jifeeItems.map(i=>i.label).join("・")||null,
     });
     if(result&&result.error){throw new Error(result.message||result.error||"保存に失敗しました");}
+
+    // ===== 回数券・FP購入をpassesテーブルに自動登録 =====
+    for(const item of state.jifeeItems){
+      // 回数券の判定
+      const kaisuMatch=item.label.match(/(.+?)(\d+)回券/);
+      if(kaisuMatch){
+        const count=parseInt(kaisuMatch[2]);
+        // 有効期限：購入日から1年
+        const expiry=new Date(booking.date);expiry.setFullYear(expiry.getFullYear()+1);
+        const expiryStr=expiry.toISOString().split("T")[0];
+        await sbPost("passes",{
+          patient_name:booking.patient_name,
+          phone:booking.phone||null,
+          pass_type:item.label,
+          total_count:count,
+          remaining_count:count,
+          amount:item.amount,
+          purchased_date:booking.date,
+          expiry_date:expiryStr,
+          staff_id:booking.staff_id,
+          active:true,
+        });
+      }
+      // FPの判定
+      const fpMatch=item.label.match(/FP\s*(\d+)ヶ月/);
+      if(fpMatch){
+        const months=parseInt(fpMatch[1]);
+        const expiry=new Date(booking.date);expiry.setMonth(expiry.getMonth()+months);
+        const expiryStr=expiry.toISOString().split("T")[0];
+        await sbPost("passes",{
+          patient_name:booking.patient_name,
+          phone:booking.phone||null,
+          pass_type:item.label,
+          total_count:months*30, // 日数換算
+          remaining_count:months*30,
+          amount:item.amount,
+          purchased_date:booking.date,
+          expiry_date:expiryStr,
+          staff_id:booking.staff_id,
+          active:true,
+        });
+      }
+    }
+
     state.done=true;
   }catch(e){
     alert("保存エラー："+e.message+"\n\nログイン状態が切れている可能性があります。お手数ですが管理画面に戻って再ログインしてから、もう一度お試しください。");
