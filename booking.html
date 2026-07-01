@@ -22,7 +22,6 @@ const CLINIC_TEL = "0000-00-0000";
 const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
 const LINE_GROUP_ID = "Cfd9d54fedc95bbe4ce1a7ac64ec97fa0";
-const LINE_TOKEN = "IjKfscY0v26S5eBl+Soop/Ty2r+YLovOOanqXJRbUL8093lsfJt1sjgj4T+xN66KZ3ufgPomsXn5BIR3Uy9Bw4HPArx/hpo4dqI6knZXj8aADrf/eTJekeLzCC662exQYxHRUtNSpUUvFweJHRFXCwdB04t89/1O/w1cDnyilFU=";
 const LIFF_ID = "2010529910-NlBCzfsM";
 
 const STAFF = [
@@ -127,7 +126,10 @@ function App(){
   var errState = useState({});
   var errors = errState[0]; var setErrors = errState[1];
 
-  // LINEユーザーID保持
+  // 登録された予約ID（QR送信に使用）
+  var bookingIdState = useState(null);
+  var bookingId = bookingIdState[0]; var setBookingId = bookingIdState[1];
+
   var lineUserIdState = useState(null);
   var lineUserId = lineUserIdState[0]; var setLineUserId = lineUserIdState[1];
 
@@ -145,7 +147,6 @@ function App(){
 
   var days = getDays(14);
 
-  // LIFF初期化
   useEffect(function(){
     liff.init({liffId: LIFF_ID}).then(function(){
       setLiffReady(true);
@@ -155,7 +156,6 @@ function App(){
         }).catch(function(){});
       }
     }).catch(function(){
-      // LIFF外（通常ブラウザ）でも動作継続
       setLiffReady(true);
     });
   }, []);
@@ -208,17 +208,14 @@ function App(){
     setForm(Object.assign({}, form, upd));
   }
 
-  // LINEログイン処理
   function handleLineLogin(){
     if(!liffReady) return;
     if(liff.isInClient()){
-      // LINEアプリ内ブラウザなら直接プロフィール取得
       liff.getProfile().then(function(profile){
         setLineUserId(profile.userId);
         setF("lineNotify", true);
       }).catch(function(){});
     } else {
-      // 外部ブラウザならLINEログインへ
       liff.login();
     }
   }
@@ -247,6 +244,7 @@ function App(){
     setSubmitting(true);
     var staffId = getAvailableStaffId(selTime);
     var howKnowText = form.howKnow==="その他" ? "その他："+form.howKnowOther : form.howKnow;
+    var newBookingId = null;
 
     sb.insert("bookings",{
       patient_name:form.name,
@@ -268,7 +266,14 @@ function App(){
       medical_history:form.medicalHistory,
       want_continue:form.wantContinue,
       how_know:howKnowText
-    }).then(function(){
+    }).then(function(result){
+      // 予約IDを取得
+      if(Array.isArray(result) && result.length > 0){
+        newBookingId = result[0].id;
+        setBookingId(newBookingId);
+      }
+
+      // グループLINEへ通知
       var msg = "🏥【あんど整骨院 新規予約】\n\n"+
         "👤 "+form.name+" 様\n"+
         "📞 "+form.phone+"\n"+
@@ -280,11 +285,26 @@ function App(){
         "📣 経路："+howKnowText+"\n"+
         "🔔 LINE連携："+(form.lineNotify && lineUserId ? "あり" : "なし");
 
-      return fetch("/api/line-notify",{
+      fetch("/api/line-notify",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({groupId:LINE_GROUP_ID, message:msg})
-      });
+      }).catch(function(){});
+
+      // LINE連携済みの患者へ予約確認QRを送信
+      if(form.lineNotify && lineUserId && newBookingId){
+        fetch("/api/send-confirmation",{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({
+            userId: lineUserId,
+            bookingId: newBookingId,
+            patientName: form.name,
+            date: fmtDateJP(selDate),
+            time: selTime
+          })
+        }).catch(function(){});
+      }
     }).catch(function(){}).finally(function(){
       setDone(true);
       setSubmitting(false);
@@ -296,6 +316,7 @@ function App(){
     setSlotData({booked:[],breaks:[]});
     setForm({name:"",nameKana:"",phone:"",bodyParts:[],injuryCause:"",injuryCauseDetail:"",painWhen:"",painLevel:"",symptoms:[],otherClinic:"",otherClinicName:"",medicalHistory:"",wantContinue:"",howKnow:"",howKnowOther:"",lineNotify:false});
     setDone(false);
+    setBookingId(null);
   }
 
   var H = {
@@ -317,40 +338,80 @@ function App(){
     }, val);
   }
 
+  // ===== 予約完了画面 =====
   if(done) return React.createElement("div",{style:{minHeight:"100vh",background:"#f0f4f8"}},
     React.createElement("div",{style:{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",color:"white",padding:"18px 16px",textAlign:"center"}},
       React.createElement("div",{style:{fontSize:20,fontWeight:800,letterSpacing:2}},CLINIC_NAME)
     ),
-    React.createElement("div",{style:{maxWidth:480,margin:"0 auto",padding:"40px 16px",textAlign:"center"}},
-      React.createElement("div",{style:{fontSize:72,marginBottom:16}},"🎉"),
-      React.createElement("div",{style:{fontSize:22,fontWeight:800,color:"#1e3a5f",marginBottom:8}},"予約が完了しました！"),
-      React.createElement("div",{style:{color:"#666",fontSize:14,marginBottom:28,lineHeight:1.8}},
-        "無料施術体験会のご予約ありがとうございます。",React.createElement("br"),
-        "ご来院をお待ちしております🌸"
+    React.createElement("div",{style:{maxWidth:480,margin:"0 auto",padding:"32px 16px"}},
+      React.createElement("div",{style:{textAlign:"center",marginBottom:24}},
+        React.createElement("div",{style:{fontSize:64,marginBottom:12}},"🎉"),
+        React.createElement("div",{style:{fontSize:22,fontWeight:800,color:"#1e3a5f",marginBottom:6}},"予約が完了しました！"),
+        React.createElement("div",{style:{color:"#666",fontSize:14,lineHeight:1.8}},
+          "無料施術体験会のご予約ありがとうございます。",React.createElement("br"),
+          "ご来院をお待ちしております🌸"
+        )
       ),
-      React.createElement("div",{style:{background:"#f0f7ff",borderRadius:14,padding:20,textAlign:"left",marginBottom:24}},
-        [["メニュー","🎁 無料施術体験会（60分）¥0"],
-         ["日時",selDate?fmtDateJP(selDate)+" "+selTime:""],
-         ["お名前",form.name+" 様"],
-         ["電話番号",form.phone]
+
+      // ===== 予約情報カード =====
+      React.createElement("div",{style:{background:"white",borderRadius:14,border:"2px solid #e5e7eb",overflow:"hidden",marginBottom:12}},
+        React.createElement("div",{style:{background:"#1e3a5f",color:"white",padding:"12px 16px",fontSize:13,fontWeight:700}},"📅 予約情報"),
+        [
+          ["メニュー","🎁 無料施術体験会（60分）¥0"],
+          ["日付",selDate?fmtDateJP(selDate):""],
+          ["時間",selTime||""],
+          ["お名前",form.name+" 様"],
+          ["電話番号",form.phone],
+          ["LINEリマインド",lineUserId ? "✅ 連携済み（前日送信）" : "なし"]
         ].map(function(item){
-          return React.createElement("div",{key:item[0],style:{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #e5e7eb",gap:12}},
-            React.createElement("span",{style:{fontSize:13,color:"#9ca3af",fontWeight:600,whiteSpace:"nowrap"}},item[0]),
-            React.createElement("span",{style:{fontSize:14,color:"#1e3a5f",fontWeight:600,textAlign:"right"}},item[1])
+          return React.createElement("div",{key:item[0],style:{display:"flex",justifyContent:"space-between",padding:"9px 16px",borderBottom:"1px solid #f0f0f0",gap:12}},
+            React.createElement("span",{style:{fontSize:12,color:"#9ca3af",fontWeight:600,whiteSpace:"nowrap",minWidth:80}},item[0]),
+            React.createElement("span",{style:{fontSize:13,color:"#1e3a5f",fontWeight:600,textAlign:"right"}},item[1])
           );
         })
       ),
-      form.lineNotify && lineUserId ? React.createElement("div",{style:{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"12px 16px",marginBottom:24,fontSize:13,color:"#065f46"}},
-        "🟢 LINE連携完了！前日にリマインドメッセージをお送りします。"
-      ) : null,
-      React.createElement("div",{style:{background:"#fef9ec",border:"1px solid #fde68a",borderRadius:10,padding:"12px 16px",marginBottom:24,fontSize:13,color:"#92400e",textAlign:"left"}},
-        "🔔 キャンセル・変更は前日18時までに",React.createElement("br"),
+
+      // ===== 問診情報カード =====
+      React.createElement("div",{style:{background:"white",borderRadius:14,border:"2px solid #e5e7eb",overflow:"hidden",marginBottom:12}},
+        React.createElement("div",{style:{background:"#059669",color:"white",padding:"12px 16px",fontSize:13,fontWeight:700}},"🩺 ご入力いただいた問診内容"),
+        [
+          ["負傷部位",form.bodyParts.join("・")||"—"],
+          ["負傷原因",form.injuryCause||"—"],
+          ["いつから",form.painWhen||"—"],
+          ["痛みの強さ",form.painLevel ? form.painLevel+"/10" : "—"],
+          ["主な症状",form.symptoms.length>0 ? form.symptoms.join("・") : "—"],
+          ["他院受診",form.otherClinic||(form.otherClinicName?"（"+form.otherClinicName+"）":"")||"—"],
+          ["既往歴",form.medicalHistory||"—"],
+          ["継続意思",form.wantContinue||"—"],
+          ["来院経路",form.howKnow==="その他"?"その他："+form.howKnowOther:form.howKnow||"—"]
+        ].map(function(item){
+          return React.createElement("div",{key:item[0],style:{display:"flex",justifyContent:"space-between",padding:"8px 16px",borderBottom:"1px solid #f0f0f0",gap:12}},
+            React.createElement("span",{style:{fontSize:12,color:"#9ca3af",fontWeight:600,whiteSpace:"nowrap",minWidth:80}},item[0]),
+            React.createElement("span",{style:{fontSize:13,color:"#1e3a5f",fontWeight:600,textAlign:"right",wordBreak:"break-all"}},item[1])
+          );
+        })
+      ),
+
+      // LINE連携済みの場合のQR通知メッセージ
+      lineUserId ? React.createElement("div",{style:{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"12px 16px",marginBottom:12,fontSize:13,color:"#065f46"}},
+        React.createElement("div",{style:{fontWeight:800,marginBottom:4}},"📱 LINEにQRコードをお送りしました"),
+        "来院時にQRコードをご提示ください。前日にもリマインドメッセージをお送りします。"
+      ) : React.createElement("div",{style:{background:"#fef9ec",border:"1px solid #fde68a",borderRadius:10,padding:"12px 16px",marginBottom:12,fontSize:13,color:"#92400e"}},
+        React.createElement("div",{style:{fontWeight:800,marginBottom:4}},"🔔 LINEリマインドについて"),
+        "LINE連携をされていない場合、リマインドはお送りできません。次回ご来院時にLINE連携をお勧めします。"
+      ),
+
+      // キャンセル案内
+      React.createElement("div",{style:{background:"#fef9ec",border:"1px solid #fde68a",borderRadius:10,padding:"12px 16px",marginBottom:20,fontSize:13,color:"#92400e"}},
+        "⚠️ キャンセル・変更は前日18時までに",React.createElement("br"),
         React.createElement("strong",null,CLINIC_TEL),"までご連絡ください。"
       ),
+
       React.createElement("button",{onClick:reset,style:H.btn},"別の予約をする")
     )
   );
 
+  // ===== 予約フォーム（ステップ0〜3）=====
   return React.createElement("div",{style:{minHeight:"100vh",background:"#f0f4f8"}},
     React.createElement("div",{style:{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",color:"white",padding:"18px 16px",textAlign:"center"}},
       React.createElement("div",{style:{fontSize:20,fontWeight:800,letterSpacing:2}},CLINIC_NAME),
@@ -377,6 +438,7 @@ function App(){
     ),
     React.createElement("div",{style:{maxWidth:480,margin:"0 auto",padding:"20px 16px"}},
 
+      // ===== STEP 0: 日時選択 =====
       step===0?React.createElement("div",null,
         React.createElement("div",{style:{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:16}},"日時を選んでください"),
         React.createElement("div",{style:{marginBottom:20}},
@@ -424,6 +486,7 @@ function App(){
         },"次へ →")
       ):null,
 
+      // ===== STEP 1: 基本情報 =====
       step===1?React.createElement("div",null,
         React.createElement("div",{style:{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:16}},"基本情報を入力してください"),
         React.createElement("div",{style:H.sec},
@@ -443,8 +506,6 @@ function App(){
             );
           })
         ),
-
-        // LINE連携ブロック
         React.createElement("div",{style:{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12,padding:16,marginBottom:20}},
           React.createElement("div",{style:{fontWeight:800,fontSize:14,color:"#065f46",marginBottom:8}},"🔔 前日リマインドを受け取る"),
           React.createElement("div",{style:{fontSize:12,color:"#059669",marginBottom:12,lineHeight:1.7}},"LINEと連携すると、ご予約前日に自動でリマインドメッセージが届きます。"),
@@ -460,13 +521,13 @@ function App(){
                 "LINEでリマインドを受け取る"
               )
         ),
-
         React.createElement("div",{style:{display:"flex",gap:10}},
           React.createElement("button",{onClick:function(){setStep(0);},style:H.btnB},"← 戻る"),
           React.createElement("button",{onClick:function(){if(validate2())setStep(2);},style:Object.assign({},H.btn,{flex:1,width:"auto"})},"次へ →")
         )
       ):null,
 
+      // ===== STEP 2: 問診 =====
       step===2?React.createElement("div",null,
         React.createElement("div",{style:{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:4}},"症状・問診票"),
         React.createElement("div",{style:{fontSize:12,color:"#9ca3af",marginBottom:16}},"保険請求に必要な情報です。"),
@@ -575,6 +636,7 @@ function App(){
         )
       ):null,
 
+      // ===== STEP 3: 確認 =====
       step===3?React.createElement("div",null,
         React.createElement("div",{style:{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:16}},"予約内容を確認してください"),
         React.createElement("div",{style:{background:"white",borderRadius:14,border:"2px solid #e5e7eb",overflow:"hidden",marginBottom:12}},
