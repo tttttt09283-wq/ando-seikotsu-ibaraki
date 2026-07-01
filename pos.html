@@ -91,6 +91,46 @@ const STAFF={1:"岩永",2:"大皿",3:"定井",4:"細永",5:"広川"};
 const INSURANCE_PRICES={"無料施術体験会（60分）":0,"初診（60分）":0,"再診（30分）":0,"鍼灸（45分）":580,"骨盤矯正（40分）":580,"マッサージ（30分）":380};
 const JIFEE_PRICES={"矯正NE":3300,"矯正KO":2200,"ST":1650,"Hi":5500,"鍼":3300,"他":0};
 
+// カテゴリ別自費メニュー
+const JIFEE_CATEGORIES=[
+  {
+    id:"spot",label:"スポット施術",color:"#059669",
+    items:[
+      {label:"矯正NE",amount:3300},
+      {label:"矯正KO",amount:2200},
+      {label:"ST",amount:1650},
+      {label:"Hi（ハイボルテージ）",amount:5500},
+      {label:"鍼",amount:3300},
+      {label:"EMS体験",amount:1100},
+      {label:"EMS単発",amount:3300},
+      {label:"その他",amount:0},
+    ]
+  },
+  {
+    id:"kaisu",label:"回数券",color:"#2563eb",
+    items:[
+      {label:"アジャスト5回券",amount:4400},
+      {label:"アジャスト11回券",amount:8800},
+      {label:"アジャスト23回券",amount:17600},
+      {label:"鍼・Hi 5回券",amount:6000},
+      {label:"鍼・Hi 11回券",amount:12000},
+      {label:"鍼・Hi 23回券",amount:24000},
+      {label:"EMS 8回券",amount:24000},
+      {label:"EMS 16回券",amount:45600},
+      {label:"EMS 24回券",amount:66000},
+      {label:"EMS 32回券",amount:84800},
+    ]
+  },
+  {
+    id:"fp",label:"フリーパス",color:"#7c3aed",
+    items:[
+      {label:"FP 1ヶ月",amount:12000},
+      {label:"FP 3ヶ月",amount:34500},
+      {label:"FP 6ヶ月",amount:66000},
+    ]
+  },
+];
+
 const TIME_OPTS = (()=>{
   const opts=[];
   for(let h=9;h<=18;h++){
@@ -122,7 +162,7 @@ async function sbPost(t,d){
 function fmt(n){return"¥"+Number(n||0).toLocaleString();}
 
 let booking=null,treatment=null,visitCount=1;
-let state={insuranceAmount:0,jifeeItems:[],payments:[],done:false,saving:false,nextBookings:[],savingBookings:false,bookingsSaved:false};
+let state={insuranceAmount:0,jifeeItems:[],payments:[],done:false,saving:false,nextBookings:[],savingBookings:false,bookingsSaved:false,jifeeTab:"spot"};
 
 function getMenuByVisit(visit){if(visit===1) return "初診（60分）";if(visit===2) return "初診（60分）";return "再診（30分）";}
 function getInsMenuByVisit(visit){if(visit===1) return "初診（60分）";if(visit===2) return "初診（60分）";if(visit===3) return "再診（30分）";return "3回目以降";}
@@ -361,11 +401,33 @@ function render(){
       <div class="card">
         <div class="card-header green">💴 自費項目</div>
         <div class="card-body">
-          <div class="jifee-grid">
-            ${Object.entries(JIFEE_PRICES).map(([label,amount])=>`<button class="jifee-btn" onclick="addJifee('${label}',${amount})">${label}<br/><span style="font-size:10px;color:#9ca3af;font-weight:400;">${amount>0?fmt(amount):"金額入力"}</span></button>`).join("")}
+          <!-- カテゴリタブ -->
+          <div style="display:flex;gap:5px;margin-bottom:10px;">
+            ${JIFEE_CATEGORIES.map(cat=>`
+              <button onclick="state.jifeeTab='${cat.id}';render();" style="flex:1;padding:7px 4px;border-radius:8px;border:2px solid ${state.jifeeTab===cat.id?cat.color:'#e2e8f0'};background:${state.jifeeTab===cat.id?cat.color:'white'};color:${state.jifeeTab===cat.id?'white':'#374151'};font-size:11px;font-weight:700;cursor:pointer;">${cat.label}</button>
+            `).join("")}
           </div>
-          ${state.jifeeItems.map((item,i)=>`<div class="jifee-item"><span>${item.label}</span><input type="number" value="${item.amount}" onchange="updateJifee(${i},this.value)"/><button onclick="removeJifee(${i})">✕</button></div>`).join("")}
-          ${state.jifeeItems.length===0?`<div style="text-align:center;color:#d1d5db;font-size:12px;">なし</div>`:""}
+          <!-- 選択中カテゴリのメニュー -->
+          ${(()=>{
+            const cat=JIFEE_CATEGORIES.find(c=>c.id===state.jifeeTab)||JIFEE_CATEGORIES[0];
+            return`<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">
+              ${cat.items.map(item=>`
+                <button class="jifee-btn" onclick="addJifee('${item.label}',${item.amount})" style="border-color:${cat.color};color:${cat.color};text-align:left;padding:8px 10px;">
+                  <div style="font-size:12px;font-weight:700;">${item.label}</div>
+                  <div style="font-size:10px;color:#9ca3af;margin-top:2px;">${item.amount>0?fmt(item.amount):'金額入力'}</div>
+                </button>
+              `).join("")}
+            </div>`;
+          })()}
+          <!-- 追加済み自費項目 -->
+          ${state.jifeeItems.map((item,i)=>`
+            <div class="jifee-item">
+              <span>${item.label}</span>
+              <input type="number" value="${item.amount}" onchange="updateJifee(${i},this.value)"/>
+              <button onclick="removeJifee(${i})">✕</button>
+            </div>
+          `).join("")}
+          ${state.jifeeItems.length===0?`<div style="text-align:center;color:#d1d5db;font-size:12px;padding:4px 0;">上のボタンから追加</div>`:""}
         </div>
       </div>
       <div class="card">
