@@ -16,36 +16,50 @@ export default async function handler(req, res) {
   }
 
   try {
-    // マイページへのURL（予約確認・変更・回数券残高などが確認できる）
+    // intake.htmlへのURL（スタッフが読み取る問診票）
+    const intakeUrl = `${BASE_URL}/intake.html?id=${bookingId}`;
+    // QRコード画像URL（自前API）
+    const qrImageUrl = `${BASE_URL}/api/qr?url=${encodeURIComponent(intakeUrl)}`;
+    // マイページURL
     const mypageUrl = `${BASE_URL}/mypage.html`;
 
-    // LINEメッセージ（テキスト＋QRコードはLIFFのURLスキームで代替）
     const messages = [
+      // テキストメッセージ
+      {
+        type: "text",
+        text: `✅ ご予約ありがとうございます！\n\nあんど整骨院 香里園駅前院\n\n📅 ${date} ${time}\n👤 ${patientName} 様\n\n来院時に下のQRコードをスタッフにご提示ください。`,
+      },
+      // QRコード画像
+      {
+        type: "image",
+        originalContentUrl: qrImageUrl,
+        previewImageUrl: qrImageUrl,
+      },
+      // マイページへのボタン
       {
         type: "template",
-        altText: `【あんど整骨院】ご予約確認 ${date} ${time}`,
+        altText: "マイページで予約確認・変更ができます",
         template: {
           type: "buttons",
-          title: "✅ ご予約ありがとうございます",
-          text: `${patientName} 様\n📅 ${date} ${time}\n\n来院時にQRを提示してください`,
+          text: "マイページで予約確認・変更・回数券残高をご確認いただけます",
           actions: [
             {
               type: "uri",
-              label: "📋 マイページで予約を確認する",
-              uri: mypageUrl
-            }
-          ]
-        }
-      }
+              label: "📋 マイページを開く",
+              uri: mypageUrl,
+            },
+          ],
+        },
+      },
     ];
 
     const lineRes = await fetch("https://api.line.me/v2/bot/message/push", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${LINE_CHANNEL_ACCESS_TOKEN}`
+        "Authorization": `Bearer ${LINE_CHANNEL_ACCESS_TOKEN}`,
       },
-      body: JSON.stringify({ to: userId, messages })
+      body: JSON.stringify({ to: userId, messages }),
     });
 
     const lineData = await lineRes.json();
