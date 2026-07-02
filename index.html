@@ -1410,6 +1410,40 @@ function Dashboard({user,onLogout}){
     setLoading(false);
   }
 
+  async function insertTestBooking(){
+    const today=new Date();
+    const dateStr=fmtDate(today);
+    const h=today.getHours();
+    const nextHour=h>=18?9:h+1;
+    const timeStr=`${String(nextHour).padStart(2,"0")}:00`;
+    const testData={
+      patient_name:"テスト 太郎",
+      phone:"090-0000-0000",
+      staff_id:user.id||1,
+      date:dateStr,
+      time:timeStr,
+      menu:"無料施術体験会（60分）",
+      line_notify:false,
+      reminded:false,
+      body_parts:"腰部",
+      injury_cause:"日常生活中のケガ",
+      pain_when:"1週間以内",
+      pain_level:"5",
+      symptoms:"痛み・こり・張り",
+      want_continue:"はい、通いたいです",
+      how_know:"Instagram",
+    };
+    try{
+      const result=await sb.insert("bookings",testData);
+      const newBooking=Array.isArray(result)&&result.length>0?result[0]:{...testData,id:Date.now()};
+      setBookings(prev=>[...prev,newBooking]);
+      showToast(`✅ テスト予約を追加しました（${dateStr} ${timeStr}）`);
+      setView("calendar");
+    }catch(e){
+      showToast("❌ テスト予約の追加に失敗しました","delete");
+    }
+  }
+
   React.useEffect(()=>{fetchAll();const t=setInterval(fetchAll,30000);return()=>clearInterval(t);},[]);
 
   function showToast(msg,type="success"){setToast({msg,type});setTimeout(()=>setToast(null),3000);}
@@ -1529,6 +1563,12 @@ function Dashboard({user,onLogout}){
             );
           })}
           <div style={{flex:1}}/>
+          {isAdmin&&(
+            <button onClick={insertTestBooking} className="sidebar-btn" style={{height:46,fontSize:9,opacity:.8,gap:3,flexDirection:"column",background:"rgba(217,119,6,.3)",borderColor:"rgba(217,119,6,.5)"}}>
+              <span style={{fontSize:14}}>🧪</span>
+              <span>テスト<br/>予約</span>
+            </button>
+          )}
           <button onClick={fetchAll} className="sidebar-btn" style={{height:42,fontSize:10,opacity:.7,gap:4,flexDirection:"row"}}>
             <SvgRefresh/><span>同期</span>
           </button>
