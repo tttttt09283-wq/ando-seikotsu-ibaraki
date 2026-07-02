@@ -223,6 +223,7 @@ function updatePaymentAmount(i,val){state.payments[i].amount=parseInt(val)||0;re
 function addJifee(label,amount){state.jifeeItems.push({label,amount});render();}
 function removeJifee(i){state.jifeeItems.splice(i,1);render();}
 function updateJifee(i,val){state.jifeeItems[i].amount=parseInt(val)||0;renderSummary();}
+function setJifeeTab(id){state.jifeeTab=id;render();}
 
 function renderSummaryHtml(){
   const ins=parseInt(state.insuranceAmount)||0;
@@ -478,15 +479,15 @@ function render(){
           <!-- カテゴリタブ -->
           <div style="display:flex;gap:5px;margin-bottom:10px;">
             ${JIFEE_CATEGORIES.map(cat=>`
-              <button onclick="state.jifeeTab='${cat.id}';render();" style="flex:1;padding:7px 4px;border-radius:8px;border:2px solid ${state.jifeeTab===cat.id?cat.color:'#e2e8f0'};background:${state.jifeeTab===cat.id?cat.color:'white'};color:${state.jifeeTab===cat.id?'white':'#374151'};font-size:11px;font-weight:700;cursor:pointer;">${cat.label}</button>
+              <button data-cat="${cat.id}" onclick="setJifeeTab(this.dataset.cat)" style="flex:1;padding:7px 4px;border-radius:8px;border:2px solid ${state.jifeeTab===cat.id?cat.color:'#e2e8f0'};background:${state.jifeeTab===cat.id?cat.color:'white'};color:${state.jifeeTab===cat.id?'white':'#374151'};font-size:11px;font-weight:700;cursor:pointer;">${cat.label}</button>
             `).join("")}
           </div>
           <!-- 選択中カテゴリのメニュー -->
           ${(()=>{
             const cat=JIFEE_CATEGORIES.find(c=>c.id===state.jifeeTab)||JIFEE_CATEGORIES[0];
             return`<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">
-              ${cat.items.map(item=>`
-                <button class="jifee-btn" onclick="addJifee('${item.label}',${item.amount})" style="border-color:${cat.color};color:${cat.color};text-align:left;padding:8px 10px;">
+              ${cat.items.map((item,idx)=>`
+                <button class="jifee-btn" data-label="${item.label.replace(/"/g,'&quot;')}" data-amount="${item.amount}" onclick="addJifee(this.dataset.label,Number(this.dataset.amount))" style="border-color:${cat.color};color:${cat.color};text-align:left;padding:8px 10px;">
                   <div style="font-size:12px;font-weight:700;">${item.label}</div>
                   <div style="font-size:10px;color:#9ca3af;margin-top:2px;">${item.amount>0?fmt(item.amount):'金額入力'}</div>
                 </button>
