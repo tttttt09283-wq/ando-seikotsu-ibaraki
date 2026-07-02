@@ -293,11 +293,16 @@ function renderNextBookings(){
               <span style="background:#dbeafe;color:#1e40af;border-radius:4px;padding:1px 6px;font-size:10px;margin-left:6px;">${nb.insMenu}</span>
             </div>
             <div class="nb-grid">
-              <div><span class="nb-label">📅 日付</span><input type="date" class="nb-input" value="${nb.date}" onchange="updateNB(${i},'date',this.value)"/></div>
+              <div><span class="nb-label">📅 日付</span><input type="date" class="nb-input" value="${nb.date}" onchange="onNBDateChange(${i},this.value)"/></div>
               <div><span class="nb-label">🕐 時間</span>
                 <select class="nb-input" onchange="updateNB(${i},'time',this.value)">
                   <option value="">選択</option>
-                  ${TIME_OPTS.map(t=>`<option value="${t}" ${nb.time===t?'selected':''}>${t}</option>`).join('')}
+                  ${TIME_OPTS.map(t=>{
+                    const key=`${nb.date}_${nb.staffId}`;
+                    const fullSlots=slotCache[key]||[];
+                    const isFull=fullSlots.includes(t);
+                    return`<option value="${t}" ${nb.time===t?'selected':''} ${isFull?'disabled':''} style="color:${isFull?'#d1d5db':'inherit'}">${t}${isFull?' ×満員':''}</option>`;
+                  }).join('')}
                 </select>
               </div>
             </div>
@@ -330,7 +335,32 @@ function renderNextBookings(){
     </div>`;
 }
 
-async function save(){
+// 日付ごとの空きスロットをキャッシュ
+const slotCache={};
+async function getAvailableSlots(date, staffId){
+  const key=`${date}_${staffId}`;
+  if(slotCache[key]) return slotCache[key];
+  try{
+    const token=await getAuthToken();
+    const [bkRes,brRes]=await Promise.all([
+      fetch(`${SUPABASE_URL}/rest/v1/bookings?date=eq.${date}&staff_id=eq.${staffId}`,{headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`}}).then(r=>r.json()),
+      fetch(`${SUPABASE_URL}/rest/v1/staff_breaks?date=eq.${date}&staff_id=eq.${staffId}`,{headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`}}).then(r=>r.json()),
+    ]);
+    const booked=(Array.isArray(bkRes)?bkRes:[]).map(b=>b.time);
+    const breaks=(Array.isArray(brRes)?brRes:[]).map(b=>b.time);
+    const full=[...booked,...breaks];
+    slotCache[key]=full;
+    return full;
+  }catch{return [];}
+}
+
+async function onNBDateChange(i, date){
+  state.nextBookings[i].date=date;
+  state.nextBookings[i].time="";
+  // 空きスロットを事前取得
+  if(date) await getAvailableSlots(date, state.nextBookings[i].staffId);
+  render();
+}
   if(state.saving) return;
   const total=calcTotal();const paid=calcPaid();
   if(state.payments.length===0){alert("支払方法を追加してください");return;}
@@ -485,7 +515,7 @@ function render(){
         </div>
       </div>
       <button class="btn-confirm" onclick="save()" ${state.saving?"disabled":""} style="opacity:${state.saving?0.7:1};">${state.saving?"処理中...":"✅ 会計を確定する"}</button>
-      <button class="btn-back" onclick="history.back()">← 戻る</button>
+      <button class="btn-back" onclick="location.href='/index.html'">← カレンダーへ戻る</button>
       <div style="height:40px;"></div>
     </div>`;
 }
