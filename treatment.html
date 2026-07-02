@@ -678,28 +678,30 @@ function render() {
     timeLabel.textContent = "時間";
     timeWrap.appendChild(timeLabel);
 
-    if(state.nextSlots.length === 0){
+    if(state.nextSlots.length === 0 && state.nextDate){
       const loading = document.createElement("div");
       loading.style.cssText = "text-align:center;color:#94a3b8;font-size:13px;padding:12px;";
       loading.textContent = "空き状況を確認中...";
       timeWrap.appendChild(loading);
     } else {
-      const slotGrid = document.createElement("div");
-      slotGrid.style.cssText = "display:grid;grid-template-columns:repeat(5,1fr);gap:6px;";
+      const timeSelect = document.createElement("select");
+      timeSelect.className = "form-input";
+      timeSelect.style.cssText = "width:100%;";
+      const defaultOpt = document.createElement("option");
+      defaultOpt.value = "";
+      defaultOpt.textContent = "時間を選択してください";
+      timeSelect.appendChild(defaultOpt);
       ALL_SLOTS.forEach(t=>{
         const avail = state.nextSlots.includes(t);
-        const sel = state.nextTime === t;
-        const btn = document.createElement("button");
-        btn.disabled = !avail;
-        btn.textContent = t;
-        btn.style.cssText = `padding:8px 4px;border-radius:8px;font-size:12px;font-weight:${sel?700:400};font-family:inherit;cursor:${avail?'pointer':'not-allowed'};border:1.5px solid ${sel?'#1e3a5f':avail?'#e2e8f0':'#f1f5f9'};background:${sel?'#1e3a5f':avail?'white':'#f8fafc'};color:${sel?'white':avail?'#374151':'#d1d5db'};`;
-        if(!avail){
-          btn.style.textDecoration = "line-through";
-        }
-        btn.onclick = () => { state.nextTime = t; render(); };
-        slotGrid.appendChild(btn);
+        const opt = document.createElement("option");
+        opt.value = t;
+        opt.textContent = avail ? t : `${t}（満員）`;
+        opt.disabled = !avail;
+        if(state.nextTime === t) opt.selected = true;
+        timeSelect.appendChild(opt);
       });
-      timeWrap.appendChild(slotGrid);
+      timeSelect.onchange = e => { state.nextTime = e.target.value; render(); };
+      timeWrap.appendChild(timeSelect);
       if(state.nextTime){
         const selected = document.createElement("div");
         selected.style.cssText = "margin-top:8px;padding:8px 12px;background:#eff6ff;border-radius:8px;font-size:13px;font-weight:700;color:#1e3a5f;";
