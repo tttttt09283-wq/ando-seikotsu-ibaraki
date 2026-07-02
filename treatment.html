@@ -519,30 +519,7 @@ function render() {
   passCard.appendChild(passBody);
   root.appendChild(passCard);
 
-  const resultCard = document.createElement("div");
-  resultCard.className = "card";
-  const resultHeader = document.createElement("div");
-  resultHeader.className = "card-header purple";
-  resultHeader.textContent = "📊 結果 *";
-  const resultBody = document.createElement("div");
-  resultBody.className = "card-body";
-  const resultChips = document.createElement("div");
-  resultChips.className = "chips";
-  RESULTS.forEach(r => {
-    const btn = document.createElement("button");
-    btn.className = `chip ${r.color}${state.result === r.id ? " sel" : ""}`;
-    btn.style.fontSize = "15px";
-    btn.style.padding = "10px 18px";
-    btn.textContent = `${r.icon} ${r.id}`;
-    btn.onclick = () => { state.result = r.id; render(); };
-    resultChips.appendChild(btn);
-  });
-  resultBody.appendChild(resultChips);
-  resultCard.appendChild(resultHeader);
-  resultCard.appendChild(resultBody);
-  root.appendChild(resultCard);
-
-  // ===== 提案内容カード =====
+  // ===== 提案内容カード（回数券・FPの直後） =====
   const PROPOSAL_PLANS = [
     {id:"",label:"提案なし",color:"#6b7280"},
     {id:"アジャスト5回券 ¥4,400",label:"🎫 アジャスト5回券",sub:"¥4,400",color:"#2563eb"},
@@ -624,6 +601,30 @@ function render() {
 
   proposalCard.appendChild(proposalBody);
   root.appendChild(proposalCard);
+
+  // 結果カード（提案内容の後）
+  const resultCard = document.createElement("div");
+  resultCard.className = "card";
+  const resultHeader = document.createElement("div");
+  resultHeader.className = "card-header purple";
+  resultHeader.textContent = "📊 結果 *";
+  const resultBody = document.createElement("div");
+  resultBody.className = "card-body";
+  const resultChips = document.createElement("div");
+  resultChips.className = "chips";
+  RESULTS.forEach(r => {
+    const btn = document.createElement("button");
+    btn.className = `chip ${r.color}${state.result === r.id ? " sel" : ""}`;
+    btn.style.fontSize = "15px";
+    btn.style.padding = "10px 18px";
+    btn.textContent = `${r.icon} ${r.id}`;
+    btn.onclick = () => { state.result = r.id; render(); };
+    resultChips.appendChild(btn);
+  });
+  resultBody.appendChild(resultChips);
+  resultCard.appendChild(resultHeader);
+  resultCard.appendChild(resultBody);
+  root.appendChild(resultCard);
 
   const nextCard = document.createElement("div");
   nextCard.className = "card";
