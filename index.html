@@ -1074,7 +1074,32 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
 // ===== 患者管理パネル =====
 function PatientsPanel({bookings,onHistory}){
   const [patientQ,setPatientQ]=React.useState("");
-  const [sortBy,setSortBy]=React.useState("count");
+  const [sortBy,setSortBy]=React.useState("name");
+
+  // 五十音グループ定義
+  const GOJUON=[
+    {label:"あ行",chars:["あ","い","う","え","お","ア","イ","ウ","エ","オ"]},
+    {label:"か行",chars:["か","き","く","け","こ","カ","キ","ク","ケ","コ"]},
+    {label:"さ行",chars:["さ","し","す","せ","そ","サ","シ","ス","セ","ソ"]},
+    {label:"た行",chars:["た","ち","つ","て","と","タ","チ","ツ","テ","ト"]},
+    {label:"な行",chars:["な","に","ぬ","ね","の","ナ","ニ","ヌ","ネ","ノ"]},
+    {label:"は行",chars:["は","ひ","ふ","へ","ほ","ハ","ヒ","フ","ヘ","ホ"]},
+    {label:"ま行",chars:["ま","み","む","め","も","マ","ミ","ム","メ","モ"]},
+    {label:"や行",chars:["や","ゆ","よ","ヤ","ユ","ヨ"]},
+    {label:"ら行",chars:["ら","り","る","れ","ろ","ラ","リ","ル","レ","ロ"]},
+    {label:"わ行",chars:["わ","を","ん","ワ","ヲ","ン"]},
+    {label:"英数",chars:[]}, // それ以外
+  ];
+
+  function getGroup(name){
+    if(!name) return "英数";
+    const first=name.charAt(0);
+    for(const g of GOJUON){
+      if(g.label==="英数") continue;
+      if(g.chars.includes(first)) return g.label;
+    }
+    return "英数";
+  }
 
   const pm={};
   bookings.forEach(b=>{
@@ -1089,11 +1114,7 @@ function PatientsPanel({bookings,onHistory}){
     if(!q) return true;
     return p.name.toLowerCase().includes(q)||(p.phone&&p.phone.replace(/-/g,"").includes(q.replace(/-/g,"")));
   });
-  const sorted=[...filtered].sort((a,b)=>{
-    if(sortBy==="name") return a.name.localeCompare(b.name,"ja");
-    if(sortBy==="lastDate") return b.lastDate.localeCompare(a.lastDate);
-    return b.count-a.count;
-  });
+  const sorted=[...filtered].sort((a,b)=>a.name.localeCompare(b.name,"ja"));
 
   function highlight(text){
     if(!q||!text) return text;
@@ -1102,68 +1123,84 @@ function PatientsPanel({bookings,onHistory}){
     return <span>{text.slice(0,idx)}<mark style={{background:"#fef08a",borderRadius:2,padding:"0 1px"}}>{text.slice(idx,idx+q.length)}</mark>{text.slice(idx+q.length)}</span>;
   }
 
+  function PatientCard({p}){
+    const s=STAFF_ACCOUNTS.find(x=>x.id===p.lastStaff)||{color:"#888",name:"不明",initial:"？"};
+    return(
+      <div className="card" style={{marginBottom:8}}>
+        <div style={{padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:12,flex:1}}>
+            <div style={{width:40,height:40,borderRadius:12,background:`linear-gradient(135deg,${s.color},${s.color}99)`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:15,flexShrink:0,boxShadow:`0 3px 8px ${s.color}44`}}>{p.name.charAt(0)}</div>
+            <div>
+              <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:2}}>
+                <span style={{fontWeight:800,fontSize:14,color:"#1e293b"}}>{highlight(p.name)}</span>
+                {p.count>=2?<span className="badge badge-yellow">{p.count}回</span>:<span className="badge badge-gray">初回</span>}
+              </div>
+              <div style={{fontSize:11,color:"#64748b"}}>最終：{p.lastDate}　{s.name}</div>
+              {p.phone&&<div style={{fontSize:11,color:"#94a3b8"}}>{highlight(p.phone)}</div>}
+            </div>
+          </div>
+          <button onClick={()=>onHistory(p.name)} className="btn btn-primary btn-sm" style={{whiteSpace:"nowrap",flexShrink:0}}>履歴</button>
+        </div>
+      </div>
+    );
+  }
+
+  // 検索中は通常リスト表示
+  const isSearching=q.length>0;
+
+  // グループ化
+  const groups={};
+  if(!isSearching){
+    GOJUON.forEach(g=>{groups[g.label]=[];});
+    sorted.forEach(p=>{const g=getGroup(p.name);if(groups[g])groups[g].push(p);else groups["英数"].push(p);});
+  }
+
   return(
     <div>
-      {/* 検索・フィルターバー */}
+      {/* 検索バー */}
       <div style={{background:"white",borderRadius:12,padding:"14px 16px",marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
-        <div style={{position:"relative",marginBottom:10}}>
+        <div style={{position:"relative"}}>
           <span style={{position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",fontSize:16,color:"#94a3b8",pointerEvents:"none"}}>🔍</span>
-          <input
-            className="form-input"
-            placeholder="患者名・電話番号で検索..."
-            value={patientQ}
-            onChange={e=>setPatientQ(e.target.value)}
-            style={{paddingLeft:38,paddingRight:patientQ?36:12}}
-          />
-          {patientQ&&(
-            <button onClick={()=>setPatientQ("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"#e2e8f0",border:"none",borderRadius:"50%",width:22,height:22,cursor:"pointer",fontSize:12,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
-          )}
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-          <span style={{fontSize:12,color:"#94a3b8",fontWeight:600,whiteSpace:"nowrap"}}>並び替え：</span>
-          {[["count","来院回数"],["lastDate","最終来院日"],["name","患者名"]].map(([val,label])=>(
-            <button key={val} onClick={()=>setSortBy(val)} className="btn" style={{padding:"5px 12px",borderRadius:20,fontSize:12,fontWeight:700,background:sortBy===val?"#1e3a5f":"white",color:sortBy===val?"white":"#64748b",border:`1.5px solid ${sortBy===val?"#1e3a5f":"#e2e8f0"}`,boxShadow:sortBy===val?"0 2px 6px rgba(30,58,95,.25)":"none"}}>{label}</button>
-          ))}
+          <input className="form-input" placeholder="患者名・電話番号で検索..."
+            value={patientQ} onChange={e=>setPatientQ(e.target.value)}
+            style={{paddingLeft:38,paddingRight:patientQ?36:12}}/>
+          {patientQ&&<button onClick={()=>setPatientQ("")} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"#e2e8f0",border:"none",borderRadius:"50%",width:22,height:22,cursor:"pointer",fontSize:12,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>}
         </div>
       </div>
 
       {/* 件数 */}
       <div style={{marginBottom:10,display:"flex",alignItems:"center",gap:8}}>
         <span style={{fontSize:13,color:"#64748b",fontWeight:700}}>
-          {q?`「${patientQ}」の検索結果：${sorted.length}名`:`患者数：${allPatients.length}名`}
+          {isSearching?`「${patientQ}」の検索結果：${sorted.length}名`:`患者数：${allPatients.length}名`}
         </span>
-        {q&&sorted.length===0&&<span className="badge badge-red">該当なし</span>}
+        {isSearching&&sorted.length===0&&<span className="badge badge-red">該当なし</span>}
       </div>
 
-      {/* 患者一覧 */}
-      {sorted.length===0&&q?(
-        <div className="card" style={{padding:40,textAlign:"center"}}>
-          <div style={{fontSize:32,marginBottom:12}}>🔍</div>
-          <div style={{fontWeight:700,color:"#374151",marginBottom:6}}>「{patientQ}」に一致する患者が見つかりません</div>
-          <div style={{fontSize:13,color:"#94a3b8"}}>患者名または電話番号で検索してください</div>
-          <button onClick={()=>setPatientQ("")} className="btn btn-outline btn-sm" style={{marginTop:14}}>検索をクリア</button>
-        </div>
-      ):sorted.map(p=>{
-        const s=STAFF_ACCOUNTS.find(x=>x.id===p.lastStaff)||{color:"#888",name:"不明",initial:"？"};
-        return(
-          <div key={p.name} className="card" style={{marginBottom:8}}>
-            <div style={{padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
-              <div style={{display:"flex",alignItems:"center",gap:12,flex:1}}>
-                <div style={{width:42,height:42,borderRadius:12,background:`linear-gradient(135deg,${s.color},${s.color}99)`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:16,flexShrink:0,boxShadow:`0 3px 8px ${s.color}44`}}>{p.name.charAt(0)}</div>
-                <div>
-                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
-                    <span style={{fontWeight:800,fontSize:15,color:"#1e293b"}}>{highlight(p.name)}</span>
-                    {p.count>=2?<span className="badge badge-yellow">{p.count}回来院</span>:<span className="badge badge-gray">初回</span>}
-                  </div>
-                  <div style={{fontSize:12,color:"#64748b"}}>最終：{p.lastDate}　前回担当：{s.name}</div>
-                  {p.phone&&<div style={{fontSize:12,color:"#94a3b8"}}>{highlight(p.phone)}</div>}
-                </div>
-              </div>
-              <button onClick={()=>onHistory(p.name)} className="btn btn-primary btn-sm" style={{whiteSpace:"nowrap",flexShrink:0}}>履歴を見る</button>
-            </div>
+      {/* 検索結果 or 五十音グループ */}
+      {isSearching?(
+        sorted.length===0?(
+          <div className="card" style={{padding:40,textAlign:"center"}}>
+            <div style={{fontSize:32,marginBottom:12}}>🔍</div>
+            <div style={{fontWeight:700,color:"#374151",marginBottom:6}}>「{patientQ}」に一致する患者が見つかりません</div>
+            <button onClick={()=>setPatientQ("")} className="btn btn-outline btn-sm" style={{marginTop:14}}>検索をクリア</button>
           </div>
-        );
-      })}
+        ):sorted.map(p=><PatientCard key={p.name} p={p}/>)
+      ):(
+        GOJUON.map(g=>{
+          const patients=groups[g.label]||[];
+          if(patients.length===0) return null;
+          return(
+            <div key={g.label} style={{marginBottom:16}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+                <div style={{padding:"3px 14px",borderRadius:20,fontWeight:800,fontSize:13,background:"#1e3a5f",color:"white"}}>{g.label}</div>
+                <div style={{flex:1,height:1,background:"#e2e8f0"}}/>
+                <span className="badge badge-gray">{patients.length}名</span>
+              </div>
+              {patients.map(p=><PatientCard key={p.name} p={p}/>)}
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }
@@ -1511,7 +1548,6 @@ function Dashboard({user,onLogout}){
     {id:"add",label:"新規予約",icon:<SvgPlus/>,special:"btn-add",action:()=>openAdd()},
     {id:"break",label:"休憩管理",icon:<SvgClock/>,special:"",action:()=>setShowBreakModal(true)},
     {id:"calendar",label:"カレンダー",icon:<SvgCal/>,special:""},
-    {id:"list",label:"一覧",icon:<SvgList/>,special:""},
     {id:"patients",label:"患者管理",icon:<SvgPeople/>,special:""},
     {id:"stats",label:"サマリー",icon:<SvgChart/>,special:""},
     {id:"shift",label:"シフト",icon:<SvgShift/>,special:""},
@@ -1740,73 +1776,6 @@ function Dashboard({user,onLogout}){
                     })}
                   </div>
                 </div>
-              </div>
-            );
-          })()}
-
-          {/* 一覧 */}
-          {view==="list"&&(()=>{
-            const sorted=[...filtered].sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time));
-            const groups={};
-            sorted.forEach(b=>{if(!groups[b.date]) groups[b.date]=[];groups[b.date].push(b);});
-            const dates=Object.keys(groups).sort();
-            const DAYS=["日","月","火","水","木","金","土"];
-            function fmtDateJP(ds){const d=new Date(ds+"T00:00:00");const t=new Date();t.setHours(0,0,0,0);const diff=Math.round((d-t)/(1000*60*60*24));const label=diff===0?"今日":diff===1?"明日":diff===-1?"昨日":"";return `${ds}（${DAYS[d.getDay()]}）${label?` ${label}`:""}`;};
-            if(dates.length===0) return <div className="card" style={{padding:40,textAlign:"center",color:"#94a3b8"}}>予約がありません</div>;
-            return(
-              <div>
-                {dates.map(date=>{
-                  const dayBookings=groups[date];
-                  const d=new Date(date+"T00:00:00");
-                  const isToday=date===todayStr;
-                  const isSun=d.getDay()===0,isSat=d.getDay()===6;
-                  return(
-                    <div key={date} style={{marginBottom:20}}>
-                      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
-                        <div style={{padding:"4px 14px",borderRadius:20,fontWeight:800,fontSize:13,background:isToday?"#2563eb":isSun?"#ef4444":isSat?"#7c3aed":"#1e293b",color:"white",boxShadow:"0 2px 6px rgba(0,0,0,.2)"}}>{fmtDateJP(date)}</div>
-                        <div style={{flex:1,height:1,background:"#e2e8f0"}}></div>
-                        <span className="badge badge-gray">{dayBookings.length}件</span>
-                      </div>
-                      {dayBookings.map(b=>{
-                        const s=STAFF_ACCOUNTS.find(x=>x.id===b.staff_id)||{color:"#888",name:"不明"};
-                        const canEdit=isAdmin||b.staff_id===user.id;
-                        const cnt=visitCounts[b.id]||1;
-                        return(
-                          <div key={b.id} style={{marginBottom:6}}>
-                            <div className="list-item" style={{borderLeftColor:s.color}}>
-                              <div className="list-item-body">
-                                <div style={{flex:1,minWidth:0}}>
-                                  <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:4}}>
-                                    <span className="badge" style={{background:s.color,color:"white"}}>{s.name}</span>
-                                    <span style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{b.time}</span>
-                                    {b.line_notify&&<span className="badge badge-green">LINE</span>}
-                                    {cnt>1&&<span className="badge badge-yellow">{cnt}回目</span>}
-                                    {cnt===1&&<span className="badge badge-orange">初回</span>}
-                                  </div>
-                                  <div style={{fontWeight:800,fontSize:15,color:"#1e293b"}}>{b.patient_name}</div>
-                                  <div style={{color:"#64748b",fontSize:12,marginTop:2}}>{b.menu}　{b.phone}</div>
-                                  {b.karte_no&&<div style={{color:"#94a3b8",fontSize:11}}>カルテ：{b.karte_no}</div>}
-                                </div>
-                                <div className="list-actions">
-                                  <button onClick={()=>setHistoryPatient(b.patient_name)} className="btn btn-outline btn-sm" style={{color:"#d97706",borderColor:"#fde68a"}}>履歴</button>
-                                  <button onClick={()=>setViewIntake(viewIntake===b.id?null:b.id)} className="btn btn-outline btn-sm" style={{color:"#059669",borderColor:"#a7f3d0"}}>問診</button>
-                                  {canEdit&&<button onClick={()=>openEdit(b)} className="btn btn-outline btn-sm" style={{color:"#2563eb",borderColor:"#bfdbfe"}}>編集</button>}
-                                  {canEdit&&<button onClick={()=>setDelConfirm(b)} className="btn btn-danger btn-sm">削除</button>}
-                                </div>
-                              </div>
-                            </div>
-                            {viewIntake===b.id&&(b.body_parts||b.injury_cause||b.pain_when)&&(
-                              <div style={{background:"white",borderRadius:"0 0 10px 10px",padding:"12px 14px",marginTop:-2,borderLeft:`4px solid ${s.color}`,borderRight:"1px solid #e2e8f0",borderBottom:"1px solid #e2e8f0"}}>
-                                <div style={{fontWeight:700,color:"#059669",marginBottom:8,fontSize:13}}>問診情報</div>
-                                {[["負傷部位",b.body_parts],["負傷原因",b.injury_cause],["いつから",b.pain_when],["痛みの強さ",b.pain_level?b.pain_level+"/10":null],["症状",b.symptoms],["他院受診",b.other_clinic],["既往歴",b.medical_history],["継続意思",b.want_continue],["何で知った",b.how_know]].filter(x=>x[1]).map(([l,v])=>(<div key={l} style={{display:"flex",gap:8,marginBottom:4}}><span style={{color:"#94a3b8",minWidth:80,fontSize:12,fontWeight:600}}>{l}</span><span style={{color:"#1e3a5f",fontSize:12,fontWeight:600}}>{v}</span></div>))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
               </div>
             );
           })()}
