@@ -406,7 +406,10 @@ function renderUpcomingBookings(){
             <div class="empty-title">予約がありません</div>
             <div class="empty-desc">下のボタンから新規予約ができます</div>
           </div>
-        `:upcoming.map(b=>`
+        `:upcoming.map(b=>{
+          const intakeUrl=`https://ando-seikotsu-ibaraki.vercel.app/intake.html?id=${b.id}`;
+          const qrUrl=`https://ando-seikotsu-ibaraki.vercel.app/api/qr?url=${encodeURIComponent(intakeUrl)}`;
+          return`
           <div class="booking-item" style="border-left-color:${isToday(b.date)?'#059669':'#2563eb'}">
             <div class="booking-date">
               <span class="booking-badge ${isToday(b.date)?'badge-today':'badge-upcoming'}">${isToday(b.date)?'本日':'予定'}</span>
@@ -416,6 +419,12 @@ function renderUpcomingBookings(){
               🩺 ${b.menu||"メニュー未設定"}<br>
               👨‍⚕️ 担当：${b.staff_id?['','岩永','大皿','定井','細永','広川'][b.staff_id]||'未定':'未定'}先生
             </div>
+            <!-- QRコード -->
+            <div style="margin-top:12px;text-align:center;padding:12px;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0;">
+              <div style="font-size:11px;font-weight:700;color:#64748b;margin-bottom:8px;">来院時にこのQRをご提示ください</div>
+              <img src="${qrUrl}" alt="QRコード" style="width:140px;height:140px;border-radius:8px;" onerror="this.style.display='none'"/>
+              <div style="font-size:10px;color:#94a3b8;margin-top:6px;">${b.date} ${b.time}</div>
+            </div>
             ${isFuture(b.date)&&!isToday(b.date)?`
               <div class="booking-actions">
                 <button class="booking-btn booking-btn-change" onclick="openChangeModal(${b.id})">📝 変更する</button>
@@ -423,7 +432,7 @@ function renderUpcomingBookings(){
               </div>
             `:""}
           </div>
-        `).join("")}
+        `}).join("")}
         <button class="btn btn-primary" onclick="location.href='${BOOKING_URL}'" style="margin-top:${upcoming.length>0?'12':'0'}px;">
           <span class="btn-icon">➕</span>
           <span class="btn-label">新しく予約する</span>
