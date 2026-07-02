@@ -94,10 +94,11 @@ let state = {
   treatTab: "hoken",
   usePassId: null,
   result: "",
-  resultPlan: "",    // 成約・持ち帰りのプラン
-  resultReason: "",  // バツの理由
+  resultPlan: "",
+  resultReason: "",
   nextDate: "",
   nextTime: "",
+  nextSlots: [], // 空き時間スロット
   memo: "",
   proposalPlan: "",
   proposalMemo: "",
@@ -106,9 +107,31 @@ let state = {
   nextBookingId: null,
 };
 
+const ALL_SLOTS=(()=>{const s=[];for(let h=9;h<=19;h++){for(let m=0;m<60;m+=10){if(h===19&&m>0)break;s.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);}}return s;})();
+const STAFF_COUNT=5;
+
 async function getAuthToken(){
   const {data:{session}} = await supabaseClient.auth.getSession();
   return session ? session.access_token : SUPABASE_ANON_KEY;
+}
+
+async function loadSlotsForDate(date){
+  if(!date){state.nextSlots=[];render();return;}
+  try{
+    const[bk,br]=await Promise.all([
+      sb_get("bookings",`?date=eq.${date}&select=time,staff_id`),
+      sb_get("staff_breaks",`?date=eq.${date}&select=time,staff_id`),
+    ]);
+    const bookings=Array.isArray(bk)?bk:[];
+    const breaks=Array.isArray(br)?br:[];
+    const slotCount={};
+    bookings.forEach(b=>{slotCount[b.time]=(slotCount[b.time]||0)+1;});
+    breaks.forEach(b=>{slotCount[b.time]=(slotCount[b.time]||0)+1;});
+    state.nextSlots=ALL_SLOTS.filter(t=>(slotCount[t]||0)<STAFF_COUNT);
+  }catch(e){
+    state.nextSlots=ALL_SLOTS;
+  }
+  render();
 }
 async function sb_get(table, filter) {
   const token = await getAuthToken();
@@ -628,24 +651,80 @@ function render() {
   nextCard.innerHTML = `<div class="card-header blue">📅 次回予約</div>`;
   const nextBody = document.createElement("div");
   nextBody.className = "card-body";
-  nextBody.innerHTML = `
-    <div class="row2" style="margin-bottom:12px;">
-      <div><label>日付</label><input type="date" id="nextDate" value="${state.nextDate}"/></div>
-      <div><label>時間</label><input type="time" step="600" id="nextTime" value="${state.nextTime}"/></div>
-    </div>
-    <div><label>メモ（任意）</label><textarea id="memo" rows="2" placeholder="気になる点など">${state.memo}</textarea></div>
-  `;
+
+  // 日付選択
+  const dateWrap = document.createElement("div");
+  dateWrap.style.cssText = "margin-bottom:14px;";
+  dateWrap.innerHTML = `<label style="display:block;font-size:12px;font-weight:700;color:#374151;margin-bottom:6px;">日付</label>`;
+  const dateInput = document.createElement("input");
+  dateInput.type = "date";
+  dateInput.className = "form-input";
+  dateInput.value = state.nextDate;
+  dateInput.min = new Date().toISOString().split("T")[0];
+  dateInput.oninput = e => {
+    state.nextDate = e.target.value;
+    state.nextTime = "";
+    loadSlotsForDate(e.target.value);
+  };
+  dateWrap.appendChild(dateInput);
+  nextBody.appendChild(dateWrap);
+
+  // 時間スロット選択
+  if(state.nextDate){
+    const timeWrap = document.createElement("div");
+    timeWrap.style.cssText = "margin-bottom:14px;";
+    const timeLabel = document.createElement("label");
+    timeLabel.style.cssText = "display:block;font-size:12px;font-weight:700;color:#374151;margin-bottom:6px;";
+    timeLabel.textContent = "時間";
+    timeWrap.appendChild(timeLabel);
+
+    if(state.nextSlots.length === 0){
+      const loading = document.createElement("div");
+      loading.style.cssText = "text-align:center;color:#94a3b8;font-size:13px;padding:12px;";
+      loading.textContent = "空き状況を確認中...";
+      timeWrap.appendChild(loading);
+    } else {
+      const slotGrid = document.createElement("div");
+      slotGrid.style.cssText = "display:grid;grid-template-columns:repeat(5,1fr);gap:6px;";
+      ALL_SLOTS.forEach(t=>{
+        const avail = state.nextSlots.includes(t);
+        const sel = state.nextTime === t;
+        const btn = document.createElement("button");
+        btn.disabled = !avail;
+        btn.textContent = t;
+        btn.style.cssText = `padding:8px 4px;border-radius:8px;font-size:12px;font-weight:${sel?700:400};font-family:inherit;cursor:${avail?'pointer':'not-allowed'};border:1.5px solid ${sel?'#1e3a5f':avail?'#e2e8f0':'#f1f5f9'};background:${sel?'#1e3a5f':avail?'white':'#f8fafc'};color:${sel?'white':avail?'#374151':'#d1d5db'};`;
+        if(!avail){
+          btn.style.textDecoration = "line-through";
+        }
+        btn.onclick = () => { state.nextTime = t; render(); };
+        slotGrid.appendChild(btn);
+      });
+      timeWrap.appendChild(slotGrid);
+      if(state.nextTime){
+        const selected = document.createElement("div");
+        selected.style.cssText = "margin-top:8px;padding:8px 12px;background:#eff6ff;border-radius:8px;font-size:13px;font-weight:700;color:#1e3a5f;";
+        selected.textContent = `✓ ${state.nextDate} ${state.nextTime} に予約`;
+        timeWrap.appendChild(selected);
+      }
+    }
+    nextBody.appendChild(timeWrap);
+  }
+
+  // メモ
+  const memoWrap = document.createElement("div");
+  memoWrap.innerHTML = `<label style="display:block;font-size:12px;font-weight:700;color:#374151;margin-bottom:6px;">メモ（任意）</label>`;
+  const memoInput = document.createElement("textarea");
+  memoInput.id = "memo";
+  memoInput.rows = 2;
+  memoInput.placeholder = "気になる点など";
+  memoInput.value = state.memo;
+  memoInput.style.cssText = "width:100%;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:inherit;resize:none;";
+  memoInput.oninput = e => { state.memo = e.target.value; };
+  memoWrap.appendChild(memoInput);
+  nextBody.appendChild(memoWrap);
+
   nextCard.appendChild(nextBody);
   root.appendChild(nextCard);
-
-  setTimeout(() => {
-    const nd = document.getElementById("nextDate");
-    const nt = document.getElementById("nextTime");
-    const mo = document.getElementById("memo");
-    if(nd) nd.oninput = e => { state.nextDate = e.target.value; };
-    if(nt) nt.oninput = e => { state.nextTime = e.target.value; };
-    if(mo) mo.oninput = e => { state.memo = e.target.value; };
-  }, 0);
 
   const saveBtn = document.createElement("button");
   saveBtn.className = "btn-primary";
