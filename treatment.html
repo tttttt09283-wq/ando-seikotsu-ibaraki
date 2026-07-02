@@ -92,11 +92,13 @@ let state = {
   bodyParts: [],
   treatmentTypes: [],
   treatTab: "hoken",
-  usePassId: null,    // 今回使用するpass.id
+  usePassId: null,
   result: "",
   nextDate: "",
   nextTime: "",
   memo: "",
+  proposalPlan: "",   // 提案プラン
+  proposalMemo: "",   // 提案メモ
   saving: false,
   done: false,
   nextBookingId: null,
@@ -168,6 +170,8 @@ async function save() {
       next_date: state.nextDate || null,
       next_time: state.nextTime || null,
       memo: state.memo || null,
+      proposal_plan: state.proposalPlan || null,
+      proposal_memo: state.proposalMemo || null,
     };
     const treatResult = await sb_post("treatments", treatData);
     if (treatResult && treatResult.error) {
@@ -537,6 +541,89 @@ function render() {
   resultCard.appendChild(resultHeader);
   resultCard.appendChild(resultBody);
   root.appendChild(resultCard);
+
+  // ===== 提案内容カード =====
+  const PROPOSAL_PLANS = [
+    {id:"",label:"提案なし",color:"#6b7280"},
+    {id:"アジャスト5回券 ¥4,400",label:"🎫 アジャスト5回券",sub:"¥4,400",color:"#2563eb"},
+    {id:"アジャスト11回券 ¥8,800",label:"🎫 アジャスト11回券",sub:"¥8,800",color:"#2563eb"},
+    {id:"アジャスト23回券 ¥17,600",label:"🎫 アジャスト23回券",sub:"¥17,600 最安値",color:"#2563eb",hot:true},
+    {id:"鍼・Hi 5回券 ¥6,000",label:"🎫 鍼・Hi 5回券",sub:"¥6,000",color:"#7c3aed"},
+    {id:"鍼・Hi 11回券 ¥12,000",label:"🎫 鍼・Hi 11回券",sub:"¥12,000",color:"#7c3aed"},
+    {id:"鍼・Hi 23回券 ¥24,000",label:"🎫 鍼・Hi 23回券",sub:"¥24,000 最安値",color:"#7c3aed",hot:true},
+    {id:"EMS 8回券 ¥24,000",label:"🎫 EMS 8回券",sub:"¥24,000",color:"#059669"},
+    {id:"EMS 16回券 ¥45,600",label:"🎫 EMS 16回券",sub:"¥45,600",color:"#059669"},
+    {id:"EMS 24回券 ¥66,000",label:"🎫 EMS 24回券",sub:"¥66,000",color:"#059669"},
+    {id:"EMS 32回券 ¥84,800",label:"🎫 EMS 32回券",sub:"¥84,800 最安値",color:"#059669",hot:true},
+    {id:"FP 1ヶ月 ¥12,000",label:"🎟️ FP 1ヶ月",sub:"¥12,000",color:"#d97706"},
+    {id:"FP 3ヶ月 ¥34,500",label:"🎟️ FP 3ヶ月",sub:"¥34,500",color:"#d97706",hot:true},
+    {id:"FP 6ヶ月 ¥66,000",label:"🎟️ FP 6ヶ月",sub:"¥66,000 人気",color:"#d97706",hot:true},
+  ];
+
+  const proposalCard = document.createElement("div");
+  proposalCard.className = "card";
+  const proposalHeader = document.createElement("div");
+  proposalHeader.className = "card-header purple";
+  proposalHeader.textContent = "💡 クロージング担当へ：提案内容";
+  proposalCard.appendChild(proposalHeader);
+
+  const proposalBody = document.createElement("div");
+  proposalBody.className = "card-body";
+
+  const proposalDesc = document.createElement("div");
+  proposalDesc.style.cssText = "font-size:12px;color:#64748b;margin-bottom:12px;";
+  proposalDesc.textContent = "今回患者様に提案したプランを選択してください（クロージング担当に共有されます）";
+  proposalBody.appendChild(proposalDesc);
+
+  // プラン選択ボタン
+  const planGrid = document.createElement("div");
+  planGrid.style.cssText = "display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px;";
+  PROPOSAL_PLANS.forEach(plan => {
+    const sel = state.proposalPlan === plan.id;
+    const btn = document.createElement("button");
+    btn.style.cssText = `padding:7px 12px;border-radius:20px;border:1.5px solid ${sel?plan.color:'#e2e8f0'};background:${sel?plan.color:'white'};color:${sel?'white':plan.color==='#6b7280'?'#374151':plan.color};font-size:12px;font-weight:${sel?700:500};cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:flex-start;gap:1px;`;
+    const labelEl = document.createElement("span");
+    labelEl.textContent = plan.label + (plan.hot?" ⭐":"");
+    btn.appendChild(labelEl);
+    if(plan.sub){
+      const subEl = document.createElement("span");
+      subEl.style.cssText = `font-size:10px;opacity:0.8;`;
+      subEl.textContent = plan.sub;
+      btn.appendChild(subEl);
+    }
+    btn.onclick = () => { state.proposalPlan = plan.id; render(); };
+    planGrid.appendChild(btn);
+  });
+  proposalBody.appendChild(planGrid);
+
+  // 選択中プランの表示
+  if(state.proposalPlan){
+    const selectedPlan = PROPOSAL_PLANS.find(p=>p.id===state.proposalPlan);
+    if(selectedPlan){
+      const preview = document.createElement("div");
+      preview.style.cssText = `background:${selectedPlan.color}18;border:1.5px solid ${selectedPlan.color};border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;`;
+      preview.innerHTML = `<span style="font-size:20px;">✅</span><div><div style="font-size:13px;font-weight:800;color:${selectedPlan.color};">${selectedPlan.label}</div><div style="font-size:11px;color:#64748b;">${selectedPlan.sub||""}</div></div>`;
+      proposalBody.appendChild(preview);
+    }
+  }
+
+  // 追加メモ
+  const proposalMemoLabel = document.createElement("label");
+  proposalMemoLabel.style.cssText = "display:block;font-size:12px;font-weight:700;color:#475569;margin-bottom:6px;";
+  proposalMemoLabel.textContent = "追加メモ（反応・状況など）";
+  proposalBody.appendChild(proposalMemoLabel);
+
+  const proposalMemoInput = document.createElement("textarea");
+  proposalMemoInput.id = "proposalMemo";
+  proposalMemoInput.rows = 3;
+  proposalMemoInput.placeholder = "例：23回券に興味あり、値段で迷っていた、FPを検討中、など";
+  proposalMemoInput.value = state.proposalMemo;
+  proposalMemoInput.style.cssText = "width:100%;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:inherit;resize:none;line-height:1.6;";
+  proposalMemoInput.oninput = e => { state.proposalMemo = e.target.value; };
+  proposalBody.appendChild(proposalMemoInput);
+
+  proposalCard.appendChild(proposalBody);
+  root.appendChild(proposalCard);
 
   const nextCard = document.createElement("div");
   nextCard.className = "card";
