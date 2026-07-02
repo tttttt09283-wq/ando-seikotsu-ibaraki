@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>問診票 - あんど整骨院</title>
+<title>施術記録 - あんど整骨院</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -11,41 +11,45 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 .header{background:linear-gradient(135deg,#1e3a5f,#2d6a9f);color:white;padding:16px;text-align:center;}
 .header h1{font-size:18px;font-weight:800;}
 .header p{font-size:12px;opacity:0.75;margin-top:4px;}
-.container{max-width:480px;margin:0 auto;padding:20px 16px;}
-.card{background:white;border-radius:12px;overflow:hidden;margin-bottom:16px;box-shadow:0 2px 12px rgba(0,0,0,0.08);}
-.card-header{padding:12px 16px;font-size:13px;font-weight:700;color:white;}
+.container{max-width:480px;margin:0 auto;padding:16px;}
+.card{background:white;border-radius:12px;overflow:hidden;margin-bottom:14px;box-shadow:0 2px 10px rgba(0,0,0,0.07);}
+.card-header{padding:11px 16px;font-size:13px;font-weight:800;color:white;}
 .card-header.blue{background:#1e3a5f;}
 .card-header.green{background:#059669;}
 .card-header.orange{background:#d97706;}
-.card-header.gray{background:#6b7280;}
+.card-header.purple{background:#7c3aed;}
+.card-header.red{background:#dc2626;}
 .card-body{padding:14px 16px;}
-.row{display:flex;gap:8px;padding:8px 0;border-bottom:1px solid #f0f0f0;}
-.row:last-child{border-bottom:none;}
-.label{color:#9ca3af;font-size:12px;font-weight:600;min-width:90px;flex-shrink:0;}
-.value{color:#1e3a5f;font-size:13px;font-weight:600;}
-.badge{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;}
-.badge-green{background:#dcfce7;color:#15803d;}
-.badge-orange{background:#fef3c7;color:#92400e;}
-.badge-red{background:#fee2e2;color:#991b1b;}
-.badge-blue{background:#dbeafe;color:#1e40af;}
-.btn-start{display:block;width:100%;padding:16px;background:linear-gradient(135deg,#059669,#047857);color:white;border:none;border-radius:12px;font-size:16px;font-weight:800;cursor:pointer;text-align:center;margin-bottom:12px;text-decoration:none;}
-.btn-back{display:block;width:100%;padding:12px;background:white;color:#666;border:1.5px solid #ddd;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;text-align:center;text-decoration:none;}
-.history-item{border-left:3px solid #d97706;background:#fffbeb;border-radius:8px;padding:12px 14px;margin-bottom:10px;}
-.history-date{font-size:12px;color:#9ca3af;font-weight:600;margin-bottom:6px;}
-.history-row{display:flex;gap:8px;margin-bottom:4px;}
-.history-label{color:#9ca3af;font-size:11px;font-weight:600;min-width:70px;}
-.history-value{color:#1e3a5f;font-size:12px;font-weight:600;}
-.result-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;}
-.result-成約{background:#dcfce7;color:#15803d;}
-.result-持ち帰り{background:#fef3c7;color:#92400e;}
-.result-バツ{background:#fee2e2;color:#991b1b;}
+.chips{display:flex;flex-wrap:wrap;gap:7px;}
+.chip{padding:8px 13px;border-radius:20px;border:1.5px solid #ddd;background:white;color:#444;cursor:pointer;font-size:13px;font-weight:500;transition:all 0.15s;}
+.chip.sel{border-color:currentColor;font-weight:700;}
+.chip.blue{color:#1e3a5f;} .chip.blue.sel{background:#1e3a5f;color:white;}
+.chip.green{color:#059669;} .chip.green.sel{background:#059669;color:white;}
+.chip.orange{color:#d97706;} .chip.orange.sel{background:#d97706;color:white;}
+.chip.purple{color:#7c3aed;} .chip.purple.sel{background:#7c3aed;color:white;}
+.chip.red{color:#dc2626;} .chip.red.sel{background:#dc2626;color:white;}
+.btn-primary{width:100%;padding:14px;background:linear-gradient(135deg,#1e3a5f,#2d6a9f);color:white;border:none;border-radius:10px;font-size:16px;font-weight:800;cursor:pointer;}
+.btn-secondary{width:100%;padding:12px;background:white;color:#666;border:1.5px solid #ddd;border-radius:10px;font-size:14px;font-weight:600;cursor:pointer;margin-top:10px;}
+label{display:block;font-size:13px;font-weight:700;color:#444;margin-bottom:6px;}
+input,select,textarea{width:100%;padding:10px 12px;border:1.5px solid #ddd;border-radius:8px;font-size:14px;font-family:inherit;}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.info-row{display:flex;gap:8px;padding:7px 0;border-bottom:1px solid #f0f0f0;}
+.info-row:last-child{border-bottom:none;}
+.info-label{color:#9ca3af;font-size:12px;font-weight:600;min-width:80px;}
+.info-value{color:#1e3a5f;font-size:13px;font-weight:600;}
+.done-wrap{text-align:center;padding:40px 20px;}
+.done-icon{font-size:64px;margin-bottom:16px;}
+.done-title{font-size:22px;font-weight:800;color:#1e3a5f;margin-bottom:8px;}
+.done-sub{color:#666;font-size:14px;line-height:1.8;margin-bottom:28px;}
+.next-box{background:#f0f7ff;border-radius:12px;padding:16px;text-align:left;margin-bottom:20px;}
+.section-title{font-size:13px;font-weight:700;color:#1e3a5f;margin-bottom:10px;}
 .auth-wait{text-align:center;padding:60px 20px;color:#9ca3af;}
 </style>
 </head>
 <body>
 <div class="header">
-  <h1>🩺 あんど整骨院 問診票</h1>
-  <p>スタッフ専用ページ</p>
+  <h1>🩺 施術記録</h1>
+  <p>あんど整骨院 香里園駅前院</p>
 </div>
 <div class="container" id="root">
   <div style="text-align:center;padding:60px 20px;color:#9ca3af;">読み込み中...</div>
@@ -54,157 +58,654 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 <script>
 const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
-const STAFF = {1:"岩永",2:"大皿",3:"定井",4:"細永",5:"広川"};
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
 });
 
+const STAFF = {1:"岩永",2:"大皿",3:"定井",4:"細永",5:"広川"};
+
+const BODY_PARTS = ["頸部（首）","肩","上腕","肘","前腕","手首・手","胸部","腰部","臀部","大腿","膝","下腿","足首・足","その他"];
+
+// 施術種別カテゴリ
+const TREATMENT_CATEGORIES = [
+  {
+    id:"hoken", label:"保険", color:"#1e3a5f",
+    items:["保険"]
+  },
+  {
+    id:"spot", label:"スポット", color:"#059669",
+    items:["矯正NE","矯正KO","ST","Hi","鍼","EMS","その他"]
+  },
+];
+
+const RESULTS = [
+  {id:"成約", icon:"✅", color:"green"},
+  {id:"持ち帰り", icon:"🤔", color:"orange"},
+  {id:"バツ", icon:"❌", color:"red"},
+];
+
+let booking = null;
+let patientPasses = []; // その患者のアクティブなpass一覧
+
+let state = {
+  bodyParts: [],
+  treatmentTypes: [],
+  treatTab: "hoken",
+  usePassId: null,
+  result: "",
+  nextDate: "",
+  nextTime: "",
+  memo: "",
+  proposalPlan: "",   // 提案プラン
+  proposalMemo: "",   // 提案メモ
+  saving: false,
+  done: false,
+  nextBookingId: null,
+};
+
 async function getAuthToken(){
   const {data:{session}} = await supabaseClient.auth.getSession();
   return session ? session.access_token : SUPABASE_ANON_KEY;
 }
-async function sbGet(table, filter) {
+async function sb_get(table, filter) {
   const token = await getAuthToken();
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}${filter||""}`, {
     headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` }
   });
   return res.json();
 }
-
-function resultBadge(result) {
-  if (!result) return "—";
-  return `<span class="result-badge result-${result}">${result === "成約" ? "✅" : result === "持ち帰り" ? "🤔" : "❌"} ${result}</span>`;
+async function sb_post(table, data) {
+  const token = await getAuthToken();
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+    method: "POST",
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify(data)
+  });
+  return res.json();
+}
+async function sb_patch(table, id, data) {
+  const token = await getAuthToken();
+  await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(data)
+  });
 }
 
-function jifeeText(t) {
-  if (!t || t === "なし") return "なし";
-  if (t.jifee_type === "回数券") return `回数券 ${t.jifee_count||""}枚 ${t.jifee_amount ? "¥"+Number(t.jifee_amount).toLocaleString() : ""}`;
-  if (t.jifee_type === "FP（フリーパス）") return `FP ¥${t.jifee_amount ? Number(t.jifee_amount).toLocaleString() : "—"}`;
-  return "なし";
+function toggle(arr, val) {
+  return arr.includes(val) ? arr.filter(x => x !== val) : [...arr, val];
 }
 
-async function load() {
-  const root = document.getElementById('root');
+function chip(label, color, selected, onClick) {
+  const el = document.createElement("button");
+  el.className = `chip ${color}${selected ? " sel" : ""}`;
+  el.textContent = label;
+  el.onclick = onClick;
+  return el;
+}
 
-  // ログイン確認（スタッフ専用ページのため必須）
+async function save() {
+  if (state.saving) return;
+  if (state.bodyParts.length === 0) { alert("施術部位を選択してください"); return; }
+  if (state.treatmentTypes.length === 0) { alert("施術種別を選択してください"); return; }
+  if (!state.result) { alert("結果を選択してください"); return; }
+
+  state.saving = true;
+  render();
+
+  try {
+    // 使用中のpass情報
+    const selPass = state.usePassId ? patientPasses.find(p=>p.id===state.usePassId) : null;
+
+    const treatData = {
+      booking_id: booking.id,
+      body_parts: state.bodyParts.join("・"),
+      treatment_types: state.treatmentTypes.join("・"),
+      jifee_type: selPass ? selPass.pass_type : "なし",
+      jifee_detail: selPass ? selPass.pass_type : null,
+      jifee_amount: null,
+      jifee_count: selPass ? selPass.remaining_count - 1 : null,
+      result: state.result,
+      next_date: state.nextDate || null,
+      next_time: state.nextTime || null,
+      memo: state.memo || null,
+      proposal_plan: state.proposalPlan || null,
+      proposal_memo: state.proposalMemo || null,
+    };
+    const treatResult = await sb_post("treatments", treatData);
+    if (treatResult && treatResult.error) {
+      throw new Error(treatResult.message || treatResult.error || "保存に失敗しました");
+    }
+
+    // passを使用した場合、残数を1減らす
+    if (selPass) {
+      const newRemaining = Math.max(0, selPass.remaining_count - 1);
+      await sb_patch("passes", selPass.id, {
+        remaining_count: newRemaining,
+        active: newRemaining > 0,
+      });
+      // ローカルも更新
+      selPass.remaining_count = newRemaining;
+      selPass.active = newRemaining > 0;
+    }
+
+    if (state.nextDate && state.nextTime) {
+      const nextBooking = await sb_post("bookings", {
+        patient_name: booking.patient_name,
+        phone: booking.phone,
+        staff_id: booking.staff_id,
+        date: state.nextDate,
+        time: state.nextTime,
+        menu: "再診（30分）",
+        line_notify: !!booking.line_user_id,
+        line_user_id: booking.line_user_id || null,
+        reminded: false,
+      });
+      if (Array.isArray(nextBooking) && nextBooking.length > 0) {
+        state.nextBookingId = nextBooking[0].id;
+      }
+    }
+
+    state.done = true;
+  } catch(e) {
+    alert("保存エラー：" + e.message + "\n\nログイン状態が切れている可能性があります。お手数ですが管理画面に戻って再ログインしてから、もう一度お試しください。");
+    state.saving = false;
+  }
+  render();
+}
+
+function render() {
+  const root = document.getElementById("root");
+  if (!booking) return;
+
+  if (state.done) {
+    root.innerHTML = "";
+    const wrap = document.createElement("div");
+    wrap.className = "done-wrap";
+    wrap.innerHTML = `
+      <div class="done-icon">🎉</div>
+      <div class="done-title">施術記録を保存しました</div>
+      <div class="done-sub">${booking.patient_name} 様の施術記録が完了しました。</div>
+    `;
+
+    if (state.nextDate && state.nextTime) {
+      const box = document.createElement("div");
+      box.className = "next-box";
+      box.innerHTML = `
+        <div class="section-title">📅 次回予約</div>
+        <div class="info-row"><span class="info-label">患者名</span><span class="info-value">${booking.patient_name} 様</span></div>
+        <div class="info-row"><span class="info-label">日時</span><span class="info-value">${state.nextDate} ${state.nextTime}</span></div>
+        <div class="info-row"><span class="info-label">メニュー</span><span class="info-value">再診（30分）</span></div>
+        <div class="info-row"><span class="info-label">担当</span><span class="info-value">${STAFF[booking.staff_id]||"未定"} 先生</span></div>
+      `;
+      wrap.appendChild(box);
+    }
+
+    const btn = document.createElement("button");
+    btn.className = "btn-primary";
+    btn.textContent = "💴 会計へ進む";
+    btn.onclick = () => { location.href = "/pos.html?id=" + booking.id; };
+    wrap.appendChild(btn);
+
+    const btn2 = document.createElement("button");
+    btn2.className = "btn-secondary";
+    btn2.textContent = "← カレンダーへ戻る";
+    btn2.onclick = () => { location.href = "/index.html"; };
+    wrap.appendChild(btn2);
+
+    root.appendChild(wrap);
+    return;
+  }
+
+  root.innerHTML = "";
+
+  const infoCard = document.createElement("div");
+  infoCard.className = "card";
+  infoCard.innerHTML = `
+    <div class="card-header blue">👤 患者情報</div>
+    <div class="card-body">
+      <div class="info-row"><span class="info-label">患者名</span><span class="info-value">${booking.patient_name} 様</span></div>
+      <div class="info-row"><span class="info-label">日時</span><span class="info-value">${booking.date} ${booking.time}</span></div>
+      <div class="info-row"><span class="info-label">メニュー</span><span class="info-value">${booking.menu}</span></div>
+      <div class="info-row"><span class="info-label">担当</span><span class="info-value">${STAFF[booking.staff_id]||"未定"} 先生</span></div>
+    </div>
+  `;
+  root.appendChild(infoCard);
+
+  const partsCard = document.createElement("div");
+  partsCard.className = "card";
+  const partsHeader = document.createElement("div");
+  partsHeader.className = "card-header blue";
+  partsHeader.textContent = "🦴 施術部位（複数選択可）*";
+  const partsBody = document.createElement("div");
+  partsBody.className = "card-body";
+  const partsChips = document.createElement("div");
+  partsChips.className = "chips";
+  BODY_PARTS.forEach(p => {
+    partsChips.appendChild(chip(p, "blue", state.bodyParts.includes(p), () => {
+      state.bodyParts = toggle(state.bodyParts, p);
+      render();
+    }));
+  });
+  partsBody.appendChild(partsChips);
+  if (state.bodyParts.length > 0) {
+    const sel = document.createElement("div");
+    sel.style.cssText = "margin-top:10px;padding:8px 12px;background:#eff6ff;border-radius:8px;font-size:13px;color:#1e3a5f;font-weight:600;";
+    sel.textContent = "選択中：" + state.bodyParts.join("・");
+    partsBody.appendChild(sel);
+  }
+  partsCard.appendChild(partsHeader);
+  partsCard.appendChild(partsBody);
+  root.appendChild(partsCard);
+
+  const typeCard = document.createElement("div");
+  typeCard.className = "card";
+  const typeHeader = document.createElement("div");
+  typeHeader.className = "card-header green";
+  typeHeader.textContent = "⚕️ 施術種別（複数選択可）*";
+  const typeBody = document.createElement("div");
+  typeBody.className = "card-body";
+
+  // カテゴリタブ
+  const tabRow = document.createElement("div");
+  tabRow.style.cssText = "display:flex;gap:6px;margin-bottom:12px;";
+  TREATMENT_CATEGORIES.forEach(cat => {
+    const btn = document.createElement("button");
+    btn.textContent = cat.label;
+    btn.style.cssText = `flex:1;padding:8px 4px;border-radius:8px;border:2px solid ${state.treatTab===cat.id?cat.color:'#e2e8f0'};background:${state.treatTab===cat.id?cat.color:'white'};color:${state.treatTab===cat.id?'white':'#374151'};font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;`;
+    btn.onclick = () => { state.treatTab = cat.id; render(); };
+    tabRow.appendChild(btn);
+  });
+  typeBody.appendChild(tabRow);
+
+  // 選択中カテゴリのアイテム
+  const itemRow = document.createElement("div");
+  itemRow.style.cssText = "display:flex;flex-wrap:wrap;gap:7px;";
+  const currentCat = TREATMENT_CATEGORIES.find(c=>c.id===state.treatTab)||TREATMENT_CATEGORIES[0];
+  currentCat.items.forEach(item => {
+    const sel = state.treatmentTypes.includes(item);
+    const btn = document.createElement("button");
+    btn.textContent = item;
+    btn.style.cssText = `padding:8px 14px;border-radius:20px;border:1.5px solid ${sel?currentCat.color:'#ddd'};background:${sel?currentCat.color:'white'};color:${sel?'white':'#444'};font-size:13px;font-weight:${sel?700:400};cursor:pointer;font-family:inherit;`;
+    btn.onclick = () => {
+      state.treatmentTypes = toggle(state.treatmentTypes, item);
+      render();
+    };
+    itemRow.appendChild(btn);
+  });
+  typeBody.appendChild(itemRow);
+
+  if (state.treatmentTypes.length > 0) {
+    const sel = document.createElement("div");
+    sel.style.cssText = "margin-top:10px;padding:8px 12px;background:#eff6ff;border-radius:8px;font-size:13px;color:#1e3a5f;font-weight:600;";
+    sel.textContent = "選択中：" + state.treatmentTypes.join("・");
+    typeBody.appendChild(sel);
+  }
+
+  typeCard.appendChild(typeHeader);
+  typeCard.appendChild(typeBody);
+  root.appendChild(typeCard);
+
+  // ===== 回数券・FP使用セクション =====
+  const passCard = document.createElement("div");
+  passCard.className = "card";
+  const passHeader = document.createElement("div");
+  passHeader.className = "card-header orange";
+  passHeader.textContent = "🎫 回数券・フリーパス使用";
+  passCard.appendChild(passHeader);
+  const passBody = document.createElement("div");
+  passBody.className = "card-body";
+
+  if(patientPasses.length === 0){
+    const empty = document.createElement("div");
+    empty.style.cssText = "padding:4px 0;";
+
+    // 回数券カテゴリ（プルダウン式）
+    const kaisuCategories = [
+      {
+        label:"アジャスト（骨格矯正）",
+        items:[
+          {label:"5回券",amount:"¥4,400",per:"1回あたり ¥880"},
+          {label:"11回券",amount:"¥8,800",per:"1回あたり ¥800",hot:true},
+          {label:"23回券",amount:"¥17,600",per:"1回あたり ¥765 最安値",best:true},
+        ]
+      },
+      {
+        label:"鍼・ハイボルテージ",
+        items:[
+          {label:"5回券",amount:"¥6,000",per:"1回あたり ¥1,200"},
+          {label:"11回券",amount:"¥12,000",per:"1回あたり ¥1,091",hot:true},
+          {label:"23回券",amount:"¥24,000",per:"1回あたり ¥1,043 最安値",best:true},
+        ]
+      },
+      {
+        label:"EMS（インナーマッスル）",
+        items:[
+          {label:"8回券",amount:"¥24,000",per:"1回あたり ¥3,000"},
+          {label:"16回券",amount:"¥45,600",per:"1回あたり ¥2,850",hot:true},
+          {label:"24回券",amount:"¥66,000",per:"1回あたり ¥2,750"},
+          {label:"32回券",amount:"¥84,800",per:"1回あたり ¥2,650 最安値",best:true},
+        ]
+      },
+    ];
+
+    const fpPlans = [
+      {label:"1ヶ月",sub:"短期集中",amount:"¥12,000",desc:"まずは痛みの緩和"},
+      {label:"3ヶ月",sub:"歪み定着期",amount:"¥34,500",desc:"骨格の歪みを調整",hot:true},
+      {label:"6ヶ月",sub:"根本改善",amount:"¥66,000",desc:"正しい姿勢を定着",best:true},
+    ];
+
+    let html = `
+      <div style="font-size:12px;color:#64748b;margin-bottom:14px;">今回ご提案するプランをご確認ください（任意）</div>
+
+      <!-- 回数券プラン（アコーディオン） -->
+      <div style="font-size:11px;font-weight:800;color:#2563eb;letter-spacing:.5px;margin-bottom:8px;">🎫 回数券プラン</div>
+    `;
+
+    kaisuCategories.forEach((cat, ci) => {
+      html += `
+        <details style="margin-bottom:8px;border:1.5px solid #e2e8f0;border-radius:10px;overflow:hidden;" ${ci===0?'open':''}>
+          <summary style="padding:11px 14px;font-size:13px;font-weight:700;color:#1e293b;cursor:pointer;background:#f8fafc;list-style:none;display:flex;align-items:center;justify-content:space-between;">
+            <span>${cat.label}</span>
+            <span style="font-size:11px;color:#94a3b8;">タップで開閉 ▼</span>
+          </summary>
+          <div style="padding:10px 12px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;background:white;">
+            ${cat.items.map(p=>`
+              <div style="background:${p.best?'#eff6ff':p.hot?'#f0f9ff':'#f8fafc'};border:1.5px solid ${p.best?'#2563eb':p.hot?'#93c5fd':'#e2e8f0'};border-radius:10px;padding:10px 8px;text-align:center;position:relative;">
+                ${p.best?'<span style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:#2563eb;color:white;font-size:9px;font-weight:800;padding:2px 6px;border-radius:20px;white-space:nowrap;">最安値</span>':''}
+                ${p.hot&&!p.best?'<span style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:#0891b2;color:white;font-size:9px;font-weight:800;padding:2px 6px;border-radius:20px;white-space:nowrap;">人気</span>':''}
+                <div style="font-size:13px;font-weight:700;color:#1e293b;margin-bottom:4px;margin-top:${p.best||p.hot?'4px':'0'};">${p.label}</div>
+                <div style="font-size:15px;font-weight:800;color:#2563eb;">${p.amount}</div>
+                <div style="font-size:9px;color:#64748b;margin-top:2px;">${p.per}</div>
+              </div>
+            `).join("")}
+          </div>
+        </details>
+      `;
+    });
+
+    html += `
+      <!-- フリーパスプラン -->
+      <div style="font-size:11px;font-weight:800;color:#7c3aed;letter-spacing:.5px;margin:14px 0 8px;">🎟️ フリーパスプラン（姿勢・骨盤矯正・ストレッチ）</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px;">
+        ${fpPlans.map(p=>{
+          const badgeText = p.best ? "人気" : p.hot ? "おすすめ" : "";
+          const borderColor = p.best ? "#7c3aed" : p.hot ? "#a78bfa" : "#e2e8f0";
+          const bg = p.best ? "#f5f3ff" : p.hot ? "#faf5ff" : "#f8fafc";
+          return `
+            <div style="background:${bg};border:1.5px solid ${borderColor};border-radius:10px;padding:10px 8px;text-align:center;position:relative;${badgeText?'margin-top:10px;':''}">
+              ${badgeText?`<span style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:#7c3aed;color:white;font-size:9px;font-weight:800;padding:2px 6px;border-radius:20px;white-space:nowrap;">${badgeText}</span>`:''}
+              <div style="font-size:13px;font-weight:800;color:#1e293b;">${p.label}</div>
+              <div style="font-size:9px;color:#64748b;margin-bottom:4px;">${p.sub}</div>
+              <div style="font-size:14px;font-weight:800;color:#7c3aed;">${p.amount}</div>
+              <div style="font-size:9px;color:#64748b;margin-top:2px;">${p.desc}</div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+
+      <div style="background:#fef9ec;border:1px solid #fde68a;border-radius:8px;padding:10px 12px;font-size:12px;color:#92400e;">
+        💡 会計時に購入された場合は自動で残数管理されます
+      </div>
+    `;
+
+    empty.innerHTML = html;
+    passBody.appendChild(empty);
+  } else {
+    const desc = document.createElement("div");
+    desc.style.cssText = "font-size:12px;color:#64748b;margin-bottom:10px;";
+    desc.textContent = "今回使用する券・パスを選択してください（任意）";
+    passBody.appendChild(desc);
+
+    // 「使用しない」ボタン
+    const noneBtn = document.createElement("button");
+    noneBtn.textContent = "使用しない";
+    noneBtn.style.cssText = `width:100%;padding:10px;border-radius:8px;border:2px solid ${state.usePassId===null?'#6b7280':'#e2e8f0'};background:${state.usePassId===null?'#6b7280':'white'};color:${state.usePassId===null?'white':'#374151'};font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px;font-family:inherit;`;
+    noneBtn.onclick = () => { state.usePassId = null; render(); };
+    passBody.appendChild(noneBtn);
+
+    const today = new Date().toISOString().split("T")[0];
+    patientPasses.forEach(p => {
+      const sel = state.usePassId === p.id;
+      const isFP = p.pass_type && p.pass_type.includes("FP");
+      const isExpired = p.expiry_date && p.expiry_date < today;
+      const color = isFP ? "#7c3aed" : "#2563eb";
+
+      const btn = document.createElement("button");
+      btn.disabled = isExpired;
+      btn.style.cssText = `width:100%;padding:12px 14px;border-radius:10px;border:2px solid ${sel?color:'#e2e8f0'};background:${sel?color+'18':'#f8fafc'};cursor:${isExpired?'not-allowed':'pointer'};text-align:left;margin-bottom:8px;opacity:${isExpired?.5:1};font-family:inherit;display:block;`;
+      btn.onclick = () => { state.usePassId = p.id; render(); };
+
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;justify-content:space-between;align-items:center;";
+
+      const left = document.createElement("div");
+      const name = document.createElement("div");
+      name.style.cssText = `font-size:13px;font-weight:800;color:${sel?color:'#1e293b'};`;
+      name.textContent = (isFP?"🎟️":"🎫") + " " + p.pass_type;
+      const expiry = document.createElement("div");
+      expiry.style.cssText = "font-size:11px;color:#64748b;margin-top:3px;";
+      expiry.textContent = p.expiry_date ? `期限：${p.expiry_date}` : "期限なし";
+      left.appendChild(name);
+      left.appendChild(expiry);
+
+      const right = document.createElement("div");
+      right.style.cssText = "text-align:right;";
+      const count = document.createElement("div");
+      count.style.cssText = `font-size:18px;font-weight:800;color:${isExpired?'#ef4444':color};`;
+      count.textContent = isFP ? p.remaining_count+"日" : p.remaining_count+"回";
+      const countLabel = document.createElement("div");
+      countLabel.style.cssText = "font-size:10px;color:#94a3b8;";
+      countLabel.textContent = isExpired ? "期限切れ" : "残り";
+      right.appendChild(count);
+      right.appendChild(countLabel);
+
+      row.appendChild(left);
+      row.appendChild(right);
+      btn.appendChild(row);
+
+      if(sel){
+        const notice = document.createElement("div");
+        notice.style.cssText = `margin-top:8px;padding:6px 10px;background:${color}22;border-radius:6px;font-size:12px;color:${color};font-weight:700;`;
+        notice.textContent = `✓ 今回使用 → 残り${Math.max(0,p.remaining_count-1)}${isFP?"日":"回"}になります`;
+        btn.appendChild(notice);
+      }
+
+      passBody.appendChild(btn);
+    });
+  }
+
+  passCard.appendChild(passBody);
+  root.appendChild(passCard);
+
+  const resultCard = document.createElement("div");
+  resultCard.className = "card";
+  const resultHeader = document.createElement("div");
+  resultHeader.className = "card-header purple";
+  resultHeader.textContent = "📊 結果 *";
+  const resultBody = document.createElement("div");
+  resultBody.className = "card-body";
+  const resultChips = document.createElement("div");
+  resultChips.className = "chips";
+  RESULTS.forEach(r => {
+    const btn = document.createElement("button");
+    btn.className = `chip ${r.color}${state.result === r.id ? " sel" : ""}`;
+    btn.style.fontSize = "15px";
+    btn.style.padding = "10px 18px";
+    btn.textContent = `${r.icon} ${r.id}`;
+    btn.onclick = () => { state.result = r.id; render(); };
+    resultChips.appendChild(btn);
+  });
+  resultBody.appendChild(resultChips);
+  resultCard.appendChild(resultHeader);
+  resultCard.appendChild(resultBody);
+  root.appendChild(resultCard);
+
+  // ===== 提案内容カード =====
+  const PROPOSAL_PLANS = [
+    {id:"",label:"提案なし",color:"#6b7280"},
+    {id:"アジャスト5回券 ¥4,400",label:"🎫 アジャスト5回券",sub:"¥4,400",color:"#2563eb"},
+    {id:"アジャスト11回券 ¥8,800",label:"🎫 アジャスト11回券",sub:"¥8,800",color:"#2563eb"},
+    {id:"アジャスト23回券 ¥17,600",label:"🎫 アジャスト23回券",sub:"¥17,600 最安値",color:"#2563eb",hot:true},
+    {id:"鍼・Hi 5回券 ¥6,000",label:"🎫 鍼・Hi 5回券",sub:"¥6,000",color:"#7c3aed"},
+    {id:"鍼・Hi 11回券 ¥12,000",label:"🎫 鍼・Hi 11回券",sub:"¥12,000",color:"#7c3aed"},
+    {id:"鍼・Hi 23回券 ¥24,000",label:"🎫 鍼・Hi 23回券",sub:"¥24,000 最安値",color:"#7c3aed",hot:true},
+    {id:"EMS 8回券 ¥24,000",label:"🎫 EMS 8回券",sub:"¥24,000",color:"#059669"},
+    {id:"EMS 16回券 ¥45,600",label:"🎫 EMS 16回券",sub:"¥45,600",color:"#059669"},
+    {id:"EMS 24回券 ¥66,000",label:"🎫 EMS 24回券",sub:"¥66,000",color:"#059669"},
+    {id:"EMS 32回券 ¥84,800",label:"🎫 EMS 32回券",sub:"¥84,800 最安値",color:"#059669",hot:true},
+    {id:"FP 1ヶ月 ¥12,000",label:"🎟️ FP 1ヶ月",sub:"¥12,000",color:"#d97706"},
+    {id:"FP 3ヶ月 ¥34,500",label:"🎟️ FP 3ヶ月",sub:"¥34,500",color:"#d97706",hot:true},
+    {id:"FP 6ヶ月 ¥66,000",label:"🎟️ FP 6ヶ月",sub:"¥66,000 人気",color:"#d97706",hot:true},
+  ];
+
+  const proposalCard = document.createElement("div");
+  proposalCard.className = "card";
+  const proposalHeader = document.createElement("div");
+  proposalHeader.className = "card-header purple";
+  proposalHeader.textContent = "💡 クロージング担当へ：提案内容";
+  proposalCard.appendChild(proposalHeader);
+
+  const proposalBody = document.createElement("div");
+  proposalBody.className = "card-body";
+
+  const proposalDesc = document.createElement("div");
+  proposalDesc.style.cssText = "font-size:12px;color:#64748b;margin-bottom:12px;";
+  proposalDesc.textContent = "今回患者様に提案したプランを選択してください（クロージング担当に共有されます）";
+  proposalBody.appendChild(proposalDesc);
+
+  // プラン選択ボタン
+  const planGrid = document.createElement("div");
+  planGrid.style.cssText = "display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px;";
+  PROPOSAL_PLANS.forEach(plan => {
+    const sel = state.proposalPlan === plan.id;
+    const btn = document.createElement("button");
+    btn.style.cssText = `padding:7px 12px;border-radius:20px;border:1.5px solid ${sel?plan.color:'#e2e8f0'};background:${sel?plan.color:'white'};color:${sel?'white':plan.color==='#6b7280'?'#374151':plan.color};font-size:12px;font-weight:${sel?700:500};cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:flex-start;gap:1px;`;
+    const labelEl = document.createElement("span");
+    labelEl.textContent = plan.label + (plan.hot?" ⭐":"");
+    btn.appendChild(labelEl);
+    if(plan.sub){
+      const subEl = document.createElement("span");
+      subEl.style.cssText = `font-size:10px;opacity:0.8;`;
+      subEl.textContent = plan.sub;
+      btn.appendChild(subEl);
+    }
+    btn.onclick = () => { state.proposalPlan = plan.id; render(); };
+    planGrid.appendChild(btn);
+  });
+  proposalBody.appendChild(planGrid);
+
+  // 選択中プランの表示
+  if(state.proposalPlan){
+    const selectedPlan = PROPOSAL_PLANS.find(p=>p.id===state.proposalPlan);
+    if(selectedPlan){
+      const preview = document.createElement("div");
+      preview.style.cssText = `background:${selectedPlan.color}18;border:1.5px solid ${selectedPlan.color};border-radius:10px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:10px;`;
+      preview.innerHTML = `<span style="font-size:20px;">✅</span><div><div style="font-size:13px;font-weight:800;color:${selectedPlan.color};">${selectedPlan.label}</div><div style="font-size:11px;color:#64748b;">${selectedPlan.sub||""}</div></div>`;
+      proposalBody.appendChild(preview);
+    }
+  }
+
+  // 追加メモ
+  const proposalMemoLabel = document.createElement("label");
+  proposalMemoLabel.style.cssText = "display:block;font-size:12px;font-weight:700;color:#475569;margin-bottom:6px;";
+  proposalMemoLabel.textContent = "追加メモ（反応・状況など）";
+  proposalBody.appendChild(proposalMemoLabel);
+
+  const proposalMemoInput = document.createElement("textarea");
+  proposalMemoInput.id = "proposalMemo";
+  proposalMemoInput.rows = 3;
+  proposalMemoInput.placeholder = "例：23回券に興味あり、値段で迷っていた、FPを検討中、など";
+  proposalMemoInput.value = state.proposalMemo;
+  proposalMemoInput.style.cssText = "width:100%;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:inherit;resize:none;line-height:1.6;";
+  proposalMemoInput.oninput = e => { state.proposalMemo = e.target.value; };
+  proposalBody.appendChild(proposalMemoInput);
+
+  proposalCard.appendChild(proposalBody);
+  root.appendChild(proposalCard);
+
+  const nextCard = document.createElement("div");
+  nextCard.className = "card";
+  nextCard.innerHTML = `<div class="card-header blue">📅 次回予約</div>`;
+  const nextBody = document.createElement("div");
+  nextBody.className = "card-body";
+  nextBody.innerHTML = `
+    <div class="row2" style="margin-bottom:12px;">
+      <div><label>日付</label><input type="date" id="nextDate" value="${state.nextDate}"/></div>
+      <div><label>時間</label><input type="time" step="600" id="nextTime" value="${state.nextTime}"/></div>
+    </div>
+    <div><label>メモ（任意）</label><textarea id="memo" rows="2" placeholder="気になる点など">${state.memo}</textarea></div>
+  `;
+  nextCard.appendChild(nextBody);
+  root.appendChild(nextCard);
+
+  setTimeout(() => {
+    const nd = document.getElementById("nextDate");
+    const nt = document.getElementById("nextTime");
+    const mo = document.getElementById("memo");
+    if(nd) nd.oninput = e => { state.nextDate = e.target.value; };
+    if(nt) nt.oninput = e => { state.nextTime = e.target.value; };
+    if(mo) mo.oninput = e => { state.memo = e.target.value; };
+  }, 0);
+
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "btn-primary";
+  saveBtn.textContent = state.saving ? "保存中..." : "✅ 施術記録を保存する";
+  saveBtn.disabled = state.saving;
+  saveBtn.style.opacity = state.saving ? "0.7" : "1";
+  saveBtn.onclick = save;
+  root.appendChild(saveBtn);
+
+  const backBtn = document.createElement("button");
+  backBtn.className = "btn-secondary";
+  backBtn.textContent = "← カレンダーへ戻る";
+  backBtn.onclick = () => { location.href = "/index.html"; };
+  root.appendChild(backBtn);
+
+  const spacer = document.createElement("div");
+  spacer.style.height = "40px";
+  root.appendChild(spacer);
+}
+
+async function init() {
   const {data:{session}} = await supabaseClient.auth.getSession();
   if (!session) {
-    root.innerHTML = `
+    document.getElementById("root").innerHTML = `
       <div class="auth-wait">
         <div style="font-size:40px;margin-bottom:12px;">🔒</div>
         <div style="font-weight:700;color:#374151;margin-bottom:10px;">ログインが必要です</div>
         <div style="font-size:13px;color:#9ca3af;margin-bottom:20px;">管理画面からログインした状態でこのページを開いてください。</div>
-        <a href="/index.html" class="btn-back">管理画面へ</a>
+        <button class="btn-secondary" onclick="location.href='/index.html'">管理画面へ</button>
       </div>`;
     return;
   }
 
   const params = new URLSearchParams(location.search);
-  const id = params.get('id');
-
+  const id = params.get("id");
   if (!id) {
-    root.innerHTML = '<div style="text-align:center;padding:60px;color:#ef4444;">❌ 予約IDが指定されていません</div>';
+    document.getElementById("root").innerHTML = '<div style="text-align:center;padding:60px;color:#ef4444;">❌ 予約IDが指定されていません</div>';
     return;
   }
-
   try {
-    const bookings = await sbGet("bookings", `?id=eq.${id}`);
-    if (!bookings || bookings.length === 0) {
-      root.innerHTML = '<div style="text-align:center;padding:60px;color:#ef4444;">❌ 予約が見つかりません</div>';
+    const data = await sb_get("bookings", `?id=eq.${id}`);
+    if (!data || data.length === 0) {
+      document.getElementById("root").innerHTML = '<div style="text-align:center;padding:60px;color:#ef4444;">❌ 予約が見つかりません</div>';
       return;
     }
-    const b = bookings[0];
-    const staffName = STAFF[b.staff_id] || '不明';
+    booking = data[0];
 
-    const pastBookings = await sbGet("bookings", `?patient_name=eq.${encodeURIComponent(b.patient_name)}&id=neq.${id}&order=date.desc`);
-    const pastIds = (pastBookings || []).map(pb => pb.id);
+    // その患者のアクティブな回数券・FPを取得
+    const passes = await sb_get("passes", `?patient_name=eq.${encodeURIComponent(booking.patient_name)}&active=eq.true&order=purchased_date.desc`);
+    patientPasses = Array.isArray(passes) ? passes : [];
 
-    let historyHtml = "";
-    if (pastIds.length > 0) {
-      const treatments = await sbGet("treatments", `?booking_id=in.(${pastIds.join(",")})&order=treated_at.desc&limit=5`);
-
-      if (treatments && treatments.length > 0) {
-        const items = treatments.map(t => {
-          const pb = pastBookings.find(pb => pb.id === t.booking_id);
-          const dateStr = pb ? pb.date : (t.treated_at ? t.treated_at.split("T")[0] : "—");
-          const staffStr = pb ? (STAFF[pb.staff_id] || "不明") : "不明";
-          return `
-            <div class="history-item">
-              <div class="history-date">📅 ${dateStr}　担当：${staffStr} 先生</div>
-              <div class="history-row"><span class="history-label">施術種別</span><span class="history-value">${t.treatment_types || "—"}</span></div>
-              <div class="history-row"><span class="history-label">施術部位</span><span class="history-value">${t.body_parts || "—"}</span></div>
-              <div class="history-row"><span class="history-label">自費</span><span class="history-value">${jifeeText(t)}</span></div>
-              <div class="history-row"><span class="history-label">結果</span><span class="history-value">${resultBadge(t.result)}</span></div>
-              ${t.memo ? `<div class="history-row"><span class="history-label">メモ</span><span class="history-value">${t.memo}</span></div>` : ""}
-            </div>
-          `;
-        }).join("");
-
-        historyHtml = `
-          <div class="card">
-            <div class="card-header orange">📋 前回までの施術記録</div>
-            <div class="card-body">${items}</div>
-          </div>
-        `;
-      } else {
-        historyHtml = `
-          <div class="card">
-            <div class="card-header gray">📋 前回までの施術記録</div>
-            <div class="card-body" style="text-align:center;color:#9ca3af;padding:16px;">施術記録なし（初回）</div>
-          </div>
-        `;
-      }
-    } else {
-      historyHtml = `
-        <div class="card">
-          <div class="card-header gray">📋 前回までの施術記録</div>
-          <div class="card-body" style="text-align:center;color:#9ca3af;padding:16px;">施術記録なし（初回）</div>
-        </div>
-      `;
-    }
-
-    root.innerHTML = `
-      <div class="card">
-        <div class="card-header blue">📅 予約情報</div>
-        <div class="card-body">
-          <div class="row"><span class="label">患者名</span><span class="value">${b.patient_name} 様</span></div>
-          <div class="row"><span class="label">電話番号</span><span class="value">${b.phone || '—'}</span></div>
-          <div class="row"><span class="label">日時</span><span class="value">${b.date} ${b.time}</span></div>
-          <div class="row"><span class="label">メニュー</span><span class="value">${b.menu}</span></div>
-          <div class="row"><span class="label">担当</span><span class="value">${staffName} 先生</span></div>
-          <div class="row"><span class="label">LINE</span><span class="value">${b.line_user_id ? '<span class="badge badge-green">✅ 連携済み</span>' : '未連携'}</span></div>
-        </div>
-      </div>
-
-      ${(b.body_parts || b.injury_cause || b.pain_when) ? `
-      <div class="card">
-        <div class="card-header green">🩺 問診情報</div>
-        <div class="card-body">
-          ${b.body_parts ? `<div class="row"><span class="label">負傷部位</span><span class="value">${b.body_parts}</span></div>` : ''}
-          ${b.injury_cause ? `<div class="row"><span class="label">負傷原因</span><span class="value">${b.injury_cause}</span></div>` : ''}
-          ${b.pain_when ? `<div class="row"><span class="label">いつから</span><span class="value">${b.pain_when}</span></div>` : ''}
-          ${b.pain_level ? `<div class="row"><span class="label">痛みの強さ</span><span class="value">${b.pain_level} / 10</span></div>` : ''}
-          ${b.symptoms ? `<div class="row"><span class="label">症状</span><span class="value">${b.symptoms}</span></div>` : ''}
-          ${b.other_clinic ? `<div class="row"><span class="label">他院受診</span><span class="value">${b.other_clinic}</span></div>` : ''}
-          ${b.medical_history ? `<div class="row"><span class="label">既往歴</span><span class="value">${b.medical_history}</span></div>` : ''}
-          ${b.want_continue ? `<div class="row"><span class="label">継続意思</span><span class="value">${b.want_continue}</span></div>` : ''}
-          ${b.how_know ? `<div class="row"><span class="label">来院経路</span><span class="value">${b.how_know}</span></div>` : ''}
-        </div>
-      </div>` : ''}
-
-      ${historyHtml}
-
-      <a href="/treatment.html?id=${id}" class="btn-start">⚕️ 施術を開始する →</a>
-      <a href="/index.html" class="btn-back">← 管理画面へ戻る</a>
-      <div style="height:24px;"></div>
-    `;
+    render();
   } catch(e) {
-    root.innerHTML = `<div style="text-align:center;padding:60px;color:#ef4444;">❌ 読み込みエラー：${e.message}</div>`;
+    document.getElementById("root").innerHTML = `<div style="text-align:center;padding:60px;color:#ef4444;">❌ エラー：${e.message}</div>`;
   }
 }
 
-load();
+init();
 </script>
 </body>
 </html>
