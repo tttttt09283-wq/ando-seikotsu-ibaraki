@@ -1416,6 +1416,8 @@ function Dashboard({user,onLogout}){
     const h=today.getHours();
     const nextHour=h>=18?9:h+1;
     const timeStr=`${String(nextHour).padStart(2,"0")}:00`;
+    // LINEのuser_idを入力してもらう（マイページ確認用）
+    const lineId=window.prompt("LINEのuser_idを入力してください（マイページ確認用・不要なら空のままOK）","");
     const testData={
       patient_name:"テスト 太郎",
       phone:"090-0000-0000",
@@ -1423,7 +1425,8 @@ function Dashboard({user,onLogout}){
       date:dateStr,
       time:timeStr,
       menu:"無料施術体験会（60分）",
-      line_notify:false,
+      line_notify:!!lineId,
+      line_user_id:lineId||null,
       reminded:false,
       body_parts:"腰部",
       injury_cause:"日常生活中のケガ",
