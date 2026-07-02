@@ -332,6 +332,15 @@ function PatientHistoryModal({patientName,bookings,onClose}){
                       {resultBadge(treat.result)}
                       {jifeeText(treat)&&<span className="badge badge-yellow">{jifeeText(treat)}</span>}
                     </div>
+                    {treat.proposal_plan&&(
+                      <div style={{marginTop:8,padding:"6px 10px",background:"#faf5ff",borderRadius:8,border:"1px solid #e9d5ff",display:"flex",alignItems:"center",gap:6}}>
+                        <span style={{fontSize:14}}>💡</span>
+                        <div>
+                          <div style={{fontSize:12,fontWeight:800,color:"#7c3aed"}}>提案：{treat.proposal_plan}</div>
+                          {treat.proposal_memo&&<div style={{fontSize:11,color:"#9ca3af",marginTop:2}}>{treat.proposal_memo}</div>}
+                        </div>
+                      </div>
+                    )}
                     {treat.memo&&<div style={{marginTop:5,fontSize:12,color:"#9ca3af"}}>{treat.memo}</div>}
                   </div>
                 )}
