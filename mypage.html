@@ -261,7 +261,15 @@ async function loadData(){
       sbGet("bookings",`?line_user_id=eq.${encodeURIComponent(lineUserId)}&order=date.asc,time.asc`),
       sbGet("passes",`?line_user_id=eq.${encodeURIComponent(lineUserId)}&active=eq.true`),
     ]);
-    state.bookings=Array.isArray(bk)?bk:[];
+    let bookingsList=Array.isArray(bk)?bk:[];
+
+    // line_user_idで見つからない場合、LINEの表示名で検索（テストデータ対応）
+    if(bookingsList.length===0 && lineProfile?.displayName){
+      const byName=await sbGet("bookings",`?patient_name=ilike.*${encodeURIComponent(lineProfile.displayName)}*&order=date.asc,time.asc`);
+      if(Array.isArray(byName)&&byName.length>0) bookingsList=byName;
+    }
+
+    state.bookings=bookingsList;
     state.passes=Array.isArray(ps)?ps:[];
   }catch(e){console.error(e);}
   state.loading=false;
