@@ -94,11 +94,13 @@ let state = {
   treatTab: "hoken",
   usePassId: null,
   result: "",
+  resultPlan: "",    // 成約・持ち帰りのプラン
+  resultReason: "",  // バツの理由
   nextDate: "",
   nextTime: "",
   memo: "",
-  proposalPlan: "",   // 提案プラン
-  proposalMemo: "",   // 提案メモ
+  proposalPlan: "",
+  proposalMemo: "",
   saving: false,
   done: false,
   nextBookingId: null,
@@ -172,6 +174,9 @@ async function save() {
       memo: state.memo || null,
       proposal_plan: state.proposalPlan || null,
       proposal_memo: state.proposalMemo || null,
+      // 成約・持ち帰りのプラン、バツの理由
+      result_plan: state.resultPlan || null,
+      result_reason: state.resultReason || null,
     };
     const treatResult = await sb_post("treatments", treatData);
     if (treatResult && treatResult.error) {
@@ -359,98 +364,8 @@ function render() {
 
   if(patientPasses.length === 0){
     const empty = document.createElement("div");
-    empty.style.cssText = "padding:4px 0;";
-
-    // 回数券カテゴリ（プルダウン式）
-    const kaisuCategories = [
-      {
-        label:"アジャスト（骨格矯正）",
-        items:[
-          {label:"5回券",amount:"¥4,400",per:"1回あたり ¥880"},
-          {label:"11回券",amount:"¥8,800",per:"1回あたり ¥800",hot:true},
-          {label:"23回券",amount:"¥17,600",per:"1回あたり ¥765 最安値",best:true},
-        ]
-      },
-      {
-        label:"鍼・ハイボルテージ",
-        items:[
-          {label:"5回券",amount:"¥6,000",per:"1回あたり ¥1,200"},
-          {label:"11回券",amount:"¥12,000",per:"1回あたり ¥1,091",hot:true},
-          {label:"23回券",amount:"¥24,000",per:"1回あたり ¥1,043 最安値",best:true},
-        ]
-      },
-      {
-        label:"EMS（インナーマッスル）",
-        items:[
-          {label:"8回券",amount:"¥24,000",per:"1回あたり ¥3,000"},
-          {label:"16回券",amount:"¥45,600",per:"1回あたり ¥2,850",hot:true},
-          {label:"24回券",amount:"¥66,000",per:"1回あたり ¥2,750"},
-          {label:"32回券",amount:"¥84,800",per:"1回あたり ¥2,650 最安値",best:true},
-        ]
-      },
-    ];
-
-    const fpPlans = [
-      {label:"1ヶ月",sub:"短期集中",amount:"¥12,000",desc:"まずは痛みの緩和"},
-      {label:"3ヶ月",sub:"歪み定着期",amount:"¥34,500",desc:"骨格の歪みを調整",hot:true},
-      {label:"6ヶ月",sub:"根本改善",amount:"¥66,000",desc:"正しい姿勢を定着",best:true},
-    ];
-
-    let html = `
-      <div style="font-size:12px;color:#64748b;margin-bottom:14px;">今回ご提案するプランをご確認ください（任意）</div>
-
-      <!-- 回数券プラン（アコーディオン） -->
-      <div style="font-size:11px;font-weight:800;color:#2563eb;letter-spacing:.5px;margin-bottom:8px;">🎫 回数券プラン</div>
-    `;
-
-    kaisuCategories.forEach((cat, ci) => {
-      html += `
-        <details style="margin-bottom:8px;border:1.5px solid #e2e8f0;border-radius:10px;overflow:hidden;" ${ci===0?'open':''}>
-          <summary style="padding:11px 14px;font-size:13px;font-weight:700;color:#1e293b;cursor:pointer;background:#f8fafc;list-style:none;display:flex;align-items:center;justify-content:space-between;">
-            <span>${cat.label}</span>
-            <span style="font-size:11px;color:#94a3b8;">タップで開閉 ▼</span>
-          </summary>
-          <div style="padding:10px 12px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;background:white;">
-            ${cat.items.map(p=>`
-              <div style="background:${p.best?'#eff6ff':p.hot?'#f0f9ff':'#f8fafc'};border:1.5px solid ${p.best?'#2563eb':p.hot?'#93c5fd':'#e2e8f0'};border-radius:10px;padding:10px 8px;text-align:center;position:relative;">
-                ${p.best?'<span style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:#2563eb;color:white;font-size:9px;font-weight:800;padding:2px 6px;border-radius:20px;white-space:nowrap;">最安値</span>':''}
-                ${p.hot&&!p.best?'<span style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:#0891b2;color:white;font-size:9px;font-weight:800;padding:2px 6px;border-radius:20px;white-space:nowrap;">人気</span>':''}
-                <div style="font-size:13px;font-weight:700;color:#1e293b;margin-bottom:4px;margin-top:${p.best||p.hot?'4px':'0'};">${p.label}</div>
-                <div style="font-size:15px;font-weight:800;color:#2563eb;">${p.amount}</div>
-                <div style="font-size:9px;color:#64748b;margin-top:2px;">${p.per}</div>
-              </div>
-            `).join("")}
-          </div>
-        </details>
-      `;
-    });
-
-    html += `
-      <!-- フリーパスプラン -->
-      <div style="font-size:11px;font-weight:800;color:#7c3aed;letter-spacing:.5px;margin:14px 0 8px;">🎟️ フリーパスプラン（姿勢・骨盤矯正・ストレッチ）</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px;">
-        ${fpPlans.map(p=>{
-          const badgeText = p.best ? "人気" : p.hot ? "おすすめ" : "";
-          const borderColor = p.best ? "#7c3aed" : p.hot ? "#a78bfa" : "#e2e8f0";
-          const bg = p.best ? "#f5f3ff" : p.hot ? "#faf5ff" : "#f8fafc";
-          return `
-            <div style="background:${bg};border:1.5px solid ${borderColor};border-radius:10px;padding:10px 8px;text-align:center;position:relative;${badgeText?'margin-top:10px;':''}">
-              ${badgeText?`<span style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:#7c3aed;color:white;font-size:9px;font-weight:800;padding:2px 6px;border-radius:20px;white-space:nowrap;">${badgeText}</span>`:''}
-              <div style="font-size:13px;font-weight:800;color:#1e293b;">${p.label}</div>
-              <div style="font-size:9px;color:#64748b;margin-bottom:4px;">${p.sub}</div>
-              <div style="font-size:14px;font-weight:800;color:#7c3aed;">${p.amount}</div>
-              <div style="font-size:9px;color:#64748b;margin-top:2px;">${p.desc}</div>
-            </div>
-          `;
-        }).join("")}
-      </div>
-
-      <div style="background:#fef9ec;border:1px solid #fde68a;border-radius:8px;padding:10px 12px;font-size:12px;color:#92400e;">
-        💡 会計時に購入された場合は自動で残数管理されます
-      </div>
-    `;
-
-    empty.innerHTML = html;
+    empty.style.cssText = "text-align:center;color:#9ca3af;font-size:13px;padding:20px;";
+    empty.textContent = "この患者様の有効な回数券・FPはありません";
     passBody.appendChild(empty);
   } else {
     const desc = document.createElement("div");
@@ -603,6 +518,26 @@ function render() {
   root.appendChild(proposalCard);
 
   // 結果カード（提案内容の後）
+  const RESULT_PLANS = [
+    {id:"アジャスト5回券 ¥4,400",label:"アジャスト5回券",sub:"¥4,400",color:"#2563eb"},
+    {id:"アジャスト11回券 ¥8,800",label:"アジャスト11回券",sub:"¥8,800",color:"#2563eb"},
+    {id:"アジャスト23回券 ¥17,600",label:"アジャスト23回券",sub:"¥17,600",color:"#2563eb"},
+    {id:"鍼・Hi 5回券 ¥6,000",label:"鍼・Hi 5回券",sub:"¥6,000",color:"#7c3aed"},
+    {id:"鍼・Hi 11回券 ¥12,000",label:"鍼・Hi 11回券",sub:"¥12,000",color:"#7c3aed"},
+    {id:"鍼・Hi 23回券 ¥24,000",label:"鍼・Hi 23回券",sub:"¥24,000",color:"#7c3aed"},
+    {id:"EMS 8回券 ¥24,000",label:"EMS 8回券",sub:"¥24,000",color:"#059669"},
+    {id:"EMS 16回券 ¥45,600",label:"EMS 16回券",sub:"¥45,600",color:"#059669"},
+    {id:"EMS 24回券 ¥66,000",label:"EMS 24回券",sub:"¥66,000",color:"#059669"},
+    {id:"EMS 32回券 ¥84,800",label:"EMS 32回券",sub:"¥84,800",color:"#059669"},
+    {id:"FP 1ヶ月 ¥12,000",label:"FP 1ヶ月",sub:"¥12,000",color:"#d97706"},
+    {id:"FP 3ヶ月 ¥34,500",label:"FP 3ヶ月",sub:"¥34,500",color:"#d97706"},
+    {id:"FP 6ヶ月 ¥66,000",label:"FP 6ヶ月",sub:"¥66,000",color:"#d97706"},
+  ];
+  const BATSU_REASONS = [
+    "金額が高い","タイミングが合わない","効果に不安","家族に相談したい",
+    "他院に通っている","時間が取れない","その他"
+  ];
+
   const resultCard = document.createElement("div");
   resultCard.className = "card";
   const resultHeader = document.createElement("div");
@@ -610,18 +545,83 @@ function render() {
   resultHeader.textContent = "📊 結果 *";
   const resultBody = document.createElement("div");
   resultBody.className = "card-body";
-  const resultChips = document.createElement("div");
-  resultChips.className = "chips";
+
+  // 結果ボタン（成約・持ち帰り・バツ）
+  const resultBtnRow = document.createElement("div");
+  resultBtnRow.style.cssText = "display:flex;gap:10px;margin-bottom:16px;";
   RESULTS.forEach(r => {
     const btn = document.createElement("button");
-    btn.className = `chip ${r.color}${state.result === r.id ? " sel" : ""}`;
-    btn.style.fontSize = "15px";
-    btn.style.padding = "10px 18px";
-    btn.textContent = `${r.icon} ${r.id}`;
-    btn.onclick = () => { state.result = r.id; render(); };
-    resultChips.appendChild(btn);
+    const sel = state.result === r.id;
+    btn.style.cssText = `flex:1;padding:14px 8px;border-radius:10px;border:2px solid ${sel?
+      (r.id==="成約"?"#059669":r.id==="持ち帰り"?"#d97706":"#ef4444"):
+      "#e2e8f0"};background:${sel?
+      (r.id==="成約"?"#059669":r.id==="持ち帰り"?"#d97706":"#ef4444"):
+      "white"};color:${sel?"white":"#374151"};font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:4px;`;
+    btn.innerHTML = `<span style="font-size:22px;">${r.icon}</span><span>${r.id}</span>`;
+    btn.onclick = () => { state.result = r.id; state.resultPlan = ""; state.resultReason = ""; render(); };
+    resultBtnRow.appendChild(btn);
   });
-  resultBody.appendChild(resultChips);
+  resultBody.appendChild(resultBtnRow);
+
+  // 成約・持ち帰り → プラン選択
+  if(state.result === "成約" || state.result === "持ち帰り"){
+    const planLabel = document.createElement("div");
+    const isSeiyaku = state.result === "成約";
+    planLabel.style.cssText = `font-size:12px;font-weight:800;color:${isSeiyaku?"#059669":"#d97706"};margin-bottom:10px;`;
+    planLabel.textContent = isSeiyaku ? "✅ 成約したプランを選択" : "🤔 検討中のプランを選択";
+    resultBody.appendChild(planLabel);
+
+    const planGrid = document.createElement("div");
+    planGrid.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;";
+    RESULT_PLANS.forEach(plan => {
+      const sel = state.resultPlan === plan.id;
+      const btn = document.createElement("button");
+      btn.style.cssText = `padding:7px 12px;border-radius:20px;border:1.5px solid ${sel?plan.color:"#e2e8f0"};background:${sel?plan.color:"white"};color:${sel?"white":plan.color};font-size:12px;font-weight:${sel?700:500};cursor:pointer;font-family:inherit;`;
+      btn.textContent = plan.label + " " + plan.sub;
+      btn.onclick = () => { state.resultPlan = plan.id; render(); };
+      planGrid.appendChild(btn);
+    });
+    resultBody.appendChild(planGrid);
+
+    if(state.resultPlan){
+      const preview = document.createElement("div");
+      const selPlan = RESULT_PLANS.find(p=>p.id===state.resultPlan);
+      preview.style.cssText = `background:${isSeiyaku?"#f0fdf4":"#fef9ec"};border:1.5px solid ${isSeiyaku?"#86efac":"#fde68a"};border-radius:10px;padding:10px 14px;margin-top:6px;font-size:13px;font-weight:800;color:${isSeiyaku?"#059669":"#d97706"};`;
+      preview.textContent = (isSeiyaku?"✅ 成約：":"🤔 検討中：") + selPlan.label + " " + selPlan.sub;
+      resultBody.appendChild(preview);
+    }
+  }
+
+  // バツ → 理由選択＋自由入力
+  if(state.result === "バツ"){
+    const reasonLabel = document.createElement("div");
+    reasonLabel.style.cssText = "font-size:12px;font-weight:800;color:#ef4444;margin-bottom:10px;";
+    reasonLabel.textContent = "❌ バツの理由を選択してください";
+    resultBody.appendChild(reasonLabel);
+
+    const reasonGrid = document.createElement("div");
+    reasonGrid.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;";
+    BATSU_REASONS.forEach(r => {
+      const sel = state.resultReason === r;
+      const btn = document.createElement("button");
+      btn.style.cssText = `padding:7px 14px;border-radius:20px;border:1.5px solid ${sel?"#ef4444":"#e2e8f0"};background:${sel?"#ef4444":"white"};color:${sel?"white":"#374151"};font-size:12px;font-weight:${sel?700:500};cursor:pointer;font-family:inherit;`;
+      btn.textContent = r;
+      btn.onclick = () => { state.resultReason = r; render(); };
+      reasonGrid.appendChild(btn);
+    });
+    resultBody.appendChild(reasonGrid);
+
+    // 「その他」の場合は自由入力
+    if(state.resultReason === "その他"){
+      const otherInput = document.createElement("textarea");
+      otherInput.placeholder = "具体的な理由を入力してください";
+      otherInput.rows = 2;
+      otherInput.style.cssText = "width:100%;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:inherit;resize:none;";
+      otherInput.oninput = e => { state.resultReason = e.target.value; };
+      resultBody.appendChild(otherInput);
+    }
+  }
+
   resultCard.appendChild(resultHeader);
   resultCard.appendChild(resultBody);
   root.appendChild(resultCard);
