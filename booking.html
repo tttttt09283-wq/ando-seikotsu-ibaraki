@@ -335,6 +335,25 @@ function App(){
     setBookingId(null);
   }
 
+  // テスト用ワンタップ予約
+  function quickTest(){
+    var today=new Date();
+    var d=new Date(today);
+    d.setDate(d.getDate()+1); // 明日
+    var testDate=d;
+    var testTime="10:00";
+    setSelDate(testDate);
+    setSelTime(testTime);
+    setForm({
+      name:"テスト 花子",nameKana:"テスト ハナコ",phone:"090-1234-5678",
+      bodyParts:["腰部","肩"],injuryCause:"日常生活中のケガ",injuryCauseDetail:"",
+      painWhen:"1週間以内",painLevel:"5",symptoms:["痛み","こり・張り"],
+      otherClinic:"受診していない",otherClinicName:"",medicalHistory:"なし",
+      wantContinue:"はい、通いたいです",howKnow:"Instagram",howKnowOther:"",lineNotify:!!lineUserId
+    });
+    setStep(3); // 確認画面に直接ジャンプ
+  }
+
   var H = {
     label:{display:"block",fontSize:13,fontWeight:700,color:"#444",marginBottom:6},
     input:{width:"100%",padding:"11px 12px",border:"1.5px solid #ddd",borderRadius:10,fontSize:15,boxSizing:"border-box"},
@@ -505,7 +524,12 @@ function App(){
           onClick:function(){setStep(1);},
           disabled:!selDate||!selTime,
           style:Object.assign({},H.btn,{opacity:(!selDate||!selTime)?0.4:1})
-        },"次へ →")
+        },"次へ →"),
+        // テスト用ワンタップボタン（開発・テスト用）
+        React.createElement("button",{
+          onClick:quickTest,
+          style:{marginTop:12,width:"100%",padding:"10px",borderRadius:10,border:"2px dashed #d97706",background:"#fef9ec",color:"#92400e",fontSize:13,fontWeight:700,cursor:"pointer"}
+        },"🧪 テスト用：ワンタップで確認画面へ")
       ):null,
 
       // ===== STEP 1: 基本情報 =====
