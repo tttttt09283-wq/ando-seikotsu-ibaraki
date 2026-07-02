@@ -132,7 +132,6 @@ function App(){
   var errState = useState({});
   var errors = errState[0]; var setErrors = errState[1];
 
-  // 登録された予約ID（QR送信に使用）
   var bookingIdState = useState(null);
   var bookingId = bookingIdState[0]; var setBookingId = bookingIdState[1];
 
@@ -141,6 +140,16 @@ function App(){
 
   var liffReadyState = useState(false);
   var liffReady = liffReadyState[0]; var setLiffReady = liffReadyState[1];
+
+  // リピーター判定・過去予約情報
+  var isRepeatState = useState(false);
+  var isRepeat = isRepeatState[0]; var setIsRepeat = isRepeatState[1];
+  var pastBookingState = useState(null);
+  var pastBooking = pastBookingState[0]; var setPastBooking = pastBookingState[1];
+
+  // リピーター用メモ（任意）
+  var memoState = useState("");
+  var memo = memoState[0]; var setMemo = memoState[1];
 
   var formState = useState({
     name:"",nameKana:"",phone:"",
@@ -159,6 +168,20 @@ function App(){
       if(liff.isLoggedIn()){
         liff.getProfile().then(function(profile){
           setLineUserId(profile.userId);
+          // 過去予約を確認してリピーター判定
+          sb.select("bookings","?line_user_id=eq."+encodeURIComponent(profile.userId)+"&order=date.desc&limit=1")
+            .then(function(past){
+              if(Array.isArray(past)&&past.length>0){
+                setIsRepeat(true);
+                setPastBooking(past[0]);
+                // 過去の情報をformにセット
+                setForm(function(f){return Object.assign({},f,{
+                  name:past[0].patient_name||"",
+                  phone:past[0].phone||"",
+                  lineNotify:true,
+                });});
+              }
+            }).catch(function(){});
         }).catch(function(){});
       }
     }).catch(function(){
@@ -331,8 +354,51 @@ function App(){
     setStep(0); setSelDate(null); setSelTime(null);
     setSlotData({booked:[],breaks:[]});
     setForm({name:"",nameKana:"",phone:"",bodyParts:[],injuryCause:"",injuryCauseDetail:"",painWhen:"",painLevel:"",symptoms:[],otherClinic:"",otherClinicName:"",medicalHistory:"",wantContinue:"",howKnow:"",howKnowOther:"",lineNotify:false});
-    setDone(false);
-    setBookingId(null);
+    setDone(false); setBookingId(null); setMemo("");
+  }
+
+  // リピーター向けかんたん予約（日時だけで完結）
+  function submitRepeat(){
+    if(!selDate||!selTime) return;
+    setSubmitting(true);
+    var staffId=getAvailableStaffId(selTime);
+    var newBookingId=null;
+    sb.insert("bookings",{
+      patient_name:pastBooking.patient_name,
+      phone:pastBooking.phone||"",
+      staff_id:staffId,
+      date:fmtDate(selDate),
+      time:selTime,
+      menu:"再診（30分）",
+      line_notify:true,
+      line_user_id:lineUserId||null,
+      reminded:false,
+      // 伝えたいことがあれば症状欄に入れる
+      symptoms:memo||null,
+    }).then(function(result){
+      var nb=Array.isArray(result)&&result.length>0?result[0]:null;
+      if(nb) newBookingId=nb.id;
+      setBookingId(newBookingId);
+      // グループLINE通知
+      fetch("/api/line-notify",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          groupId:LINE_GROUP_ID,
+          message:"🏥【リピーター予約】\n👤 "+pastBooking.patient_name+" 様\n📅 "+fmtDateJP(selDate)+" "+selTime+(memo?"\n💬 "+memo:"")
+        })
+      }).catch(function(){});
+      // QR・確認メッセージ送信
+      if(lineUserId&&newBookingId){
+        fetch("/api/send-confirmation",{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({userId:lineUserId,bookingId:newBookingId,patientName:pastBooking.patient_name,date:fmtDateJP(selDate),time:selTime})
+        }).catch(function(){});
+      }
+    }).catch(function(){}).finally(function(){
+      setDone(true); setSubmitting(false);
+    });
   }
 
   // テスト用ワンタップ予約
@@ -480,6 +546,14 @@ function App(){
 
       // ===== STEP 0: 日時選択 =====
       step===0?React.createElement("div",null,
+        // リピーター向けバナー
+        isRepeat?React.createElement("div",{style:{background:"linear-gradient(135deg,#f0fdf4,#dcfce7)",border:"1.5px solid #86efac",borderRadius:12,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}},
+          React.createElement("span",{style:{fontSize:24}},"👋"),
+          React.createElement("div",null,
+            React.createElement("div",{style:{fontWeight:800,fontSize:14,color:"#065f46"}}),"おかえりなさい！ "+pastBooking.patient_name+" 様"),
+            React.createElement("div",{style:{fontSize:12,color:"#059669",marginTop:2}}),"日時だけ選べばすぐ予約できます"
+        ):null,
+
         React.createElement("div",{style:{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:16}},"日時を選んでください"),
         React.createElement("div",{style:{marginBottom:20}},
           React.createElement("div",{style:{fontSize:13,fontWeight:700,color:"#555",marginBottom:8}},"📅 日付"),
@@ -519,12 +593,48 @@ function App(){
           ),
           React.createElement("div",{style:{fontSize:11,color:"#9ca3af",marginTop:8}},"※ ×は満員・休憩中・受付終了です")
         ):null,
-        React.createElement("button",{
-          onClick:function(){setStep(1);},
+
+        // リピーターは「かんたん予約」ボタン、初回は「次へ」
+        isRepeat&&selDate&&selTime?React.createElement("div",null,
+          // 伝えたいこと（任意）
+          React.createElement("div",{style:{marginBottom:16}},
+            React.createElement("div",{style:{fontSize:13,fontWeight:700,color:"#555",marginBottom:6}},"💬 スタッフへ伝えたいこと（任意）"),
+            React.createElement("textarea",{
+              value:memo,
+              onChange:function(e){setMemo(e.target.value);},
+              placeholder:"前回より痛みが強い、別の部位も気になる、など\n何もなければ空欄でOK",
+              rows:3,
+              style:{width:"100%",padding:"10px 12px",border:"1.5px solid #e2e8f0",borderRadius:10,fontSize:14,fontFamily:"inherit",resize:"none",lineHeight:1.6}
+            })
+          ),
+          // 予約内容プレビュー
+          React.createElement("div",{style:{background:"#f8fafc",border:"1.5px solid #e2e8f0",borderRadius:12,padding:"12px 16px",marginBottom:14}},
+            React.createElement("div",{style:{fontSize:12,fontWeight:700,color:"#64748b",marginBottom:8}},"📋 予約内容"),
+            React.createElement("div",{style:{fontSize:13,color:"#1e293b",lineHeight:2}},[
+              "👤 "+pastBooking.patient_name+" 様",
+              "📅 "+fmtDateJP(selDate)+" "+selTime,
+              "🩺 再診（30分）",
+              "📞 "+pastBooking.phone,
+            ].join("\n"))
+          ),
+          React.createElement("button",{
+            onClick:submitRepeat,
+            disabled:submitting,
+            style:Object.assign({},H.btn,{fontSize:16,padding:"16px",opacity:submitting?0.7:1,background:"linear-gradient(180deg,#059669,#047857)",boxShadow:"0 4px 0 #065f46,0 6px 16px rgba(5,150,105,.35)"})
+          },submitting?"送信中...":"⚡ かんたん予約する"),
+          React.createElement("div",{style:{textAlign:"center",marginTop:12}},
+            React.createElement("button",{
+              onClick:function(){setIsRepeat(false);setStep(1);},
+              style:{background:"none",border:"none",color:"#94a3b8",fontSize:12,cursor:"pointer",textDecoration:"underline"}
+            },"初回の方・情報を変更する場合はこちら")
+          )
+        ):React.createElement("button",{
+          onClick:function(){setStep(isRepeat?0:1);if(!isRepeat)setStep(1);},
           disabled:!selDate||!selTime,
           style:Object.assign({},H.btn,{opacity:(!selDate||!selTime)?0.4:1})
         },"次へ →"),
-        // テスト用ワンタップボタン（開発・テスト用）
+
+        // テスト用ワンタップボタン
         React.createElement("button",{
           onClick:quickTest,
           style:{marginTop:12,width:"100%",padding:"10px",borderRadius:10,border:"2px dashed #d97706",background:"#fef9ec",color:"#92400e",fontSize:13,fontWeight:700,cursor:"pointer"}
