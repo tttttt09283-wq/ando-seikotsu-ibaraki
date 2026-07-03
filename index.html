@@ -1016,6 +1016,275 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
   );
 }
 
+// ===== メニュー・コース管理パネル =====
+function MenuMgmtPanel(){
+  const CATEGORIES=["保険診療","自費治療","回数券","フリーパス"];
+  const CATEGORY_COLORS={"保険診療":"#2563eb","自費治療":"#059669","回数券":"#d97706","フリーパス":"#7c3aed"};
+  const CATEGORY_BG={"保険診療":"#dbeafe","自費治療":"#dcfce7","回数券":"#fef3c7","フリーパス":"#f5f3ff"};
+
+  const [menus,setMenus]=React.useState([]);
+  const [loading,setLoading]=React.useState(true);
+  const [selCategory,setSelCategory]=React.useState("all");
+  const [editId,setEditId]=React.useState(null); // null=一覧, "new"=新規, number=編集
+  const [form,setForm]=React.useState({name:"",category:"自費治療",duration:60,price:0,price_label:"",description:"",active:true});
+  const [saving,setSaving]=React.useState(false);
+  const [toast,setToast]=React.useState("");
+  const [searchQ,setSearchQ]=React.useState("");
+
+  React.useEffect(()=>{loadMenus();},[]);
+
+  async function loadMenus(){
+    setLoading(true);
+    try{
+      const data=await sb.select("menus","?order=display_order.asc,id.asc");
+      setMenus(Array.isArray(data)?data:[]);
+    }catch(e){console.error(e);}
+    setLoading(false);
+  }
+
+  function showToast(msg){setToast(msg);setTimeout(()=>setToast(""),2500);}
+  function fmt(n){return"¥"+Number(n||0).toLocaleString();}
+
+  function openNew(){
+    setForm({name:"",category:"自費治療",duration:60,price:0,price_label:"",description:"",active:true});
+    setEditId("new");
+  }
+
+  function openEdit(menu){
+    setForm({name:menu.name||"",category:menu.category||"自費治療",duration:menu.duration||60,price:menu.price||0,price_label:menu.price_label||"",description:menu.description||"",active:menu.active!==false});
+    setEditId(menu.id);
+  }
+
+  async function saveMenu(){
+    if(!form.name.trim()){alert("メニュー名を入力してください");return;}
+    setSaving(true);
+    try{
+      const payload={name:form.name,category:form.category,duration:parseInt(form.duration)||0,price:parseInt(form.price)||0,price_label:form.price_label||null,description:form.description||null,active:form.active};
+      if(editId==="new"){
+        const result=await sb.insert("menus",{...payload,display_order:menus.length+1});
+        if(Array.isArray(result)&&result.length>0) setMenus(prev=>[...prev,result[0]]);
+        showToast("メニューを追加しました");
+      }else{
+        await sb.update("menus",editId,payload);
+        setMenus(prev=>prev.map(m=>m.id===editId?{...m,...payload}:m));
+        showToast("メニューを更新しました");
+      }
+      setEditId(null);
+      loadMenus();
+    }catch(e){alert("保存に失敗しました："+e.message);}
+    setSaving(false);
+  }
+
+  async function toggleActive(menu){
+    try{
+      await sb.update("menus",menu.id,{active:!menu.active});
+      setMenus(prev=>prev.map(m=>m.id===menu.id?{...m,active:!m.active}:m));
+    }catch(e){alert("更新に失敗しました");}
+  }
+
+  async function deleteMenu(menu){
+    if(!confirm(`「${menu.name}」を削除しますか？`)) return;
+    try{
+      await sb.delete("menus",menu.id);
+      setMenus(prev=>prev.filter(m=>m.id!==menu.id));
+      showToast("削除しました");
+    }catch(e){alert("削除に失敗しました");}
+  }
+
+  function priceText(menu){
+    if(menu.price_label) return menu.price_label;
+    if(menu.price===0) return "¥0";
+    return fmt(menu.price);
+  }
+
+  // フィルタ
+  const filtered=menus.filter(m=>{
+    if(selCategory!=="all"&&m.category!==selCategory) return false;
+    if(searchQ&&!m.name.includes(searchQ)&&!(m.category||"").includes(searchQ)) return false;
+    return true;
+  });
+
+  // カテゴリ別グループ
+  const grouped={};
+  CATEGORIES.forEach(c=>{grouped[c]=filtered.filter(m=>m.category===c);});
+
+  // ===== 編集フォーム =====
+  if(editId!==null){
+    return(
+      <div style={{maxWidth:600,margin:"0 auto"}}>
+        {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#15803d",fontWeight:700,fontSize:13}}>{toast}</div>}
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
+          <button onClick={()=>setEditId(null)} style={{background:"none",border:"none",cursor:"pointer",color:"#64748b",fontSize:13,fontFamily:"inherit"}}>← 一覧に戻る</button>
+          <div style={{fontSize:16,fontWeight:800,color:"#1e3a5f"}}>{editId==="new"?"メニューを追加":"メニューを編集"}</div>
+        </div>
+        <div style={{background:"white",borderRadius:12,padding:"20px",boxShadow:"0 1px 4px rgba(0,0,0,.06)",border:"1px solid #f1f5f9"}}>
+          {/* カテゴリ */}
+          <div style={{marginBottom:16}}>
+            <label style={{display:"block",fontSize:12,fontWeight:700,color:"#374151",marginBottom:8}}>カテゴリ *</label>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {CATEGORIES.map(c=>(
+                <button key={c} onClick={()=>setForm(p=>({...p,category:c}))}
+                  style={{padding:"7px 14px",borderRadius:20,border:"1.5px solid",borderColor:form.category===c?CATEGORY_COLORS[c]:"#e2e8f0",background:form.category===c?CATEGORY_COLORS[c]:"white",color:form.category===c?"white":CATEGORY_COLORS[c],fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* 名前 */}
+          <div style={{marginBottom:16}}>
+            <label style={{display:"block",fontSize:12,fontWeight:700,color:"#374151",marginBottom:6}}>メニュー名 *</label>
+            <input value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} placeholder="例：アジャスト（骨格矯正）"
+              style={{width:"100%",padding:"10px 12px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontFamily:"inherit"}}/>
+          </div>
+          {/* 時間・料金 */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+            <div>
+              <label style={{display:"block",fontSize:12,fontWeight:700,color:"#374151",marginBottom:6}}>時間（分）</label>
+              <input type="number" value={form.duration} onChange={e=>setForm(p=>({...p,duration:e.target.value}))}
+                style={{width:"100%",padding:"10px 12px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontFamily:"inherit"}}/>
+            </div>
+            <div>
+              <label style={{display:"block",fontSize:12,fontWeight:700,color:"#374151",marginBottom:6}}>料金（円）</label>
+              <input type="number" value={form.price} onChange={e=>setForm(p=>({...p,price:e.target.value}))}
+                style={{width:"100%",padding:"10px 12px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontFamily:"inherit"}}/>
+            </div>
+          </div>
+          {/* 料金表示テキスト */}
+          <div style={{marginBottom:16}}>
+            <label style={{display:"block",fontSize:12,fontWeight:700,color:"#374151",marginBottom:6}}>料金表示テキスト（任意）</label>
+            <input value={form.price_label} onChange={e=>setForm(p=>({...p,price_label:e.target.value}))} placeholder="例：負担割合に応じて / 初回無料"
+              style={{width:"100%",padding:"10px 12px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontFamily:"inherit"}}/>
+            <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>入力した場合、料金数値より優先して表示されます</div>
+          </div>
+          {/* 説明 */}
+          <div style={{marginBottom:16}}>
+            <label style={{display:"block",fontSize:12,fontWeight:700,color:"#374151",marginBottom:6}}>説明（任意）</label>
+            <textarea value={form.description} onChange={e=>setForm(p=>({...p,description:e.target.value}))} rows={3} placeholder="メニューの説明・備考"
+              style={{width:"100%",padding:"10px 12px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontFamily:"inherit",resize:"none"}}/>
+          </div>
+          {/* 表示状態 */}
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20,padding:"10px 14px",background:"#f8fafc",borderRadius:8}}>
+            <div onClick={()=>setForm(p=>({...p,active:!p.active}))}
+              style={{width:44,height:24,borderRadius:12,background:form.active?"#059669":"#d1d5db",cursor:"pointer",position:"relative",flexShrink:0}}>
+              <div style={{position:"absolute",top:2,left:form.active?20:2,width:20,height:20,borderRadius:"50%",background:"white",transition:"left .2s",boxShadow:"0 1px 4px rgba(0,0,0,.2)"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:13,fontWeight:700,color:"#374151"}}>{form.active?"有効（予約フォームに表示）":"無効（非表示）"}</div>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:10}}>
+            <button onClick={()=>setEditId(null)} style={{flex:1,padding:"11px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>キャンセル</button>
+            <button onClick={saveMenu} disabled={saving} style={{flex:2,padding:"11px",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:8,fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit",opacity:saving?0.7:1}}>
+              {saving?"保存中...":"💾 保存する"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ===== 一覧画面 =====
+  return(
+    <div style={{maxWidth:900,margin:"0 auto"}}>
+      {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#15803d",fontWeight:700,fontSize:13}}>{toast}</div>}
+
+      {/* ヘッダー */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:10}}>
+        <div style={{fontSize:16,fontWeight:800,color:"#1e3a5f"}}>メニュー・コース管理</div>
+        <button onClick={openNew} style={{padding:"9px 18px",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:8,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 6px rgba(5,150,105,.3)"}}>
+          + メニューを追加
+        </button>
+      </div>
+
+      {/* 検索＋カテゴリフィルタ */}
+      <div style={{background:"white",borderRadius:10,padding:"12px 14px",marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,.06)",border:"1px solid #f1f5f9"}}>
+        <input placeholder="メニュー名で検索" value={searchQ} onChange={e=>setSearchQ(e.target.value)}
+          style={{width:"100%",padding:"8px 12px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit",marginBottom:10}}/>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          <button onClick={()=>setSelCategory("all")} style={{padding:"5px 14px",borderRadius:20,border:"1.5px solid",borderColor:selCategory==="all"?"#1e3a5f":"#e2e8f0",background:selCategory==="all"?"#1e3a5f":"white",color:selCategory==="all"?"white":"#374151",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>すべて</button>
+          {CATEGORIES.map(c=>(
+            <button key={c} onClick={()=>setSelCategory(c)}
+              style={{padding:"5px 14px",borderRadius:20,border:"1.5px solid",borderColor:selCategory===c?CATEGORY_COLORS[c]:"#e2e8f0",background:selCategory===c?CATEGORY_COLORS[c]:"white",color:selCategory===c?"white":CATEGORY_COLORS[c],fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+              {c}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {loading?(
+        <div style={{textAlign:"center",padding:40,color:"#94a3b8"}}>読み込み中...</div>
+      ):(
+        /* カテゴリ別グループ表示 */
+        (selCategory==="all"?CATEGORIES:CATEGORIES.filter(c=>c===selCategory)).map(cat=>{
+          const items=grouped[cat]||[];
+          if(items.length===0&&selCategory==="all") return null;
+          return(
+            <div key={cat} style={{marginBottom:20}}>
+              {/* カテゴリヘッダー */}
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                <span style={{padding:"3px 12px",borderRadius:20,fontSize:12,fontWeight:800,background:CATEGORY_BG[cat],color:CATEGORY_COLORS[cat]}}>{cat}</span>
+                <div style={{flex:1,height:1,background:"#e2e8f0"}}/>
+                <span style={{fontSize:12,color:"#94a3b8",fontWeight:600}}>{items.length}件</span>
+              </div>
+
+              {items.length===0?(
+                <div style={{background:"white",borderRadius:10,padding:"20px",textAlign:"center",color:"#94a3b8",fontSize:13,border:"1px dashed #e2e8f0"}}>
+                  {cat}のメニューはありません
+                </div>
+              ):(
+                <div style={{background:"white",borderRadius:12,overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,.06)",border:"1px solid #f1f5f9"}}>
+                  {/* テーブルヘッダー */}
+                  <div style={{display:"grid",gridTemplateColumns:"2.5fr 1fr 1.5fr 0.8fr 1fr 1.5fr",background:"#f8fafc",borderBottom:"1px solid #e2e8f0"}}>
+                    {["メニュー名","時間","料金","状態","表示URL","操作"].map(h=>(
+                      <div key={h} style={{padding:"9px 12px",fontSize:11,fontWeight:700,color:"#64748b"}}>{h}</div>
+                    ))}
+                  </div>
+                  {items.map((menu,i)=>(
+                    <div key={menu.id} style={{display:"grid",gridTemplateColumns:"2.5fr 1fr 1.5fr 0.8fr 1fr 1.5fr",borderBottom:i<items.length-1?"1px solid #f1f5f9":"none",alignItems:"center",opacity:menu.active?1:0.6}}>
+                      {/* メニュー名 */}
+                      <div style={{padding:"12px"}}>
+                        <div style={{fontWeight:700,fontSize:13,color:"#1e293b",marginBottom:2}}>{menu.name}</div>
+                        {!menu.active&&<span style={{fontSize:10,fontWeight:700,color:"#ef4444",background:"#fee2e2",padding:"1px 6px",borderRadius:4}}>非表示</span>}
+                        {menu.description&&<div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>{menu.description}</div>}
+                      </div>
+                      {/* 時間 */}
+                      <div style={{padding:"12px",fontSize:13,color:"#374151"}}>
+                        {menu.duration>0?`${menu.duration}分`:"—"}
+                      </div>
+                      {/* 料金 */}
+                      <div style={{padding:"12px",fontSize:13,fontWeight:700,color:CATEGORY_COLORS[cat]}}>
+                        {priceText(menu)}
+                      </div>
+                      {/* 状態 */}
+                      <div style={{padding:"12px"}}>
+                        <div onClick={()=>toggleActive(menu)} style={{width:36,height:20,borderRadius:10,background:menu.active?"#059669":"#d1d5db",cursor:"pointer",position:"relative"}}>
+                          <div style={{position:"absolute",top:2,left:menu.active?16:2,width:16,height:16,borderRadius:"50%",background:"white",transition:"left .2s",boxShadow:"0 1px 3px rgba(0,0,0,.2)"}}/>
+                        </div>
+                      </div>
+                      {/* URLコピー */}
+                      <div style={{padding:"12px"}}>
+                        <button onClick={()=>{navigator.clipboard.writeText(`https://ando-seikotsu-ibaraki.vercel.app/booking.html`).then(()=>showToast("URLをコピーしました"));}}
+                          style={{padding:"4px 10px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>
+                          コピー
+                        </button>
+                      </div>
+                      {/* 操作 */}
+                      <div style={{padding:"12px",display:"flex",gap:6}}>
+                        <button onClick={()=>openEdit(menu)} style={{padding:"5px 10px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>編集</button>
+                        <button onClick={()=>deleteMenu(menu)} style={{padding:"5px 10px",background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",color:"#ef4444"}}>削除</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
 // ===== スタッフ管理パネル =====
 function StaffMgmtPanel({currentUser}){
   const DAYS_JP=["日","月","火","水","木","金","土"];
@@ -2344,13 +2613,14 @@ function Dashboard({user,onLogout}){
           {/* スタッフ・シフト管理（統合） */}
           {view==="staff_mgmt"&&<StaffMgmtPanel currentUser={user}/>}
 
+          {/* メニュー・コース管理 */}
+          {view==="menu_mgmt"&&<MenuMgmtPanel/>}
+
           {/* その他準備中ページ */}
-          {["business_hours","menu_mgmt","user_mgmt","settings"].includes(view)&&(()=>{
+          {["business_hours","user_mgmt","settings"].includes(view)&&(()=>{
             const labels={
-              staff_mgmt:{title:"スタッフ管理",desc:"スタッフの追加・編集・権限設定ができます。"},
               store_mgmt:{title:"店舗管理",desc:"店舗情報（院名・住所・電話番号など）の設定ができます。"},
               business_hours:{title:"営業時間・休憩",desc:"営業時間・定休日・休憩時間の設定ができます。"},
-              menu_mgmt:{title:"メニュー・コース管理",desc:"施術メニュー・回数券・フリーパスの設定ができます。"},
               user_mgmt:{title:"ユーザー管理",desc:"ログインアカウントの追加・編集・削除ができます。"},
               settings:{title:"各種設定",desc:"予約受付設定・LINE連携・通知設定などができます。"},
             };
