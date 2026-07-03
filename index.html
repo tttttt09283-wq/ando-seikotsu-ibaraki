@@ -1016,6 +1016,177 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
   );
 }
 
+// ===== 店舗管理パネル =====
+function StoreMgmtPanel(){
+  const [stores,setStores]=React.useState([]);
+  const [loading,setLoading]=React.useState(true);
+  const [editId,setEditId]=React.useState(null); // null=一覧, "new"=新規, number=編集
+  const [form,setForm]=React.useState({name:"",address:"",tel:"",email:"",memo:""});
+  const [saving,setSaving]=React.useState(false);
+  const [toast,setToast]=React.useState("");
+  const [searchQ,setSearchQ]=React.useState("");
+
+  React.useEffect(()=>{loadStores();},[]);
+
+  async function loadStores(){
+    setLoading(true);
+    try{
+      const data=await sb.select("stores","?order=id.asc");
+      setStores(Array.isArray(data)?data:[]);
+    }catch(e){console.error(e);}
+    setLoading(false);
+  }
+
+  function showToast(msg){setToast(msg);setTimeout(()=>setToast(""),2500);}
+
+  function openNew(){
+    setForm({name:"",address:"",tel:"",email:"",memo:""});
+    setEditId("new");
+  }
+
+  function openEdit(store){
+    setForm({name:store.name||"",address:store.address||"",tel:store.tel||"",email:store.email||"",memo:store.memo||""});
+    setEditId(store.id);
+  }
+
+  async function saveStore(){
+    if(!form.name.trim()){alert("店舗名を入力してください");return;}
+    setSaving(true);
+    try{
+      if(editId==="new"){
+        const result=await sb.insert("stores",{name:form.name,address:form.address,tel:form.tel,email:form.email,memo:form.memo,active:true});
+        if(Array.isArray(result)&&result.length>0) setStores(prev=>[...prev,result[0]]);
+        showToast("店舗を追加しました");
+      }else{
+        await sb.update("stores",editId,{name:form.name,address:form.address,tel:form.tel,email:form.email,memo:form.memo});
+        setStores(prev=>prev.map(s=>s.id===editId?{...s,...form}:s));
+        showToast("店舗情報を更新しました");
+      }
+      setEditId(null);
+      loadStores();
+    }catch(e){alert("保存に失敗しました："+e.message);}
+    setSaving(false);
+  }
+
+  async function toggleActive(store){
+    try{
+      await sb.update("stores",store.id,{active:!store.active});
+      setStores(prev=>prev.map(s=>s.id===store.id?{...s,active:!s.active}:s));
+      showToast(store.active?"店舗を無効にしました":"店舗を有効にしました");
+    }catch(e){alert("更新に失敗しました");}
+  }
+
+  const filtered=stores.filter(s=>!searchQ||(s.name&&s.name.includes(searchQ))||(s.address&&s.address.includes(searchQ)));
+
+  if(editId!==null){
+    return(
+      <div style={{maxWidth:600,margin:"0 auto"}}>
+        {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#15803d",fontWeight:700,fontSize:13}}>{toast}</div>}
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
+          <button onClick={()=>setEditId(null)} style={{background:"none",border:"none",cursor:"pointer",color:"#64748b",fontSize:13,display:"flex",alignItems:"center",gap:4,fontFamily:"inherit"}}>← 一覧に戻る</button>
+          <div style={{fontSize:16,fontWeight:800,color:"#1e3a5f"}}>{editId==="new"?"店舗を追加":"店舗情報を編集"}</div>
+        </div>
+        <div style={{background:"white",borderRadius:12,padding:"20px",boxShadow:"0 1px 4px rgba(0,0,0,.06)",border:"1px solid #f1f5f9"}}>
+          {[
+            {label:"店舗名 *",key:"name",placeholder:"例：あんど整骨院 香里園駅前院",type:"text"},
+            {label:"住所",key:"address",placeholder:"例：大阪府寝屋川市香里園駅前",type:"text"},
+            {label:"電話番号",key:"tel",placeholder:"例：072-000-0000",type:"tel"},
+            {label:"メールアドレス",key:"email",placeholder:"例：info@ando.jp",type:"email"},
+          ].map(f=>(
+            <div key={f.key} style={{marginBottom:16}}>
+              <label style={{display:"block",fontSize:12,fontWeight:700,color:"#374151",marginBottom:6}}>{f.label}</label>
+              <input type={f.type} value={form[f.key]} placeholder={f.placeholder}
+                onChange={e=>setForm(prev=>({...prev,[f.key]:e.target.value}))}
+                style={{width:"100%",padding:"10px 12px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontFamily:"inherit"}}/>
+            </div>
+          ))}
+          <div style={{marginBottom:20}}>
+            <label style={{display:"block",fontSize:12,fontWeight:700,color:"#374151",marginBottom:6}}>メモ</label>
+            <textarea value={form.memo} placeholder="運営会社・備考など" rows={3}
+              onChange={e=>setForm(prev=>({...prev,memo:e.target.value}))}
+              style={{width:"100%",padding:"10px 12px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontFamily:"inherit",resize:"none"}}/>
+          </div>
+          <div style={{display:"flex",gap:10}}>
+            <button onClick={()=>setEditId(null)} style={{flex:1,padding:"11px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>キャンセル</button>
+            <button onClick={saveStore} disabled={saving} style={{flex:2,padding:"11px",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:8,fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit",opacity:saving?0.7:1}}>
+              {saving?"保存中...":"💾 保存する"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return(
+    <div style={{maxWidth:800,margin:"0 auto"}}>
+      {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#15803d",fontWeight:700,fontSize:13}}>{toast}</div>}
+
+      {/* ヘッダー */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10}}>
+        <div style={{fontSize:16,fontWeight:800,color:"#1e3a5f"}}>店舗管理</div>
+        <button onClick={openNew} style={{padding:"9px 18px",background:"linear-gradient(135deg,#2563eb,#1d4ed8)",color:"white",border:"none",borderRadius:8,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 6px rgba(37,99,235,.3)"}}>
+          + 店舗を追加
+        </button>
+      </div>
+
+      {/* 検索 */}
+      <div style={{background:"white",borderRadius:10,padding:"12px 14px",marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,.06)",border:"1px solid #f1f5f9"}}>
+        <input placeholder="店舗名・住所で検索" value={searchQ} onChange={e=>setSearchQ(e.target.value)}
+          style={{width:"100%",padding:"8px 12px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
+      </div>
+
+      {/* 店舗一覧 */}
+      {loading?(
+        <div style={{textAlign:"center",padding:40,color:"#94a3b8"}}>読み込み中...</div>
+      ):filtered.length===0?(
+        <div style={{background:"white",borderRadius:12,padding:40,textAlign:"center",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
+          <div style={{fontSize:32,marginBottom:12}}>🏥</div>
+          <div style={{fontWeight:700,color:"#374151",marginBottom:6}}>店舗が登録されていません</div>
+          <div style={{fontSize:13,color:"#94a3b8",marginBottom:16}}>「店舗を追加」ボタンから登録してください</div>
+          <button onClick={openNew} style={{padding:"10px 20px",background:"#2563eb",color:"white",border:"none",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>+ 店舗を追加</button>
+        </div>
+      ):filtered.map(store=>(
+        <div key={store.id} style={{background:"white",borderRadius:12,marginBottom:10,boxShadow:"0 1px 4px rgba(0,0,0,.06)",border:"1px solid #f1f5f9",overflow:"hidden"}}>
+          {/* 店舗ヘッダー */}
+          <div style={{background:store.active?"linear-gradient(135deg,#1e3a5f,#2d6a9f)":"#9ca3af",padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <div style={{fontWeight:800,fontSize:15,color:"white"}}>{store.name}</div>
+            <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:12,background:store.active?"rgba(255,255,255,.2)":"rgba(0,0,0,.2)",color:"white"}}>
+              {store.active?"営業中":"無効"}
+            </span>
+          </div>
+          {/* 店舗詳細 */}
+          <div style={{padding:"14px 16px"}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:14,textAlign:"center"}}>
+              {[
+                {label:"コース",value:"—"},
+                {label:"スタッフ",value:String(5)},
+                {label:"今月予約",value:"—"},
+              ].map(item=>(
+                <div key={item.label} style={{background:"#f8fafc",borderRadius:8,padding:"10px 8px"}}>
+                  <div style={{fontSize:18,fontWeight:800,color:"#1e3a5f"}}>{item.value}</div>
+                  <div style={{fontSize:11,color:"#94a3b8",fontWeight:600}}>{item.label}</div>
+                </div>
+              ))}
+            </div>
+            {store.address&&<div style={{fontSize:13,color:"#64748b",marginBottom:10}}>📍 {store.address}</div>}
+            {store.tel&&<div style={{fontSize:13,color:"#64748b",marginBottom:10}}>📞 {store.tel}</div>}
+            {store.email&&<div style={{fontSize:13,color:"#64748b",marginBottom:10}}>✉️ {store.email}</div>}
+            {store.memo&&<div style={{fontSize:12,color:"#94a3b8",marginBottom:10}}>📝 {store.memo}</div>}
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>openEdit(store)} style={{flex:2,padding:"9px",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                詳細を見る / 編集
+              </button>
+              <button onClick={()=>toggleActive(store)} style={{flex:1,padding:"9px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",color:store.active?"#ef4444":"#059669"}}>
+                {store.active?"無効にする":"有効にする"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ===== 患者管理パネル =====
 function PatientsPanel({bookings,onHistory}){
   const [patientQ,setPatientQ]=React.useState("");
@@ -1848,7 +2019,11 @@ function Dashboard({user,onLogout}){
           {view==="shift"&&<ShiftPanel currentUser={user}/>}
 
           {/* 新メニュー項目（準備中プレースホルダー） */}
-          {["staff_mgmt","store_mgmt","business_hours","menu_mgmt","user_mgmt","settings"].includes(view)&&(()=>{
+          {/* 店舗管理 */}
+          {view==="store_mgmt"&&<StoreMgmtPanel/>}
+
+          {/* その他準備中ページ */}
+          {["staff_mgmt","business_hours","menu_mgmt","user_mgmt","settings"].includes(view)&&(()=>{
             const labels={
               staff_mgmt:{title:"スタッフ管理",desc:"スタッフの追加・編集・権限設定ができます。"},
               store_mgmt:{title:"店舗管理",desc:"店舗情報（院名・住所・電話番号など）の設定ができます。"},
