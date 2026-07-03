@@ -1017,14 +1017,14 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
 }
 
 // ===== スタッフ管理パネル =====
-function StaffMgmtPanel(){
+function StaffMgmtPanel({currentUser}){
   const DAYS_JP=["日","月","火","水","木","金","土"];
   const DAY_COLORS=["#ef4444","#374151","#374151","#374151","#374151","#374151","#7c3aed"];
   const DEFAULT_SHIFTS=DAYS_JP.map((_,i)=>({day:i,is_working:i!==0,start_time:"09:00",end_time:"19:00"}));
 
   const [mode,setMode]=React.useState("list"); // "list" | "shift"
-  const [selStaff,setSelStaff]=React.useState(null);
-  const [shiftTab,setShiftTab]=React.useState("weekly"); // "weekly" | "individual"
+  const [selStaffId,setSelStaffId]=React.useState(null);
+  const [shiftTab,setShiftTab]=React.useState("weekly"); // "weekly" | "monthly"
   const [weeklyShifts,setWeeklyShifts]=React.useState(DEFAULT_SHIFTS);
   const [loadingShift,setLoadingShift]=React.useState(false);
   const [saving,setSaving]=React.useState(false);
@@ -1033,12 +1033,70 @@ function StaffMgmtPanel(){
   const [bulkStart,setBulkStart]=React.useState("09:00");
   const [bulkEnd,setBulkEnd]=React.useState("19:00");
 
+  // 月次シフト用
+  const today=new Date();
+  const todayStr=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+  const [selMonth,setSelMonth]=React.useState(todayStr.slice(0,7));
+  const [monthShifts,setMonthShifts]=React.useState({});
+  const [monthHolidays,setMonthHolidays]=React.useState({});
+  const [editingCell,setEditingCell]=React.useState(null);
+  const SHIFT_TYPES=["出勤","休み","有休","振替","祝振替"];
+  const SHIFT_COLORS={"出勤":"#2563eb","休み":"#9ca3af","有休":"#059669","振替":"#d97706","祝振替":"#7c3aed"};
+  const SHIFT_ABBR={"出勤":"勤","休み":"休","有休":"有","振替":"振","祝振替":"祝"};
+
+  const selStaff=STAFF_ACCOUNTS.find(s=>s.id===selStaffId)||null;
+
   function showToast(msg){setToast(msg);setTimeout(()=>setToast(""),2500);}
 
+  // 月次シフトのロード
+  React.useEffect(()=>{
+    try{
+      const s=localStorage.getItem(`shifts_${selMonth}`);
+      if(s) setMonthShifts(JSON.parse(s));
+      else setMonthShifts({});
+      const h=localStorage.getItem("holiday_balance");
+      if(h) setMonthHolidays(JSON.parse(h));
+      else{const init={};STAFF_ACCOUNTS.forEach(s=>{init[s.id]={有休残:10,振替残:0,祝振替残:0};});setMonthHolidays(init);}
+    }catch{}
+  },[selMonth,mode,shiftTab]);
+
+  function saveMonthShifts(){
+    try{
+      localStorage.setItem(`shifts_${selMonth}`,JSON.stringify(monthShifts));
+      localStorage.setItem("holiday_balance",JSON.stringify(monthHolidays));
+      showToast("保存しました");
+    }catch{showToast("エラー");}
+  }
+
+  function setShiftCell(staffId,date,val){
+    const key=`${staffId}_${date}`;
+    const cur=monthShifts[key]||"出勤";
+    const newH={...monthHolidays};
+    if(!newH[staffId]) newH[staffId]={有休残:10,振替残:0,祝振替残:0};
+    if(cur==="有休") newH[staffId].有休残=(newH[staffId].有休残||0)+1;
+    if(cur==="振替") newH[staffId].振替残=(newH[staffId].振替残||0)+1;
+    if(cur==="祝振替") newH[staffId].祝振替残=(newH[staffId].祝振替残||0)+1;
+    if(val==="有休") newH[staffId].有休残=Math.max(0,(newH[staffId].有休残||0)-1);
+    if(val==="振替") newH[staffId].振替残=Math.max(0,(newH[staffId].振替残||0)-1);
+    if(val==="祝振替") newH[staffId].祝振替残=Math.max(0,(newH[staffId].祝振替残||0)-1);
+    setMonthHolidays(newH);
+    setMonthShifts(prev=>({...prev,[key]:val}));
+    setEditingCell(null);
+  }
+
+  // 月の日付生成
+  const [y,m]=selMonth.split("-").map(Number);
+  const daysInMonth=new Date(y,m,0).getDate();
+  const dates=Array.from({length:daysInMonth},(_,i)=>{
+    const d=new Date(y,m-1,i+1);
+    return{date:`${y}-${String(m).padStart(2,"0")}-${String(i+1).padStart(2,"0")}`,day:d.getDay(),label:i+1};
+  });
+
   async function openShift(staff){
-    setSelStaff(staff);
+    setSelStaffId(staff.id);
     setLoadingShift(true);
     setMode("shift");
+    setShiftTab("weekly");
     try{
       const data=await sb.select("staff_weekly_shifts",`?staff_id=eq.${staff.id}&order=day_of_week.asc`);
       if(Array.isArray(data)&&data.length>0){
@@ -1054,31 +1112,18 @@ function StaffMgmtPanel(){
     setLoadingShift(false);
   }
 
-  function updateShift(day,key,val){
-    setWeeklyShifts(prev=>prev.map(s=>s.day===day?{...s,[key]:val}:s));
-  }
+  function updateShift(day,key,val){setWeeklyShifts(prev=>prev.map(s=>s.day===day?{...s,[key]:val}:s));}
 
   async function saveWeeklyShifts(){
     if(!selStaff) return;
     setSaving(true);
     try{
+      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
       for(const shift of weeklyShifts){
-        // upsert（insert or update）
         await fetch(`${SUPABASE_URL}/rest/v1/staff_weekly_shifts`,{
           method:"POST",
-          headers:{
-            apikey:SUPABASE_ANON_KEY,
-            Authorization:`Bearer ${(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY}`,
-            "Content-Type":"application/json",
-            Prefer:"resolution=merge-duplicates",
-          },
-          body:JSON.stringify({
-            staff_id:selStaff.id,
-            day_of_week:shift.day,
-            is_working:shift.is_working,
-            start_time:shift.start_time,
-            end_time:shift.end_time,
-          })
+          headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates"},
+          body:JSON.stringify({staff_id:selStaff.id,day_of_week:shift.day,is_working:shift.is_working,start_time:shift.start_time,end_time:shift.end_time})
         });
       }
       showToast(`${selStaff.name}のシフトを保存しました`);
@@ -1095,86 +1140,68 @@ function StaffMgmtPanel(){
   // ===== シフト設定画面 =====
   if(mode==="shift"&&selStaff){
     return(
-      <div style={{maxWidth:700,margin:"0 auto"}}>
+      <div style={{maxWidth:900,margin:"0 auto"}}>
         {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#15803d",fontWeight:700,fontSize:13}}>{toast}</div>}
 
-        {/* 全スタッフ一括シフト設定（折りたたみ） */}
+        {/* 全スタッフ一括（折りたたみ） */}
         <div style={{background:"white",borderRadius:12,marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,.06)",border:"1px solid #f1f5f9",overflow:"hidden"}}>
           <button onClick={()=>setBulkOpen(v=>!v)} style={{width:"100%",padding:"14px 16px",background:"none",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:10,textAlign:"left",fontFamily:"inherit"}}>
-            <span style={{fontSize:13,fontWeight:700,color:"#374151"}}>▶ 全スタッフ一括シフト設定</span>
-            <span style={{fontSize:12,color:"#94a3b8"}}>この店舗の全スタッフに同じ週固定シフトを一括適用します</span>
+            <span style={{fontSize:12,color:"#374151"}}>▶ 全スタッフ一括シフト設定</span>
+            <span style={{fontSize:11,color:"#94a3b8"}}>全スタッフに同じ週固定シフトを一括適用</span>
           </button>
           {bulkOpen&&(
             <div style={{padding:"0 16px 16px",borderTop:"1px solid #f1f5f9"}}>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,margin:"14px 0"}}>
-                <div>
-                  <label style={{display:"block",fontSize:12,fontWeight:700,color:"#374151",marginBottom:6}}>開始時間</label>
-                  <input type="time" value={bulkStart} onChange={e=>setBulkStart(e.target.value)}
-                    style={{width:"100%",padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontFamily:"inherit"}}/>
-                </div>
-                <div>
-                  <label style={{display:"block",fontSize:12,fontWeight:700,color:"#374151",marginBottom:6}}>終了時間</label>
-                  <input type="time" value={bulkEnd} onChange={e=>setBulkEnd(e.target.value)}
-                    style={{width:"100%",padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontFamily:"inherit"}}/>
-                </div>
+                {[{label:"開始時間",val:bulkStart,set:setBulkStart},{label:"終了時間",val:bulkEnd,set:setBulkEnd}].map(f=>(
+                  <div key={f.label}><label style={{display:"block",fontSize:12,fontWeight:700,color:"#374151",marginBottom:6}}>{f.label}</label>
+                  <input type="time" value={f.val} onChange={e=>f.set(e.target.value)} style={{width:"100%",padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontFamily:"inherit"}}/></div>
+                ))}
               </div>
-              <button onClick={applyBulk} style={{width:"100%",padding:"10px",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:8,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
-                一括適用する
-              </button>
+              <button onClick={applyBulk} style={{width:"100%",padding:"10px",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:8,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>一括適用する</button>
             </div>
           )}
         </div>
 
-        {/* スタッフ名＋シフト設定 */}
+        {/* スタッフ名＋タブ */}
         <div style={{background:"white",borderRadius:12,boxShadow:"0 1px 4px rgba(0,0,0,.06)",border:"1px solid #f1f5f9",overflow:"hidden"}}>
           <div style={{padding:"16px",borderBottom:"1px solid #f1f5f9"}}>
             <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
               <div style={{width:36,height:36,borderRadius:10,background:selStaff.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:15}}>{selStaff.initial}</div>
               <div style={{fontSize:16,fontWeight:800,color:"#1e3a5f"}}>{selStaff.name} のシフト設定</div>
             </div>
-            {/* タブ */}
             <div style={{display:"flex",gap:8}}>
-              {[{id:"weekly",label:"週固定シフト"},{id:"individual",label:"日別個別設定"}].map(t=>(
-                <button key={t.id} onClick={()=>setShiftTab(t.id)} style={{padding:"8px 16px",borderRadius:8,fontSize:13,fontWeight:700,border:"1.5px solid",borderColor:shiftTab===t.id?"#059669":"#e2e8f0",background:shiftTab===t.id?"#059669":"white",color:shiftTab===t.id?"white":"#374151",cursor:"pointer",fontFamily:"inherit"}}>
-                  {t.label}
-                </button>
+              {[{id:"weekly",label:"週固定シフト"},{id:"monthly",label:"月次シフト表"}].map(t=>(
+                <button key={t.id} onClick={()=>setShiftTab(t.id)} style={{padding:"8px 16px",borderRadius:8,fontSize:13,fontWeight:700,border:"1.5px solid",borderColor:shiftTab===t.id?"#059669":"#e2e8f0",background:shiftTab===t.id?"#059669":"white",color:shiftTab===t.id?"white":"#374151",cursor:"pointer",fontFamily:"inherit"}}>{t.label}</button>
               ))}
             </div>
           </div>
 
+          {/* 週固定シフト */}
           {shiftTab==="weekly"&&(
             <div style={{padding:"16px"}}>
-              <div style={{fontSize:12,color:"#64748b",marginBottom:16}}>毎週繰り返す基本シフトを設定します。個別設定がある日はそちらが優先されます。</div>
-              {loadingShift?(
-                <div style={{textAlign:"center",padding:24,color:"#94a3b8"}}>読み込み中...</div>
-              ):(
+              <div style={{fontSize:12,color:"#64748b",marginBottom:16}}>毎週繰り返す基本シフトを設定します。月次シフト表で個別調整もできます。</div>
+              {loadingShift?<div style={{textAlign:"center",padding:24,color:"#94a3b8"}}>読み込み中...</div>:(
                 <table style={{width:"100%",borderCollapse:"collapse"}}>
                   <thead>
                     <tr style={{background:"#f8fafc"}}>
-                      {["曜日","出勤","開始","終了"].map(h=>(
-                        <th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:12,fontWeight:700,color:"#64748b",borderBottom:"1px solid #e2e8f0"}}>{h}</th>
-                      ))}
+                      {["曜日","出勤","開始","終了"].map(h=>(<th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:12,fontWeight:700,color:"#64748b",borderBottom:"1px solid #e2e8f0"}}>{h}</th>))}
                     </tr>
                   </thead>
                   <tbody>
                     {weeklyShifts.map(shift=>(
                       <tr key={shift.day} style={{borderBottom:"1px solid #f1f5f9"}}>
-                        {/* 曜日 */}
                         <td style={{padding:"14px",fontWeight:800,fontSize:15,color:DAY_COLORS[shift.day],width:50}}>{DAYS_JP[shift.day]}</td>
-                        {/* 出勤トグル */}
                         <td style={{padding:"14px",width:80}}>
                           <div onClick={()=>updateShift(shift.day,"is_working",!shift.is_working)}
                             style={{width:44,height:24,borderRadius:12,background:shift.is_working?"#059669":"#d1d5db",cursor:"pointer",position:"relative",transition:"background .2s"}}>
                             <div style={{position:"absolute",top:2,left:shift.is_working?20:2,width:20,height:20,borderRadius:"50%",background:"white",transition:"left .2s",boxShadow:"0 1px 4px rgba(0,0,0,.2)"}}/>
                           </div>
                         </td>
-                        {/* 開始時間 */}
                         <td style={{padding:"14px"}}>
                           <input type="time" value={shift.start_time} disabled={!shift.is_working}
                             onChange={e=>updateShift(shift.day,"start_time",e.target.value)}
                             style={{padding:"8px 10px",border:"1.5px solid",borderColor:shift.is_working?"#e2e8f0":"#f1f5f9",borderRadius:8,fontSize:14,fontFamily:"inherit",background:shift.is_working?"white":"#f8fafc",color:shift.is_working?"#374151":"#d1d5db",width:130}}/>
                         </td>
-                        {/* 終了時間 */}
                         <td style={{padding:"14px"}}>
                           <input type="time" value={shift.end_time} disabled={!shift.is_working}
                             onChange={e=>updateShift(shift.day,"end_time",e.target.value)}
@@ -1186,24 +1213,89 @@ function StaffMgmtPanel(){
                 </table>
               )}
               <div style={{display:"flex",gap:10,marginTop:20}}>
-                <button onClick={()=>{setMode("list");setSelStaff(null);}} style={{flex:1,padding:"11px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>キャンセル</button>
-                <button onClick={saveWeeklyShifts} disabled={saving} style={{flex:2,padding:"11px",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:8,fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit",opacity:saving?0.7:1}}>
-                  {saving?"保存中...":"保存"}
-                </button>
+                <button onClick={()=>{setMode("list");setSelStaffId(null);}} style={{flex:1,padding:"11px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>キャンセル</button>
+                <button onClick={saveWeeklyShifts} disabled={saving} style={{flex:2,padding:"11px",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:8,fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit",opacity:saving?0.7:1}}>{saving?"保存中...":"保存"}</button>
               </div>
             </div>
           )}
 
-          {shiftTab==="individual"&&(
+          {/* 月次シフト表 */}
+          {shiftTab==="monthly"&&(
             <div style={{padding:"16px"}}>
-              <div style={{fontSize:12,color:"#64748b",marginBottom:16}}>特定の日だけシフトを個別設定できます（週固定シフトより優先されます）。</div>
-              <div style={{textAlign:"center",padding:32,color:"#94a3b8"}}>
-                <div style={{fontSize:32,marginBottom:8}}>📅</div>
-                <div style={{fontWeight:700,marginBottom:4}}>日別個別設定</div>
-                <div style={{fontSize:12}}>既存の「シフト管理」メニューから日別の出勤・休み設定ができます。</div>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,flexWrap:"wrap"}}>
+                <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)}
+                  style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontWeight:700}}/>
+                <button onClick={saveMonthShifts} className="btn btn-primary btn-sm" style={{marginLeft:"auto"}}>💾 保存する</button>
               </div>
-              <div style={{display:"flex",gap:10,marginTop:8}}>
-                <button onClick={()=>{setMode("list");setSelStaff(null);}} style={{flex:1,padding:"11px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>戻る</button>
+              <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>セルをクリックするとシフト種別が切り替わります。</div>
+              {/* 凡例 */}
+              <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>
+                {SHIFT_TYPES.map(t=>(
+                  <span key={t} style={{display:"inline-flex",alignItems:"center",gap:3,fontSize:11,fontWeight:700}}>
+                    <span style={{width:10,height:10,borderRadius:2,background:SHIFT_COLORS[t],display:"inline-block"}}></span>{t}
+                  </span>
+                ))}
+              </div>
+              <div style={{overflowX:"auto"}}>
+                <table style={{borderCollapse:"collapse",fontSize:11}}>
+                  <thead>
+                    <tr style={{background:"#f8fafc"}}>
+                      <th style={{padding:"6px 12px",textAlign:"left",fontWeight:700,color:"#64748b",borderBottom:"2px solid #e2e8f0",minWidth:80}}>スタッフ</th>
+                      {dates.map(({date,day,label})=>(
+                        <th key={date} style={{padding:"4px 2px",textAlign:"center",fontWeight:700,borderBottom:"2px solid #e2e8f0",minWidth:32,
+                          color:day===0?"#ef4444":day===6?"#7c3aed":"#374151",
+                          background:day===0?"#fff1f2":day===6?"#faf5ff":"#f8fafc"}}>
+                          <div>{label}</div>
+                          <div style={{fontSize:9,fontWeight:600}}>{"日月火水木金土"[day]}</div>
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {/* 個人シフトのみ表示 */}
+                    {[selStaff].map(s=>{
+                      const bal=monthHolidays[s.id]||{有休残:10,振替残:0,祝振替残:0};
+                      return(
+                        <tr key={s.id}>
+                          <td style={{padding:"6px 12px",borderBottom:"1px solid #f1f5f9",fontWeight:700,fontSize:12,background:"white"}}>
+                            <div style={{display:"flex",alignItems:"center",gap:5}}>
+                              <div style={{width:20,height:20,borderRadius:5,background:s.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:10}}>{s.initial}</div>
+                              {s.name.replace(" 先生","")}
+                            </div>
+                          </td>
+                          {dates.map(({date,day})=>{
+                            const key=`${s.id}_${date}`;
+                            const val=monthShifts[key]||"出勤";
+                            const color=SHIFT_COLORS[val];
+                            const isEditing=editingCell===key;
+                            return(
+                              <td key={date} style={{padding:2,textAlign:"center",borderBottom:"1px solid #f1f5f9",borderRight:"1px solid #f1f5f9",
+                                background:day===0?"#fff8f8":day===6?"#faf8ff":"white"}}>
+                                {isEditing?(
+                                  <select autoFocus value={val}
+                                    onChange={e=>setShiftCell(s.id,date,e.target.value)}
+                                    onBlur={()=>setEditingCell(null)}
+                                    style={{width:52,fontSize:10,padding:"2px",borderRadius:4,border:`1.5px solid ${color}`,fontFamily:"inherit",background:"white",cursor:"pointer"}}>
+                                    {SHIFT_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+                                  </select>
+                                ):(
+                                  <div onClick={()=>setEditingCell(key)}
+                                    style={{width:28,height:26,borderRadius:6,background:color,color:"white",fontSize:10,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",margin:"auto",boxShadow:`0 1px 3px ${color}66`}}>
+                                    {SHIFT_ABBR[val]}
+                                  </div>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{marginTop:16,display:"flex",gap:10}}>
+                <button onClick={()=>setShiftTab("weekly")} style={{padding:"9px 16px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>← 週固定に戻る</button>
+                <button onClick={()=>{setMode("list");setSelStaffId(null);}} style={{padding:"9px 16px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>一覧に戻る</button>
               </div>
             </div>
           )}
@@ -1216,44 +1308,29 @@ function StaffMgmtPanel(){
   return(
     <div style={{maxWidth:800,margin:"0 auto"}}>
       {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#15803d",fontWeight:700,fontSize:13}}>{toast}</div>}
-
       <div style={{background:"white",borderRadius:12,boxShadow:"0 1px 4px rgba(0,0,0,.06)",border:"1px solid #f1f5f9",overflow:"hidden"}}>
-        {/* ヘッダー */}
         <div style={{padding:"16px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid #f1f5f9"}}>
           <div style={{fontSize:15,fontWeight:800,color:"#1e3a5f"}}>スタッフ一覧</div>
-          <button style={{padding:"8px 16px",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:8,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
-            + スタッフ追加
-          </button>
+          <button style={{padding:"8px 16px",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:8,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>+ スタッフ追加</button>
         </div>
-
         {/* テーブルヘッダー */}
-        <div style={{display:"grid",gridTemplateColumns:"2fr 2fr 1fr 1fr 1fr 1fr",gap:0,background:"#f8fafc",borderBottom:"1px solid #e2e8f0"}}>
-          {["名前","店舗","役職","状態","シフト","操作"].map(h=>(
-            <div key={h} style={{padding:"10px 14px",fontSize:12,fontWeight:700,color:"#64748b"}}>{h}</div>
-          ))}
+        <div style={{display:"grid",gridTemplateColumns:"2fr 2fr 1fr 1fr 1fr 1fr",background:"#f8fafc",borderBottom:"1px solid #e2e8f0"}}>
+          {["名前","店舗","役職","状態","シフト","操作"].map(h=>(<div key={h} style={{padding:"10px 14px",fontSize:12,fontWeight:700,color:"#64748b"}}>{h}</div>))}
         </div>
-
-        {/* スタッフ行 */}
         {STAFF_ACCOUNTS.map(s=>(
-          <div key={s.id} style={{display:"grid",gridTemplateColumns:"2fr 2fr 1fr 1fr 1fr 1fr",gap:0,borderBottom:"1px solid #f1f5f9",alignItems:"center"}}>
+          <div key={s.id} style={{display:"grid",gridTemplateColumns:"2fr 2fr 1fr 1fr 1fr 1fr",borderBottom:"1px solid #f1f5f9",alignItems:"center"}}>
             <div style={{padding:"14px",display:"flex",alignItems:"center",gap:10}}>
               <div style={{width:32,height:32,borderRadius:8,background:s.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:13,flexShrink:0}}>{s.initial}</div>
               <span style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{s.name}</span>
             </div>
             <div style={{padding:"14px",fontSize:13,color:"#64748b"}}>あんど整骨院</div>
             <div style={{padding:"14px",fontSize:13,color:"#64748b"}}>{s.role==="admin"?"管理者":"スタッフ"}</div>
+            <div style={{padding:"14px"}}><span style={{display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:12,fontWeight:700,background:"#dcfce7",color:"#15803d"}}>有効</span></div>
             <div style={{padding:"14px"}}>
-              <span style={{display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:12,fontWeight:700,background:"#dcfce7",color:"#15803d"}}>有効</span>
+              <button onClick={()=>openShift(s)} style={{padding:"6px 12px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>シフト設定</button>
             </div>
             <div style={{padding:"14px"}}>
-              <button onClick={()=>openShift(s)} style={{padding:"6px 12px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>
-                シフト設定
-              </button>
-            </div>
-            <div style={{padding:"14px"}}>
-              <button style={{padding:"6px 12px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>
-                編集
-              </button>
+              <button style={{padding:"6px 12px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>編集</button>
             </div>
           </div>
         ))}
@@ -1261,7 +1338,6 @@ function StaffMgmtPanel(){
     </div>
   );
 }
-
 // ===== 店舗管理パネル =====
 function StoreMgmtPanel(){
   const [stores,setStores]=React.useState([]);
@@ -1993,8 +2069,7 @@ function Dashboard({user,onLogout}){
     {id:"stats",label:"予約分析・サマリー",special:""},
     // スタッフ・シフト
     {section:"スタッフ"},
-    {id:"shift",label:"シフト管理",special:""},
-    {id:"staff_mgmt",label:"スタッフ管理",special:""},
+    {id:"staff_mgmt",label:"スタッフ・シフト管理",special:""},
     // 店舗設定
     {section:"店舗設定"},
     {id:"store_mgmt",label:"店舗管理",special:""},
@@ -2262,14 +2337,12 @@ function Dashboard({user,onLogout}){
 
           {/* サマリー */}
           {view==="stats"&&<StatsPanel bookings={bookings} payments={payments} todayStr={todayStr}/>}
-          {view==="shift"&&<ShiftPanel currentUser={user}/>}
 
-          {/* 新メニュー項目（準備中プレースホルダー） */}
           {/* 店舗管理 */}
           {view==="store_mgmt"&&<StoreMgmtPanel/>}
 
-          {/* スタッフ管理 */}
-          {view==="staff_mgmt"&&<StaffMgmtPanel/>}
+          {/* スタッフ・シフト管理（統合） */}
+          {view==="staff_mgmt"&&<StaffMgmtPanel currentUser={user}/>}
 
           {/* その他準備中ページ */}
           {["business_hours","menu_mgmt","user_mgmt","settings"].includes(view)&&(()=>{
