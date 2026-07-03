@@ -580,27 +580,178 @@ function StatsPanel({bookings,payments,todayStr}){
           </div>
         </div>
       )}
-      {tab==="monthly"&&(
-        <div>
-          <div style={{marginBottom:14}}><input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)} style={{padding:"8px 12px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontWeight:700}}/></div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16}}>
-            {[{label:"来院数",value:`${monthBookings.length}件`,color:"#2563eb"},{label:"会計件数",value:`${monthPayments.length}件`,color:"#059669"},{label:"月計売上",value:fmt(monthTotal),color:"#d97706"}].map(item=>(<div key={item.label} className="stat-card" style={{borderTopColor:item.color,padding:14,textAlign:"center"}}><div style={{fontSize:18,fontWeight:800,color:item.color}}>{item.value}</div><div style={{fontSize:11,color:"#94a3b8",fontWeight:600,marginTop:2}}>{item.label}</div></div>))}
-          </div>
-          <div className="card" style={{marginBottom:12}}>
-            <div style={{padding:"12px 16px"}}>
-              <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:10}}>月計内訳</div>
-              {[{label:"保険窓口負担計",val:monthIns,color:"#2563eb"},{label:"自費売上計",val:monthJifee,color:"#059669"},{label:"月計合計",val:monthTotal,color:"#d97706",bold:true}].map(item=>(<div key={item.label} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #f1f5f9"}}><span style={{fontSize:13,color:"#374151",fontWeight:item.bold?800:600}}>{item.label}</span><span style={{fontSize:item.bold?20:14,fontWeight:800,color:item.color}}>{fmt(item.val)}</span></div>))}
+      {tab==="monthly"&&(()=>{
+        // ===== 指標計算 =====
+        const monthPays=monthPayments;
+        const monthBks=monthBookings;
+
+        // 売上
+        const totalSales=monthPays.reduce((s,p)=>s+(p.total_amount||0),0);
+        const insSales=monthPays.reduce((s,p)=>s+(p.insurance_amount||0),0);
+        const jifeeSales=monthPays.reduce((s,p)=>s+(p.jifee_amount||0),0);
+
+        // 来院患者（ユニーク）
+        const uniquePatients=[...new Set(monthBks.map(b=>b.patient_name))];
+        const totalUniqueCount=uniquePatients.length;
+
+        // 全期間の来院データ（新規・再訪・継続・LTV計算用）
+        const allPatientMap={};
+        bookings.forEach(b=>{
+          if(!allPatientMap[b.patient_name]) allPatientMap[b.patient_name]=[];
+          allPatientMap[b.patient_name].push(b.date);
+        });
+
+        // 今月の来院区分
+        let newCount=0,revisitCount=0,continuedCount=0;
+        uniquePatients.forEach(name=>{
+          const allDates=(allPatientMap[name]||[]).sort();
+          const monthDates=monthBks.filter(b=>b.patient_name===name).map(b=>b.date).sort();
+          const firstEver=allDates[0];
+          const isNewThisMonth=firstEver&&firstEver.startsWith(selMonth);
+          if(isNewThisMonth) newCount++;
+          else if(monthDates.length>=3) continuedCount++;
+          else revisitCount++;
+        });
+
+        // 平均通院回数（今月の来院患者の全期間累計）
+        const totalVisitSum=uniquePatients.reduce((s,name)=>{
+          return s+(allPatientMap[name]||[]).length;
+        },0);
+        const avgVisit=totalUniqueCount>0?(totalVisitSum/totalUniqueCount).toFixed(1):"0";
+
+        // 総来院数（今月の予約件数）
+        const totalVisits=monthBks.length;
+
+        // 単価計算
+        const paidCount=monthPays.length;
+        const allUnitPrice=paidCount>0?Math.round(totalSales/paidCount):0; // 全体単価
+        const windowUnitPrice=paidCount>0?Math.round(insSales/paidCount):0; // 窓口単価
+        const newPayments=monthPays.filter(p=>{
+          const name=p.patient_name;
+          const firstDate=(allPatientMap[name]||[]).sort()[0];
+          return firstDate&&firstDate.startsWith(selMonth);
+        });
+        const newUnitPrice=newPayments.length>0?Math.round(newPayments.reduce((s,p)=>s+(p.total_amount||0),0)/newPayments.length):0;
+
+        // LTV（月計売上 ÷ ユニーク来院患者数）
+        const ltv=totalUniqueCount>0?Math.round(totalSales/totalUniqueCount):0;
+
+        // 離反（今月来院なし、かつ最終来院が30日以上前）
+        const allUniquePatients=[...new Set(bookings.map(b=>b.patient_name))];
+        const cutoff=new Date();cutoff.setDate(cutoff.getDate()-30);
+        const cutoffStr=cutoff.toISOString().split("T")[0];
+        const churned=allUniquePatients.filter(name=>{
+          const lastDate=(allPatientMap[name]||[]).sort().slice(-1)[0];
+          const visitedThisMonth=monthBks.some(b=>b.patient_name===name);
+          return !visitedThisMonth&&lastDate&&lastDate<cutoffStr;
+        });
+        const churnCount=churned.length;
+        const churnRate=allUniquePatients.length>0?((churnCount/allUniquePatients.length)*100).toFixed(1):"0";
+
+        return(
+          <div>
+            <div style={{marginBottom:14}}>
+              <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)}
+                style={{padding:"8px 12px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontWeight:700}}/>
+            </div>
+
+            {/* 売上サマリー */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:12}}>
+              {[{label:"月計売上",value:fmt(totalSales),color:"#d97706"},{label:"保険窓口計",value:fmt(insSales),color:"#2563eb"},{label:"自費売上計",value:fmt(jifeeSales),color:"#059669"}].map(item=>(
+                <div key={item.label} className="stat-card" style={{borderTopColor:item.color,padding:12,textAlign:"center"}}>
+                  <div style={{fontSize:16,fontWeight:800,color:item.color}}>{item.value}</div>
+                  <div style={{fontSize:10,color:"#94a3b8",fontWeight:600,marginTop:2}}>{item.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* 単価・LTV */}
+            <div className="card" style={{marginBottom:12}}>
+              <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>💰 単価・LTV</div>
+              <div style={{padding:"12px 16px"}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  {[
+                    {label:"全体単価",value:fmt(allUnitPrice),sub:"会計1件あたり",color:"#1e3a5f"},
+                    {label:"窓口単価",value:fmt(windowUnitPrice),sub:"保険窓口1件あたり",color:"#2563eb"},
+                    {label:"新規単価",value:fmt(newUnitPrice),sub:"新患1件あたり",color:"#059669"},
+                    {label:"LTV（月間）",value:fmt(ltv),sub:"売上÷ユニーク患者数",color:"#d97706"},
+                  ].map(item=>(
+                    <div key={item.label} style={{background:"#f8fafc",borderRadius:10,padding:"12px 14px",borderLeft:`3px solid ${item.color}`}}>
+                      <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:4}}>{item.label}</div>
+                      <div style={{fontSize:20,fontWeight:800,color:item.color}}>{item.value}</div>
+                      <div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>{item.sub}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* 来院数 */}
+            <div className="card" style={{marginBottom:12}}>
+              <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>👥 来院数</div>
+              <div style={{padding:"12px 16px"}}>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:8}}>
+                  {[
+                    {label:"総人数",value:totalUniqueCount,sub:"ユニーク患者",color:"#1e3a5f"},
+                    {label:"新規来院",value:newCount,sub:"今月初来院",color:"#059669"},
+                    {label:"再訪来院",value:revisitCount,sub:"2回目",color:"#2563eb"},
+                  ].map(item=>(
+                    <div key={item.label} style={{background:"#f8fafc",borderRadius:10,padding:"10px 8px",textAlign:"center"}}>
+                      <div style={{fontSize:22,fontWeight:800,color:item.color}}>{item.value}</div>
+                      <div style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>{item.label}</div>
+                      <div style={{fontSize:9,color:"#cbd5e1"}}>{item.sub}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+                  {[
+                    {label:"継続来院",value:continuedCount,sub:"3回目以上",color:"#7c3aed"},
+                    {label:"平均通院回数",value:avgVisit+"回",sub:"全期間累計",color:"#d97706"},
+                    {label:"総来院数",value:totalVisits,sub:"予約件数",color:"#0891b2"},
+                  ].map(item=>(
+                    <div key={item.label} style={{background:"#f8fafc",borderRadius:10,padding:"10px 8px",textAlign:"center"}}>
+                      <div style={{fontSize:22,fontWeight:800,color:item.color}}>{item.value}</div>
+                      <div style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>{item.label}</div>
+                      <div style={{fontSize:9,color:"#cbd5e1"}}>{item.sub}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* 離反 */}
+            <div className="card" style={{marginBottom:12}}>
+              <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>⚠️ 離反</div>
+              <div style={{padding:"12px 16px"}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <div style={{background:"#fef2f2",borderRadius:10,padding:"12px 14px",borderLeft:"3px solid #ef4444",textAlign:"center"}}>
+                    <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:4}}>離反数</div>
+                    <div style={{fontSize:28,fontWeight:800,color:"#ef4444"}}>{churnCount}</div>
+                    <div style={{fontSize:10,color:"#94a3b8"}}>30日以上未来院</div>
+                  </div>
+                  <div style={{background:"#fef2f2",borderRadius:10,padding:"12px 14px",borderLeft:"3px solid #f87171",textAlign:"center"}}>
+                    <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:4}}>離反率</div>
+                    <div style={{fontSize:28,fontWeight:800,color:"#ef4444"}}>{churnRate}%</div>
+                    <div style={{fontSize:10,color:"#94a3b8"}}>全患者比</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 日次推移 */}
+            <div className="card">
+              <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>📈 日次推移</div>
+              <div style={{padding:"12px 16px"}}>
+                {calcDailySales().map(d=>(<div key={d.date} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #f1f5f9"}}>
+                  <div><span style={{fontWeight:700,fontSize:13,color:"#1e293b"}}>{d.date.slice(5)}（{DAYS[new Date(d.date+"T00:00:00").getDay()]}）</span><span style={{fontSize:11,color:"#94a3b8",marginLeft:8}}>{d.count}件</span></div>
+                  <div style={{textAlign:"right"}}><div style={{fontWeight:800,fontSize:14,color:"#d97706"}}>{fmt(d.total)}</div><div style={{fontSize:11,color:"#94a3b8"}}>保:{fmt(d.ins)}　自:{fmt(d.jifee)}</div></div>
+                </div>))}
+                {calcDailySales().length===0&&<div style={{textAlign:"center",color:"#94a3b8",fontSize:13,padding:16}}>会計データなし</div>}
+              </div>
             </div>
           </div>
-          <div className="card">
-            <div style={{padding:"12px 16px"}}>
-              <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:10}}>日次推移</div>
-              {calcDailySales().map(d=>(<div key={d.date} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #f1f5f9"}}><div><span style={{fontWeight:700,fontSize:13,color:"#1e293b"}}>{d.date.slice(5)}（{DAYS[new Date(d.date+"T00:00:00").getDay()]}）</span><span style={{fontSize:11,color:"#94a3b8",marginLeft:8}}>{d.count}件</span></div><div style={{textAlign:"right"}}><div style={{fontWeight:800,fontSize:14,color:"#d97706"}}>{fmt(d.total)}</div><div style={{fontSize:11,color:"#94a3b8"}}>保:{fmt(d.ins)}　自:{fmt(d.jifee)}</div></div></div>))}
-              {calcDailySales().length===0&&<div style={{textAlign:"center",color:"#94a3b8",fontSize:13,padding:16}}>会計データなし</div>}
-            </div>
-          </div>
-        </div>
-      )}
+        );
+      })()}
       {tab==="tech"&&(
         <div>
           <div style={{marginBottom:14}}><input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)} style={{padding:"8px 12px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontWeight:700}}/></div>
@@ -1209,18 +1360,21 @@ function PatientsPanel({bookings,onHistory}){
 function ShiftPanel({currentUser}){
   const today=new Date();
   const [selMonth,setSelMonth]=React.useState(`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`);
-  const [shifts,setShifts]=React.useState({}); // {staffId_date: "出勤"|"休み"|"有休"|"振替"|"祝振替"}
-  const [holidays,setHolidays]=React.useState({}); // {staffId: {有休残:N, 振替残:N}}
-  const [saving,setSaving]=React.useState(false);
+  const [shifts,setShifts]=React.useState({});
+  const [holidays,setHolidays]=React.useState({});
   const [toast,setToast]=React.useState("");
-  const [editHoliday,setEditHoliday]=React.useState(null); // staffId
+  const [editHoliday,setEditHoliday]=React.useState(null);
+  // 一括設定
+  const [bulkTarget,setBulkTarget]=React.useState("all"); // "all" | staffId
+  const [bulkType,setBulkType]=React.useState("出勤");
+  const [bulkDayTypes,setBulkDayTypes]=React.useState(["平日"]); // 平日/土/日/全て
+  const [editingCell,setEditingCell]=React.useState(null); // "staffId_date"
 
   const SHIFT_TYPES=["出勤","休み","有休","振替","祝振替"];
   const SHIFT_COLORS={"出勤":"#2563eb","休み":"#9ca3af","有休":"#059669","振替":"#d97706","祝振替":"#7c3aed"};
+  const SHIFT_ABBR={"出勤":"勤","休み":"休","有休":"有","振替":"振","祝振替":"祝"};
 
-  // 月のカレンダー生成
   const [y,m]=selMonth.split("-").map(Number);
-  const firstDay=new Date(y,m-1,1);
   const lastDay=new Date(y,m,0);
   const daysInMonth=lastDay.getDate();
   const dates=Array.from({length:daysInMonth},(_,i)=>{
@@ -1229,7 +1383,6 @@ function ShiftPanel({currentUser}){
   });
   const DAYS_JP=["日","月","火","水","木","金","土"];
 
-  // ローカルストレージで保存（Supabaseテーブルがなくてもとりあえず動く）
   React.useEffect(()=>{
     try{
       const s=localStorage.getItem(`shifts_${selMonth}`);
@@ -1237,11 +1390,7 @@ function ShiftPanel({currentUser}){
       else setShifts({});
       const h=localStorage.getItem("holiday_balance");
       if(h) setHolidays(JSON.parse(h));
-      else{
-        const init={};
-        STAFF_ACCOUNTS.forEach(s=>{init[s.id]={有休残:10,振替残:0,祝振替残:0};});
-        setHolidays(init);
-      }
+      else{const init={};STAFF_ACCOUNTS.forEach(s=>{init[s.id]={有休残:10,振替残:0,祝振替残:0};});setHolidays(init);}
     }catch{}
   },[selMonth]);
 
@@ -1253,38 +1402,63 @@ function ShiftPanel({currentUser}){
     }catch{setToast("エラー");}
   }
 
-  function toggleShift(staffId,date){
+  // セル個別変更（プルダウン）
+  function setShiftCell(staffId,date,val){
     const key=`${staffId}_${date}`;
     const cur=shifts[key]||"出勤";
-    const next=SHIFT_TYPES[(SHIFT_TYPES.indexOf(cur)+1)%SHIFT_TYPES.length];
-    // 有休・振替・祝振替使用時に残数を減らす
     const newH={...holidays};
     if(!newH[staffId]) newH[staffId]={有休残:10,振替残:0,祝振替残:0};
-    if(next==="有休") newH[staffId].有休残=Math.max(0,(newH[staffId].有休残||0)-1);
-    if(next==="振替") newH[staffId].振替残=Math.max(0,(newH[staffId].振替残||0)-1);
-    if(next==="祝振替") newH[staffId].祝振替残=Math.max(0,(newH[staffId].祝振替残||0)-1);
-    // 戻したときに残数を戻す
+    // 旧値の残高を戻す
     if(cur==="有休") newH[staffId].有休残=(newH[staffId].有休残||0)+1;
     if(cur==="振替") newH[staffId].振替残=(newH[staffId].振替残||0)+1;
     if(cur==="祝振替") newH[staffId].祝振替残=(newH[staffId].祝振替残||0)+1;
+    // 新値の残高を減らす
+    if(val==="有休") newH[staffId].有休残=Math.max(0,(newH[staffId].有休残||0)-1);
+    if(val==="振替") newH[staffId].振替残=Math.max(0,(newH[staffId].振替残||0)-1);
+    if(val==="祝振替") newH[staffId].祝振替残=Math.max(0,(newH[staffId].祝振替残||0)-1);
     setHolidays(newH);
-    setShifts(prev=>({...prev,[key]:next}));
+    setShifts(prev=>({...prev,[key]:val}));
+    setEditingCell(null);
+  }
+
+  // 一括設定適用
+  function applyBulk(){
+    const staffIds=bulkTarget==="all"?STAFF_ACCOUNTS.map(s=>s.id):[parseInt(bulkTarget)];
+    const newShifts={...shifts};
+    const newH={...holidays};
+    dates.forEach(({date,day})=>{
+      const isSun=day===0,isSat=day===6,isWeekday=day!==0&&day!==6;
+      const match=(bulkDayTypes.includes("全て"))||(bulkDayTypes.includes("平日")&&isWeekday)||(bulkDayTypes.includes("土")&&isSat)||(bulkDayTypes.includes("日")&&isSun);
+      if(!match) return;
+      staffIds.forEach(sid=>{
+        const key=`${sid}_${date}`;
+        const cur=newShifts[key]||"出勤";
+        if(!newH[sid]) newH[sid]={有休残:10,振替残:0,祝振替残:0};
+        if(cur==="有休") newH[sid].有休残=(newH[sid].有休残||0)+1;
+        if(cur==="振替") newH[sid].振替残=(newH[sid].振替残||0)+1;
+        if(cur==="祝振替") newH[sid].祝振替残=(newH[sid].祝振替残||0)+1;
+        if(bulkType==="有休") newH[sid].有休残=Math.max(0,(newH[sid].有休残||0)-1);
+        if(bulkType==="振替") newH[sid].振替残=Math.max(0,(newH[sid].振替残||0)-1);
+        if(bulkType==="祝振替") newH[sid].祝振替残=Math.max(0,(newH[sid].祝振替残||0)-1);
+        newShifts[key]=bulkType;
+      });
+    });
+    setShifts(newShifts);setHolidays(newH);
+    setToast(`一括設定しました（${bulkTarget==="all"?"全員":STAFF_ACCOUNTS.find(s=>s.id===parseInt(bulkTarget))?.name}・${bulkDayTypes.join("/")}・${bulkType}）`);
+    setTimeout(()=>setToast(""),3000);
   }
 
   function updateBalance(staffId,key,val){
     setHolidays(prev=>({...prev,[staffId]:{...(prev[staffId]||{}), [key]:Math.max(0,parseInt(val)||0)}}));
   }
 
-  // スタッフごとの月間集計
   function calcMonthSummary(staffId){
     const result={出勤:0,休み:0,有休:0,振替:0,祝振替:0};
-    dates.forEach(({date})=>{
-      const key=`${staffId}_${date}`;
-      const v=shifts[key]||"出勤";
-      result[v]=(result[v]||0)+1;
-    });
+    dates.forEach(({date})=>{const key=`${staffId}_${date}`;const v=shifts[key]||"出勤";result[v]=(result[v]||0)+1;});
     return result;
   }
+
+  const toggleBulkDayType=(t)=>setBulkDayTypes(prev=>prev.includes(t)?prev.filter(x=>x!==t):[...prev,t]);
 
   return(
     <div>
@@ -1295,12 +1469,56 @@ function ShiftPanel({currentUser}){
         <div style={{fontSize:16,fontWeight:800,color:"#1e3a5f"}}>シフト・休日管理</div>
         <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)}
           style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontWeight:700}}/>
-        <button onClick={save} className="btn btn-primary btn-sm" style={{marginLeft:"auto"}}>保存する</button>
+        <button onClick={save} className="btn btn-primary btn-sm" style={{marginLeft:"auto"}}>💾 保存する</button>
+      </div>
+
+      {/* 一括設定カード */}
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>⚡ 一括設定</div>
+        <div style={{padding:"14px 16px"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+            {/* 対象スタッフ */}
+            <div>
+              <div style={{fontSize:12,fontWeight:700,color:"#64748b",marginBottom:6}}>対象スタッフ</div>
+              <select value={bulkTarget} onChange={e=>setBulkTarget(e.target.value)}
+                style={{width:"100%",padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}>
+                <option value="all">🏥 院全体（全員）</option>
+                {STAFF_ACCOUNTS.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            {/* シフト種別 */}
+            <div>
+              <div style={{fontSize:12,fontWeight:700,color:"#64748b",marginBottom:6}}>シフト種別</div>
+              <select value={bulkType} onChange={e=>setBulkType(e.target.value)}
+                style={{width:"100%",padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}>
+                {SHIFT_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+          </div>
+          {/* 対象曜日 */}
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#64748b",marginBottom:8}}>対象曜日（複数選択可）</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {["平日","土","日","全て"].map(t=>{
+                const sel=bulkDayTypes.includes(t);
+                return <button key={t} onClick={()=>toggleBulkDayType(t)} className="btn"
+                  style={{padding:"6px 16px",borderRadius:20,fontSize:13,fontWeight:700,
+                    background:sel?"#1e3a5f":"white",color:sel?"white":"#374151",
+                    border:`1.5px solid ${sel?"#1e3a5f":"#e2e8f0"}`,
+                    boxShadow:sel?"0 2px 6px rgba(30,58,95,.25)":"none"}}>{t}</button>;
+              })}
+            </div>
+          </div>
+          <button onClick={applyBulk} className="btn btn-primary" style={{width:"100%",justifyContent:"center",padding:"11px"}}>
+            ⚡ 一括適用する
+          </button>
+          <div style={{fontSize:11,color:"#94a3b8",marginTop:8}}>※ 適用後は「保存する」ボタンで確定してください。</div>
+        </div>
       </div>
 
       {/* 休日残高カード */}
       <div className="card" style={{marginBottom:14}}>
-        <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>休日残高管理</div>
+        <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>🏖️ 休日残高管理</div>
         <div style={{padding:"12px 16px"}}>
           <div style={{overflowX:"auto"}}>
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
@@ -1344,7 +1562,6 @@ function ShiftPanel({currentUser}){
               </tbody>
             </table>
           </div>
-          <div style={{fontSize:11,color:"#94a3b8",marginTop:8}}>※ 残数5日以下はオレンジ、2日以下は赤で表示。シフトで使用すると自動で減算されます。</div>
         </div>
       </div>
 
@@ -1366,7 +1583,7 @@ function ShiftPanel({currentUser}){
               <tr style={{background:"#f8fafc"}}>
                 <th style={{padding:"6px 8px",textAlign:"left",fontWeight:700,color:"#64748b",borderBottom:"2px solid #e2e8f0",borderRight:"1px solid #e2e8f0",minWidth:90,position:"sticky",left:0,background:"#f8fafc",zIndex:2}}>スタッフ</th>
                 {dates.map(({date,day,label})=>(
-                  <th key={date} style={{padding:"4px 2px",textAlign:"center",fontWeight:700,borderBottom:"2px solid #e2e8f0",borderRight:"1px solid #f1f5f9",minWidth:32,
+                  <th key={date} style={{padding:"4px 2px",textAlign:"center",fontWeight:700,borderBottom:"2px solid #e2e8f0",borderRight:"1px solid #f1f5f9",minWidth:36,
                     color:day===0?"#ef4444":day===6?"#7c3aed":"#374151",
                     background:day===0?"#fff1f2":day===6?"#faf5ff":"#f8fafc"}}>
                     <div>{label}</div>
@@ -1391,14 +1608,24 @@ function ShiftPanel({currentUser}){
                       const key=`${s.id}_${date}`;
                       const val=shifts[key]||"出勤";
                       const color=SHIFT_COLORS[val];
+                      const isEditing=editingCell===key;
                       return(
                         <td key={date} style={{padding:2,textAlign:"center",borderBottom:"1px solid #f1f5f9",borderRight:"1px solid #f1f5f9",
-                          background:day===0?"#fff8f8":day===6?"#faf8ff":"white",cursor:"pointer"}}
-                          onClick={()=>toggleShift(s.id,date)}
-                          title={`${date} ${s.name} → ${val}（クリックで変更）`}>
-                          <div style={{width:28,height:28,borderRadius:5,background:color,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto",fontSize:9,color:"white",fontWeight:700,boxShadow:`0 1px 3px ${color}66`}}>
-                            {val==="出勤"?"勤":val==="休み"?"休":val==="有休"?"有":val==="振替"?"振":"祝"}
-                          </div>
+                          background:day===0?"#fff8f8":day===6?"#faf8ff":"white",position:"relative"}}>
+                          {isEditing?(
+                            <select autoFocus value={val}
+                              onChange={e=>{setShiftCell(s.id,date,e.target.value);}}
+                              onBlur={()=>setEditingCell(null)}
+                              style={{width:52,fontSize:10,padding:"2px",borderRadius:4,border:`1.5px solid ${color}`,fontFamily:"inherit",background:"white",cursor:"pointer"}}>
+                              {SHIFT_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+                            </select>
+                          ):(
+                            <div onClick={()=>setEditingCell(key)}
+                              style={{width:28,height:28,borderRadius:5,background:color,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto",fontSize:9,color:"white",fontWeight:700,boxShadow:`0 1px 3px ${color}66`,cursor:"pointer"}}
+                              title="クリックでプルダウン変更">
+                              {SHIFT_ABBR[val]}
+                            </div>
+                          )}
                         </td>
                       );
                     })}
@@ -1406,7 +1633,7 @@ function ShiftPanel({currentUser}){
                       <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
                         {Object.entries(summary).filter(([,v])=>v>0).map(([k,v])=>(
                           <span key={k} style={{display:"inline-flex",alignItems:"center",gap:2,fontSize:10,fontWeight:700,color:SHIFT_COLORS[k]}}>
-                            <span style={{width:8,height:8,borderRadius:2,background:SHIFT_COLORS[k],display:"inline-block"}}></span>{k.replace("勤","").replace("み","休")}{v}
+                            <span style={{width:8,height:8,borderRadius:2,background:SHIFT_COLORS[k],display:"inline-block"}}></span>{k}{v}
                           </span>
                         ))}
                       </div>
@@ -1418,7 +1645,7 @@ function ShiftPanel({currentUser}){
           </table>
         </div>
         <div style={{padding:"10px 16px",fontSize:11,color:"#94a3b8",borderTop:"1px solid #f1f5f9"}}>
-          ※ セルをクリックするとシフト種別が切り替わります。有休・振替・祝振替を使用すると残高が自動で減算されます。「保存する」で確定してください。
+          ※ セルをクリックするとプルダウンで変更できます。「保存する」で確定してください。
         </div>
       </div>
     </div>
