@@ -1016,6 +1016,261 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
   );
 }
 
+// ===== 営業時間・休憩パネル =====
+function BusinessHoursPanel(){
+  const DAYS_JP=["日","月","火","水","木","金","土"];
+  const DAY_COLORS=["#ef4444","#374151","#374151","#374151","#374151","#374151","#7c3aed"];
+  const DEFAULT_HOURS=DAYS_JP.map((_,i)=>({day:i,is_open:i!==0,open_time:"09:00",close_time:"19:00",break_times:[]}));
+
+  const [stores,setStores]=React.useState([]);
+  const [selStoreId,setSelStoreId]=React.useState(1);
+  const [hours,setHours]=React.useState(DEFAULT_HOURS);
+  const [closures,setClosures]=React.useState([]);
+  const [loading,setLoading]=React.useState(true);
+  const [saving,setSaving]=React.useState(false);
+  const [toast,setToast]=React.useState("");
+  const [newClosure,setNewClosure]=React.useState({date:"",memo:""});
+
+  function showToast(msg){setToast(msg);setTimeout(()=>setToast(""),2500);}
+
+  // 店舗一覧取得
+  React.useEffect(()=>{
+    sb.select("stores","?order=id.asc").then(data=>{
+      if(Array.isArray(data)&&data.length>0){
+        setStores(data);
+        setSelStoreId(data[0].id);
+      }
+    }).catch(()=>{});
+  },[]);
+
+  // 営業時間・臨時休業取得
+  React.useEffect(()=>{loadData();},[selStoreId]);
+
+  async function loadData(){
+    setLoading(true);
+    try{
+      const[bh,tc]=await Promise.all([
+        sb.select("business_hours",`?store_id=eq.${selStoreId}&order=day_of_week.asc`),
+        sb.select("temp_closures",`?store_id=eq.${selStoreId}&order=date.asc`),
+      ]);
+      if(Array.isArray(bh)&&bh.length>0){
+        const merged=DEFAULT_HOURS.map(def=>{
+          const found=bh.find(h=>h.day_of_week===def.day);
+          return found?{day:def.day,is_open:found.is_open,open_time:found.open_time||"09:00",close_time:found.close_time||"19:00",break_times:found.break_times||[]}:def;
+        });
+        setHours(merged);
+      }else{
+        setHours(DEFAULT_HOURS.map(d=>({...d,break_times:[]})));
+      }
+      setClosures(Array.isArray(tc)?tc:[]);
+    }catch(e){console.error(e);}
+    setLoading(false);
+  }
+
+  function updateHour(day,key,val){
+    setHours(prev=>prev.map(h=>h.day===day?{...h,[key]:val}:h));
+  }
+
+  function addBreak(day){
+    setHours(prev=>prev.map(h=>h.day===day?{...h,break_times:[...(h.break_times||[]),{start:"12:00",end:"13:00"}]}:h));
+  }
+
+  function updateBreak(day,idx,key,val){
+    setHours(prev=>prev.map(h=>{
+      if(h.day!==day) return h;
+      const bt=[...(h.break_times||[])];
+      bt[idx]={...bt[idx],[key]:val};
+      return{...h,break_times:bt};
+    }));
+  }
+
+  function removeBreak(day,idx){
+    setHours(prev=>prev.map(h=>{
+      if(h.day!==day) return h;
+      const bt=(h.break_times||[]).filter((_,i)=>i!==idx);
+      return{...h,break_times:bt};
+    }));
+  }
+
+  async function saveHours(){
+    setSaving(true);
+    try{
+      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      for(const h of hours){
+        await fetch(`${SUPABASE_URL}/rest/v1/business_hours`,{
+          method:"POST",
+          headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates"},
+          body:JSON.stringify({store_id:selStoreId,day_of_week:h.day,is_open:h.is_open,open_time:h.open_time,close_time:h.close_time,break_times:h.break_times||[]})
+        });
+      }
+      showToast("営業時間を保存しました");
+    }catch(e){alert("保存に失敗しました："+e.message);}
+    setSaving(false);
+  }
+
+  async function addClosure(){
+    if(!newClosure.date){alert("日付を入力してください");return;}
+    try{
+      const result=await sb.insert("temp_closures",{store_id:selStoreId,date:newClosure.date,memo:newClosure.memo||null});
+      if(Array.isArray(result)&&result.length>0) setClosures(prev=>[...prev,result[0]].sort((a,b)=>a.date.localeCompare(b.date)));
+      setNewClosure({date:"",memo:""});
+      showToast("臨時休業日を追加しました");
+    }catch(e){alert("追加に失敗しました");}
+  }
+
+  async function deleteClosure(id){
+    try{
+      await sb.delete("temp_closures",id);
+      setClosures(prev=>prev.filter(c=>c.id!==id));
+      showToast("削除しました");
+    }catch(e){alert("削除に失敗しました");}
+  }
+
+  const selStore=stores.find(s=>s.id===selStoreId);
+
+  return(
+    <div style={{maxWidth:800,margin:"0 auto"}}>
+      {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#15803d",fontWeight:700,fontSize:13}}>{toast}</div>}
+
+      {/* 店舗選択 */}
+      {stores.length>0&&(
+        <div style={{background:"white",borderRadius:12,padding:"14px 16px",marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,.06)",border:"1px solid #f1f5f9"}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#64748b",marginBottom:8}}>店舗選択</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {stores.map(s=>(
+              <button key={s.id} onClick={()=>setSelStoreId(s.id)}
+                style={{padding:"7px 16px",borderRadius:8,border:"1.5px solid",borderColor:selStoreId===s.id?"#059669":"#e2e8f0",background:selStoreId===s.id?"#059669":"white",color:selStoreId===s.id?"white":"#374151",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                {s.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {loading?(
+        <div style={{textAlign:"center",padding:40,color:"#94a3b8"}}>読み込み中...</div>
+      ):(
+        <>
+          {/* 営業時間設定 */}
+          <div style={{background:"white",borderRadius:12,marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,.06)",border:"1px solid #f1f5f9",overflow:"hidden"}}>
+            <div style={{padding:"14px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:14,color:"#1e3a5f"}}>
+              営業時間・休憩時間設定
+            </div>
+            <table style={{width:"100%",borderCollapse:"collapse"}}>
+              <thead>
+                <tr style={{background:"#f8fafc"}}>
+                  {["曜日","営業","開始","終了","休憩時間"].map(h=>(
+                    <th key={h} style={{padding:"10px 14px",textAlign:"left",fontSize:12,fontWeight:700,color:"#64748b",borderBottom:"1px solid #e2e8f0"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {hours.map(h=>(
+                  <tr key={h.day} style={{borderBottom:"1px solid #f1f5f9",verticalAlign:"top"}}>
+                    {/* 曜日 */}
+                    <td style={{padding:"16px 14px",fontWeight:800,fontSize:15,color:DAY_COLORS[h.day],width:40}}>{DAYS_JP[h.day]}</td>
+                    {/* 営業トグル */}
+                    <td style={{padding:"16px 14px",width:70}}>
+                      <div onClick={()=>updateHour(h.day,"is_open",!h.is_open)}
+                        style={{width:44,height:24,borderRadius:12,background:h.is_open?"#059669":"#d1d5db",cursor:"pointer",position:"relative",transition:"background .2s"}}>
+                        <div style={{position:"absolute",top:2,left:h.is_open?20:2,width:20,height:20,borderRadius:"50%",background:"white",transition:"left .2s",boxShadow:"0 1px 4px rgba(0,0,0,.2)"}}/>
+                      </div>
+                    </td>
+                    {/* 開始 */}
+                    <td style={{padding:"12px 14px"}}>
+                      <input type="time" value={h.open_time} disabled={!h.is_open}
+                        onChange={e=>updateHour(h.day,"open_time",e.target.value)}
+                        style={{padding:"8px 10px",border:"1.5px solid",borderColor:h.is_open?"#e2e8f0":"#f1f5f9",borderRadius:8,fontSize:14,fontFamily:"inherit",background:h.is_open?"white":"#f8fafc",color:h.is_open?"#374151":"#d1d5db",width:120}}/>
+                    </td>
+                    {/* 終了 */}
+                    <td style={{padding:"12px 14px"}}>
+                      <input type="time" value={h.close_time} disabled={!h.is_open}
+                        onChange={e=>updateHour(h.day,"close_time",e.target.value)}
+                        style={{padding:"8px 10px",border:"1.5px solid",borderColor:h.is_open?"#e2e8f0":"#f1f5f9",borderRadius:8,fontSize:14,fontFamily:"inherit",background:h.is_open?"white":"#f8fafc",color:h.is_open?"#374151":"#d1d5db",width:120}}/>
+                    </td>
+                    {/* 休憩時間 */}
+                    <td style={{padding:"12px 14px"}}>
+                      {h.is_open&&(
+                        <div>
+                          {(h.break_times||[]).map((bt,idx)=>(
+                            <div key={idx} style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+                              <input type="time" value={bt.start} onChange={e=>updateBreak(h.day,idx,"start",e.target.value)}
+                                style={{padding:"6px 8px",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:13,fontFamily:"inherit",width:100}}/>
+                              <span style={{color:"#94a3b8",fontSize:12}}>〜</span>
+                              <input type="time" value={bt.end} onChange={e=>updateBreak(h.day,idx,"end",e.target.value)}
+                                style={{padding:"6px 8px",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:13,fontFamily:"inherit",width:100}}/>
+                              <button onClick={()=>removeBreak(h.day,idx)}
+                                style={{padding:"4px 8px",background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:6,fontSize:11,cursor:"pointer",fontFamily:"inherit",color:"#ef4444"}}>✕</button>
+                            </div>
+                          ))}
+                          <button onClick={()=>addBreak(h.day)}
+                            style={{padding:"5px 12px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>
+                            + 追加
+                          </button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{padding:"14px 16px",borderTop:"1px solid #f1f5f9"}}>
+              <button onClick={saveHours} disabled={saving}
+                style={{padding:"10px 24px",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:8,fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit",opacity:saving?0.7:1}}>
+                {saving?"保存中...":"保存"}
+              </button>
+            </div>
+          </div>
+
+          {/* 臨時休業日設定 */}
+          <div style={{background:"white",borderRadius:12,boxShadow:"0 1px 4px rgba(0,0,0,.06)",border:"1px solid #f1f5f9",overflow:"hidden"}}>
+            <div style={{padding:"14px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:14,color:"#1e3a5f"}}>臨時休業日設定</div>
+            <div style={{padding:"14px 16px",borderBottom:"1px solid #f1f5f9"}}>
+              <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                <div>
+                  <div style={{fontSize:12,fontWeight:700,color:"#374151",marginBottom:6}}>日付</div>
+                  <input type="date" value={newClosure.date} onChange={e=>setNewClosure(p=>({...p,date:e.target.value}))}
+                    style={{padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontFamily:"inherit"}}/>
+                </div>
+                <div style={{flex:1,minWidth:150}}>
+                  <div style={{fontSize:12,fontWeight:700,color:"#374151",marginBottom:6}}>メモ</div>
+                  <input value={newClosure.memo} onChange={e=>setNewClosure(p=>({...p,memo:e.target.value}))} placeholder="研修のため等"
+                    style={{width:"100%",padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontFamily:"inherit"}}/>
+                </div>
+                <div style={{paddingTop:22}}>
+                  <button onClick={addClosure}
+                    style={{padding:"9px 20px",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:8,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+                    追加
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div style={{padding:"14px 16px"}}>
+              {closures.length===0?(
+                <div style={{textAlign:"center",color:"#94a3b8",fontSize:13,padding:"16px 0"}}>臨時休業日が設定されていません</div>
+              ):closures.map(c=>(
+                <div key={c.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid #f1f5f9"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:12}}>
+                    <div style={{width:8,height:8,borderRadius:"50%",background:"#ef4444",flexShrink:0}}/>
+                    <div>
+                      <div style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{c.date}</div>
+                      {c.memo&&<div style={{fontSize:12,color:"#64748b",marginTop:2}}>{c.memo}</div>}
+                    </div>
+                  </div>
+                  <button onClick={()=>deleteClosure(c.id)}
+                    style={{padding:"5px 12px",background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:6,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",color:"#ef4444"}}>
+                    削除
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ===== メニュー・コース管理パネル =====
 function MenuMgmtPanel(){
   const CATEGORIES=["保険診療","自費治療","回数券","フリーパス"];
@@ -2616,11 +2871,14 @@ function Dashboard({user,onLogout}){
           {/* メニュー・コース管理 */}
           {view==="menu_mgmt"&&<MenuMgmtPanel/>}
 
+          {/* 営業時間・休憩 */}
+          {view==="business_hours"&&<BusinessHoursPanel/>}
+
           {/* その他準備中ページ */}
-          {["business_hours","user_mgmt","settings"].includes(view)&&(()=>{
+          {["user_mgmt","settings"].includes(view)&&(()=>{
             const labels={
-              store_mgmt:{title:"店舗管理",desc:"店舗情報（院名・住所・電話番号など）の設定ができます。"},
-              business_hours:{title:"営業時間・休憩",desc:"営業時間・定休日・休憩時間の設定ができます。"},
+              user_mgmt:{title:"ユーザー管理",desc:"ログインアカウントの追加・編集・削除ができます。"},
+              settings:{title:"各種設定",desc:"予約受付設定・LINE連携・通知設定などができます。"},
               user_mgmt:{title:"ユーザー管理",desc:"ログインアカウントの追加・編集・削除ができます。"},
               settings:{title:"各種設定",desc:"予約受付設定・LINE連携・通知設定などができます。"},
             };
