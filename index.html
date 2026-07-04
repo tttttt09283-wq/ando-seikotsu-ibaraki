@@ -2708,6 +2708,95 @@ function ShiftPanel({currentUser}){
 }
 
 // ===== メイン管理画面 =====
+// ===== 個人週間ビュー =====
+function PersonalWeekView({staff,filtered,payments,visitCounts,setBookingPopup,setView,setForm,setEditId,todayStr,DAYS_JP,fmtDate,today,isAdmin,user}){
+  const [weekBase,setWeekBase]=React.useState(()=>{const d=new Date(today);d.setHours(0,0,0,0);return d;});
+  const weekDays=Array.from({length:7},(_,i)=>{const d=new Date(weekBase);d.setDate(weekBase.getDate()+i);return d;});
+
+  return(
+    <div>
+      {/* ヘッダー */}
+      <div style={{background:`linear-gradient(135deg,${staff.color},${staff.color}cc)`,padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:36,height:36,borderRadius:10,background:"rgba(255,255,255,.25)",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:16}}>{staff.initial}</div>
+          <div>
+            <div style={{color:"white",fontWeight:800,fontSize:15}}>{staff.name}</div>
+            <div style={{color:"rgba(255,255,255,.7)",fontSize:11}}>1週間の予約状況</div>
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <button onClick={()=>{const d=new Date(weekBase);d.setDate(d.getDate()-7);setWeekBase(d);}}
+            style={{background:"rgba(255,255,255,.2)",border:"none",color:"white",borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>◀</button>
+          <input type="date" value={fmtDate(weekBase)} onChange={e=>{if(e.target.value){const d=new Date(e.target.value+"T00:00:00");setWeekBase(d);}}}
+            style={{padding:"5px 10px",borderRadius:8,border:"none",fontSize:13,fontWeight:700,background:"rgba(255,255,255,.9)",color:"#1e3a5f"}}/>
+          <button onClick={()=>{const d=new Date(weekBase);d.setDate(d.getDate()+7);setWeekBase(d);}}
+            style={{background:"rgba(255,255,255,.2)",border:"none",color:"white",borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>▶</button>
+          <button onClick={()=>{const d=new Date(today);d.setHours(0,0,0,0);setWeekBase(d);}}
+            style={{background:"rgba(255,255,255,.9)",border:"none",color:staff.color,borderRadius:8,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:800}}>今日</button>
+        </div>
+      </div>
+
+      {/* 1週間カード */}
+      <div style={{padding:"12px"}}>
+        {weekDays.map(d=>{
+          const dStr=fmtDate(d);
+          const isToday=dStr===todayStr;
+          const isSun=d.getDay()===0,isSat=d.getDay()===6;
+          const isPast=dStr<todayStr;
+          const dayBookings=filtered.filter(b=>b.date===dStr&&b.staff_id===staff.id&&!b.cancelled).sort((a,b2)=>a.time.localeCompare(b2.time));
+          const dayColor=isSun?"#ef4444":isSat?"#7c3aed":"#1e293b";
+
+          return(
+            <div key={dStr} style={{marginBottom:10,borderRadius:12,overflow:"hidden",border:`1.5px solid ${isToday?staff.color:"#e2e8f0"}`,opacity:isPast?0.7:1}}>
+              <div style={{background:isToday?staff.color:isSun?"#fff1f2":isSat?"#faf5ff":"#f8fafc",padding:"8px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontWeight:800,fontSize:14,color:isToday?"white":dayColor}}>
+                    {d.getMonth()+1}/{d.getDate()}（{DAYS_JP[d.getDay()]}）
+                  </span>
+                  {isToday&&<span style={{background:"rgba(255,255,255,.3)",color:"white",fontSize:10,fontWeight:800,padding:"1px 7px",borderRadius:10}}>今日</span>}
+                  {isPast&&!isToday&&<span style={{fontSize:10,color:"#94a3b8",fontWeight:600}}>済</span>}
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:12,fontWeight:700,color:isToday?"rgba(255,255,255,.8)":dayBookings.length>0?"#059669":"#94a3b8"}}>{dayBookings.length}件</span>
+                  <button onClick={()=>{
+                    setForm({date:dStr,time:"",staff_id:staff.id,patient_name:"",phone:"",menu:"無料施術体験会（60分）",insurance_rate:"3割",memo:"",line_notify:false});
+                    setEditId(null);setView("form");
+                  }} style={{background:isToday?"rgba(255,255,255,.25)":"#eff6ff",border:"none",borderRadius:6,padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer",color:isToday?"white":"#2563eb",fontFamily:"inherit"}}>
+                    + 予約追加
+                  </button>
+                </div>
+              </div>
+              <div style={{background:"white",padding:dayBookings.length===0?"10px 14px":"6px 10px"}}>
+                {dayBookings.length===0?(
+                  <div style={{textAlign:"center",color:"#d1d5db",fontSize:12,padding:"4px 0"}}>予約なし</div>
+                ):dayBookings.map(b=>{
+                  const isPaid=payments.some(p=>p.booking_id===b.id);
+                  const cnt=visitCounts[b.id]||1;
+                  return(
+                    <div key={b.id} onClick={()=>setBookingPopup({booking:b,x:100,y:100})}
+                      style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:8,marginBottom:4,cursor:"pointer",background:isPaid?"#f0fdf4":"white",border:`1px solid ${isPaid?"#86efac":"#e2e8f0"}`}}>
+                      <div style={{width:50,fontWeight:800,fontSize:13,color:staff.color,flexShrink:0}}>{b.time}</div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontWeight:700,fontSize:13,color:"#1e293b"}}>{b.patient_name}</div>
+                        <div style={{fontSize:11,color:"#64748b"}}>{b.menu}</div>
+                      </div>
+                      <div style={{display:"flex",gap:4,flexShrink:0}}>
+                        {isPaid&&<span style={{fontSize:10,fontWeight:700,background:"#dcfce7",color:"#15803d",padding:"1px 6px",borderRadius:4}}>会計済</span>}
+                        {b.line_user_id&&<span style={{fontSize:10,fontWeight:700,background:"#f0fdf4",color:"#059669",padding:"1px 6px",borderRadius:4}}>LINE</span>}
+                        {cnt===1&&<span style={{fontSize:10,fontWeight:700,background:"#fff7ed",color:"#d97706",padding:"1px 6px",borderRadius:4}}>初回</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function Dashboard({user,onLogout}){
   const [bookings,setBookings]=React.useState([]);
   const [breaks,setBreaks]=React.useState([]);
@@ -2990,103 +3079,24 @@ function Dashboard({user,onLogout}){
             return(
               <div className="card">
                 {/* ===== スタッフ絞り込み時：1週間縦並びビュー ===== */}
-                {selStaff?(()=>{
-                  const staff=STAFF_ACCOUNTS.find(s=>s.id===selStaff);
-                  const [weekBase,setWeekBase]=React.useState(()=>{const d=new Date(today);d.setHours(0,0,0,0);return d;});
-                  const weekDays=Array.from({length:7},(_,i)=>{const d=new Date(weekBase);d.setDate(weekBase.getDate()+i);return d;});
-
-                  return(
-                    <div>
-                      {/* ヘッダー */}
-                      <div style={{background:`linear-gradient(135deg,${staff.color},${staff.color}cc)`,padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-                        <div style={{display:"flex",alignItems:"center",gap:10}}>
-                          <div style={{width:36,height:36,borderRadius:10,background:"rgba(255,255,255,.25)",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:16}}>{staff.initial}</div>
-                          <div>
-                            <div style={{color:"white",fontWeight:800,fontSize:15}}>{staff.name}</div>
-                            <div style={{color:"rgba(255,255,255,.7)",fontSize:11}}>1週間の予約状況</div>
-                          </div>
-                        </div>
-                        <div style={{display:"flex",alignItems:"center",gap:8}}>
-                          <button onClick={()=>{const d=new Date(weekBase);d.setDate(d.getDate()-7);setWeekBase(d);}}
-                            style={{background:"rgba(255,255,255,.2)",border:"none",color:"white",borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>◀</button>
-                          <input type="date" value={fmtDate(weekBase)} onChange={e=>{if(e.target.value){const d=new Date(e.target.value+"T00:00:00");setWeekBase(d);}}}
-                            style={{padding:"5px 10px",borderRadius:8,border:"none",fontSize:13,fontWeight:700,background:"rgba(255,255,255,.9)",color:"#1e3a5f"}}/>
-                          <button onClick={()=>{const d=new Date(weekBase);d.setDate(d.getDate()+7);setWeekBase(d);}}
-                            style={{background:"rgba(255,255,255,.2)",border:"none",color:"white",borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>▶</button>
-                          <button onClick={()=>{const d=new Date(today);d.setHours(0,0,0,0);setWeekBase(d);}}
-                            style={{background:"rgba(255,255,255,.9)",border:"none",color:staff.color,borderRadius:8,padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:800}}>今日</button>
-                        </div>
-                      </div>
-
-                      {/* 1週間カード */}
-                      <div style={{padding:"12px"}}>
-                        {weekDays.map(d=>{
-                          const dStr=fmtDate(d);
-                          const isToday=dStr===todayStr;
-                          const isSun=d.getDay()===0,isSat=d.getDay()===6;
-                          const isPast=dStr<todayStr;
-                          const dayBookings=filtered.filter(b=>b.date===dStr&&b.staff_id===selStaff&&!b.cancelled).sort((a,b2)=>a.time.localeCompare(b2.time));
-                          const dayColor=isSun?"#ef4444":isSat?"#7c3aed":"#1e293b";
-
-                          return(
-                            <div key={dStr} style={{marginBottom:10,borderRadius:12,overflow:"hidden",border:`1.5px solid ${isToday?staff.color:"#e2e8f0"}`,opacity:isPast?0.7:1}}>
-                              {/* 日付ヘッダー */}
-                              <div style={{background:isToday?staff.color:isSun?"#fff1f2":isSat?"#faf5ff":"#f8fafc",padding:"8px 14px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                                <div style={{display:"flex",alignItems:"center",gap:8}}>
-                                  <span style={{fontWeight:800,fontSize:14,color:isToday?"white":dayColor}}>
-                                    {d.getMonth()+1}/{d.getDate()}（{DAYS_JP[d.getDay()]}）
-                                  </span>
-                                  {isToday&&<span style={{background:"rgba(255,255,255,.3)",color:"white",fontSize:10,fontWeight:800,padding:"1px 7px",borderRadius:10}}>今日</span>}
-                                  {isPast&&!isToday&&<span style={{fontSize:10,color:"#94a3b8",fontWeight:600}}>済</span>}
-                                </div>
-                                <div style={{display:"flex",alignItems:"center",gap:8}}>
-                                  <span style={{fontSize:12,fontWeight:700,color:isToday?"rgba(255,255,255,.8)":dayBookings.length>0?"#059669":"#94a3b8"}}>
-                                    {dayBookings.length}件
-                                  </span>
-                                  <button onClick={()=>{
-                                    setForm({date:dStr,time:"",staff_id:selStaff,patient_name:"",phone:"",menu:"無料施術体験会（60分）",insurance_rate:"3割",memo:"",line_notify:false});
-                                    setEditId(null);
-                                    setView("form");
-                                  }} style={{background:isToday?"rgba(255,255,255,.25)":"#eff6ff",border:"none",borderRadius:6,padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer",color:isToday?"white":"#2563eb",fontFamily:"inherit"}}>
-                                    + 予約追加
-                                  </button>
-                                </div>
-                              </div>
-
-                              {/* 予約一覧 */}
-                              <div style={{background:"white",padding:dayBookings.length===0?"10px 14px":"6px 10px"}}>
-                                {dayBookings.length===0?(
-                                  <div style={{textAlign:"center",color:"#d1d5db",fontSize:12,padding:"4px 0"}}>予約なし</div>
-                                ):dayBookings.map(b=>{
-                                  const isPaid=payments.some(p=>p.booking_id===b.id);
-                                  return(
-                                    <div key={b.id} onClick={()=>setBookingPopup({booking:b,x:100,y:100})}
-                                      style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:8,marginBottom:4,cursor:"pointer",background:isPaid?"#f0fdf4":"white",border:`1px solid ${isPaid?"#86efac":"#e2e8f0"}`,transition:"box-shadow .1s"}}
-                                      onMouseEnter={e=>e.currentTarget.style.boxShadow="0 2px 8px rgba(0,0,0,.1)"}
-                                      onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
-                                      <div style={{width:50,fontWeight:800,fontSize:13,color:staff.color,flexShrink:0}}>{b.time}</div>
-                                      <div style={{flex:1,minWidth:0}}>
-                                        <div style={{fontWeight:700,fontSize:13,color:"#1e293b"}}>{b.patient_name}</div>
-                                        <div style={{fontSize:11,color:"#64748b"}}>{b.menu}</div>
-                                      </div>
-                                      <div style={{display:"flex",gap:4,flexShrink:0}}>
-                                        {isPaid&&<span style={{fontSize:10,fontWeight:700,background:"#dcfce7",color:"#15803d",padding:"1px 6px",borderRadius:4}}>会計済</span>}
-                                        {b.line_user_id&&<span style={{fontSize:10,fontWeight:700,background:"#f0fdf4",color:"#059669",padding:"1px 6px",borderRadius:4}}>LINE</span>}
-                                        {visitCounts[b.id]===1&&<span style={{fontSize:10,fontWeight:700,background:"#fff7ed",color:"#d97706",padding:"1px 6px",borderRadius:4}}>初回</span>}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })():(
-                <div style={{display:"flex",alignItems:"center",background:"linear-gradient(135deg,#0f2744,#1e4d8c)",padding:"8px 10px",gap:4,overflowX:"auto"}}>
-                  {!selStaff&&<button onClick={prevWeek} style={{background:"rgba(255,255,255,.15)",border:"none",color:"white",borderRadius:8,width:32,height:32,cursor:"pointer",fontWeight:800,fontSize:14,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>◀</button>}
+                {selStaff?<PersonalWeekView
+                  staff={STAFF_ACCOUNTS.find(s=>s.id===selStaff)}
+                  filtered={filtered}
+                  payments={payments}
+                  visitCounts={visitCounts}
+                  setBookingPopup={setBookingPopup}
+                  setView={setView}
+                  setForm={setForm}
+                  setEditId={setEditId}
+                  todayStr={todayStr}
+                  DAYS_JP={DAYS_JP}
+                  fmtDate={fmtDate}
+                  today={today}
+                  isAdmin={isAdmin}
+                  user={user}
+                />}
+                {!selStaff&&<div style={{display:"flex",alignItems:"center",background:"linear-gradient(135deg,#0f2744,#1e4d8c)",padding:"8px 10px",gap:4,overflowX:"auto"}}>
+                  <button onClick={prevWeek} style={{background:"rgba(255,255,255,.15)",border:"none",color:"white",borderRadius:8,width:32,height:32,cursor:"pointer",fontWeight:800,fontSize:14,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>◀</button>
                   {weekDates.map(d=>{
                     const dStr=fmtDate(d);
                     const isSelected=dStr===ds;
@@ -3094,9 +3104,9 @@ function Dashboard({user,onLogout}){
                     const isSun=d.getDay()===0,isSat=d.getDay()===6;
                     const cnt=bookings.filter(b=>b.date===dStr).length;
                     return(
-                      <button key={dStr} onClick={()=>{if(!selStaff)setBaseDate(new Date(dStr+"T00:00:00"));}}
-                        style={{flex:1,minWidth:72,padding:"6px 4px",borderRadius:10,border:"none",cursor:selStaff?"default":"pointer",fontWeight:800,fontSize:12,textAlign:"center",transition:"all .15s",
-                          background:isToday?"#d97706":isSelected&&!selStaff?"rgba(255,255,255,.3)":"rgba(255,255,255,.1)",
+                      <button key={dStr} onClick={()=>setBaseDate(new Date(dStr+"T00:00:00"))}
+                        style={{flex:1,minWidth:72,padding:"6px 4px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:800,fontSize:12,textAlign:"center",transition:"all .15s",
+                          background:isToday?"#d97706":isSelected?"rgba(255,255,255,.3)":"rgba(255,255,255,.1)",
                           color:"white",boxShadow:isToday?"0 2px 8px rgba(217,119,6,.5)":"none"}}>
                         <div style={{color:isSun?"#fca5a5":isSat?"#c4b5fd":"white"}}>{d.getMonth()+1}/{d.getDate()}({DAYS_JP[d.getDay()]})</div>
                         {cnt>0&&<div style={{fontSize:10,opacity:.8,marginTop:1}}>{cnt}件</div>}
@@ -3104,8 +3114,8 @@ function Dashboard({user,onLogout}){
                       </button>
                     );
                   })}
-                  {!selStaff&&<button onClick={nextWeek} style={{background:"rgba(255,255,255,.15)",border:"none",color:"white",borderRadius:8,width:32,height:32,cursor:"pointer",fontWeight:800,fontSize:14,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>▶</button>}
-                  {selStaff&&<div style={{fontSize:11,color:"rgba(255,255,255,.7)",whiteSpace:"nowrap",paddingLeft:4}}>今日〜7日先</div>}
+                  <button onClick={nextWeek} style={{background:"rgba(255,255,255,.15)",border:"none",color:"white",borderRadius:8,width:32,height:32,cursor:"pointer",fontWeight:800,fontSize:14,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>▶</button>
+                  </div>
                 </div>
 
                 {/* 日付ピッカー（全員表示時のみ） */}
@@ -3116,7 +3126,7 @@ function Dashboard({user,onLogout}){
                     style={{marginLeft:"auto",padding:"3px 8px",border:"1.5px solid #e2e8f0",borderRadius:7,fontSize:12,color:"#374151",cursor:"pointer"}}/>
                 </div>}
 
-                <div style={{overflowX:"auto"}}>
+                {!selStaff&&<div style={{overflowX:"auto"}}>
                   <div style={{minWidth:HEADER_W+TOTAL_MINS*CELL_W+20}}>
 
                     {/* 対応可能 / 予約数 行 */}
@@ -3193,7 +3203,7 @@ function Dashboard({user,onLogout}){
                       );
                     })}
                   </div>
-                </div>
+                </div>}
               </div>
             )
           )}
