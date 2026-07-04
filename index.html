@@ -2709,8 +2709,10 @@ function ShiftPanel({currentUser}){
 
 // ===== メイン管理画面 =====
 // ===== 個人週間ビュー =====
-function PersonalWeekView({staff,filtered,payments,visitCounts,setBookingPopup,setView,setForm,setEditId,todayStr,DAYS_JP,fmtDate,today,isAdmin,user}){
-  const [weekBase,setWeekBase]=React.useState(()=>{const d=new Date(today);d.setHours(0,0,0,0);return d;});
+function PersonalWeekView({staff,filtered,payments,visitCounts,setBookingPopup,setView,setForm,setEditId,todayStr,isAdmin,user}){
+  const DAYS_JP=["日","月","火","水","木","金","土"];
+  const today=new Date();
+  const [weekBase,setWeekBase]=React.useState(()=>{const d=new Date();d.setHours(0,0,0,0);return d;});
   const weekDays=Array.from({length:7},(_,i)=>{const d=new Date(weekBase);d.setDate(weekBase.getDate()+i);return d;});
 
   return(
@@ -3089,9 +3091,6 @@ function Dashboard({user,onLogout}){
                   setForm={setForm}
                   setEditId={setEditId}
                   todayStr={todayStr}
-                  DAYS_JP={DAYS_JP}
-                  fmtDate={fmtDate}
-                  today={today}
                   isAdmin={isAdmin}
                   user={user}
                 />}
@@ -3115,8 +3114,7 @@ function Dashboard({user,onLogout}){
                     );
                   })}
                   <button onClick={nextWeek} style={{background:"rgba(255,255,255,.15)",border:"none",color:"white",borderRadius:8,width:32,height:32,cursor:"pointer",fontWeight:800,fontSize:14,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>▶</button>
-                  </div>
-                </div>
+                </div>}
 
                 {/* 日付ピッカー（全員表示時のみ） */}
                 {!selStaff&&<div style={{padding:"6px 12px",borderBottom:"1px solid #e2e8f0",display:"flex",alignItems:"center",gap:8,background:"#f8fafc"}}>
