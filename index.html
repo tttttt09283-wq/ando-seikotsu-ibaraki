@@ -2805,6 +2805,7 @@ function Dashboard({user,onLogout}){
   const [loading,setLoading]=React.useState(true);
   const [view,setView]=React.useState("calendar");
   const [selStaff,setSelStaff]=React.useState(null);
+  const [weekViewMode,setWeekViewMode]=React.useState("calendar"); // "calendar" | "list"
   const [baseDate,setBaseDate]=React.useState(today);
   const [form,setForm]=React.useState(null);
   const [editId,setEditId]=React.useState(null);
@@ -3080,8 +3081,21 @@ function Dashboard({user,onLogout}){
 
             return(
               <div className="card">
-                {/* ===== スタッフ絞り込み時：1週間縦並びビュー ===== */}
-                {selStaff&&<PersonalWeekView
+                {/* 個人絞り込み時：週間リスト切り替えボタン */}
+                {selStaff&&(
+                  <div style={{padding:"8px 12px",background:"#f8fafc",borderBottom:"1px solid #e2e8f0",display:"flex",gap:8}}>
+                    <button onClick={()=>setWeekViewMode("calendar")}
+                      style={{padding:"5px 14px",borderRadius:8,border:"1.5px solid",borderColor:weekViewMode==="calendar"?"#1e3a5f":"#e2e8f0",background:weekViewMode==="calendar"?"#1e3a5f":"white",color:weekViewMode==="calendar"?"white":"#374151",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                      時間軸カレンダー
+                    </button>
+                    <button onClick={()=>setWeekViewMode("list")}
+                      style={{padding:"5px 14px",borderRadius:8,border:"1.5px solid",borderColor:weekViewMode==="list"?"#1e3a5f":"#e2e8f0",background:weekViewMode==="list"?"#1e3a5f":"white",color:weekViewMode==="list"?"white":"#374151",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                      週間リスト
+                    </button>
+                  </div>
+                )}
+                {/* 週間リストビュー（個人絞り込み時のみ） */}
+                {selStaff&&weekViewMode==="list"&&<PersonalWeekView
                   staff={STAFF_ACCOUNTS.find(s=>s.id===selStaff)}
                   filtered={filtered}
                   payments={payments}
@@ -3094,7 +3108,8 @@ function Dashboard({user,onLogout}){
                   isAdmin={isAdmin}
                   user={user}
                 />}
-                {!selStaff&&<div style={{display:"flex",alignItems:"center",background:"linear-gradient(135deg,#0f2744,#1e4d8c)",padding:"8px 10px",gap:4,overflowX:"auto"}}>
+                {/* 時間軸カレンダー（全員・個人共通） */}
+                {(!selStaff||weekViewMode==="calendar")&&<div style={{display:"flex",alignItems:"center",background:"linear-gradient(135deg,#0f2744,#1e4d8c)",padding:"8px 10px",gap:4,overflowX:"auto"}}>
                   <button onClick={prevWeek} style={{background:"rgba(255,255,255,.15)",border:"none",color:"white",borderRadius:8,width:32,height:32,cursor:"pointer",fontWeight:800,fontSize:14,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>◀</button>
                   {weekDates.map(d=>{
                     const dStr=fmtDate(d);
@@ -3116,15 +3131,15 @@ function Dashboard({user,onLogout}){
                   <button onClick={nextWeek} style={{background:"rgba(255,255,255,.15)",border:"none",color:"white",borderRadius:8,width:32,height:32,cursor:"pointer",fontWeight:800,fontSize:14,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>▶</button>
                 </div>}
 
-                {/* 日付ピッカー（全員表示時のみ） */}
-                {!selStaff&&<div style={{padding:"6px 12px",borderBottom:"1px solid #e2e8f0",display:"flex",alignItems:"center",gap:8,background:"#f8fafc"}}>
+                {/* 日付ピッカー */}
+                {(!selStaff||weekViewMode==="calendar")&&<div style={{padding:"6px 12px",borderBottom:"1px solid #e2e8f0",display:"flex",alignItems:"center",gap:8,background:"#f8fafc"}}>
                   <span style={{fontSize:13,fontWeight:800,color:"#1e3a5f"}}>{baseDate.getFullYear()}年{baseDate.getMonth()+1}月{baseDate.getDate()}日（{DAYS_JP[baseDate.getDay()]}）</span>
                   {ds!==todayStr&&<button className="btn btn-outline btn-xs" onClick={()=>setBaseDate(new Date())}>今日</button>}
                   <input type="date" value={ds} onChange={e=>{if(e.target.value)setBaseDate(new Date(e.target.value+"T00:00:00"));}}
                     style={{marginLeft:"auto",padding:"3px 8px",border:"1.5px solid #e2e8f0",borderRadius:7,fontSize:12,color:"#374151",cursor:"pointer"}}/>
                 </div>}
 
-                {!selStaff&&<div style={{overflowX:"auto"}}>
+                {(!selStaff||weekViewMode==="calendar")&&<div style={{overflowX:"auto"}}>
                   <div style={{minWidth:HEADER_W+TOTAL_MINS*CELL_W+20}}>
 
                     {/* 対応可能 / 予約数 行 */}
