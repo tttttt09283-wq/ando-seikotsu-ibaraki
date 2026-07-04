@@ -2956,13 +2956,14 @@ function Dashboard({user,onLogout}){
           {/* カレンダービュー */}
           {view==="calendar"&&(()=>{
             const DAYS_JP=["日","月","火","水","木","金","土"];
-            function getWeekStart(d){const day=d.getDay();const mon=new Date(d);mon.setDate(d.getDate()-(day===0?6:day-1));mon.setHours(0,0,0,0);return mon;}
+            // 今日を先頭に7日間表示
+            function getWeekStart(d){const s=new Date(d);s.setHours(0,0,0,0);return s;}
             const weekStart=getWeekStart(baseDate);
             const weekDates=Array.from({length:7},(_,i)=>{const d=new Date(weekStart);d.setDate(weekStart.getDate()+i);return d;});
             const ds=fmtDate(baseDate);
 
-            function prevWeek(){const d=new Date(weekStart);d.setDate(d.getDate()-7);setBaseDate(d);}
-            function nextWeek(){const d=new Date(weekStart);d.setDate(d.getDate()+7);setBaseDate(d);}
+            function prevWeek(){const d=new Date(baseDate);d.setDate(d.getDate()-7);setBaseDate(d);}
+            function nextWeek(){const d=new Date(baseDate);d.setDate(d.getDate()+7);setBaseDate(d);}
 
             const MINS=Array.from({length:54},(_,i)=>{const totalMin=i*10,h=9+Math.floor(totalMin/60),m=totalMin%60;if(h>18||(h===18&&m>0))return null;return{h,m,label:`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`};}).filter(Boolean);
             const TOTAL_MINS=MINS.length;
