@@ -3081,7 +3081,7 @@ function Dashboard({user,onLogout}){
             return(
               <div className="card">
                 {/* ===== スタッフ絞り込み時：1週間縦並びビュー ===== */}
-                {selStaff?<PersonalWeekView
+                {selStaff&&<PersonalWeekView
                   staff={STAFF_ACCOUNTS.find(s=>s.id===selStaff)}
                   filtered={filtered}
                   payments={payments}
