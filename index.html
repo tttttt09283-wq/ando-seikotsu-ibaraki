@@ -3203,8 +3203,8 @@ function Dashboard({user,onLogout}){
                   </div>
                 </div>}
               </div>
-            )
-          )}
+            );
+          })()}
 
           {/* 患者管理 */}
           {view==="patients"&&<PatientsPanel bookings={bookings} onHistory={setHistoryPatient}/>}
