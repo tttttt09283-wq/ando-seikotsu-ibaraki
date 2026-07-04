@@ -1016,6 +1016,250 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
   );
 }
 
+// ===== 各種設定パネル =====
+function SettingsPanel(){
+  const [stores,setStores]=React.useState([]);
+  const [selStoreId,setSelStoreId]=React.useState(1);
+  const [loading,setLoading]=React.useState(true);
+  const [saving,setSaving]=React.useState(false);
+  const [toast,setToast]=React.useState("");
+  const [settings,setSettings]=React.useState({
+    slot_unit:10,
+    hours_before:2,
+    days_ahead:60,
+    max_per_slot:5,
+    allow_same_day:true,
+    allow_staff_select:true,
+    auto_break:false,
+    staff_break:true,
+    thanks_url:"",
+    header_bg:"#1e3a5f",
+    header_text:"#ffffff",
+    main_color:"#1e3a5f",
+    logo_text:"",
+  });
+
+  function showToast(msg){setToast(msg);setTimeout(()=>setToast(""),2500);}
+  function setF(key,val){setSettings(p=>({...p,[key]:val}));}
+
+  React.useEffect(()=>{
+    sb.select("stores","?order=id.asc").then(data=>{
+      if(Array.isArray(data)&&data.length>0){setStores(data);setSelStoreId(data[0].id);}
+    }).catch(()=>{});
+  },[]);
+
+  React.useEffect(()=>{loadSettings();},[selStoreId]);
+
+  async function loadSettings(){
+    setLoading(true);
+    try{
+      const data=await sb.select("store_settings",`?store_id=eq.${selStoreId}`);
+      if(Array.isArray(data)&&data.length>0){
+        const s=data[0];
+        setSettings({
+          slot_unit:s.slot_unit||10,
+          hours_before:s.hours_before||2,
+          days_ahead:s.days_ahead||60,
+          max_per_slot:s.max_per_slot||5,
+          allow_same_day:s.allow_same_day!==false,
+          allow_staff_select:s.allow_staff_select!==false,
+          auto_break:s.auto_break===true,
+          staff_break:s.staff_break!==false,
+          thanks_url:s.thanks_url||"",
+          header_bg:s.header_bg||"#1e3a5f",
+          header_text:s.header_text||"#ffffff",
+          main_color:s.main_color||"#1e3a5f",
+          logo_text:s.logo_text||"",
+        });
+      }
+    }catch(e){console.error(e);}
+    setLoading(false);
+  }
+
+  async function saveSettings(){
+    setSaving(true);
+    try{
+      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      await fetch(`${SUPABASE_URL}/rest/v1/store_settings`,{
+        method:"POST",
+        headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates"},
+        body:JSON.stringify({store_id:selStoreId,...settings,updated_at:new Date().toISOString()})
+      });
+      showToast("設定を保存しました");
+    }catch(e){alert("保存に失敗しました："+e.message);}
+    setSaving(false);
+  }
+
+  const cardStyle={background:"white",borderRadius:12,marginBottom:14,boxShadow:"0 1px 4px rgba(0,0,0,.06)",border:"1px solid #f1f5f9",overflow:"hidden"};
+  const cardHeader={padding:"14px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:14,color:"#1e3a5f"};
+  const cardBody={padding:"16px"};
+  const labelStyle={display:"block",fontSize:12,fontWeight:700,color:"#374151",marginBottom:6};
+  const inputStyle={width:"100%",padding:"9px 12px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontFamily:"inherit"};
+
+  function Toggle({val,onChange,label,sub}){
+    return(
+      <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:12}}>
+        <div onClick={onChange} style={{width:44,height:24,borderRadius:12,background:val?"#059669":"#d1d5db",cursor:"pointer",position:"relative",flexShrink:0,marginTop:2}}>
+          <div style={{position:"absolute",top:2,left:val?20:2,width:20,height:20,borderRadius:"50%",background:"white",transition:"left .2s",boxShadow:"0 1px 4px rgba(0,0,0,.2)"}}/>
+        </div>
+        <div>
+          <div style={{fontSize:13,fontWeight:700,color:"#374151"}}>{label}</div>
+          {sub&&<div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>{sub}</div>}
+        </div>
+      </div>
+    );
+  }
+
+  return(
+    <div style={{maxWidth:800,margin:"0 auto"}}>
+      {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#15803d",fontWeight:700,fontSize:13}}>{toast}</div>}
+
+      {/* 店舗選択 */}
+      {stores.length>0&&(
+        <div style={{...cardStyle,marginBottom:14}}>
+          <div style={cardBody}>
+            <div style={{fontSize:12,fontWeight:700,color:"#64748b",marginBottom:8}}>店舗選択</div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {stores.map(s=>(
+                <button key={s.id} onClick={()=>setSelStoreId(s.id)}
+                  style={{padding:"7px 16px",borderRadius:8,border:"1.5px solid",borderColor:selStoreId===s.id?"#059669":"#e2e8f0",background:selStoreId===s.id?"#059669":"white",color:selStoreId===s.id?"white":"#374151",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                  {s.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {loading?<div style={{textAlign:"center",padding:40,color:"#94a3b8"}}>読み込み中...</div>:(
+        <>
+          {/* 予約制限設定 */}
+          <div style={cardStyle}>
+            <div style={cardHeader}>予約制限設定</div>
+            <div style={cardBody}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+                <div>
+                  <label style={labelStyle}>予約枠の単位</label>
+                  <select value={settings.slot_unit} onChange={e=>setF("slot_unit",parseInt(e.target.value))} style={inputStyle}>
+                    {[10,15,20,30,60].map(v=><option key={v} value={v}>{v}分単位</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>何時間前まで予約可能か</label>
+                  <input type="number" value={settings.hours_before} onChange={e=>setF("hours_before",parseInt(e.target.value)||0)} style={inputStyle}/>
+                </div>
+                <div>
+                  <label style={labelStyle}>何日先まで予約可能か</label>
+                  <input type="number" value={settings.days_ahead} onChange={e=>setF("days_ahead",parseInt(e.target.value)||0)} style={inputStyle}/>
+                </div>
+                <div>
+                  <label style={labelStyle}>同一時間帯の最大予約数</label>
+                  <input type="number" value={settings.max_per_slot} onChange={e=>setF("max_per_slot",parseInt(e.target.value)||1)} style={inputStyle}/>
+                </div>
+              </div>
+              <Toggle val={settings.allow_same_day} onChange={()=>setF("allow_same_day",!settings.allow_same_day)} label="当日予約を許可する"/>
+              <Toggle val={settings.allow_staff_select} onChange={()=>setF("allow_staff_select",!settings.allow_staff_select)} label="スタッフ指名を許可する" sub="OFFにするとスタッフ選択画面を表示しない"/>
+            </div>
+          </div>
+
+          {/* 休憩時間設定 */}
+          <div style={cardStyle}>
+            <div style={cardHeader}>休憩時間設定</div>
+            <div style={cardBody}>
+              <Toggle val={settings.auto_break} onChange={()=>setF("auto_break",!settings.auto_break)} label="自動休憩時間を設定する" sub="ONにすると全スタッフ共通の休憩時間が自動で予約不可になります"/>
+              <Toggle val={settings.staff_break} onChange={()=>setF("staff_break",!settings.staff_break)} label="スタッフ別休憩時間を設定する" sub="ONにするとスタッフ管理→シフト設定でスタッフごとに休憩時間を設定できます"/>
+            </div>
+          </div>
+
+          {/* サンクスページ設定 */}
+          <div style={cardStyle}>
+            <div style={cardHeader}>サンクスページ設定</div>
+            <div style={cardBody}>
+              <label style={labelStyle}>リダイレクトURL（空欄＝通常完了画面）</label>
+              <input value={settings.thanks_url} onChange={e=>setF("thanks_url",e.target.value)} placeholder="https://example.com/thanks" style={inputStyle}/>
+              <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>設定した場合、予約完了後に自動リダイレクトします</div>
+            </div>
+          </div>
+
+          {/* デザイン設定 */}
+          <div style={cardStyle}>
+            <div style={cardHeader}>デザイン設定</div>
+            <div style={cardBody}>
+              <div style={{fontSize:12,color:"#64748b",marginBottom:14}}>予約ページのカラーやロゴを変更できます。</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+                <div>
+                  <label style={labelStyle}>ヘッダー背景色</label>
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <input type="color" value={settings.header_bg} onChange={e=>setF("header_bg",e.target.value)}
+                      style={{width:40,height:36,border:"1.5px solid #e2e8f0",borderRadius:6,cursor:"pointer",padding:2}}/>
+                    <input value={settings.header_bg} onChange={e=>setF("header_bg",e.target.value)}
+                      style={{flex:1,padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
+                  </div>
+                </div>
+                <div>
+                  <label style={labelStyle}>ヘッダーテキスト色</label>
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <input type="color" value={settings.header_text} onChange={e=>setF("header_text",e.target.value)}
+                      style={{width:40,height:36,border:"1.5px solid #e2e8f0",borderRadius:6,cursor:"pointer",padding:2}}/>
+                    <input value={settings.header_text} onChange={e=>setF("header_text",e.target.value)}
+                      style={{flex:1,padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
+                  </div>
+                </div>
+                <div>
+                  <label style={labelStyle}>メインカラー</label>
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <input type="color" value={settings.main_color} onChange={e=>setF("main_color",e.target.value)}
+                      style={{width:40,height:36,border:"1.5px solid #e2e8f0",borderRadius:6,cursor:"pointer",padding:2}}/>
+                    <input value={settings.main_color} onChange={e=>setF("main_color",e.target.value)}
+                      style={{flex:1,padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
+                  </div>
+                </div>
+                <div>
+                  <label style={labelStyle}>ロゴテキスト（画像なし時）</label>
+                  <input value={settings.logo_text} onChange={e=>setF("logo_text",e.target.value)} placeholder="例：あんど整骨院"
+                    style={{width:"100%",padding:"9px 12px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontFamily:"inherit"}}/>
+                </div>
+              </div>
+              {/* プレビュー */}
+              <div style={{marginBottom:4,fontSize:12,fontWeight:700,color:"#374151"}}>プレビュー</div>
+              <div style={{borderRadius:10,overflow:"hidden",border:"1px solid #e2e8f0"}}>
+                <div style={{background:settings.header_bg,padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                  <div style={{color:settings.header_text,fontWeight:800,fontSize:15}}>{settings.logo_text||"あんど整骨院"}</div>
+                  <div style={{color:settings.header_text,fontSize:11,opacity:.7}}>管理画面</div>
+                </div>
+                <div style={{padding:"16px",background:"#f8fafc"}}>
+                  <button style={{padding:"10px 20px",background:settings.main_color,color:"white",border:"none",borderRadius:8,fontSize:14,fontWeight:800,cursor:"pointer"}}>予約する</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* LINE連携情報 */}
+          <div style={cardStyle}>
+            <div style={cardHeader}>LINE連携</div>
+            <div style={cardBody}>
+              <div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:10,padding:"14px 16px"}}>
+                <div style={{fontWeight:700,fontSize:13,color:"#065f46",marginBottom:8}}>✅ LINE連携設定済み</div>
+                <div style={{fontSize:12,color:"#374151",lineHeight:1.8}}>
+                  <div>LIFF ID（予約）：2010529910-NlBCzfsM</div>
+                  <div>LIFF ID（マイページ）：2010529910-xlDqckoY</div>
+                  <div style={{marginTop:8,color:"#64748b",fontSize:11}}>LINE連携の変更はLINE Developersコンソールで行ってください。</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 保存ボタン */}
+          <button onClick={saveSettings} disabled={saving}
+            style={{width:"100%",padding:"14px",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:10,fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"inherit",opacity:saving?0.7:1,marginBottom:20}}>
+            {saving?"保存中...":"設定を保存"}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ===== 営業時間・休憩パネル =====
 function BusinessHoursPanel(){
   const DAYS_JP=["日","月","火","水","木","金","土"];
@@ -2874,11 +3118,13 @@ function Dashboard({user,onLogout}){
           {/* 営業時間・休憩 */}
           {view==="business_hours"&&<BusinessHoursPanel/>}
 
+          {/* 各種設定 */}
+          {view==="settings"&&<SettingsPanel/>}
+
           {/* その他準備中ページ */}
-          {["user_mgmt","settings"].includes(view)&&(()=>{
+          {["user_mgmt"].includes(view)&&(()=>{
             const labels={
               user_mgmt:{title:"ユーザー管理",desc:"ログインアカウントの追加・編集・削除ができます。"},
-              settings:{title:"各種設定",desc:"予約受付設定・LINE連携・通知設定などができます。"},
               user_mgmt:{title:"ユーザー管理",desc:"ログインアカウントの追加・編集・削除ができます。"},
               settings:{title:"各種設定",desc:"予約受付設定・LINE連携・通知設定などができます。"},
             };
