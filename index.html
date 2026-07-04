@@ -3142,24 +3142,8 @@ function Dashboard({user,onLogout}){
                 {(!selStaff||weekViewMode==="calendar")&&<div style={{overflowX:"auto"}}>
                   <div style={{minWidth:HEADER_W+TOTAL_MINS*CELL_W+20}}>
 
-                    {/* 対応可能 / 予約数 行 */}
-                    <div style={{display:"flex",borderBottom:"1px solid #e2e8f0"}}>
-                      <div style={{width:HEADER_W,flexShrink:0,borderRight:"1px solid #e2e8f0",background:"#f8fafc",display:"flex",flexDirection:"column",justifyContent:"center",alignItems:"center",padding:"3px 4px",gap:1}}>
-                        <div style={{display:"flex",alignItems:"center",gap:3}}><div style={{width:8,height:8,borderRadius:2,background:"#2563eb"}}></div><span style={{fontSize:9,color:"#64748b",fontWeight:700}}>対応可能</span></div>
-                        <div style={{display:"flex",alignItems:"center",gap:3}}><div style={{width:8,height:8,borderRadius:2,background:"#059669"}}></div><span style={{fontSize:9,color:"#64748b",fontWeight:700}}>予約数</span></div>
-                      </div>
-                      <div style={{position:"relative",flex:1,height:34}}>
-                        {timeSlots30.map(slot=>(
-                          <div key={slot.label} style={{position:"absolute",left:slot.x,top:0,width:slot.w-1,height:"100%",display:"flex",flexDirection:"column",borderRight:"1px solid #e2e8f0"}}>
-                            <div style={{flex:1,background:"#2563eb",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:10,fontWeight:800,color:"white"}}>{slot.available}</span></div>
-                            <div style={{flex:1,background:"#059669",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:10,fontWeight:800,color:"white"}}>{slot.booked}</span></div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* 時間ヘッダー */}
-                    <div style={{display:"flex",borderBottom:"2px solid #e2e8f0",background:"#f8fafc"}}>
+                    {/* 時間ヘッダー（固定） */}
+                    <div style={{display:"flex",borderBottom:"2px solid #e2e8f0",background:"#f8fafc",position:"sticky",top:0,zIndex:10}}>
                       <div style={{width:HEADER_W,flexShrink:0,padding:"5px 8px",fontWeight:700,fontSize:11,color:"#64748b",borderRight:"1px solid #e2e8f0"}}>スタッフ</div>
                       <div style={{position:"relative",height:24,flex:1}}>
                         {MINS.filter((_,i)=>i%3===0).map(({h,m,label})=>(
@@ -3170,48 +3154,93 @@ function Dashboard({user,onLogout}){
                       </div>
                     </div>
 
-                    {/* スタッフ行 */}
-                    {filteredStaff.map(staff=>{
-                      const staffBookings=bookings.filter(b=>b.date===ds&&b.staff_id===staff.id);
-                      const staffBreaks=breaks.filter(b=>b.date===ds&&b.staff_id===staff.id);
+                    {/* 7日分ループ */}
+                    {weekDates.map(wd=>{
+                      const wdStr=fmtDate(wd);
+                      const isToday=wdStr===todayStr;
+                      const isSun=wd.getDay()===0,isSat=wd.getDay()===6;
+                      const dayBookings=bookings.filter(b=>b.date===wdStr);
+                      const dayColor=isSun?"#ef4444":isSat?"#7c3aed":"#1e293b";
+
+                      // 対応可能・予約数（その日の）
+                      const daySlots30=[];
+                      for(let h=9;h<=18;h++){
+                        for(let m=0;m<60;m+=30){
+                          if(h===18&&m>0) break;
+                          const label=`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
+                          const booked=dayBookings.filter(b=>b.time===label).length;
+                          const resting=breaks.filter(b=>b.date===wdStr&&b.time===label).length;
+                          const available=Math.max(0,filteredStaff.length-resting);
+                          daySlots30.push({label,booked,available,x:(h-9)*60/10*CELL_W+m/10*CELL_W,w:30/10*CELL_W});
+                        }
+                      }
+
                       return(
-                        <div key={staff.id} style={{display:"flex",borderBottom:"1px solid #f1f5f9",minHeight:52}}>
-                          <div style={{width:HEADER_W,flexShrink:0,padding:"6px 8px",borderRight:"1px solid #e2e8f0",background:"#fafbfc",display:"flex",alignItems:"center",gap:6}}>
-                            <div style={{width:26,height:26,borderRadius:7,background:`linear-gradient(135deg,${staff.color},${staff.color}99)`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:11,flexShrink:0,boxShadow:`0 2px 5px ${staff.color}44`}}>{staff.initial}</div>
-                            <div>
-                              <div style={{fontWeight:700,fontSize:11,color:"#1e293b",lineHeight:1.2}}>{staff.name}</div>
-                              <div style={{fontSize:10,color:staff.color,fontWeight:700}}>{staffBookings.length}件</div>
+                        <div key={wdStr}>
+                          {/* 日付ヘッダー行 */}
+                          <div style={{display:"flex",background:isToday?"#1e3a5f":isSun?"#fff1f2":isSat?"#faf5ff":"#f1f5f9",borderBottom:"1px solid #e2e8f0",borderTop:"2px solid #e2e8f0"}}>
+                            <div style={{width:HEADER_W,flexShrink:0,padding:"5px 8px",borderRight:"1px solid #e2e8f0",display:"flex",alignItems:"center",gap:6}}>
+                              <span style={{fontWeight:800,fontSize:12,color:isToday?"white":dayColor}}>
+                                {wd.getMonth()+1}/{wd.getDate()}({DAYS_JP[wd.getDay()]})
+                              </span>
+                              {isToday&&<span style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.8)"}}>今日</span>}
+                            </div>
+                            {/* 対応可能・予約数 */}
+                            <div style={{position:"relative",flex:1,height:22}}>
+                              {daySlots30.map(slot=>(
+                                <div key={slot.label} style={{position:"absolute",left:slot.x,top:0,width:slot.w-1,height:"100%",display:"flex",borderRight:"1px solid rgba(0,0,0,.05)"}}>
+                                  <div style={{flex:1,background:"rgba(37,99,235,.15)",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:8,fontWeight:800,color:"#2563eb"}}>{slot.available}</span></div>
+                                  <div style={{flex:1,background:"rgba(5,150,105,.15)",display:"flex",alignItems:"center",justifyContent:"center"}}><span style={{fontSize:8,fontWeight:800,color:"#059669"}}>{slot.booked}</span></div>
+                                </div>
+                              ))}
                             </div>
                           </div>
-                          <div style={{position:"relative",flex:1,minHeight:52,cursor:"pointer",background:ds===todayStr?"#fafeff":"white"}}
-                            onClick={e=>{
-                              const rect=e.currentTarget.getBoundingClientRect();
-                              const x=e.clientX-rect.left;
-                              const totalMinFromStart=Math.round(x/CELL_W)*10;
-                              const h=9+Math.floor(totalMinFromStart/60);
-                              const m=totalMinFromStart%60;
-                              if(h>=9&&h<=17){openAdd(ds,`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`);setForm(f=>f?{...f,staff_id:staff.id}:f);}
-                            }}>
-                            {MINS.filter((_,i)=>i%3===0).map(({h,m,label})=>(
-                              <div key={label} style={{position:"absolute",left:(h-9)*60/10*CELL_W+m/10*CELL_W,top:0,bottom:0,borderLeft:"1px solid #f1f5f9",pointerEvents:"none"}}/>
-                            ))}
-                            {staffBreaks.map(br=>(
-                              <div key={`br-${br.id}`} style={{position:"absolute",left:timeToX(br.time),top:4,bottom:4,width:CELL_W*3,background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1,pointerEvents:"none"}}>
-                                <span style={{fontSize:9,color:"#94a3b8",fontWeight:600}}>{br.reason}</span>
-                              </div>
-                            ))}
-                            {staffBookings.map(b=>{
-                              const x=timeToX(b.time);const w=durationToW(b);const cnt=visitCounts[b.id]||1;
-                              const isPaid=paidBookingIds.has(b.id);
-                              return(
-                                <div key={b.id} onClick={e=>{e.stopPropagation();setBookingPopup({booking:b,x:e.clientX,y:e.clientY});}}
-                                  style={{position:"absolute",left:x,top:3,bottom:3,width:Math.max(w-2,20),background:isPaid?"linear-gradient(135deg,#9ca3af,#6b7280)":`linear-gradient(135deg,${staff.color},${staff.color}bb)`,borderRadius:6,padding:"2px 5px",cursor:"pointer",boxShadow:isPaid?"0 1px 3px rgba(0,0,0,.2)":`0 2px 6px ${staff.color}44`,display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden",zIndex:2,opacity:isPaid?.75:1}}>
-                                  <div style={{fontWeight:800,fontSize:10,color:"white",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isPaid?"✓ ":""}{b.patient_name}</div>
-                                  <div style={{fontSize:9,color:"rgba(255,255,255,.85)"}}>{b.time}{cnt>1&&<span style={{marginLeft:2,background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}</div>
+
+                          {/* スタッフ行 */}
+                          {filteredStaff.map(staff=>{
+                            const staffBookings=dayBookings.filter(b=>b.staff_id===staff.id);
+                            const staffBreaks=breaks.filter(b=>b.date===wdStr&&b.staff_id===staff.id);
+                            return(
+                              <div key={staff.id} style={{display:"flex",borderBottom:"1px solid #f1f5f9",minHeight:48}}>
+                                <div style={{width:HEADER_W,flexShrink:0,padding:"4px 8px",borderRight:"1px solid #e2e8f0",background:"#fafbfc",display:"flex",alignItems:"center",gap:5}}>
+                                  <div style={{width:22,height:22,borderRadius:6,background:`linear-gradient(135deg,${staff.color},${staff.color}99)`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:10,flexShrink:0}}>{staff.initial}</div>
+                                  <div>
+                                    <div style={{fontWeight:700,fontSize:10,color:"#1e293b",lineHeight:1.2}}>{staff.name}</div>
+                                    <div style={{fontSize:9,color:staff.color,fontWeight:700}}>{staffBookings.length}件</div>
+                                  </div>
                                 </div>
-                              );
-                            })}
-                          </div>
+                                <div style={{position:"relative",flex:1,minHeight:48,cursor:"pointer",background:isToday?"#fafeff":"white"}}
+                                  onClick={e=>{
+                                    const rect=e.currentTarget.getBoundingClientRect();
+                                    const x=e.clientX-rect.left;
+                                    const totalMinFromStart=Math.round(x/CELL_W)*10;
+                                    const h=9+Math.floor(totalMinFromStart/60);
+                                    const m=totalMinFromStart%60;
+                                    if(h>=9&&h<=17){openAdd(wdStr,`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`);setForm(f=>f?{...f,staff_id:staff.id}:f);}
+                                  }}>
+                                  {MINS.filter((_,i)=>i%3===0).map(({h,m,label})=>(
+                                    <div key={label} style={{position:"absolute",left:(h-9)*60/10*CELL_W+m/10*CELL_W,top:0,bottom:0,borderLeft:"1px solid #f1f5f9",pointerEvents:"none"}}/>
+                                  ))}
+                                  {staffBreaks.map(br=>(
+                                    <div key={`br-${br.id}`} style={{position:"absolute",left:timeToX(br.time),top:4,bottom:4,width:CELL_W*3,background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1,pointerEvents:"none"}}>
+                                      <span style={{fontSize:9,color:"#94a3b8",fontWeight:600}}>{br.reason}</span>
+                                    </div>
+                                  ))}
+                                  {staffBookings.map(b=>{
+                                    const x=timeToX(b.time);const w=durationToW(b);const cnt=visitCounts[b.id]||1;
+                                    const isPaid=paidBookingIds.has(b.id);
+                                    return(
+                                      <div key={b.id} onClick={e=>{e.stopPropagation();setBookingPopup({booking:b,x:e.clientX,y:e.clientY});}}
+                                        style={{position:"absolute",left:x,top:3,bottom:3,width:Math.max(w-2,20),background:isPaid?"linear-gradient(135deg,#9ca3af,#6b7280)":`linear-gradient(135deg,${staff.color},${staff.color}bb)`,borderRadius:6,padding:"2px 5px",cursor:"pointer",boxShadow:isPaid?"0 1px 3px rgba(0,0,0,.2)":`0 2px 6px ${staff.color}44`,display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden",zIndex:2,opacity:isPaid?.75:1}}>
+                                        <div style={{fontWeight:800,fontSize:10,color:"white",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isPaid?"✓ ":""}{b.patient_name}</div>
+                                        <div style={{fontSize:9,color:"rgba(255,255,255,.85)"}}>{b.time}{cnt>1&&<span style={{marginLeft:2,background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}</div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       );
                     })}
