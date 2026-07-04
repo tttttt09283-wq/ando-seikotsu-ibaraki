@@ -264,7 +264,10 @@ function overlaps(a,b){
 function PatientHistoryModal({patientName,bookings,onClose}){
   const [treatments,setTreatments]=React.useState([]);
   const [loading,setLoading]=React.useState(true);
+  const [activeTab,setActiveTab]=React.useState("intake"); // "intake" | "treatments" | "history"
   const patientBookings=bookings.filter(b=>b.patient_name===patientName).sort((a,b)=>b.date.localeCompare(a.date));
+  const firstBooking=patientBookings[patientBookings.length-1]||null; // 初回予約（問診票）
+
   React.useEffect(()=>{
     async function load(){
       if(patientBookings.length===0){setLoading(false);return;}
@@ -274,86 +277,170 @@ function PatientHistoryModal({patientName,bookings,onClose}){
     }
     load();
   },[]);
+
   const visitCount=patientBookings.length;
   const treatCount=treatments.length;
   const contracts=treatments.filter(t=>t.result==="成約").length;
+
   function resultBadge(r){
     if(!r) return null;
-    const map={"成約":["badge-green","成約"],"持ち帰り":["badge-yellow","持ち帰り"],"バツ":["badge-red","バツ"]};
+    const map={"成約":["badge-green","✅ 成約"],"持ち帰り":["badge-yellow","🤔 持ち帰り"],"バツ":["badge-red","❌ バツ"]};
     const[cls,label]=map[r]||["badge-gray",r];
     return <span className={`badge ${cls}`}>{label}</span>;
   }
-  function jifeeText(t){
-    if(!t.jifee_type||t.jifee_type==="なし") return null;
-    if(t.jifee_type==="回数券") return `回数券 ${t.jifee_count||""}枚`;
-    if(t.jifee_type==="FP（フリーパス）") return `FP`;
-    return null;
-  }
-  return (
+
+  const TABS=[
+    {id:"intake",label:"問診票"},
+    {id:"treatments",label:`施術録（${treatCount}件）`},
+    {id:"history",label:`来院履歴（${visitCount}回）`},
+  ];
+
+  return(
     <div className="modal-overlay">
-      <div className="modal-box">
-        <div className="modal-header" style={{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)"}}>
+      <div className="modal-box" style={{maxHeight:"85vh",display:"flex",flexDirection:"column"}}>
+        {/* ヘッダー */}
+        <div className="modal-header" style={{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",flexShrink:0}}>
           <div>
             <div style={{fontWeight:800,fontSize:17,color:"white"}}>{patientName} 様</div>
-            <div style={{fontSize:12,color:"rgba(255,255,255,.7)",marginTop:2}}>施術・来院履歴</div>
+            <div style={{fontSize:12,color:"rgba(255,255,255,.7)",marginTop:2}}>
+              {firstBooking&&<span>{firstBooking.phone}</span>}
+              {firstBooking?.line_user_id&&<span style={{marginLeft:8,background:"rgba(6,199,85,.3)",borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>LINE連携</span>}
+            </div>
           </div>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
-        <div style={{padding:16}}>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16}}>
-            {[{label:"来院回数",value:`${visitCount}回`,color:"#2563eb"},{label:"施術記録",value:`${treatCount}件`,color:"#059669"},{label:"成約数",value:`${contracts}件`,color:"#d97706"}].map(item=>(
-              <div key={item.label} className="stat-card" style={{borderTopColor:item.color,textAlign:"center",padding:12}}>
-                <div style={{fontSize:22,fontWeight:800,color:item.color,margin:"4px 0 2px"}}>{item.value}</div>
-                <div style={{fontSize:11,color:"#9ca3af",fontWeight:600}}>{item.label}</div>
-              </div>
-            ))}
-          </div>
-          {loading?(<div style={{textAlign:"center",padding:30,color:"#9ca3af"}}>読み込み中...</div>):patientBookings.length===0?(<div style={{textAlign:"center",padding:30,color:"#9ca3af"}}>予約記録がありません</div>):patientBookings.map((b,i)=>{
-            const staff=STAFF_ACCOUNTS.find(s=>s.id===b.staff_id)||{name:"不明",color:"#888",initial:"？"};
-            const treat=treatments.find(t=>t.booking_id===b.id);
-            const isFirst=i===patientBookings.length-1;
-            return (
-              <div key={b.id} style={{marginBottom:10,borderRadius:10,overflow:"hidden",border:`1px solid ${treat?"#bbf7d0":"#e2e8f0"}`,boxShadow:"0 1px 4px rgba(0,0,0,.05)"}}>
-                <div style={{background:treat?"#f0fdf4":"#f8fafc",padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid "+(treat?"#bbf7d0":"#e2e8f0")}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <span style={{fontWeight:800,fontSize:13,color:"#1e3a5f"}}>{b.date} {b.time}</span>
-                    {isFirst&&<span className="badge badge-orange">初回</span>}
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:6}}>
-                    <div style={{width:24,height:24,borderRadius:"50%",background:staff.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:11,boxShadow:`0 0 0 2px white,0 0 0 3px ${staff.color}`}}>{staff.initial}</div>
-                    <span style={{fontSize:12,color:"#374151",fontWeight:600}}>{staff.name}</span>
-                  </div>
-                </div>
-                <div style={{padding:"8px 14px",background:"white"}}>
-                  <span className="badge badge-gray" style={{marginBottom:treat?6:0}}>{b.menu}</span>
-                  {b.line_user_id&&<span className="badge badge-green" style={{marginLeft:6}}>LINE連携</span>}
-                </div>
-                {treat&&(
-                  <div style={{padding:"8px 14px",background:"white",borderTop:"1px solid #f1f5f9"}}>
-                    <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:6}}>
-                      {treat.treatment_types&&treat.treatment_types.split("・").map(t=>(<span key={t} className="badge badge-blue">{t}</span>))}
+
+        {/* サマリー */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,padding:"12px 16px",background:"#f8fafc",borderBottom:"1px solid #e2e8f0",flexShrink:0}}>
+          {[{label:"来院回数",value:`${visitCount}回`,color:"#2563eb"},{label:"施術記録",value:`${treatCount}件`,color:"#059669"},{label:"成約数",value:`${contracts}件`,color:"#d97706"}].map(item=>(
+            <div key={item.label} style={{background:"white",borderRadius:8,padding:"8px",textAlign:"center",border:"1px solid #e2e8f0"}}>
+              <div style={{fontSize:20,fontWeight:800,color:item.color}}>{item.value}</div>
+              <div style={{fontSize:10,color:"#9ca3af",fontWeight:600,marginTop:2}}>{item.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* タブ */}
+        <div style={{display:"flex",borderBottom:"1px solid #e2e8f0",background:"white",flexShrink:0}}>
+          {TABS.map(t=>(
+            <button key={t.id} onClick={()=>setActiveTab(t.id)}
+              style={{flex:1,padding:"10px 4px",border:"none",borderBottom:`2px solid ${activeTab===t.id?"#1e3a5f":"transparent"}`,background:"none",fontSize:12,fontWeight:activeTab===t.id?800:600,color:activeTab===t.id?"#1e3a5f":"#64748b",cursor:"pointer",fontFamily:"inherit",transition:"all .15s"}}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* タブコンテンツ */}
+        <div style={{flex:1,overflowY:"auto",padding:"14px 16px"}}>
+          {loading?<div style={{textAlign:"center",padding:30,color:"#9ca3af"}}>読み込み中...</div>:(
+
+            // ===== 問診票タブ =====
+            activeTab==="intake"?(
+              firstBooking?(
+                <div>
+                  <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>初回来院日：{firstBooking.date}（{firstBooking.menu}）</div>
+                  {[
+                    {label:"負傷部位",value:firstBooking.body_parts},
+                    {label:"負傷原因",value:firstBooking.injury_cause},
+                    {label:"いつから",value:firstBooking.pain_when},
+                    {label:"痛みの強さ",value:firstBooking.pain_level?firstBooking.pain_level+"/10":null},
+                    {label:"主な症状",value:firstBooking.symptoms},
+                    {label:"他院受診",value:firstBooking.other_clinic},
+                    {label:"既往歴",value:firstBooking.medical_history},
+                    {label:"継続意思",value:firstBooking.want_continue},
+                    {label:"来院経路",value:firstBooking.how_know},
+                  ].map(({label,value})=>value?(
+                    <div key={label} style={{display:"flex",gap:10,padding:"10px 0",borderBottom:"1px solid #f1f5f9"}}>
+                      <div style={{width:80,fontSize:12,fontWeight:700,color:"#94a3b8",flexShrink:0}}>{label}</div>
+                      <div style={{fontSize:13,fontWeight:600,color:"#1e293b",flex:1}}>{value}</div>
                     </div>
-                    {treat.body_parts&&<div style={{fontSize:12,color:"#6b7280",marginBottom:4}}>{treat.body_parts}</div>}
-                    <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-                      {resultBadge(treat.result)}
-                      {jifeeText(treat)&&<span className="badge badge-yellow">{jifeeText(treat)}</span>}
+                  ):null)}
+                  {/* 問診情報がない場合 */}
+                  {!firstBooking.body_parts&&!firstBooking.injury_cause&&(
+                    <div style={{textAlign:"center",padding:30,color:"#94a3b8"}}>
+                      <div style={{fontSize:32,marginBottom:8}}>📋</div>
+                      <div style={{fontWeight:700,marginBottom:4}}>問診情報なし</div>
+                      <div style={{fontSize:12}}>予約フォームで問診情報が入力されていません</div>
                     </div>
-                    {treat.proposal_plan&&(
-                      <div style={{marginTop:8,padding:"6px 10px",background:"#faf5ff",borderRadius:8,border:"1px solid #e9d5ff",display:"flex",alignItems:"center",gap:6}}>
-                        <span style={{fontSize:14}}>💡</span>
-                        <div>
-                          <div style={{fontSize:12,fontWeight:800,color:"#7c3aed"}}>提案：{treat.proposal_plan}</div>
-                          {treat.proposal_memo&&<div style={{fontSize:11,color:"#9ca3af",marginTop:2}}>{treat.proposal_memo}</div>}
+                  )}
+                </div>
+              ):<div style={{textAlign:"center",padding:30,color:"#9ca3af"}}>来院記録がありません</div>
+
+            // ===== 施術録タブ =====
+            ):activeTab==="treatments"?(
+              treatments.length===0?(
+                <div style={{textAlign:"center",padding:30,color:"#9ca3af"}}>
+                  <div style={{fontSize:32,marginBottom:8}}>📝</div>
+                  <div>施術記録がありません</div>
+                </div>
+              ):treatments.map(t=>{
+                const booking=patientBookings.find(b=>b.id===t.booking_id);
+                const staff=STAFF_ACCOUNTS.find(s=>s.id===booking?.staff_id)||{name:"不明",color:"#888",initial:"？"};
+                return(
+                  <div key={t.id} style={{marginBottom:12,borderRadius:10,overflow:"hidden",border:"1px solid #e2e8f0",boxShadow:"0 1px 4px rgba(0,0,0,.05)"}}>
+                    {/* 施術録ヘッダー */}
+                    <div style={{background:"#f8fafc",padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid #e2e8f0"}}>
+                      <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f"}}>{booking?.date||"—"} {booking?.time||""}</div>
+                      <div style={{display:"flex",alignItems:"center",gap:6}}>
+                        <div style={{width:22,height:22,borderRadius:"50%",background:staff.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:10}}>{staff.initial}</div>
+                        <span style={{fontSize:11,color:"#374151",fontWeight:600}}>{staff.name}</span>
+                      </div>
+                    </div>
+                    <div style={{padding:"10px 14px",background:"white"}}>
+                      {/* 施術種別・部位 */}
+                      <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:6}}>
+                        {t.treatment_types&&t.treatment_types.split("・").map(tp=>(<span key={tp} className="badge badge-blue">{tp}</span>))}
+                      </div>
+                      {t.body_parts&&<div style={{fontSize:12,color:"#64748b",marginBottom:8}}>🦴 {t.body_parts}</div>}
+                      {/* 結果 */}
+                      <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginBottom:6}}>
+                        {resultBadge(t.result)}
+                        {t.result_plan&&<span style={{fontSize:11,color:"#059669",fontWeight:700}}>→ {t.result_plan}</span>}
+                        {t.result_reason&&<span style={{fontSize:11,color:"#ef4444"}}>理由：{t.result_reason}</span>}
+                      </div>
+                      {/* 提案内容 */}
+                      {t.proposal_plan&&(
+                        <div style={{padding:"6px 10px",background:"#faf5ff",borderRadius:8,border:"1px solid #e9d5ff",marginBottom:6}}>
+                          <div style={{fontSize:11,fontWeight:800,color:"#7c3aed"}}>💡 提案：{t.proposal_plan}</div>
+                          {t.proposal_memo&&<div style={{fontSize:11,color:"#9ca3af",marginTop:2}}>{t.proposal_memo}</div>}
+                        </div>
+                      )}
+                      {/* メモ */}
+                      {t.memo&&<div style={{fontSize:12,color:"#9ca3af",marginTop:4}}>📝 {t.memo}</div>}
+                    </div>
+                  </div>
+                );
+              })
+
+            // ===== 来院履歴タブ =====
+            ):(
+              patientBookings.length===0?(
+                <div style={{textAlign:"center",padding:30,color:"#9ca3af"}}>来院記録がありません</div>
+              ):patientBookings.map((b,i)=>{
+                const staff=STAFF_ACCOUNTS.find(s=>s.id===b.staff_id)||{name:"不明",color:"#888",initial:"？"};
+                const treat=treatments.find(t=>t.booking_id===b.id);
+                const isFirst=i===patientBookings.length-1;
+                const isPaid=treat!==undefined;
+                return(
+                  <div key={b.id} style={{display:"flex",gap:10,padding:"10px 0",borderBottom:"1px solid #f1f5f9",alignItems:"flex-start"}}>
+                    <div style={{width:8,height:8,borderRadius:"50%",background:isPaid?"#059669":"#e2e8f0",flexShrink:0,marginTop:5}}/>
+                    <div style={{flex:1}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                        <span style={{fontWeight:700,fontSize:13,color:"#1e293b"}}>{b.date} {b.time}</span>
+                        <div style={{display:"flex",alignItems:"center",gap:4}}>
+                          {isFirst&&<span className="badge badge-orange" style={{fontSize:9}}>初回</span>}
+                          <span style={{fontSize:10,color:staff.color,fontWeight:700}}>{staff.name}</span>
                         </div>
                       </div>
-                    )}
-                    {treat.memo&&<div style={{marginTop:5,fontSize:12,color:"#9ca3af"}}>{treat.memo}</div>}
+                      <div style={{fontSize:11,color:"#64748b"}}>{b.menu}</div>
+                      {treat&&<div style={{display:"flex",gap:4,marginTop:4,flexWrap:"wrap"}}>{resultBadge(treat.result)}</div>}
+                      {!treat&&<div style={{fontSize:11,color:"#d1d5db",marginTop:2}}>施術記録なし</div>}
+                    </div>
                   </div>
-                )}
-                {!treat&&<div style={{padding:"6px 14px",background:"white",fontSize:12,color:"#d1d5db",borderTop:"1px solid #f1f5f9"}}>施術記録なし</div>}
-              </div>
-            );
-          })}
+                );
+              })
+            )
+          )}
         </div>
       </div>
     </div>
