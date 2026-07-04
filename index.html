@@ -2956,9 +2956,9 @@ function Dashboard({user,onLogout}){
           {/* カレンダービュー */}
           {view==="calendar"&&(()=>{
             const DAYS_JP=["日","月","火","水","木","金","土"];
-            // 今日を先頭に7日間表示
+            // スタッフ絞り込み時は今日〜7日先固定、全員表示時は通常ナビ
             function getWeekStart(d){const s=new Date(d);s.setHours(0,0,0,0);return s;}
-            const weekStart=getWeekStart(baseDate);
+            const weekStart=selStaff?getWeekStart(today):getWeekStart(baseDate);
             const weekDates=Array.from({length:7},(_,i)=>{const d=new Date(weekStart);d.setDate(weekStart.getDate()+i);return d;});
             const ds=fmtDate(baseDate);
 
@@ -2991,7 +2991,7 @@ function Dashboard({user,onLogout}){
               <div className="card">
                 {/* 曜日タブナビ */}
                 <div style={{display:"flex",alignItems:"center",background:"linear-gradient(135deg,#0f2744,#1e4d8c)",padding:"8px 10px",gap:4,overflowX:"auto"}}>
-                  <button onClick={prevWeek} style={{background:"rgba(255,255,255,.15)",border:"none",color:"white",borderRadius:8,width:32,height:32,cursor:"pointer",fontWeight:800,fontSize:14,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>◀</button>
+                  {!selStaff&&<button onClick={prevWeek} style={{background:"rgba(255,255,255,.15)",border:"none",color:"white",borderRadius:8,width:32,height:32,cursor:"pointer",fontWeight:800,fontSize:14,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>◀</button>}
                   {weekDates.map(d=>{
                     const dStr=fmtDate(d);
                     const isSelected=dStr===ds;
@@ -2999,25 +2999,27 @@ function Dashboard({user,onLogout}){
                     const isSun=d.getDay()===0,isSat=d.getDay()===6;
                     const cnt=bookings.filter(b=>b.date===dStr).length;
                     return(
-                      <button key={dStr} onClick={()=>setBaseDate(new Date(dStr+"T00:00:00"))}
-                        style={{flex:1,minWidth:72,padding:"6px 4px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:800,fontSize:12,textAlign:"center",transition:"all .15s",
-                          background:isSelected?"#d97706":isToday?"rgba(255,255,255,.25)":"rgba(255,255,255,.1)",
-                          color:"white",boxShadow:isSelected?"0 2px 8px rgba(217,119,6,.5)":"none"}}>
-                        <div>{d.getMonth()+1}/{d.getDate()}({DAYS_JP[d.getDay()]})</div>
+                      <button key={dStr} onClick={()=>{if(!selStaff)setBaseDate(new Date(dStr+"T00:00:00"));}}
+                        style={{flex:1,minWidth:72,padding:"6px 4px",borderRadius:10,border:"none",cursor:selStaff?"default":"pointer",fontWeight:800,fontSize:12,textAlign:"center",transition:"all .15s",
+                          background:isToday?"#d97706":isSelected&&!selStaff?"rgba(255,255,255,.3)":"rgba(255,255,255,.1)",
+                          color:"white",boxShadow:isToday?"0 2px 8px rgba(217,119,6,.5)":"none"}}>
+                        <div style={{color:isSun?"#fca5a5":isSat?"#c4b5fd":"white"}}>{d.getMonth()+1}/{d.getDate()}({DAYS_JP[d.getDay()]})</div>
                         {cnt>0&&<div style={{fontSize:10,opacity:.8,marginTop:1}}>{cnt}件</div>}
+                        {isToday&&<div style={{fontSize:9,fontWeight:700,marginTop:1}}>今日</div>}
                       </button>
                     );
                   })}
-                  <button onClick={nextWeek} style={{background:"rgba(255,255,255,.15)",border:"none",color:"white",borderRadius:8,width:32,height:32,cursor:"pointer",fontWeight:800,fontSize:14,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>▶</button>
+                  {!selStaff&&<button onClick={nextWeek} style={{background:"rgba(255,255,255,.15)",border:"none",color:"white",borderRadius:8,width:32,height:32,cursor:"pointer",fontWeight:800,fontSize:14,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>▶</button>}
+                  {selStaff&&<div style={{fontSize:11,color:"rgba(255,255,255,.7)",whiteSpace:"nowrap",paddingLeft:4}}>今日〜7日先</div>}
                 </div>
 
-                {/* 日付ピッカー */}
-                <div style={{padding:"6px 12px",borderBottom:"1px solid #e2e8f0",display:"flex",alignItems:"center",gap:8,background:"#f8fafc"}}>
+                {/* 日付ピッカー（全員表示時のみ） */}
+                {!selStaff&&<div style={{padding:"6px 12px",borderBottom:"1px solid #e2e8f0",display:"flex",alignItems:"center",gap:8,background:"#f8fafc"}}>
                   <span style={{fontSize:13,fontWeight:800,color:"#1e3a5f"}}>{baseDate.getFullYear()}年{baseDate.getMonth()+1}月{baseDate.getDate()}日（{DAYS_JP[baseDate.getDay()]}）</span>
                   {ds!==todayStr&&<button className="btn btn-outline btn-xs" onClick={()=>setBaseDate(new Date())}>今日</button>}
                   <input type="date" value={ds} onChange={e=>{if(e.target.value)setBaseDate(new Date(e.target.value+"T00:00:00"));}}
                     style={{marginLeft:"auto",padding:"3px 8px",border:"1.5px solid #e2e8f0",borderRadius:7,fontSize:12,color:"#374151",cursor:"pointer"}}/>
-                </div>
+                </div>}
 
                 <div style={{overflowX:"auto"}}>
                   <div style={{minWidth:HEADER_W+TOTAL_MINS*CELL_W+20}}>
