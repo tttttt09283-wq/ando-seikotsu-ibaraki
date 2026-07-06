@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>あんど整骨院 | 学校訪問 登録フォーム</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@500;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --ink:#2B211B;
+    --cream:#FAF5EE;
+    --brown:#3E2A1D;
+    --terracotta:#C67C4E;
+    --gold:#D9A85C;
+    --line-green:#06C755;
+    --error:#B3423A;
+    --radius:14px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--cream);
+    color:var(--ink);
+    font-family:"Noto Sans JP", sans-serif;
+    -webkit-font-smoothing:antialiased;
+    padding-bottom:48px;
+  }
+  .hero{
+    background:linear-gradient(135deg, var(--brown) 0%, var(--terracotta) 100%);
+    color:#fff;
+    padding:36px 24px 30px;
+    border-radius:0 0 28px 28px;
+  }
+  .hero .eyebrow{
+    font-size:12px;
+    letter-spacing:.14em;
+    opacity:.85;
+    margin-bottom:8px;
+  }
+  .hero h1{
+    font-family:"Shippori Mincho", serif;
+    font-size:24px;
+    line-height:1.5;
+    margin:0 0 12px;
+  }
+  .hero p{
+    font-size:13.5px;
+    line-height:1.8;
+    opacity:.95;
+    margin:0;
+  }
+  .container{
+    max-width:480px;
+    margin:0 auto;
+    padding:0 20px;
+  }
+  .card{
+    background:#fff;
+    border-radius:var(--radius);
+    padding:22px 20px;
+    margin-top:20px;
+    box-shadow:0 2px 10px rgba(62,42,29,.06);
+  }
+  .liff-profile{
+    display:flex;
+    align-items:center;
+    gap:12px;
+    margin-top:-40px;
+    margin-bottom:16px;
+  }
+  .liff-profile img{
+    width:52px;height:52px;border-radius:50%;
+    border:3px solid #fff;
+    box-shadow:0 2px 8px rgba(0,0,0,.15);
+  }
+  .liff-profile .name{
+    background:#fff;
+    padding:8px 14px;
+    border-radius:20px;
+    font-size:13px;
+    box-shadow:0 2px 8px rgba(0,0,0,.08);
+  }
+  .liff-profile .name b{ color:var(--terracotta); }
+
+  fieldset{ border:none; padding:0; margin:0 0 20px; }
+  legend{
+    font-size:14px;
+    font-weight:700;
+    margin-bottom:10px;
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  legend .req{
+    font-size:10px;
+    color:#fff;
+    background:var(--terracotta);
+    padding:2px 6px;
+    border-radius:4px;
+    font-weight:500;
+  }
+  legend .opt{
+    font-size:10px;
+    color:var(--terracotta);
+    border:1px solid var(--terracotta);
+    padding:1px 6px;
+    border-radius:4px;
+    font-weight:500;
+  }
+  input[type=text], input[type=tel], input[type=email], select, textarea{
+    width:100%;
+    font-family:inherit;
+    font-size:15px;
+    padding:12px 14px;
+    border:1.5px solid #E5DACB;
+    border-radius:10px;
+    background:#FFFDFB;
+    color:var(--ink);
+    transition:border-color .15s;
+  }
+  input:focus, select:focus, textarea:focus{
+    outline:none;
+    border-color:var(--terracotta);
+  }
+  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+
+  .chip-group{ display:flex; flex-wrap:wrap; gap:8px; }
+  .chip{
+    position:relative;
+  }
+  .chip input{ position:absolute; opacity:0; width:100%; height:100%; cursor:pointer; margin:0; }
+  .chip label{
+    display:block;
+    padding:9px 14px;
+    border-radius:20px;
+    border:1.5px solid #E5DACB;
+    font-size:13.5px;
+    color:var(--ink);
+    background:#FFFDFB;
+    cursor:pointer;
+    user-select:none;
+    transition:.15s;
+  }
+  .chip input:checked + label{
+    background:var(--terracotta);
+    border-color:var(--terracotta);
+    color:#fff;
+    font-weight:500;
+  }
+
+  .toggle-row{ display:flex; gap:10px; }
+  .toggle-row .chip label{ min-width:70px; text-align:center; }
+
+  .hint{ font-size:11.5px; color:#8A7A68; margin-top:6px; line-height:1.6; }
+
+  .submit-btn{
+    width:100%;
+    padding:15px;
+    background:var(--brown);
+    color:#fff;
+    border:none;
+    border-radius:12px;
+    font-size:16px;
+    font-weight:700;
+    letter-spacing:.02em;
+    cursor:pointer;
+    margin-top:6px;
+  }
+  .submit-btn:disabled{ opacity:.5; }
+  .submit-btn:active{ transform:scale(.99); }
+
+  .error-msg{
+    color:var(--error);
+    font-size:12.5px;
+    margin-top:6px;
+    display:none;
+  }
+  .error-msg.show{ display:block; }
+
+  .status-banner{
+    text-align:center;
+    font-size:13px;
+    padding:14px;
+    color:#8A7A68;
+  }
+
+  /* 完了画面 */
+  .done-screen{ display:none; text-align:center; padding:60px 24px; }
+  .done-screen.show{ display:block; }
+  .done-icon{
+    width:64px;height:64px;border-radius:50%;
+    background:var(--terracotta);
+    color:#fff;
+    display:flex;align-items:center;justify-content:center;
+    font-size:30px;
+    margin:0 auto 20px;
+  }
+  .done-screen h2{
+    font-family:"Shippori Mincho", serif;
+    font-size:20px;
+    margin:0 0 12px;
+  }
+  .done-screen p{
+    font-size:13.5px;
+    line-height:1.9;
+    color:#5C4A3A;
+  }
+  .form-wrapper.hide{ display:none; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="eyebrow">SCHOOL VISIT REGISTRATION</div>
+  <h1>あんど整骨院<br>学校訪問 登録フォーム</h1>
+  <p>本日はお時間をいただきありがとうございます。今後の学校訪問・イベント情報や、現場での学びに役立つ情報をLINEでお届けします。よろしければご登録ください。</p>
+</div>
+
+<div class="container">
+
+  <div id="statusBanner" class="status-banner">LINEと連携しています…</div>
+
+  <div id="formWrapper" class="form-wrapper" style="display:none;">
+    <div class="liff-profile" id="liffProfile" style="display:none;">
+      <img id="liffAvatar" src="" alt="">
+      <div class="name">LINE: <b id="liffName"></b> さん</div>
+    </div>
+
+    <div class="card">
+      <form id="regForm" novalidate>
+
+        <fieldset>
+          <legend>お名前 <span class="req">必須</span></legend>
+          <input type="text" id="name" placeholder="例）山田 太郎" required>
+          <div class="error-msg" id="err-name">お名前を入力してください</div>
+        </fieldset>
+
+        <fieldset>
+          <legend>学校名 <span class="req">必須</span></legend>
+          <input type="text" id="schoolName" placeholder="例）〇〇柔道整復専門学校" required>
+          <div class="error-msg" id="err-school">学校名を入力してください</div>
+        </fieldset>
+
+        <fieldset>
+          <legend>学年</legend>
+          <select id="grade">
+            <option value="">選択してください</option>
+            <option value="1年">1年</option>
+            <option value="2年">2年</option>
+            <option value="3年">3年</option>
+            <option value="4年">4年</option>
+            <option value="卒業済み">卒業済み</option>
+          </select>
+        </fieldset>
+
+        <fieldset>
+          <legend>連絡先 <span class="opt">任意</span></legend>
+          <div class="grid2">
+            <input type="tel" id="phone" placeholder="電話番号">
+            <input type="email" id="email" placeholder="メールアドレス">
+          </div>
+          <div class="hint">LINE登録があれば連絡先は空欄でも配信可能です。フォローのお電話等をご希望の場合はご入力ください。</div>
+        </fieldset>
+
+        <fieldset>
+          <legend>資格取得の目標</legend>
+          <div class="chip-group" id="qualGroup">
+            <div class="chip"><input type="radio" name="qual" id="q1" value="柔道整復師"><label for="q1">柔道整復師</label></div>
+            <div class="chip"><input type="radio" name="qual" id="q2" value="鍼灸師"><label for="q2">鍼灸師</label></div>
+            <div class="chip"><input type="radio" name="qual" id="q3" value="ダブルライセンス"><label for="q3">ダブルライセンス</label></div>
+            <div class="chip"><input type="radio" name="qual" id="q4" value="未定・検討中"><label for="q4">未定・検討中</label></div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>興味のある分野・進路希望 <span class="opt">複数選択可</span></legend>
+          <div class="chip-group" id="interestGroup">
+            <div class="chip"><input type="checkbox" id="i1" value="スポーツ整体・コンディショニング"><label for="i1">スポーツ整体・コンディショニング</label></div>
+            <div class="chip"><input type="checkbox" id="i2" value="美容・エステ系"><label for="i2">美容・エステ系</label></div>
+            <div class="chip"><input type="checkbox" id="i3" value="開業・経営"><label for="i3">開業・経営</label></div>
+            <div class="chip"><input type="checkbox" id="i4" value="訪問診療・訪問リハビリ"><label for="i4">訪問診療・訪問リハビリ</label></div>
+            <div class="chip"><input type="checkbox" id="i5" value="複数店舗マネジメント"><label for="i5">複数店舗マネジメント</label></div>
+            <div class="chip"><input type="checkbox" id="i6" value="まだ決めていない"><label for="i6">まだ決めていない</label></div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>院見学の希望</legend>
+          <div class="toggle-row">
+            <div class="chip"><input type="radio" name="tour" id="tourYes" value="yes"><label for="tourYes">希望する</label></div>
+            <div class="chip"><input type="radio" name="tour" id="tourNo" value="no" checked><label for="tourNo">今は不要</label></div>
+          </div>
+        </fieldset>
+
+        <button type="submit" class="submit-btn" id="submitBtn">登録する</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="doneScreen" class="done-screen">
+    <div class="done-icon">✓</div>
+    <h2>ご登録ありがとうございました</h2>
+    <p>
+      今後、学校訪問やイベントの情報、施術現場のリアルな様子などをLINEでお届けします。<br><br>
+      院見学やご相談があれば、いつでもこのLINEからメッセージをお送りください。
+    </p>
+  </div>
+
+</div>
+
+<script>
+// ============================================================
+// 設定 — 実際の値に置き換えてください
+// ============================================================
+const LIFF_ID = "YOUR_LIFF_ID_HERE";
+const SUPABASE_URL = "YOUR_SUPABASE_URL_HERE";
+const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY_HERE";
+
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// URLの ?event=xxx で「どの学校訪問での登録か」を判別
+// 例: https://xxxx.vercel.app/student-registration.html?event=osaka_seikotsu_2026_07
+const params = new URLSearchParams(window.location.search);
+const sourceEvent = params.get("event") || "unspecified";
+
+let lineProfile = { userId: null, displayName: null, pictureUrl: null };
+
+async function initLiff() {
+  const banner = document.getElementById("statusBanner");
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) {
+      liff.login();
+      return; // login()はリダイレクトするのでここで終了
+    }
+    const profile = await liff.getProfile();
+    lineProfile = {
+      userId: profile.userId,
+      displayName: profile.displayName,
+      pictureUrl: profile.pictureUrl
+    };
+
+    document.getElementById("liffProfile").style.display = "flex";
+    document.getElementById("liffAvatar").src = profile.pictureUrl || "";
+    document.getElementById("liffName").textContent = profile.displayName || "";
+
+    banner.style.display = "none";
+    document.getElementById("formWrapper").style.display = "block";
+  } catch (e) {
+    console.error(e);
+    banner.textContent = "LINE連携でエラーが発生しました。LINEアプリ内から開き直してください。";
+  }
+}
+
+function getCheckedValues(name) {
+  return Array.from(document.querySelectorAll(`input[name="${name}"]:checked`)).map(el => el.value);
+}
+function getCheckedBoxValues(groupId) {
+  return Array.from(document.querySelectorAll(`#${groupId} input[type=checkbox]:checked`)).map(el => el.value);
+}
+
+document.getElementById("regForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+
+  const name = document.getElementById("name").value.trim();
+  const schoolName = document.getElementById("schoolName").value.trim();
+
+  let hasError = false;
+  document.getElementById("err-name").classList.remove("show");
+  document.getElementById("err-school").classList.remove("show");
+
+  if (!name) { document.getElementById("err-name").classList.add("show"); hasError = true; }
+  if (!schoolName) { document.getElementById("err-school").classList.add("show"); hasError = true; }
+  if (hasError) return;
+
+  const submitBtn = document.getElementById("submitBtn");
+  submitBtn.disabled = true;
+  submitBtn.textContent = "送信中…";
+
+  const payload = {
+    line_user_id: lineProfile.userId,
+    line_display_name: lineProfile.displayName,
+    line_picture_url: lineProfile.pictureUrl,
+    name,
+    school_name: schoolName,
+    grade: document.getElementById("grade").value || null,
+    qualification_target: getCheckedValues("qual")[0] || null,
+    interest_area: getCheckedBoxValues("interestGroup").join(", ") || null,
+    phone: document.getElementById("phone").value.trim() || null,
+    email: document.getElementById("email").value.trim() || null,
+    wants_tour: getCheckedValues("tour")[0] === "yes",
+    source_event: sourceEvent
+  };
+
+  const { error } = await supabase.from("recruit_students").insert([payload]);
+
+  if (error) {
+    console.error(error);
+    submitBtn.disabled = false;
+    submitBtn.textContent = "登録する";
+    alert("送信に失敗しました。通信環境をご確認の上、もう一度お試しください。");
+    return;
+  }
+
+  document.getElementById("formWrapper").classList.add("hide");
+  document.getElementById("doneScreen").classList.add("show");
+
+  // 送信完了後、LINEトークルームに戻す(LIFF外ブラウザの場合は何もしない)
+  setTimeout(() => {
+    if (liff.isInClient()) liff.closeWindow();
+  }, 3500);
+});
+
+initLiff();
+</script>
+
+</body>
+</html>
