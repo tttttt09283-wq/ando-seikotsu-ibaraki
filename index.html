@@ -537,6 +537,8 @@ function BreakModal({onClose,bookings,breaks,setBreaks}){
     <div className="modal-overlay">
       <div className="modal-box" style={{overflowY:"auto"}}>
         <div className="modal-header" style={{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)"}}>
+          <div>
+            <div style={{fontWeight:800,fontSize:16,color:"white"}}>休憩・不在管理</div>
             <div style={{fontSize:12,color:"rgba(255,255,255,.7)",marginTop:2}}>登録すると患者予約に反映されます</div>
           </div>
           <button className="modal-close" onClick={onClose}>✕</button>
