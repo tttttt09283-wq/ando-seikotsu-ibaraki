@@ -333,8 +333,6 @@ function PatientHistoryModal({patientName,bookings,onClose}){
         {/* タブコンテンツ */}
         <div style={{flex:1,overflowY:"auto",padding:"14px 16px"}}>
           {loading?<div style={{textAlign:"center",padding:30,color:"#9ca3af"}}>読み込み中...</div>:(
-
-            // ===== 問診票タブ =====
             activeTab==="intake"?(
               firstBooking?(
                 <div>
@@ -355,7 +353,6 @@ function PatientHistoryModal({patientName,bookings,onClose}){
                       <div style={{fontSize:13,fontWeight:600,color:"#1e293b",flex:1}}>{value}</div>
                     </div>
                   ):null)}
-                  {/* 問診情報がない場合 */}
                   {!firstBooking.body_parts&&!firstBooking.injury_cause&&(
                     <div style={{textAlign:"center",padding:30,color:"#94a3b8"}}>
                       <div style={{fontSize:32,marginBottom:8}}>📋</div>
@@ -365,20 +362,17 @@ function PatientHistoryModal({patientName,bookings,onClose}){
                   )}
                 </div>
               ):<div style={{textAlign:"center",padding:30,color:"#9ca3af"}}>来院記録がありません</div>
-
-            // ===== 施術録タブ =====
             ):activeTab==="treatments"?(
               treatments.length===0?(
                 <div style={{textAlign:"center",padding:30,color:"#9ca3af"}}>
                   <div style={{fontSize:32,marginBottom:8}}>📝</div>
                   <div>施術記録がありません</div>
                 </div>
-              ):treatments.map(t=>{
+              ):<div>{treatments.map(t=>{
                 const booking=patientBookings.find(b=>b.id===t.booking_id);
                 const staff=STAFF_ACCOUNTS.find(s=>s.id===booking?.staff_id)||{name:"不明",color:"#888",initial:"？"};
                 return(
                   <div key={t.id} style={{marginBottom:12,borderRadius:10,overflow:"hidden",border:"1px solid #e2e8f0",boxShadow:"0 1px 4px rgba(0,0,0,.05)"}}>
-                    {/* 施術録ヘッダー */}
                     <div style={{background:"#f8fafc",padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",borderBottom:"1px solid #e2e8f0"}}>
                       <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f"}}>{booking?.date||"—"} {booking?.time||""}</div>
                       <div style={{display:"flex",alignItems:"center",gap:6}}>
@@ -387,36 +381,30 @@ function PatientHistoryModal({patientName,bookings,onClose}){
                       </div>
                     </div>
                     <div style={{padding:"10px 14px",background:"white"}}>
-                      {/* 施術種別・部位 */}
                       <div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:6}}>
                         {t.treatment_types&&t.treatment_types.split("・").map(tp=>(<span key={tp} className="badge badge-blue">{tp}</span>))}
                       </div>
                       {t.body_parts&&<div style={{fontSize:12,color:"#64748b",marginBottom:8}}>🦴 {t.body_parts}</div>}
-                      {/* 結果 */}
                       <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginBottom:6}}>
                         {resultBadge(t.result)}
                         {t.result_plan&&<span style={{fontSize:11,color:"#059669",fontWeight:700}}>→ {t.result_plan}</span>}
                         {t.result_reason&&<span style={{fontSize:11,color:"#ef4444"}}>理由：{t.result_reason}</span>}
                       </div>
-                      {/* 提案内容 */}
                       {t.proposal_plan&&(
                         <div style={{padding:"6px 10px",background:"#faf5ff",borderRadius:8,border:"1px solid #e9d5ff",marginBottom:6}}>
                           <div style={{fontSize:11,fontWeight:800,color:"#7c3aed"}}>💡 提案：{t.proposal_plan}</div>
                           {t.proposal_memo&&<div style={{fontSize:11,color:"#9ca3af",marginTop:2}}>{t.proposal_memo}</div>}
                         </div>
                       )}
-                      {/* メモ */}
                       {t.memo&&<div style={{fontSize:12,color:"#9ca3af",marginTop:4}}>📝 {t.memo}</div>}
                     </div>
                   </div>
                 );
-              })
-
-            // ===== 来院履歴タブ =====
+              })}</div>
             ):(
               patientBookings.length===0?(
                 <div style={{textAlign:"center",padding:30,color:"#9ca3af"}}>来院記録がありません</div>
-              ):patientBookings.map((b,i)=>{
+              ):<div>{patientBookings.map((b,i)=>{
                 const staff=STAFF_ACCOUNTS.find(s=>s.id===b.staff_id)||{name:"不明",color:"#888",initial:"？"};
                 const treat=treatments.find(t=>t.booking_id===b.id);
                 const isFirst=i===patientBookings.length-1;
@@ -438,7 +426,7 @@ function PatientHistoryModal({patientName,bookings,onClose}){
                     </div>
                   </div>
                 );
-              })
+              })}</div>
             )
           )}
         </div>
