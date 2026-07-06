@@ -63,7 +63,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 .stat-card{background:white;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.06),0 4px 16px rgba(0,0,0,.04);border-top:3px solid;}
 
 .modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:500;padding:16px;backdrop-filter:blur(2px);}
-.modal-box{background:white;border-radius:16px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;box-shadow:0 25px 60px rgba(0,0,0,.25);}
+.modal-box{background:white;border-radius:16px;width:100%;max-width:520px;max-height:90vh;overflow:hidden;box-shadow:0 25px 60px rgba(0,0,0,.25);display:flex;flex-direction:column;}
 .modal-header{padding:16px 20px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10;border-radius:16px 16px 0 0;}
 .modal-close{background:rgba(255,255,255,.15);border:none;color:white;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px;display:flex;align-items:center;justify-content:center;}
 .modal-close:hover{background:rgba(255,255,255,.25);}
@@ -547,10 +547,8 @@ function BreakModal({onClose,bookings,breaks,setBreaks}){
   }
   return(
     <div className="modal-overlay">
-      <div className="modal-box">
+      <div className="modal-box" style={{overflowY:"auto"}}>
         <div className="modal-header" style={{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)"}}>
-          <div>
-            <div style={{fontWeight:800,fontSize:16,color:"white"}}>休憩・不在管理</div>
             <div style={{fontSize:12,color:"rgba(255,255,255,.7)",marginTop:2}}>登録すると患者予約に反映されます</div>
           </div>
           <button className="modal-close" onClick={onClose}>✕</button>
