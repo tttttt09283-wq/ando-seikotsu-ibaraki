@@ -984,7 +984,12 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
       <div className="form-group"><label className="form-label">電話番号</label><input type="tel" className="form-input" value={form.phone||""} placeholder="090-0000-0000" onChange={e=>setForm(f=>({...f,phone:e.target.value}))}/></div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
         <div><label className="form-label">日付</label><input type="date" className="form-input" value={form.date||""} onChange={e=>{setForm(f=>({...f,date:e.target.value}));setConflict(false);}}/></div>
-        <div><label className="form-label">時間</label><input type="time" step="600" className="form-input" value={form.time||""} onChange={e=>{setForm(f=>({...f,time:e.target.value}));setConflict(false);}}/></div>
+        <div><label className="form-label">時間</label>
+          <select className="form-input" value={form.time||""} onChange={e=>{setForm(f=>({...f,time:e.target.value}));setConflict(false);}}>
+            <option value="">選択してください</option>
+            {(()=>{const opts=[];for(let h=9;h<=19;h++){for(let m=0;m<60;m+=10){if(h===19&&m>0)break;const t=`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;opts.push(<option key={t} value={t}>{t}</option>);}}return opts;})()}
+          </select>
+        </div>
       </div>
       {isAdmin&&(<div className="form-group"><label className="form-label">担当スタッフ</label><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{STAFF_ACCOUNTS.map(s=>(<button key={s.id} onClick={()=>{setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} className="btn" style={{background:form.staff_id===s.id?s.color:"white",color:form.staff_id===s.id?"white":"#374151",border:`2px solid ${s.color}`,borderRadius:20,padding:"5px 12px",fontSize:12,fontWeight:700,boxShadow:form.staff_id===s.id?`0 2px 8px ${s.color}55`:"none"}}>{s.name}</button>))}</div></div>)}
       {/* ===== メニュー選択 ===== */}
