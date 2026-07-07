@@ -892,7 +892,7 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
   const [searchQ,setSearchQ]=React.useState("");
   const [searchResults,setSearchResults]=React.useState([]);
   const [searching,setSearching]=React.useState(false);
-  const [showSearch,setShowSearch]=React.useState(editId===null);
+  const [showSearch,setShowSearch]=React.useState(editId===null&&!form.patient_name);
 
   // メニューの現在カテゴリ・サブカテゴリを初期化
   const initCat=()=>{
