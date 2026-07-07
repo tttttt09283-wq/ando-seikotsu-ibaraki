@@ -2353,7 +2353,7 @@ function StoreMgmtPanel(){
 }
 
 // ===== 患者管理パネル =====
-function PatientsPanel({bookings,setView,setForm,setEditId}){
+function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr}){
   const [patientQ,setPatientQ]=React.useState("");
   const [selPatient,setSelPatient]=React.useState(null);
   const [activeTab,setActiveTab]=React.useState("intake");
@@ -2570,10 +2570,19 @@ function PatientsPanel({bookings,setView,setForm,setEditId}){
                     ✏️ 情報編集
                   </button>
                   <button onClick={()=>{
-                    // 予約フォームを開く（患者情報をプリセット）
-                    setView("form");
-                    setForm({date:"",time:"",staff_id:null,patient_name:selPatient,phone:firstBk?.phone||"",menu:"再診（30分）",insurance_rate:"3割",memo:"",line_notify:!!firstBk?.line_user_id});
+                    setForm({
+                      patient_name:selPatient,
+                      phone:firstBk?.phone||"",
+                      staff_id:1,
+                      date:todayStr,
+                      time:"10:00",
+                      menu:"再診（30分）",
+                      line_notify:!!firstBk?.line_user_id,
+                      reminded:false,
+                    });
+                    setConflict(false);
                     setEditId(null);
+                    setView("form");
                   }}
                     style={{padding:"7px 14px",background:"linear-gradient(135deg,#2563eb,#1d4ed8)",color:"white",border:"none",borderRadius:8,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(37,99,235,.4)",whiteSpace:"nowrap"}}>
                     + 予約追加
@@ -3570,7 +3579,7 @@ function Dashboard({user,onLogout}){
           })()}
 
           {/* 患者管理 */}
-          {view==="patients"&&<PatientsPanel bookings={bookings} setView={setView} setForm={setForm} setEditId={setEditId}/>}
+          {view==="patients"&&<PatientsPanel bookings={bookings} setView={setView} setForm={setForm} setEditId={setEditId} setConflict={setConflict} todayStr={todayStr}/>}
 
           {/* サマリー */}
           {view==="stats"&&<StatsPanel bookings={bookings} payments={payments} todayStr={todayStr}/>}
