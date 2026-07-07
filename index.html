@@ -2355,10 +2355,12 @@ function StoreMgmtPanel(){
 // ===== 患者管理パネル =====
 function PatientsPanel({bookings,setView,setForm,setEditId}){
   const [patientQ,setPatientQ]=React.useState("");
-  const [selPatient,setSelPatient]=React.useState(null); // 選択中の患者名
+  const [selPatient,setSelPatient]=React.useState(null);
   const [activeTab,setActiveTab]=React.useState("intake");
   const [treatments,setTreatments]=React.useState([]);
   const [loadingDetail,setLoadingDetail]=React.useState(false);
+  const [editMode,setEditMode]=React.useState(false);
+  const [editForm,setEditForm]=React.useState({name:"",phone:""});
 
   const GOJUON=[
     {label:"あ行",chars:["あ","い","う","え","お","ア","イ","ウ","エ","オ"]},
@@ -2419,8 +2421,9 @@ function PatientsPanel({bookings,setView,setForm,setEditId}){
     setLoadingDetail(false);
   }
 
-  const [editMode,setEditMode]=React.useState(false);
-  const [editForm,setEditForm]=React.useState({name:"",phone:""});
+  // 選択中患者の情報
+  const selBks=selPatient?bookings.filter(b=>b.patient_name===selPatient).sort((a,b)=>b.date.localeCompare(a.date)):[];
+  const firstBk=selBks.length>0?selBks[selBks.length-1]:null;
 
   function openEdit(){
     if(!firstBk) return;
@@ -2431,18 +2434,14 @@ function PatientsPanel({bookings,setView,setForm,setEditId}){
   async function saveEdit(){
     if(!editForm.name.trim()) return;
     try{
-      // bookingsテーブルの患者名・電話番号を更新
       const bkIds=selBks.map(b=>b.id);
       for(const id of bkIds){
         await sb.update("bookings",id,{patient_name:editForm.name,phone:editForm.phone});
       }
       setEditMode(false);
-      // リスト更新のため再選択
       selectPatient(editForm.name);
     }catch(e){alert("更新に失敗しました");}
   }
-  const firstBk=selBks.length>0?selBks[selBks.length-1]:null;
-  const selStaffInfo=selBks.length>0?STAFF_ACCOUNTS.find(s=>s.id===selBks[0].lastStaff)||{color:"#888",name:"不明",initial:"？"}:{color:"#888",name:"不明",initial:"？"};
 
   function resultBadge(r){
     if(!r) return null;
