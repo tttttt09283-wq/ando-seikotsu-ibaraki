@@ -2353,7 +2353,7 @@ function StoreMgmtPanel(){
 }
 
 // ===== 患者管理パネル =====
-function PatientsPanel({bookings,onHistory}){
+function PatientsPanel({bookings,setView,setForm,setEditId}){
   const [patientQ,setPatientQ]=React.useState("");
   const [selPatient,setSelPatient]=React.useState(null); // 選択中の患者名
   const [activeTab,setActiveTab]=React.useState("intake");
@@ -2419,8 +2419,28 @@ function PatientsPanel({bookings,onHistory}){
     setLoadingDetail(false);
   }
 
-  // 選択中患者の情報
-  const selBks=selPatient?bookings.filter(b=>b.patient_name===selPatient).sort((a,b)=>b.date.localeCompare(a.date)):[];
+  const [editMode,setEditMode]=React.useState(false);
+  const [editForm,setEditForm]=React.useState({name:"",phone:""});
+
+  function openEdit(){
+    if(!firstBk) return;
+    setEditForm({name:firstBk.patient_name||"",phone:firstBk.phone||""});
+    setEditMode(true);
+  }
+
+  async function saveEdit(){
+    if(!editForm.name.trim()) return;
+    try{
+      // bookingsテーブルの患者名・電話番号を更新
+      const bkIds=selBks.map(b=>b.id);
+      for(const id of bkIds){
+        await sb.update("bookings",id,{patient_name:editForm.name,phone:editForm.phone});
+      }
+      setEditMode(false);
+      // リスト更新のため再選択
+      selectPatient(editForm.name);
+    }catch(e){alert("更新に失敗しました");}
+  }
   const firstBk=selBks.length>0?selBks[selBks.length-1]:null;
   const selStaffInfo=selBks.length>0?STAFF_ACCOUNTS.find(s=>s.id===selBks[0].lastStaff)||{color:"#888",name:"不明",initial:"？"}:{color:"#888",name:"不明",initial:"？"};
 
@@ -2530,7 +2550,7 @@ function PatientsPanel({bookings,onHistory}){
           <div style={{flex:1,display:"flex",flexDirection:"column",background:"white",borderRadius:12,boxShadow:"0 1px 4px rgba(0,0,0,.06)",overflow:"hidden"}}>
             {/* 患者ヘッダー */}
             <div style={{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",padding:"14px 18px",flexShrink:0}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
                 <div>
                   <div style={{fontWeight:800,fontSize:17,color:"white"}}>{selPatient} 様</div>
                   <div style={{fontSize:12,color:"rgba(255,255,255,.7)",marginTop:2}}>
@@ -2538,16 +2558,52 @@ function PatientsPanel({bookings,onHistory}){
                     {firstBk?.line_user_id&&<span style={{marginLeft:8,background:"rgba(6,199,85,.3)",borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>LINE連携</span>}
                   </div>
                 </div>
-                <div style={{display:"flex",gap:8}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                   {[{label:"来院",val:selBks.length+"回",color:"#60a5fa"},{label:"施術録",val:treatments.length+"件",color:"#34d399"},{label:"成約",val:treatments.filter(t=>t.result==="成約").length+"件",color:"#fbbf24"}].map(item=>(
-                    <div key={item.label} style={{textAlign:"center",background:"rgba(255,255,255,.15)",borderRadius:8,padding:"6px 12px"}}>
-                      <div style={{fontSize:16,fontWeight:800,color:item.color}}>{item.val}</div>
-                      <div style={{fontSize:10,color:"rgba(255,255,255,.6)"}}>{item.label}</div>
+                    <div key={item.label} style={{textAlign:"center",background:"rgba(255,255,255,.15)",borderRadius:8,padding:"5px 10px"}}>
+                      <div style={{fontSize:15,fontWeight:800,color:item.color}}>{item.val}</div>
+                      <div style={{fontSize:9,color:"rgba(255,255,255,.6)"}}>{item.label}</div>
                     </div>
                   ))}
+                  <button onClick={openEdit}
+                    style={{padding:"7px 12px",background:"rgba(255,255,255,.2)",color:"white",border:"1.5px solid rgba(255,255,255,.4)",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                    ✏️ 情報編集
+                  </button>
+                  <button onClick={()=>{
+                    // 予約フォームを開く（患者情報をプリセット）
+                    setView("form");
+                    setForm({date:"",time:"",staff_id:null,patient_name:selPatient,phone:firstBk?.phone||"",menu:"再診（30分）",insurance_rate:"3割",memo:"",line_notify:!!firstBk?.line_user_id});
+                    setEditId(null);
+                  }}
+                    style={{padding:"7px 14px",background:"linear-gradient(135deg,#2563eb,#1d4ed8)",color:"white",border:"none",borderRadius:8,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(37,99,235,.4)",whiteSpace:"nowrap"}}>
+                    + 予約追加
+                  </button>
                 </div>
               </div>
             </div>
+
+            {/* 情報編集パネル */}
+            {editMode&&(
+              <div style={{padding:"16px 18px",background:"#fffbeb",borderBottom:"1px solid #fde68a",flexShrink:0}}>
+                <div style={{fontWeight:800,fontSize:13,color:"#92400e",marginBottom:12}}>✏️ 患者情報の編集</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+                  <div>
+                    <label style={{display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4}}>患者名</label>
+                    <input value={editForm.name} onChange={e=>setEditForm(p=>({...p,name:e.target.value}))}
+                      style={{width:"100%",padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
+                  </div>
+                  <div>
+                    <label style={{display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4}}>電話番号</label>
+                    <input value={editForm.phone} onChange={e=>setEditForm(p=>({...p,phone:e.target.value}))}
+                      style={{width:"100%",padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  <button onClick={()=>setEditMode(false)} style={{flex:1,padding:"8px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>キャンセル</button>
+                  <button onClick={saveEdit} style={{flex:2,padding:"8px",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:8,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>💾 保存する</button>
+                </div>
+              </div>
+            )}
 
             {/* タブ */}
             <div style={{display:"flex",borderBottom:"1px solid #e2e8f0",flexShrink:0}}>
@@ -3141,8 +3197,8 @@ function Dashboard({user,onLogout}){
   // 会計済みのbooking_idセット
   const paidBookingIds=React.useMemo(()=>new Set(payments.map(p=>p.booking_id).filter(Boolean)),[payments]);
 
-  function openAdd(date=null,time=null){
-    setForm({patient_name:"",phone:"",staff_id:isAdmin?1:user.id,date:date||todayStr,time:time||"10:00",menu:MENUS[0],line_notify:true,reminded:false});
+  function openAdd(date=null,time=null,patientName="",phone=""){
+    setForm({patient_name:patientName,phone:phone,staff_id:isAdmin?1:user.id,date:date||todayStr,time:time||"10:00",menu:MENUS[0],line_notify:true,reminded:false});
     setConflict(false);setEditId(null);setView("form");
   }
   function openEdit(b){
@@ -3508,7 +3564,7 @@ function Dashboard({user,onLogout}){
           })()}
 
           {/* 患者管理 */}
-          {view==="patients"&&<PatientsPanel bookings={bookings} onHistory={setHistoryPatient}/>}
+          {view==="patients"&&<PatientsPanel bookings={bookings} setView={setView} setForm={setForm} setEditId={setEditId}/>}
 
           {/* サマリー */}
           {view==="stats"&&<StatsPanel bookings={bookings} payments={payments} todayStr={todayStr}/>}
