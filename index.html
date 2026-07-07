@@ -940,38 +940,42 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
   }
   const visitCount=React.useMemo(()=>{if(!form.patient_name) return 0;return bookings.filter(b=>b.patient_name===form.patient_name).length;},[form.patient_name,bookings]);
   return(
-    <div className="card" style={{maxWidth:900,padding:0,overflow:"hidden"}}>
+    <div className="card" style={{maxWidth:700,padding:0,overflow:"hidden"}}>
       <div style={{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div style={{fontWeight:800,fontSize:17,color:"white"}}>{editId!==null?"予約を編集":"新規予約"}</div>
-        <button onClick={onClose} style={{background:"rgba(255,255,255,.2)",border:"none",color:"white",width:30,height:30,borderRadius:"50%",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+        <button onClick={onClose} style={{background:"rgba(255,255,255,.2)",border:"none",color:"white",width:30,height:30,borderRadius:"50%",cursor:"pointer",fontSize:16}}>x</button>
       </div>
-      <div style={{display:"flex",minHeight:500}}>
-        <div style={{flex:1,padding:"16px 18px",borderRight:"1px solid #e2e8f0",overflowY:"auto"}}>
-          {conflict&&<div style={{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#dc2626",fontSize:13,fontWeight:700}}>ダブルブッキングになります</div>}
-          {showSearch?(
+      <div style={{display:"flex"}}>
+        <div style={{flex:1,padding:"16px 18px",borderRight:"1px solid #e2e8f0",overflowY:"auto",maxHeight:"80vh"}}>
+          {conflict&&<div style={{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:8,padding:"10px",marginBottom:12,color:"#dc2626",fontSize:13,fontWeight:700}}>ダブルブッキングになります</div>}
+          {showSearch&&(
             <div style={{background:"#f0f9ff",borderRadius:10,padding:12,marginBottom:14,border:"1px solid #bae6fd"}}>
               <div style={{fontWeight:800,fontSize:13,color:"#0369a1",marginBottom:8}}>既存患者を検索</div>
               <input className="form-input" placeholder="患者名またはカルテ番号..." value={searchQ} onChange={e=>{setSearchQ(e.target.value);searchPatients(e.target.value);}} autoFocus/>
               {searching&&<div style={{fontSize:12,color:"#94a3b8",marginTop:4}}>検索中...</div>}
               {searchResults.length>0&&(
-                <div style={{background:"white",borderRadius:8,border:"1px solid #e2e8f0",overflow:"hidden",maxHeight:180,overflowY:"auto",marginTop:6}}>
-                  {searchResults.map((b,i)=>(<button key={i} onClick={()=>selectPatient(b)} style={{width:"100%",padding:"8px 12px",background:"none",border:"none",borderBottom:"1px solid #f1f5f9",cursor:"pointer",textAlign:"left"}}><div style={{fontWeight:700,fontSize:13}}>{b.patient_name}</div><div style={{fontSize:11,color:"#64748b"}}>{b.phone||""}</div></button>))}
+                <div style={{background:"white",borderRadius:8,border:"1px solid #e2e8f0",maxHeight:160,overflowY:"auto",marginTop:6}}>
+                  {searchResults.map((b,i)=>(
+                    <button key={i} onClick={()=>selectPatient(b)} style={{width:"100%",padding:"8px 12px",background:"none",border:"none",borderBottom:"1px solid #f1f5f9",cursor:"pointer",textAlign:"left"}}>
+                      <div style={{fontWeight:700,fontSize:13}}>{b.patient_name}</div>
+                      <div style={{fontSize:11,color:"#64748b"}}>{b.phone||""}</div>
+                    </button>
+                  ))}
                 </div>
               )}
-              {searchQ&&!searching&&searchResults.length===0&&<div style={{fontSize:12,color:"#94a3b8",textAlign:"center",padding:"6px 0"}}>該当患者なし</div>}
+              {searchQ&&!searching&&searchResults.length===0&&<div style={{fontSize:12,color:"#94a3b8",padding:"6px 0"}}>該当患者なし</div>}
               <button onClick={()=>setShowSearch(false)} className="btn btn-outline btn-sm" style={{marginTop:8,width:"100%",justifyContent:"center"}}>新規患者として入力</button>
             </div>
-          ):(
-            form.patient_name?(
-              <div style={{background:"#f0fdf4",borderRadius:10,padding:"10px 14px",marginBottom:12,border:"1px solid #bbf7d0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <div>
-                  <div style={{fontWeight:800,fontSize:15,color:"#1e293b"}}>{form.patient_name}</div>
-                  <div style={{fontSize:12,color:"#64748b"}}>{form.phone}</div>
-                  {visitCount>0&&<div style={{fontSize:11,color:"#059669",fontWeight:700}}>来院{visitCount}回目</div>}
-                </div>
-                {editId===null&&<button onClick={()=>setShowSearch(true)} className="btn btn-outline btn-xs">変更</button>}
+          )}
+          {!showSearch&&form.patient_name&&(
+            <div style={{background:"#f0fdf4",borderRadius:10,padding:"10px 14px",marginBottom:12,border:"1px solid #bbf7d0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:15,color:"#1e293b"}}>{form.patient_name}</div>
+                <div style={{fontSize:12,color:"#64748b"}}>{form.phone}</div>
+                {visitCount>0&&<div style={{fontSize:11,color:"#059669",fontWeight:700}}>来院{visitCount}回目</div>}
               </div>
-            ):null
+              {editId===null&&<button onClick={()=>setShowSearch(true)} className="btn btn-outline btn-xs">変更</button>}
+            </div>
           )}
           {!showSearch&&(
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
@@ -982,44 +986,71 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
           <div className="form-group"><label className="form-label">電話番号</label><input type="tel" className="form-input" value={form.phone||""} placeholder="090-0000-0000" onChange={e=>setForm(f=>({...f,phone:e.target.value}))}/></div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
             <div><label className="form-label">日付</label><input type="date" className="form-input" value={form.date||""} onChange={e=>{setForm(f=>({...f,date:e.target.value}));setConflict(false);}}/></div>
-            <div><label className="form-label">時間</label>
+            <div>
+              <label className="form-label">時間</label>
               <select className="form-input" value={form.time||""} onChange={e=>{setForm(f=>({...f,time:e.target.value}));setConflict(false);}}>
                 <option value="">選択</option>
-                {(()=>{const o=[];for(let h=9;h<=19;h++){for(let m=0;m<60;m+=10){if(h===19&&m>0)break;const t=`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;o.push(<option key={t} value={t}>{t}</option>);}}return o;})()}
+                <option value="09:00">09:00</option><option value="09:10">09:10</option><option value="09:20">09:20</option><option value="09:30">09:30</option><option value="09:40">09:40</option><option value="09:50">09:50</option>
+                <option value="10:00">10:00</option><option value="10:10">10:10</option><option value="10:20">10:20</option><option value="10:30">10:30</option><option value="10:40">10:40</option><option value="10:50">10:50</option>
+                <option value="11:00">11:00</option><option value="11:10">11:10</option><option value="11:20">11:20</option><option value="11:30">11:30</option><option value="11:40">11:40</option><option value="11:50">11:50</option>
+                <option value="12:00">12:00</option><option value="12:10">12:10</option><option value="12:20">12:20</option><option value="12:30">12:30</option><option value="12:40">12:40</option><option value="12:50">12:50</option>
+                <option value="13:00">13:00</option><option value="13:10">13:10</option><option value="13:20">13:20</option><option value="13:30">13:30</option><option value="13:40">13:40</option><option value="13:50">13:50</option>
+                <option value="14:00">14:00</option><option value="14:10">14:10</option><option value="14:20">14:20</option><option value="14:30">14:30</option><option value="14:40">14:40</option><option value="14:50">14:50</option>
+                <option value="15:00">15:00</option><option value="15:10">15:10</option><option value="15:20">15:20</option><option value="15:30">15:30</option><option value="15:40">15:40</option><option value="15:50">15:50</option>
+                <option value="16:00">16:00</option><option value="16:10">16:10</option><option value="16:20">16:20</option><option value="16:30">16:30</option><option value="16:40">16:40</option><option value="16:50">16:50</option>
+                <option value="17:00">17:00</option><option value="17:10">17:10</option><option value="17:20">17:20</option><option value="17:30">17:30</option><option value="17:40">17:40</option><option value="17:50">17:50</option>
+                <option value="18:00">18:00</option><option value="18:10">18:10</option><option value="18:20">18:20</option><option value="18:30">18:30</option><option value="18:40">18:40</option><option value="18:50">18:50</option>
+                <option value="19:00">19:00</option>
               </select>
             </div>
           </div>
-          {isAdmin&&<div className="form-group"><label className="form-label">担当スタッフ</label><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{STAFF_ACCOUNTS.map(s=>(<button key={s.id} onClick={()=>{setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} style={{background:form.staff_id===s.id?s.color:"white",color:form.staff_id===s.id?"white":"#374151",border:`2px solid ${s.color}`,borderRadius:20,padding:"4px 10px",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{s.name}</button>))}</div></div>}
+          {isAdmin&&(
+            <div className="form-group">
+              <label className="form-label">担当スタッフ</label>
+              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                {STAFF_ACCOUNTS.map(s=>(
+                  <button key={s.id} onClick={()=>{setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} style={{background:form.staff_id===s.id?s.color:"white",color:form.staff_id===s.id?"white":"#374151",border:"2px solid "+s.color,borderRadius:20,padding:"4px 10px",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{s.name}</button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="form-group"><label className="form-label">メモ</label><textarea className="form-input" rows={2} value={form.memo||""} placeholder="気になる点など" onChange={e=>setForm(f=>({...f,memo:e.target.value}))}/></div>
           <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:"#f0fdf4",borderRadius:8,border:"1px solid #bbf7d0"}}>
             <input type="checkbox" id="ln" checked={!!form.line_notify} onChange={e=>setForm(f=>({...f,line_notify:e.target.checked}))} style={{width:16,height:16,accentColor:"#059669"}}/>
             <label htmlFor="ln" style={{fontSize:13,color:"#059669",fontWeight:700,cursor:"pointer"}}>LINEリマインドを前日に送る</label>
           </div>
         </div>
-        <div style={{width:320,display:"flex",flexDirection:"column",background:"#f8fafc"}}>
-          <div style={{flex:1,overflowY:"auto",padding:"14px 14px"}}>
+        <div style={{width:280,display:"flex",flexDirection:"column",background:"#f8fafc",maxHeight:"80vh"}}>
+          <div style={{flex:1,overflowY:"auto",padding:"14px"}}>
             <label className="form-label">メニュー（複数選択可）</label>
             <div style={{display:"flex",gap:4,marginBottom:8,flexWrap:"wrap"}}>
               {MENU_CATEGORIES.map(cat=>(
-                <button key={cat.id} onClick={()=>{setSelCategory(cat.id);setSelSub(cat.subs[0].id);}}
-                  style={{padding:"4px 8px",borderRadius:6,border:"1.5px solid",borderColor:selCategory===cat.id?cat.color:"#e2e8f0",background:selCategory===cat.id?cat.color:"white",color:selCategory===cat.id?"white":cat.color,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                <button key={cat.id} onClick={()=>{setSelCategory(cat.id);setSelSub(cat.subs[0].id);}} style={{padding:"4px 8px",borderRadius:6,border:"1.5px solid",borderColor:selCategory===cat.id?cat.color:"#e2e8f0",background:selCategory===cat.id?cat.color:"white",color:selCategory===cat.id?"white":cat.color,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
                   {cat.label}
                 </button>
               ))}
             </div>
             {(()=>{
               const cat=MENU_CATEGORIES.find(c=>c.id===selCategory)||MENU_CATEGORIES[0];
+              const sub=cat.subs.find(s=>s.id===selSub)||cat.subs[0];
               return(
                 <div>
-                  {cat.subs.length>1&&<div style={{display:"flex",gap:4,marginBottom:8,flexWrap:"wrap"}}>{cat.subs.map(s=>(<button key={s.id} onClick={()=>setSelSub(s.id)} style={{padding:"3px 8px",borderRadius:5,border:"1px solid",borderColor:selSub===s.id?"#374151":"#e2e8f0",background:selSub===s.id?"#374151":"white",color:selSub===s.id?"white":"#374151",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{s.label}</button>))}</div>}
+                  {cat.subs.length>1&&(
+                    <div style={{display:"flex",gap:4,marginBottom:8,flexWrap:"wrap"}}>
+                      {cat.subs.map(s=>(
+                        <button key={s.id} onClick={()=>setSelSub(s.id)} style={{padding:"3px 8px",borderRadius:5,border:"1px solid",borderColor:selSub===s.id?"#374151":"#e2e8f0",background:selSub===s.id?"#374151":"white",color:selSub===s.id?"white":"#374151",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
-                    {(cat.subs.find(s=>s.id===selSub)||cat.subs[0]).items.map(item=>{
+                    {sub.items.map(item=>{
                       const isSel=selectedMenus.includes(item.name);
                       return(
-                        <button key={item.name} onClick={()=>toggleMenu(item.name,item.duration)}
-                          style={{padding:"7px 8px",borderRadius:7,border:`1.5px solid ${isSel?cat.color:"#e2e8f0"}`,background:isSel?cat.color+"18":"white",textAlign:"left",cursor:"pointer",fontFamily:"inherit"}}>
+                        <button key={item.name} onClick={()=>toggleMenu(item.name,item.duration)} style={{padding:"7px 8px",borderRadius:7,border:"1.5px solid "+(isSel?cat.color:"#e2e8f0"),background:isSel?cat.color+"18":"white",textAlign:"left",cursor:"pointer",fontFamily:"inherit"}}>
                           <div style={{fontSize:11,fontWeight:700,color:isSel?cat.color:"#374151"}}>{item.name}</div>
-                          <div style={{fontSize:10,color:"#94a3b8"}}>{item.price>0?"¥"+item.price.toLocaleString():item.price===0?"保険":""}</div>
+                          <div style={{fontSize:10,color:"#94a3b8"}}>{item.price>0?""+item.price.toLocaleString():item.price===0?"保険":""}</div>
                         </button>
                       );
                     })}
@@ -1029,20 +1060,24 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
             })()}
           </div>
           <div style={{padding:"12px 14px",borderTop:"2px solid #e2e8f0",background:"white",flexShrink:0}}>
-            <div style={{fontSize:12,fontWeight:800,color:"#1e3a5f",marginBottom:6}}>選択中のメニュー</div>
-            {selectedMenus.length===0?(<div style={{fontSize:12,color:"#d1d5db",marginBottom:10}}>未選択</div>):(
+            <div style={{fontSize:12,fontWeight:800,color:"#1e3a5f",marginBottom:6}}>選択中</div>
+            {selectedMenus.length===0?(
+              <div style={{fontSize:12,color:"#d1d5db",marginBottom:10}}>未選択</div>
+            ):(
               <div style={{marginBottom:10}}>
-                {selectedMenus.map(m=>(<div key={m} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 8px",background:"#eff6ff",borderRadius:6,marginBottom:3}}>
-                  <span style={{fontSize:12,fontWeight:700,color:"#1e3a5f"}}>{m}</span>
-                  <button onClick={()=>toggleMenu(m,30)} style={{background:"none",border:"none",cursor:"pointer",color:"#94a3b8",fontSize:13,lineHeight:1}}>✕</button>
-                </div>))}
-                {totalPrice>0&&<div style={{textAlign:"right",fontWeight:800,fontSize:14,color:"#d97706",marginTop:4}}>合計 ¥{totalPrice.toLocaleString()}</div>}
+                {selectedMenus.map(m=>(
+                  <div key={m} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 8px",background:"#eff6ff",borderRadius:6,marginBottom:3}}>
+                    <span style={{fontSize:11,fontWeight:700,color:"#1e3a5f"}}>{m}</span>
+                    <button onClick={()=>toggleMenu(m,30)} style={{background:"none",border:"none",cursor:"pointer",color:"#94a3b8",fontSize:12}}>x</button>
+                  </div>
+                ))}
+                {totalPrice>0&&<div style={{textAlign:"right",fontWeight:800,fontSize:13,color:"#d97706",marginTop:4}}>{"Y"+totalPrice.toLocaleString()}</div>}
               </div>
             )}
             <div style={{display:"flex",gap:8}}>
-              {editId!==null&&<button onClick={onDelete} className="btn btn-danger" style={{flex:1,justifyContent:"center",padding:"10px 0",fontSize:13}}>削除</button>}
-              <button onClick={save} style={{flex:2,padding:"11px 0",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:8,fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px rgba(5,150,105,.35)"}}>
-                {editId!==null?"✓ 更新する":"✓ 予約を確定する"}
+              {editId!==null&&<button onClick={onDelete} className="btn btn-danger" style={{flex:1,justifyContent:"center",padding:"10px 0",fontSize:12}}>削除</button>}
+              <button onClick={save} style={{flex:2,padding:"11px 0",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:8,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+                {editId!==null?"更新する":"予約を確定する"}
               </button>
             </div>
           </div>
@@ -3323,11 +3358,15 @@ function Dashboard({user,onLogout}){
         </div>
 
         {/* ===== メインコンテンツ ===== */}
-        <div style={{flex:1,padding:16,minWidth:0,overflowY:view==="calendar"?"hidden":"auto",display:"flex",flexDirection:"column",height:"calc(100vh - 68px)"}}>
+        <div style={{flex:1,padding:16,minWidth:0,overflowY:"auto"}}>
 
-          {view==="calendar"&&<div style={{display:"flex",flexDirection:"column",flex:1,minHeight:0,gap:8}}>
-          {(
-            <div className="staff-filter" style={{flexShrink:0}}>
+          {/* スタッフフィルター（カレンダー・一覧のみ） */}
+          {(view==="calendar"||view==="list")&&(
+            <div className="staff-filter">
+              {isAdmin&&(<button onClick={()=>setSelStaff(null)} className="staff-chip" style={{background:!selStaff?"#1e3a5f":"white",color:!selStaff?"white":"#374151",borderColor:!selStaff?"#1e3a5f":"#e2e8f0",boxShadow:!selStaff?"0 2px 8px rgba(30,58,95,.35)":"0 1px 3px rgba(0,0,0,.08)"}}>全員</button>)}
+              {STAFF_ACCOUNTS.map(s=>(<button key={s.id} onClick={()=>setSelStaff(s.id)} className="staff-chip" style={{background:selStaff===s.id?s.color:"white",color:selStaff===s.id?"white":"#374151",borderColor:selStaff===s.id?s.color:"#e2e8f0",boxShadow:selStaff===s.id?`0 2px 8px ${s.color}55`:"0 1px 3px rgba(0,0,0,.08)"}}>{s.name}</button>))}
+            </div>
+          )}
               {isAdmin&&(<button onClick={()=>setSelStaff(null)} className="staff-chip" style={{background:!selStaff?"#1e3a5f":"white",color:!selStaff?"white":"#374151",borderColor:!selStaff?"#1e3a5f":"#e2e8f0",boxShadow:!selStaff?"0 2px 8px rgba(30,58,95,.35)":"0 1px 3px rgba(0,0,0,.08)"}}>全員</button>)}
               {STAFF_ACCOUNTS.map(s=>(<button key={s.id} onClick={()=>setSelStaff(s.id)} className="staff-chip" style={{background:selStaff===s.id?s.color:"white",color:selStaff===s.id?"white":"#374151",borderColor:selStaff===s.id?s.color:"#e2e8f0",boxShadow:selStaff===s.id?`0 2px 8px ${s.color}55`:"0 1px 3px rgba(0,0,0,.08)"}}>{s.name}</button>))}
             </div>
@@ -3368,7 +3407,7 @@ function Dashboard({user,onLogout}){
             }}
 
             return(
-              <div className="card" style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minHeight:0}}>
+              <div className="card">
                 {/* 個人絞り込み時：週間リスト切り替えボタン */}
                 {selStaff&&(
                   <div style={{padding:"8px 12px",background:"#f8fafc",borderBottom:"1px solid #e2e8f0",display:"flex",gap:8}}>
@@ -3427,8 +3466,8 @@ function Dashboard({user,onLogout}){
                     style={{marginLeft:"auto",padding:"3px 8px",border:"1.5px solid #e2e8f0",borderRadius:7,fontSize:12,color:"#374151",cursor:"pointer"}}/>
                 </div>}
 
-                {(!selStaff||weekViewMode==="calendar")&&<div style={{flex:1,overflowX:"auto",overflowY:"auto",minHeight:0}}>
-                  <div style={{minWidth:HEADER_W+TOTAL_MINS*CELL_W+20,height:"100%"}}>
+                {(!selStaff||weekViewMode==="calendar")&&<div style={{overflowX:"auto"}}>
+                  <div style={{minWidth:HEADER_W+TOTAL_MINS*CELL_W+20}}>
 
                     {/* 時間ヘッダー（固定） */}
                     <div style={{display:"flex",borderBottom:"2px solid #e2e8f0",background:"#f8fafc",position:"sticky",top:0,zIndex:10}}>
@@ -3537,7 +3576,6 @@ function Dashboard({user,onLogout}){
               </div>
             );
           })()}
-          </div>}
 
           {/* 患者管理 */}
           {view==="patients"&&<PatientsPanel bookings={bookings} setView={setView} setForm={setForm} setEditId={setEditId} setConflict={setConflict} todayStr={todayStr}/>}
