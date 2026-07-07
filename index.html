@@ -940,156 +940,116 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
   }
   const visitCount=React.useMemo(()=>{if(!form.patient_name) return 0;return bookings.filter(b=>b.patient_name===form.patient_name).length;},[form.patient_name,bookings]);
   return(
-    <div className="card" style={{maxWidth:520,padding:22}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
-        <div style={{fontSize:17,fontWeight:800,color:"#1e3a5f"}}>{editId!==null?"予約を編集":"新規予約"}</div>
-        <button onClick={onClose} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#94a3b8",lineHeight:1}}>✕</button>
+    <div className="card" style={{maxWidth:900,padding:0,overflow:"hidden"}}>
+      <div style={{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+        <div style={{fontWeight:800,fontSize:17,color:"white"}}>{editId!==null?"予約を編集":"新規予約"}</div>
+        <button onClick={onClose} style={{background:"rgba(255,255,255,.2)",border:"none",color:"white",width:30,height:30,borderRadius:"50%",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
       </div>
-      {conflict&&<div style={{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#dc2626",fontSize:13,fontWeight:700}}>ダブルブッキングになります</div>}
-      {showSearch?(
-        <div style={{background:"#f0f9ff",borderRadius:10,padding:14,marginBottom:16,border:"1px solid #bae6fd"}}>
-          <div style={{fontWeight:800,fontSize:13,color:"#0369a1",marginBottom:10}}>既存患者を検索</div>
-          <div style={{position:"relative",marginBottom:8}}>
-            <input className="form-input" placeholder="患者名またはカルテ番号で検索..." value={searchQ} onChange={e=>{setSearchQ(e.target.value);searchPatients(e.target.value);}} style={{paddingRight:40}} autoFocus/>
-            {searching&&<div style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",fontSize:12,color:"#94a3b8"}}>検索中...</div>}
-          </div>
-          {searchResults.length>0&&(
-            <div style={{background:"white",borderRadius:8,border:"1px solid #e2e8f0",overflow:"hidden",maxHeight:220,overflowY:"auto"}}>
-              {searchResults.map((b,i)=>(<button key={i} onClick={()=>selectPatient(b)} style={{width:"100%",padding:"10px 14px",background:"none",border:"none",borderBottom:"1px solid #f1f5f9",cursor:"pointer",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}><div><div style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{b.patient_name}</div><div style={{fontSize:12,color:"#64748b"}}>{b.phone||"電話なし"}{b.karte_no?`　カルテ：${b.karte_no}`:""}</div></div><div style={{fontSize:11,color:"#94a3b8",textAlign:"right"}}><div>{b.date}</div>{b.line_user_id&&<div style={{color:"#059669",fontWeight:700}}>LINE✓</div>}</div></button>))}
+      <div style={{display:"flex",minHeight:500}}>
+        <div style={{flex:1,padding:"16px 18px",borderRight:"1px solid #e2e8f0",overflowY:"auto"}}>
+          {conflict&&<div style={{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#dc2626",fontSize:13,fontWeight:700}}>ダブルブッキングになります</div>}
+          {showSearch?(
+            <div style={{background:"#f0f9ff",borderRadius:10,padding:12,marginBottom:14,border:"1px solid #bae6fd"}}>
+              <div style={{fontWeight:800,fontSize:13,color:"#0369a1",marginBottom:8}}>既存患者を検索</div>
+              <input className="form-input" placeholder="患者名またはカルテ番号..." value={searchQ} onChange={e=>{setSearchQ(e.target.value);searchPatients(e.target.value);}} autoFocus/>
+              {searching&&<div style={{fontSize:12,color:"#94a3b8",marginTop:4}}>検索中...</div>}
+              {searchResults.length>0&&(
+                <div style={{background:"white",borderRadius:8,border:"1px solid #e2e8f0",overflow:"hidden",maxHeight:180,overflowY:"auto",marginTop:6}}>
+                  {searchResults.map((b,i)=>(<button key={i} onClick={()=>selectPatient(b)} style={{width:"100%",padding:"8px 12px",background:"none",border:"none",borderBottom:"1px solid #f1f5f9",cursor:"pointer",textAlign:"left"}}><div style={{fontWeight:700,fontSize:13}}>{b.patient_name}</div><div style={{fontSize:11,color:"#64748b"}}>{b.phone||""}</div></button>))}
+                </div>
+              )}
+              {searchQ&&!searching&&searchResults.length===0&&<div style={{fontSize:12,color:"#94a3b8",textAlign:"center",padding:"6px 0"}}>該当患者なし</div>}
+              <button onClick={()=>setShowSearch(false)} className="btn btn-outline btn-sm" style={{marginTop:8,width:"100%",justifyContent:"center"}}>新規患者として入力</button>
             </div>
-          )}
-          {searchQ&&!searching&&searchResults.length===0&&<div style={{fontSize:13,color:"#94a3b8",textAlign:"center",padding:"8px 0"}}>該当患者なし</div>}
-          <button onClick={()=>setShowSearch(false)} className="btn btn-outline btn-sm" style={{marginTop:8,width:"100%",justifyContent:"center"}}>新規患者として入力</button>
-        </div>
-      ):(
-        <div style={{marginBottom:14}}>
-          {form.patient_name&&(
-            <div style={{background:"#f0fdf4",borderRadius:10,padding:"10px 14px",marginBottom:10,border:"1px solid #bbf7d0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <div>
-                <div style={{fontWeight:800,fontSize:15,color:"#1e293b"}}>{form.patient_name}</div>
-                <div style={{fontSize:12,color:"#64748b"}}>{form.phone}{form.karte_no?`　カルテ：${form.karte_no}`:""}</div>
-                {visitCount>0&&<div style={{fontSize:11,color:"#059669",fontWeight:700}}>来院{visitCount}回目</div>}
+          ):(
+            form.patient_name?(
+              <div style={{background:"#f0fdf4",borderRadius:10,padding:"10px 14px",marginBottom:12,border:"1px solid #bbf7d0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{fontWeight:800,fontSize:15,color:"#1e293b"}}>{form.patient_name}</div>
+                  <div style={{fontSize:12,color:"#64748b"}}>{form.phone}</div>
+                  {visitCount>0&&<div style={{fontSize:11,color:"#059669",fontWeight:700}}>来院{visitCount}回目</div>}
+                </div>
+                {editId===null&&<button onClick={()=>setShowSearch(true)} className="btn btn-outline btn-xs">変更</button>}
               </div>
-              {editId===null&&<button onClick={()=>setShowSearch(true)} className="btn btn-outline btn-xs">変更</button>}
+            ):null
+          )}
+          {!showSearch&&(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+              <div><label className="form-label">患者名 *</label><input className="form-input" value={form.patient_name||""} placeholder="山本 花子" onChange={e=>{setForm(f=>({...f,patient_name:e.target.value}));setConflict(false);}}/></div>
+              <div><label className="form-label">カルテ番号</label><input className="form-input" value={form.karte_no||""} placeholder="K-001" onChange={e=>setForm(f=>({...f,karte_no:e.target.value}))}/></div>
             </div>
           )}
-        </div>
-      )}
-      {!showSearch&&(
-        <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:10,marginBottom:14}}>
-          <div><label className="form-label">患者名 *</label><input className="form-input" value={form.patient_name||""} placeholder="山本 花子" onChange={e=>{setForm(f=>({...f,patient_name:e.target.value}));setConflict(false);}}/></div>
-          <div style={{minWidth:110}}><label className="form-label">カルテ番号</label><input className="form-input" value={form.karte_no||""} placeholder="K-001" onChange={e=>setForm(f=>({...f,karte_no:e.target.value}))}/></div>
-        </div>
-      )}
-      <div className="form-group"><label className="form-label">電話番号</label><input type="tel" className="form-input" value={form.phone||""} placeholder="090-0000-0000" onChange={e=>setForm(f=>({...f,phone:e.target.value}))}/></div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
-        <div><label className="form-label">日付</label><input type="date" className="form-input" value={form.date||""} onChange={e=>{setForm(f=>({...f,date:e.target.value}));setConflict(false);}}/></div>
-        <div><label className="form-label">時間</label><input type="time" step="600" className="form-input" value={form.time||""} onChange={e=>{setForm(f=>({...f,time:e.target.value}));setConflict(false);}}/></div>
-      </div>
-      {isAdmin&&(<div className="form-group"><label className="form-label">担当スタッフ</label><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{STAFF_ACCOUNTS.map(s=>(<button key={s.id} onClick={()=>{setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} className="btn" style={{background:form.staff_id===s.id?s.color:"white",color:form.staff_id===s.id?"white":"#374151",border:`2px solid ${s.color}`,borderRadius:20,padding:"5px 12px",fontSize:12,fontWeight:700,boxShadow:form.staff_id===s.id?`0 2px 8px ${s.color}55`:"none"}}>{s.name}</button>))}</div></div>)}
-      {/* ===== メニュー選択 ===== */}
-      <div className="form-group">
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <label className="form-label" style={{marginBottom:0}}>メニュー（複数選択可）</label>
-          {selectedMenus.length>0&&(
-            <button onClick={clearMenus} style={{fontSize:11,color:"#ef4444",background:"none",border:"none",cursor:"pointer",fontWeight:700}}>クリア</button>
-          )}
-        </div>
-
-        {/* 選択済みバッジ */}
-        {selectedMenus.length>0&&(
-          <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10,padding:"8px 10px",background:"#f0fdf4",borderRadius:8,border:"1px solid #bbf7d0"}}>
-            {selectedMenus.map(m=>{
-              const cat=MENU_CATEGORIES.find(c=>allCatItems(c).some(i=>i.name===m))||MENU_CATEGORIES[0];
-              const item=allCatItems(cat).find(i=>i.name===m);
-              return(
-                <span key={m} style={{display:"inline-flex",alignItems:"center",gap:4,background:cat.color,color:"white",borderRadius:20,padding:"3px 10px",fontSize:11,fontWeight:700}}>
-                  {m}
-                  {item&&<span style={{opacity:.8,fontSize:10}}>¥{item.price.toLocaleString()}</span>}
-                  <button onClick={()=>toggleMenu(m,item?.duration||30)} style={{background:"rgba(255,255,255,.3)",border:"none",color:"white",borderRadius:"50%",width:14,height:14,cursor:"pointer",fontSize:10,lineHeight:1,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
-                </span>
-              );
-            })}
-            <span style={{fontSize:11,color:"#059669",fontWeight:700,alignSelf:"center"}}>
-              合計 ¥{selectedMenus.reduce((s,m)=>{const cat=MENU_CATEGORIES.find(c=>allCatItems(c).some(i=>i.name===m));const item=allCatItems(cat||MENU_CATEGORIES[0]).find(i=>i.name===m);return s+(item?.price||0);},0).toLocaleString()}
-            </span>
+          <div className="form-group"><label className="form-label">電話番号</label><input type="tel" className="form-input" value={form.phone||""} placeholder="090-0000-0000" onChange={e=>setForm(f=>({...f,phone:e.target.value}))}/></div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+            <div><label className="form-label">日付</label><input type="date" className="form-input" value={form.date||""} onChange={e=>{setForm(f=>({...f,date:e.target.value}));setConflict(false);}}/></div>
+            <div><label className="form-label">時間</label>
+              <select className="form-input" value={form.time||""} onChange={e=>{setForm(f=>({...f,time:e.target.value}));setConflict(false);}}>
+                <option value="">選択</option>
+                {(()=>{const o=[];for(let h=9;h<=19;h++){for(let m=0;m<60;m+=10){if(h===19&&m>0)break;const t=`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;o.push(<option key={t} value={t}>{t}</option>);}}return o;})()}
+              </select>
+            </div>
           </div>
-        )}
-
-        {/* Lv1: 大分類 */}
-        <div style={{display:"flex",gap:5,marginBottom:8}}>
-          {MENU_CATEGORIES.map(c=>(
-            <button key={c.id} onClick={()=>{setSelCategory(c.id);setSelSub(c.subs[0].id);}}
-              className="btn" style={{flex:1,padding:"7px 4px",borderRadius:8,fontSize:12,fontWeight:700,background:selCategory===c.id?c.color:"white",color:selCategory===c.id?"white":"#374151",border:`2px solid ${selCategory===c.id?c.color:"#e2e8f0"}`,boxShadow:selCategory===c.id?`0 2px 8px ${c.color}44`:"none",justifyContent:"center"}}>
-              {c.label}
-            </button>
-          ))}
+          {isAdmin&&<div className="form-group"><label className="form-label">担当スタッフ</label><div style={{display:"flex",gap:5,flexWrap:"wrap"}}>{STAFF_ACCOUNTS.map(s=>(<button key={s.id} onClick={()=>{setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} style={{background:form.staff_id===s.id?s.color:"white",color:form.staff_id===s.id?"white":"#374151",border:`2px solid ${s.color}`,borderRadius:20,padding:"4px 10px",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{s.name}</button>))}</div></div>}
+          <div className="form-group"><label className="form-label">メモ</label><textarea className="form-input" rows={2} value={form.memo||""} placeholder="気になる点など" onChange={e=>setForm(f=>({...f,memo:e.target.value}))}/></div>
+          <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:"#f0fdf4",borderRadius:8,border:"1px solid #bbf7d0"}}>
+            <input type="checkbox" id="ln" checked={!!form.line_notify} onChange={e=>setForm(f=>({...f,line_notify:e.target.checked}))} style={{width:16,height:16,accentColor:"#059669"}}/>
+            <label htmlFor="ln" style={{fontSize:13,color:"#059669",fontWeight:700,cursor:"pointer"}}>LINEリマインドを前日に送る</label>
+          </div>
         </div>
-
-        {/* Lv2: サブ分類（保険→3割/2割/1割、自費→1回/回数券FP） */}
-        {(()=>{
-          const cat=MENU_CATEGORIES.find(c=>c.id===selCategory)||MENU_CATEGORIES[0];
-          if(cat.subs.length<=1) return null;
-          return(
-            <div style={{display:"flex",gap:5,marginBottom:8}}>
-              {cat.subs.map(sub=>(
-                <button key={sub.id} onClick={()=>setSelSub(sub.id)}
-                  className="btn" style={{flex:1,padding:"6px 4px",borderRadius:8,fontSize:12,fontWeight:700,background:selSub===sub.id?"#1e3a5f":"#f1f5f9",color:selSub===sub.id?"white":"#475569",border:`1.5px solid ${selSub===sub.id?"#1e3a5f":"#e2e8f0"}`,justifyContent:"center"}}>
-                  {sub.label}
+        <div style={{width:320,display:"flex",flexDirection:"column",background:"#f8fafc"}}>
+          <div style={{flex:1,overflowY:"auto",padding:"14px 14px"}}>
+            <label className="form-label">メニュー（複数選択可）</label>
+            <div style={{display:"flex",gap:4,marginBottom:8,flexWrap:"wrap"}}>
+              {MENU_CATEGORIES.map(cat=>(
+                <button key={cat.id} onClick={()=>{setSelCategory(cat.id);setSelSub(cat.subs[0].id);}}
+                  style={{padding:"4px 8px",borderRadius:6,border:"1.5px solid",borderColor:selCategory===cat.id?cat.color:"#e2e8f0",background:selCategory===cat.id?cat.color:"white",color:selCategory===cat.id?"white":cat.color,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                  {cat.label}
                 </button>
               ))}
             </div>
-          );
-        })()}
-
-        {/* Lv3: メニュー一覧（複数選択） */}
-        {(()=>{
-          const cat=MENU_CATEGORIES.find(c=>c.id===selCategory)||MENU_CATEGORIES[0];
-          const sub=cat.subs.find(s=>s.id===selSub)||cat.subs[0];
-          return(
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,maxHeight:220,overflowY:"auto",padding:2}}>
-              {sub.items.map(item=>{
-                const isSel=selectedMenus.includes(item.name);
-                return(
-                  <button key={item.name} onClick={()=>toggleMenu(item.name,item.duration)}
-                    className="btn" style={{padding:"8px 10px",borderRadius:8,fontSize:12,fontWeight:isSel?700:500,textAlign:"left",justifyContent:"flex-start",flexDirection:"column",alignItems:"flex-start",height:"auto",background:isSel?cat.color+"18":"#f8fafc",color:isSel?cat.color:"#374151",border:`1.5px solid ${isSel?cat.color:"#e2e8f0"}`,position:"relative"}}>
-                    {isSel&&<span style={{position:"absolute",top:5,right:6,fontSize:10,fontWeight:800,color:cat.color}}>✓</span>}
-                    <span style={{fontWeight:700,paddingRight:14}}>{item.name}</span>
-                    <span style={{fontSize:10,color:isSel?cat.color:"#94a3b8",marginTop:2}}>¥{item.price.toLocaleString()}</span>
-                  </button>
-                );
-              })}
-            </div>
-          );
-        })()}
-      </div>
-
-      {/* 施術時間 */}
-      <div className="form-group">
-        <label className="form-label">施術時間</label>
-        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-          {DURATION_OPTIONS.map(min=>{
-            const isSel=(form.duration||DURATION[form.menu]||30)===min;
-            return(
-              <button key={min} onClick={()=>setForm(f=>({...f,duration:min}))} className="btn"
-                style={{padding:"6px 8px",borderRadius:8,fontSize:12,fontWeight:isSel?700:500,background:isSel?"#1e3a5f":"white",color:isSel?"white":"#374151",border:`1.5px solid ${isSel?"#1e3a5f":"#e2e8f0"}`,minWidth:44,justifyContent:"center"}}>
-                {min}分
+            {(()=>{
+              const cat=MENU_CATEGORIES.find(c=>c.id===selCategory)||MENU_CATEGORIES[0];
+              return(
+                <div>
+                  {cat.subs.length>1&&<div style={{display:"flex",gap:4,marginBottom:8,flexWrap:"wrap"}}>{cat.subs.map(s=>(<button key={s.id} onClick={()=>setSelSub(s.id)} style={{padding:"3px 8px",borderRadius:5,border:"1px solid",borderColor:selSub===s.id?"#374151":"#e2e8f0",background:selSub===s.id?"#374151":"white",color:selSub===s.id?"white":"#374151",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{s.label}</button>))}</div>}
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
+                    {(cat.subs.find(s=>s.id===selSub)||cat.subs[0]).items.map(item=>{
+                      const isSel=selectedMenus.includes(item.name);
+                      return(
+                        <button key={item.name} onClick={()=>toggleMenu(item.name,item.duration)}
+                          style={{padding:"7px 8px",borderRadius:7,border:`1.5px solid ${isSel?cat.color:"#e2e8f0"}`,background:isSel?cat.color+"18":"white",textAlign:"left",cursor:"pointer",fontFamily:"inherit"}}>
+                          <div style={{fontSize:11,fontWeight:700,color:isSel?cat.color:"#374151"}}>{item.name}</div>
+                          <div style={{fontSize:10,color:"#94a3b8"}}>{item.price>0?"¥"+item.price.toLocaleString():item.price===0?"保険":""}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+          <div style={{padding:"12px 14px",borderTop:"2px solid #e2e8f0",background:"white",flexShrink:0}}>
+            <div style={{fontSize:12,fontWeight:800,color:"#1e3a5f",marginBottom:6}}>選択中のメニュー</div>
+            {selectedMenus.length===0?(<div style={{fontSize:12,color:"#d1d5db",marginBottom:10}}>未選択</div>):(
+              <div style={{marginBottom:10}}>
+                {selectedMenus.map(m=>(<div key={m} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 8px",background:"#eff6ff",borderRadius:6,marginBottom:3}}>
+                  <span style={{fontSize:12,fontWeight:700,color:"#1e3a5f"}}>{m}</span>
+                  <button onClick={()=>toggleMenu(m,30)} style={{background:"none",border:"none",cursor:"pointer",color:"#94a3b8",fontSize:13,lineHeight:1}}>✕</button>
+                </div>))}
+                {totalPrice>0&&<div style={{textAlign:"right",fontWeight:800,fontSize:14,color:"#d97706",marginTop:4}}>合計 ¥{totalPrice.toLocaleString()}</div>}
+              </div>
+            )}
+            <div style={{display:"flex",gap:8}}>
+              {editId!==null&&<button onClick={onDelete} className="btn btn-danger" style={{flex:1,justifyContent:"center",padding:"10px 0",fontSize:13}}>削除</button>}
+              <button onClick={save} style={{flex:2,padding:"11px 0",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:8,fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px rgba(5,150,105,.35)"}}>
+                {editId!==null?"✓ 更新する":"✓ 予約を確定する"}
               </button>
-            );
-          })}
+            </div>
+          </div>
         </div>
-      </div>
-      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20,padding:"10px 12px",background:"#f0fdf4",borderRadius:8,border:"1px solid #bbf7d0"}}>
-        <input type="checkbox" id="ln" checked={!!form.line_notify} onChange={e=>setForm(f=>({...f,line_notify:e.target.checked}))} style={{width:16,height:16,accentColor:"#059669"}}/>
-        <label htmlFor="ln" style={{fontSize:13,color:"#059669",fontWeight:700,cursor:"pointer"}}>LINEリマインドを前日に送る</label>
-      </div>
-      <div style={{display:"flex",gap:10}}>
-        {editId!==null&&<button onClick={onDelete} className="btn btn-danger" style={{flex:1,justifyContent:"center",padding:11,fontSize:14}}>削除</button>}
-        <button onClick={save} className="btn btn-primary" style={{flex:2,justifyContent:"center",padding:11,fontSize:14}}>{editId!==null?"更新する":"予約を登録"}</button>
       </div>
     </div>
   );
-}
 
 // ===== 各種設定パネル =====
 function SettingsPanel(){
