@@ -984,12 +984,7 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
       <div className="form-group"><label className="form-label">電話番号</label><input type="tel" className="form-input" value={form.phone||""} placeholder="090-0000-0000" onChange={e=>setForm(f=>({...f,phone:e.target.value}))}/></div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
         <div><label className="form-label">日付</label><input type="date" className="form-input" value={form.date||""} onChange={e=>{setForm(f=>({...f,date:e.target.value}));setConflict(false);}}/></div>
-        <div><label className="form-label">時間</label>
-          <select className="form-input" value={form.time||""} onChange={e=>{setForm(f=>({...f,time:e.target.value}));setConflict(false);}}>
-            <option value="">選択してください</option>
-            {(()=>{const opts=[];for(let h=9;h<=19;h++){for(let m=0;m<60;m+=10){if(h===19&&m>0)break;const t=`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;opts.push(<option key={t} value={t}>{t}</option>);}}return opts;})()}
-          </select>
-        </div>
+        <div><label className="form-label">時間</label><input type="time" step="600" className="form-input" value={form.time||""} onChange={e=>{setForm(f=>({...f,time:e.target.value}));setConflict(false);}}/></div>
       </div>
       {isAdmin&&(<div className="form-group"><label className="form-label">担当スタッフ</label><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{STAFF_ACCOUNTS.map(s=>(<button key={s.id} onClick={()=>{setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} className="btn" style={{background:form.staff_id===s.id?s.color:"white",color:form.staff_id===s.id?"white":"#374151",border:`2px solid ${s.color}`,borderRadius:20,padding:"5px 12px",fontSize:12,fontWeight:700,boxShadow:form.staff_id===s.id?`0 2px 8px ${s.color}55`:"none"}}>{s.name}</button>))}</div></div>)}
       {/* ===== メニュー選択 ===== */}
@@ -3368,11 +3363,11 @@ function Dashboard({user,onLogout}){
         </div>
 
         {/* ===== メインコンテンツ ===== */}
-        <div style={{flex:1,padding:16,minWidth:0,overflowY:"auto"}}>
+        <div style={{flex:1,padding:16,minWidth:0,overflowY:view==="calendar"?"hidden":"auto",display:"flex",flexDirection:"column",height:"calc(100vh - 68px)"}}>
 
-          {/* スタッフフィルター（カレンダー・一覧のみ） */}
-          {(view==="calendar"||view==="list")&&(
-            <div className="staff-filter">
+          {view==="calendar"&&<div style={{display:"flex",flexDirection:"column",flex:1,minHeight:0,gap:8}}>
+          {(
+            <div className="staff-filter" style={{flexShrink:0}}>
               {isAdmin&&(<button onClick={()=>setSelStaff(null)} className="staff-chip" style={{background:!selStaff?"#1e3a5f":"white",color:!selStaff?"white":"#374151",borderColor:!selStaff?"#1e3a5f":"#e2e8f0",boxShadow:!selStaff?"0 2px 8px rgba(30,58,95,.35)":"0 1px 3px rgba(0,0,0,.08)"}}>全員</button>)}
               {STAFF_ACCOUNTS.map(s=>(<button key={s.id} onClick={()=>setSelStaff(s.id)} className="staff-chip" style={{background:selStaff===s.id?s.color:"white",color:selStaff===s.id?"white":"#374151",borderColor:selStaff===s.id?s.color:"#e2e8f0",boxShadow:selStaff===s.id?`0 2px 8px ${s.color}55`:"0 1px 3px rgba(0,0,0,.08)"}}>{s.name}</button>))}
             </div>
@@ -3413,7 +3408,7 @@ function Dashboard({user,onLogout}){
             }}
 
             return(
-              <div className="card">
+              <div className="card" style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minHeight:0}}>
                 {/* 個人絞り込み時：週間リスト切り替えボタン */}
                 {selStaff&&(
                   <div style={{padding:"8px 12px",background:"#f8fafc",borderBottom:"1px solid #e2e8f0",display:"flex",gap:8}}>
@@ -3472,8 +3467,8 @@ function Dashboard({user,onLogout}){
                     style={{marginLeft:"auto",padding:"3px 8px",border:"1.5px solid #e2e8f0",borderRadius:7,fontSize:12,color:"#374151",cursor:"pointer"}}/>
                 </div>}
 
-                {(!selStaff||weekViewMode==="calendar")&&<div style={{overflowX:"auto"}}>
-                  <div style={{minWidth:HEADER_W+TOTAL_MINS*CELL_W+20}}>
+                {(!selStaff||weekViewMode==="calendar")&&<div style={{flex:1,overflowX:"auto",overflowY:"auto",minHeight:0}}>
+                  <div style={{minWidth:HEADER_W+TOTAL_MINS*CELL_W+20,height:"100%"}}>
 
                     {/* 時間ヘッダー（固定） */}
                     <div style={{display:"flex",borderBottom:"2px solid #e2e8f0",background:"#f8fafc",position:"sticky",top:0,zIndex:10}}>
@@ -3582,6 +3577,7 @@ function Dashboard({user,onLogout}){
               </div>
             );
           })()}
+          </div>}
 
           {/* 患者管理 */}
           {view==="patients"&&<PatientsPanel bookings={bookings} setView={setView} setForm={setForm} setEditId={setEditId} setConflict={setConflict} todayStr={todayStr}/>}
