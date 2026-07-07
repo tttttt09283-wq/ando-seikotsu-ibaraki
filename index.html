@@ -2360,7 +2360,7 @@ function PatientsPanel({bookings,setView,setForm,setEditId}){
   const [treatments,setTreatments]=React.useState([]);
   const [loadingDetail,setLoadingDetail]=React.useState(false);
   const [editMode,setEditMode]=React.useState(false);
-  const [editForm,setEditForm]=React.useState({name:"",phone:""});
+  const [editForm,setEditForm]=React.useState({name:"",phone:"",address:""});
 
   const GOJUON=[
     {label:"あ行",chars:["あ","い","う","え","お","ア","イ","ウ","エ","オ"]},
@@ -2427,7 +2427,7 @@ function PatientsPanel({bookings,setView,setForm,setEditId}){
 
   function openEdit(){
     if(!firstBk) return;
-    setEditForm({name:firstBk.patient_name||"",phone:firstBk.phone||""});
+    setEditForm({name:firstBk.patient_name||"",phone:firstBk.phone||"",address:firstBk.address||""});
     setEditMode(true);
   }
 
@@ -2436,7 +2436,7 @@ function PatientsPanel({bookings,setView,setForm,setEditId}){
     try{
       const bkIds=selBks.map(b=>b.id);
       for(const id of bkIds){
-        await sb.update("bookings",id,{patient_name:editForm.name,phone:editForm.phone});
+        await sb.update("bookings",id,{patient_name:editForm.name,phone:editForm.phone,address:editForm.address});
       }
       setEditMode(false);
       selectPatient(editForm.name);
@@ -2553,7 +2553,8 @@ function PatientsPanel({bookings,setView,setForm,setEditId}){
                 <div>
                   <div style={{fontWeight:800,fontSize:17,color:"white"}}>{selPatient} 様</div>
                   <div style={{fontSize:12,color:"rgba(255,255,255,.7)",marginTop:2}}>
-                    {firstBk?.phone||""}
+                    {firstBk?.phone&&<span>📞 {firstBk.phone}</span>}
+                    {firstBk?.address&&<span style={{marginLeft:10}}>📍 {firstBk.address}</span>}
                     {firstBk?.line_user_id&&<span style={{marginLeft:8,background:"rgba(6,199,85,.3)",borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>LINE連携</span>}
                   </div>
                 </div>
@@ -2585,7 +2586,7 @@ function PatientsPanel({bookings,setView,setForm,setEditId}){
             {editMode&&(
               <div style={{padding:"16px 18px",background:"#fffbeb",borderBottom:"1px solid #fde68a",flexShrink:0}}>
                 <div style={{fontWeight:800,fontSize:13,color:"#92400e",marginBottom:12}}>✏️ 患者情報の編集</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
                   <div>
                     <label style={{display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4}}>患者名</label>
                     <input value={editForm.name} onChange={e=>setEditForm(p=>({...p,name:e.target.value}))}
@@ -2596,6 +2597,12 @@ function PatientsPanel({bookings,setView,setForm,setEditId}){
                     <input value={editForm.phone} onChange={e=>setEditForm(p=>({...p,phone:e.target.value}))}
                       style={{width:"100%",padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
                   </div>
+                </div>
+                <div style={{marginBottom:12}}>
+                  <label style={{display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4}}>住所</label>
+                  <input value={editForm.address} onChange={e=>setEditForm(p=>({...p,address:e.target.value}))}
+                    placeholder="例：大阪府寝屋川市○○町1-2-3"
+                    style={{width:"100%",padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
                 </div>
                 <div style={{display:"flex",gap:8}}>
                   <button onClick={()=>setEditMode(false)} style={{flex:1,padding:"8px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>キャンセル</button>
