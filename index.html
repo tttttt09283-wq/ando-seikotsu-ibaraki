@@ -3610,6 +3610,7 @@ function Dashboard({user,onLogout}){
             <FormPanel form={form} setForm={setForm} editId={editId} conflict={conflict} setConflict={setConflict} isAdmin={isAdmin} bookings={bookings} save={save} onClose={()=>setView("calendar")} onDelete={()=>setDelConfirm(bookings.find(b=>b.id===editId))}/>
           )}
         </div>
+      </div>
 
       {/* 予約ブロック アクションポップアップ */}
       {bookingPopup&&(()=>{
