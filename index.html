@@ -888,46 +888,36 @@ function StatsPanel({bookings,payments,todayStr}){
 }
 
 
-// ===== 予約フォーム =====
 function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,save,onClose,onDelete}){
   const [searchQ,setSearchQ]=React.useState("");
   const [searchResults,setSearchResults]=React.useState([]);
   const [searching,setSearching]=React.useState(false);
   const [showSearch,setShowSearch]=React.useState(editId===null&&!form.patient_name);
+  const [selCategory,setSelCategory]=React.useState(MENU_CATEGORIES[0].id);
+  const [selSub,setSelSub]=React.useState(MENU_CATEGORIES[0].subs[0].id);
 
-  // メニューの現在カテゴリ・サブカテゴリを初期化
-  const initCat=()=>{
-    const menus=Array.isArray(form.menus)&&form.menus.length>0?form.menus:[form.menu].filter(Boolean);
-    if(!menus.length) return MENU_CATEGORIES[0].id;
-    const cat=MENU_CATEGORIES.find(c=>allCatItems(c).some(i=>menus.includes(i.name)));
-    return cat?cat.id:MENU_CATEGORIES[0].id;
-  };
-  const initSub=(catId)=>{
-    const cat=MENU_CATEGORIES.find(c=>c.id===catId)||MENU_CATEGORIES[0];
-    const menus=Array.isArray(form.menus)&&form.menus.length>0?form.menus:[form.menu].filter(Boolean);
-    if(!menus.length) return cat.subs[0].id;
-    const sub=cat.subs.find(s=>s.items.some(i=>menus.includes(i.name)));
-    return sub?sub.id:cat.subs[0].id;
-  };
-  const [selCategory,setSelCategory]=React.useState(initCat);
-  const [selSub,setSelSub]=React.useState(()=>initSub(initCat()));
+  const selectedMenus=form.menus||[];
+  const totalPrice=selectedMenus.reduce((s,m)=>s+(MENU_PRICES[m]||0),0);
+  const visitCount=React.useMemo(()=>{
+    if(!form.patient_name) return 0;
+    const prev=bookings.filter(b=>b.patient_name===form.patient_name&&b.id!==editId);
+    return prev.length+1;
+  },[form.patient_name,bookings,editId]);
 
-  // 選択中メニュー一覧（配列）
-  const selectedMenus=Array.isArray(form.menus)&&form.menus.length>0?form.menus:(form.menu?[form.menu]:[]);
-  function toggleMenu(itemName, itemDuration){
-    const cur=selectedMenus;
-    const next=cur.includes(itemName)?cur.filter(m=>m!==itemName):[...cur,itemName];
-    // durationは選択メニューの最大値
-    const maxDur=next.length>0?Math.max(...next.map(m=>DURATION[m]||30)):itemDuration;
+  function toggleMenu(name,dur){
+    const next=selectedMenus.includes(name)?selectedMenus.filter(m=>m!==name):[...selectedMenus,name];
+    const maxDur=next.length>0?Math.max(...next.map(m=>DURATION[m]||30)):dur;
     setForm(f=>({...f,menus:next,menu:next[0]||"",duration:maxDur}));
   }
-  function clearMenus(){setForm(f=>({...f,menus:[],menu:"",duration:30}));}
 
   async function searchPatients(q){
     if(!q.trim()){setSearchResults([]);return;}
     setSearching(true);
     try{
-      const [byName,byKarte]=await Promise.all([sb.select("bookings",`?patient_name=ilike.*${encodeURIComponent(q)}*&order=date.desc&limit=20`),sb.select("bookings",`?karte_no=eq.${encodeURIComponent(q)}&order=date.desc&limit=10`)]);
+      const [byName,byKarte]=await Promise.all([
+        sb.select("bookings","?patient_name=ilike.*"+encodeURIComponent(q)+"*&order=date.desc&limit=20"),
+        sb.select("bookings","?karte_no=eq."+encodeURIComponent(q)+"&order=date.desc&limit=10")
+      ]);
       const all=[...(Array.isArray(byName)?byName:[]),...(Array.isArray(byKarte)?byKarte:[])];
       const seen={};const unique=[];
       all.forEach(b=>{const key=b.patient_name;if(!seen[key]){seen[key]=true;unique.push(b);}});
@@ -935,41 +925,49 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
     }catch(e){console.error(e);}
     setSearching(false);
   }
+
   function selectPatient(b){
     setForm(f=>({...f,patient_name:b.patient_name,phone:b.phone||"",karte_no:b.karte_no||"",line_user_id:b.line_user_id||null,line_notify:!!b.line_user_id}));
     setSearchQ("");setSearchResults([]);setShowSearch(false);
   }
-  const visitCount=React.useMemo(()=>{if(!form.patient_name) return 0;return bookings.filter(b=>b.patient_name===form.patient_name).length;},[form.patient_name,bookings]);
+
   return(
-    <div className="card" style={{maxWidth:700,padding:0,overflow:"hidden"}}>
-      <div style={{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",padding:"14px 20px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <div style={{fontWeight:800,fontSize:17,color:"white"}}>{editId!==null?"予約を編集":"新規予約"}</div>
-        <button onClick={onClose} style={{background:"rgba(255,255,255,.2)",border:"none",color:"white",width:30,height:30,borderRadius:"50%",cursor:"pointer",fontSize:16}}>x</button>
+    <div className="card" style={{maxWidth:520,padding:22}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+        <div style={{fontSize:17,fontWeight:800,color:"#1e3a5f"}}>{editId!==null?"予約を編集":"新規予約"}</div>
+        <button onClick={onClose} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#94a3b8",lineHeight:1}}>x</button>
       </div>
-      <div style={{display:"flex"}}>
-        <div style={{flex:1,padding:"16px 18px",borderRight:"1px solid #e2e8f0",overflowY:"auto",maxHeight:"80vh"}}>
-          {conflict&&<div style={{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:8,padding:"10px",marginBottom:12,color:"#dc2626",fontSize:13,fontWeight:700}}>ダブルブッキングになります</div>}
-          {showSearch&&(
-            <div style={{background:"#f0f9ff",borderRadius:10,padding:12,marginBottom:14,border:"1px solid #bae6fd"}}>
-              <div style={{fontWeight:800,fontSize:13,color:"#0369a1",marginBottom:8}}>既存患者を検索</div>
-              <input className="form-input" placeholder="患者名またはカルテ番号..." value={searchQ} onChange={e=>{setSearchQ(e.target.value);searchPatients(e.target.value);}} autoFocus/>
-              {searching&&<div style={{fontSize:12,color:"#94a3b8",marginTop:4}}>検索中...</div>}
-              {searchResults.length>0&&(
-                <div style={{background:"white",borderRadius:8,border:"1px solid #e2e8f0",maxHeight:160,overflowY:"auto",marginTop:6}}>
-                  {searchResults.map((b,i)=>(
-                    <button key={i} onClick={()=>selectPatient(b)} style={{width:"100%",padding:"8px 12px",background:"none",border:"none",borderBottom:"1px solid #f1f5f9",cursor:"pointer",textAlign:"left"}}>
-                      <div style={{fontWeight:700,fontSize:13}}>{b.patient_name}</div>
-                      <div style={{fontSize:11,color:"#64748b"}}>{b.phone||""}</div>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {searchQ&&!searching&&searchResults.length===0&&<div style={{fontSize:12,color:"#94a3b8",padding:"6px 0"}}>該当患者なし</div>}
-              <button onClick={()=>setShowSearch(false)} className="btn btn-outline btn-sm" style={{marginTop:8,width:"100%",justifyContent:"center"}}>新規患者として入力</button>
+      {conflict&&<div style={{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#dc2626",fontSize:13,fontWeight:700}}>ダブルブッキングになります</div>}
+      {showSearch?(
+        <div style={{background:"#f0f9ff",borderRadius:10,padding:14,marginBottom:16,border:"1px solid #bae6fd"}}>
+          <div style={{fontWeight:800,fontSize:13,color:"#0369a1",marginBottom:10}}>既存患者を検索</div>
+          <div style={{position:"relative",marginBottom:8}}>
+            <input className="form-input" placeholder="患者名またはカルテ番号で検索..." value={searchQ} onChange={e=>{setSearchQ(e.target.value);searchPatients(e.target.value);}} style={{paddingRight:40}} autoFocus/>
+            {searching&&<div style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",fontSize:12,color:"#94a3b8"}}>検索中...</div>}
+          </div>
+          {searchResults.length>0&&(
+            <div style={{background:"white",borderRadius:8,border:"1px solid #e2e8f0",overflow:"hidden",maxHeight:220,overflowY:"auto"}}>
+              {searchResults.map((b,i)=>(
+                <button key={i} onClick={()=>selectPatient(b)} style={{width:"100%",padding:"10px 14px",background:"none",border:"none",borderBottom:"1px solid #f1f5f9",cursor:"pointer",textAlign:"left",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <div style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{b.patient_name}</div>
+                    <div style={{fontSize:12,color:"#64748b"}}>{b.phone||""}</div>
+                  </div>
+                  <div style={{fontSize:11,color:"#94a3b8",textAlign:"right"}}>
+                    <div>{b.date}</div>
+                    {b.line_user_id&&<div style={{color:"#059669",fontWeight:700}}>LINE</div>}
+                  </div>
+                </button>
+              ))}
             </div>
           )}
-          {!showSearch&&form.patient_name&&(
-            <div style={{background:"#f0fdf4",borderRadius:10,padding:"10px 14px",marginBottom:12,border:"1px solid #bbf7d0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          {searchQ&&!searching&&searchResults.length===0&&<div style={{fontSize:13,color:"#94a3b8",textAlign:"center",padding:"8px 0"}}>該当患者なし</div>}
+          <button onClick={()=>setShowSearch(false)} className="btn btn-outline btn-sm" style={{marginTop:8,width:"100%",justifyContent:"center"}}>新規患者として入力</button>
+        </div>
+      ):(
+        <div style={{marginBottom:14}}>
+          {form.patient_name&&(
+            <div style={{background:"#f0fdf4",borderRadius:10,padding:"10px 14px",marginBottom:10,border:"1px solid #bbf7d0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div>
                 <div style={{fontWeight:800,fontSize:15,color:"#1e293b"}}>{form.patient_name}</div>
                 <div style={{fontSize:12,color:"#64748b"}}>{form.phone}</div>
@@ -978,117 +976,109 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
               {editId===null&&<button onClick={()=>setShowSearch(true)} className="btn btn-outline btn-xs">変更</button>}
             </div>
           )}
-          {!showSearch&&(
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
-              <div><label className="form-label">患者名 *</label><input className="form-input" value={form.patient_name||""} placeholder="山本 花子" onChange={e=>{setForm(f=>({...f,patient_name:e.target.value}));setConflict(false);}}/></div>
-              <div><label className="form-label">カルテ番号</label><input className="form-input" value={form.karte_no||""} placeholder="K-001" onChange={e=>setForm(f=>({...f,karte_no:e.target.value}))}/></div>
-            </div>
-          )}
-          <div className="form-group"><label className="form-label">電話番号</label><input type="tel" className="form-input" value={form.phone||""} placeholder="090-0000-0000" onChange={e=>setForm(f=>({...f,phone:e.target.value}))}/></div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-            <div><label className="form-label">日付</label><input type="date" className="form-input" value={form.date||""} onChange={e=>{setForm(f=>({...f,date:e.target.value}));setConflict(false);}}/></div>
-            <div>
-              <label className="form-label">時間</label>
-              <select className="form-input" value={form.time||""} onChange={e=>{setForm(f=>({...f,time:e.target.value}));setConflict(false);}}>
-                <option value="">選択</option>
-                <option value="09:00">09:00</option><option value="09:10">09:10</option><option value="09:20">09:20</option><option value="09:30">09:30</option><option value="09:40">09:40</option><option value="09:50">09:50</option>
-                <option value="10:00">10:00</option><option value="10:10">10:10</option><option value="10:20">10:20</option><option value="10:30">10:30</option><option value="10:40">10:40</option><option value="10:50">10:50</option>
-                <option value="11:00">11:00</option><option value="11:10">11:10</option><option value="11:20">11:20</option><option value="11:30">11:30</option><option value="11:40">11:40</option><option value="11:50">11:50</option>
-                <option value="12:00">12:00</option><option value="12:10">12:10</option><option value="12:20">12:20</option><option value="12:30">12:30</option><option value="12:40">12:40</option><option value="12:50">12:50</option>
-                <option value="13:00">13:00</option><option value="13:10">13:10</option><option value="13:20">13:20</option><option value="13:30">13:30</option><option value="13:40">13:40</option><option value="13:50">13:50</option>
-                <option value="14:00">14:00</option><option value="14:10">14:10</option><option value="14:20">14:20</option><option value="14:30">14:30</option><option value="14:40">14:40</option><option value="14:50">14:50</option>
-                <option value="15:00">15:00</option><option value="15:10">15:10</option><option value="15:20">15:20</option><option value="15:30">15:30</option><option value="15:40">15:40</option><option value="15:50">15:50</option>
-                <option value="16:00">16:00</option><option value="16:10">16:10</option><option value="16:20">16:20</option><option value="16:30">16:30</option><option value="16:40">16:40</option><option value="16:50">16:50</option>
-                <option value="17:00">17:00</option><option value="17:10">17:10</option><option value="17:20">17:20</option><option value="17:30">17:30</option><option value="17:40">17:40</option><option value="17:50">17:50</option>
-                <option value="18:00">18:00</option><option value="18:10">18:10</option><option value="18:20">18:20</option><option value="18:30">18:30</option><option value="18:40">18:40</option><option value="18:50">18:50</option>
-                <option value="19:00">19:00</option>
-              </select>
-            </div>
-          </div>
-          {isAdmin&&(
-            <div className="form-group">
-              <label className="form-label">担当スタッフ</label>
-              <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                {STAFF_ACCOUNTS.map(s=>(
-                  <button key={s.id} onClick={()=>{setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} style={{background:form.staff_id===s.id?s.color:"white",color:form.staff_id===s.id?"white":"#374151",border:"2px solid "+s.color,borderRadius:20,padding:"4px 10px",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{s.name}</button>
-                ))}
-              </div>
-            </div>
-          )}
-          <div className="form-group"><label className="form-label">メモ</label><textarea className="form-input" rows={2} value={form.memo||""} placeholder="気になる点など" onChange={e=>setForm(f=>({...f,memo:e.target.value}))}/></div>
-          <div style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:"#f0fdf4",borderRadius:8,border:"1px solid #bbf7d0"}}>
-            <input type="checkbox" id="ln" checked={!!form.line_notify} onChange={e=>setForm(f=>({...f,line_notify:e.target.checked}))} style={{width:16,height:16,accentColor:"#059669"}}/>
-            <label htmlFor="ln" style={{fontSize:13,color:"#059669",fontWeight:700,cursor:"pointer"}}>LINEリマインドを前日に送る</label>
+        </div>
+      )}
+      {!showSearch&&(
+        <div style={{display:"grid",gridTemplateColumns:"1fr auto",gap:10,marginBottom:14}}>
+          <div><label className="form-label">患者名 *</label><input className="form-input" value={form.patient_name||""} placeholder="山本 花子" onChange={e=>{setForm(f=>({...f,patient_name:e.target.value}));setConflict(false);}}/></div>
+          <div style={{minWidth:110}}><label className="form-label">カルテ番号</label><input className="form-input" value={form.karte_no||""} placeholder="K-001" onChange={e=>setForm(f=>({...f,karte_no:e.target.value}))}/></div>
+        </div>
+      )}
+      <div className="form-group"><label className="form-label">電話番号</label><input type="tel" className="form-input" value={form.phone||""} placeholder="090-0000-0000" onChange={e=>setForm(f=>({...f,phone:e.target.value}))}/></div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+        <div><label className="form-label">日付</label><input type="date" className="form-input" value={form.date||""} onChange={e=>{setForm(f=>({...f,date:e.target.value}));setConflict(false);}}/></div>
+        <div>
+          <label className="form-label">時間</label>
+          <select className="form-input" value={form.time||""} onChange={e=>{setForm(f=>({...f,time:e.target.value}));setConflict(false);}}>
+            <option value="">選択</option>
+            <option value="09:00">09:00</option><option value="09:10">09:10</option><option value="09:20">09:20</option><option value="09:30">09:30</option><option value="09:40">09:40</option><option value="09:50">09:50</option>
+            <option value="10:00">10:00</option><option value="10:10">10:10</option><option value="10:20">10:20</option><option value="10:30">10:30</option><option value="10:40">10:40</option><option value="10:50">10:50</option>
+            <option value="11:00">11:00</option><option value="11:10">11:10</option><option value="11:20">11:20</option><option value="11:30">11:30</option><option value="11:40">11:40</option><option value="11:50">11:50</option>
+            <option value="12:00">12:00</option><option value="12:10">12:10</option><option value="12:20">12:20</option><option value="12:30">12:30</option><option value="12:40">12:40</option><option value="12:50">12:50</option>
+            <option value="13:00">13:00</option><option value="13:10">13:10</option><option value="13:20">13:20</option><option value="13:30">13:30</option><option value="13:40">13:40</option><option value="13:50">13:50</option>
+            <option value="14:00">14:00</option><option value="14:10">14:10</option><option value="14:20">14:20</option><option value="14:30">14:30</option><option value="14:40">14:40</option><option value="14:50">14:50</option>
+            <option value="15:00">15:00</option><option value="15:10">15:10</option><option value="15:20">15:20</option><option value="15:30">15:30</option><option value="15:40">15:40</option><option value="15:50">15:50</option>
+            <option value="16:00">16:00</option><option value="16:10">16:10</option><option value="16:20">16:20</option><option value="16:30">16:30</option><option value="16:40">16:40</option><option value="16:50">16:50</option>
+            <option value="17:00">17:00</option><option value="17:10">17:10</option><option value="17:20">17:20</option><option value="17:30">17:30</option><option value="17:40">17:40</option><option value="17:50">17:50</option>
+            <option value="18:00">18:00</option><option value="18:10">18:10</option><option value="18:20">18:20</option><option value="18:30">18:30</option><option value="18:40">18:40</option><option value="18:50">18:50</option>
+            <option value="19:00">19:00</option>
+          </select>
+        </div>
+      </div>
+      {isAdmin&&(
+        <div className="form-group">
+          <label className="form-label">担当スタッフ</label>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {STAFF_ACCOUNTS.map(s=>(
+              <button key={s.id} onClick={()=>{setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} className="btn" style={{background:form.staff_id===s.id?s.color:"white",color:form.staff_id===s.id?"white":"#374151",border:"2px solid "+s.color,borderRadius:20,padding:"5px 12px",fontSize:12,fontWeight:700,boxShadow:form.staff_id===s.id?"0 2px 8px "+s.color+"55":"none"}}>{s.name}</button>
+            ))}
           </div>
         </div>
-        <div style={{width:280,display:"flex",flexDirection:"column",background:"#f8fafc",maxHeight:"80vh"}}>
-          <div style={{flex:1,overflowY:"auto",padding:"14px"}}>
-            <label className="form-label">メニュー（複数選択可）</label>
-            <div style={{display:"flex",gap:4,marginBottom:8,flexWrap:"wrap"}}>
-              {MENU_CATEGORIES.map(cat=>(
-                <button key={cat.id} onClick={()=>{setSelCategory(cat.id);setSelSub(cat.subs[0].id);}} style={{padding:"4px 8px",borderRadius:6,border:"1.5px solid",borderColor:selCategory===cat.id?cat.color:"#e2e8f0",background:selCategory===cat.id?cat.color:"white",color:selCategory===cat.id?"white":cat.color,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                  {cat.label}
-                </button>
+      )}
+      <div className="form-group">
+        <label className="form-label">メニュー（複数選択可）</label>
+        <div style={{display:"flex",gap:4,marginBottom:8,flexWrap:"wrap"}}>
+          {MENU_CATEGORIES.map(cat=>(
+            <button key={cat.id} onClick={()=>{setSelCategory(cat.id);setSelSub(cat.subs[0].id);}} style={{padding:"5px 12px",borderRadius:8,border:"1.5px solid",borderColor:selCategory===cat.id?cat.color:"#e2e8f0",background:selCategory===cat.id?cat.color:"white",color:selCategory===cat.id?"white":cat.color,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+              {cat.label}
+            </button>
+          ))}
+        </div>
+        {(()=>{
+          const cat=MENU_CATEGORIES.find(c=>c.id===selCategory)||MENU_CATEGORIES[0];
+          const sub=cat.subs.find(s=>s.id===selSub)||cat.subs[0];
+          return(
+            <div>
+              {cat.subs.length>1&&(
+                <div style={{display:"flex",gap:4,marginBottom:8,flexWrap:"wrap"}}>
+                  {cat.subs.map(s=>(
+                    <button key={s.id} onClick={()=>setSelSub(s.id)} style={{padding:"4px 10px",borderRadius:6,border:"1px solid",borderColor:selSub===s.id?"#374151":"#e2e8f0",background:selSub===s.id?"#374151":"white",color:selSub===s.id?"white":"#374151",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,maxHeight:220,overflowY:"auto",padding:2}}>
+                {sub.items.map(item=>{
+                  const isSel=selectedMenus.includes(item.name);
+                  return(
+                    <button key={item.name} onClick={()=>toggleMenu(item.name,item.duration)} style={{padding:"8px 10px",borderRadius:8,border:"1.5px solid "+(isSel?cat.color:"#e2e8f0"),background:isSel?cat.color+"18":"white",textAlign:"left",cursor:"pointer",fontFamily:"inherit"}}>
+                      <div style={{fontSize:12,fontWeight:700,color:isSel?cat.color:"#374151"}}>{item.name}</div>
+                      <div style={{fontSize:10,color:"#94a3b8"}}>{item.price>0?""+item.price.toLocaleString()+"円":item.price===0?"保険":""}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+        {selectedMenus.length>0&&(
+          <div style={{marginTop:12,padding:"10px 14px",background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0"}}>
+            <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:6}}>
+              {selectedMenus.map(m=>(
+                <span key={m} className="badge badge-blue" style={{padding:"3px 8px"}}>
+                  {m}
+                  <button onClick={()=>toggleMenu(m,30)} style={{marginLeft:4,background:"none",border:"none",cursor:"pointer",color:"inherit",padding:0,lineHeight:1}}>x</button>
+                </span>
               ))}
             </div>
-            {(()=>{
-              const cat=MENU_CATEGORIES.find(c=>c.id===selCategory)||MENU_CATEGORIES[0];
-              const sub=cat.subs.find(s=>s.id===selSub)||cat.subs[0];
-              return(
-                <div>
-                  {cat.subs.length>1&&(
-                    <div style={{display:"flex",gap:4,marginBottom:8,flexWrap:"wrap"}}>
-                      {cat.subs.map(s=>(
-                        <button key={s.id} onClick={()=>setSelSub(s.id)} style={{padding:"3px 8px",borderRadius:5,border:"1px solid",borderColor:selSub===s.id?"#374151":"#e2e8f0",background:selSub===s.id?"#374151":"white",color:selSub===s.id?"white":"#374151",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
-                          {s.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
-                    {sub.items.map(item=>{
-                      const isSel=selectedMenus.includes(item.name);
-                      return(
-                        <button key={item.name} onClick={()=>toggleMenu(item.name,item.duration)} style={{padding:"7px 8px",borderRadius:7,border:"1.5px solid "+(isSel?cat.color:"#e2e8f0"),background:isSel?cat.color+"18":"white",textAlign:"left",cursor:"pointer",fontFamily:"inherit"}}>
-                          <div style={{fontSize:11,fontWeight:700,color:isSel?cat.color:"#374151"}}>{item.name}</div>
-                          <div style={{fontSize:10,color:"#94a3b8"}}>{item.price>0?""+item.price.toLocaleString():item.price===0?"保険":""}</div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })()}
+            {totalPrice>0&&<div style={{textAlign:"right",fontWeight:800,fontSize:15,color:"#d97706"}}>{"合計 "+totalPrice.toLocaleString()+"円"}</div>}
           </div>
-          <div style={{padding:"12px 14px",borderTop:"2px solid #e2e8f0",background:"white",flexShrink:0}}>
-            <div style={{fontSize:12,fontWeight:800,color:"#1e3a5f",marginBottom:6}}>選択中</div>
-            {selectedMenus.length===0?(
-              <div style={{fontSize:12,color:"#d1d5db",marginBottom:10}}>未選択</div>
-            ):(
-              <div style={{marginBottom:10}}>
-                {selectedMenus.map(m=>(
-                  <div key={m} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"4px 8px",background:"#eff6ff",borderRadius:6,marginBottom:3}}>
-                    <span style={{fontSize:11,fontWeight:700,color:"#1e3a5f"}}>{m}</span>
-                    <button onClick={()=>toggleMenu(m,30)} style={{background:"none",border:"none",cursor:"pointer",color:"#94a3b8",fontSize:12}}>x</button>
-                  </div>
-                ))}
-                {totalPrice>0&&<div style={{textAlign:"right",fontWeight:800,fontSize:13,color:"#d97706",marginTop:4}}>{"Y"+totalPrice.toLocaleString()}</div>}
-              </div>
-            )}
-            <div style={{display:"flex",gap:8}}>
-              {editId!==null&&<button onClick={onDelete} className="btn btn-danger" style={{flex:1,justifyContent:"center",padding:"10px 0",fontSize:12}}>削除</button>}
-              <button onClick={save} style={{flex:2,padding:"11px 0",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:8,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
-                {editId!==null?"更新する":"予約を確定する"}
-              </button>
-            </div>
-          </div>
-        </div>
+        )}
+      </div>
+      <div className="form-group"><label className="form-label">メモ</label><textarea className="form-input" rows={2} value={form.memo||""} placeholder="気になる点など" onChange={e=>setForm(f=>({...f,memo:e.target.value}))}/></div>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20,padding:"10px 12px",background:"#f0fdf4",borderRadius:8,border:"1px solid #bbf7d0"}}>
+        <input type="checkbox" id="ln" checked={!!form.line_notify} onChange={e=>setForm(f=>({...f,line_notify:e.target.checked}))} style={{width:16,height:16,accentColor:"#059669"}}/>
+        <label htmlFor="ln" style={{fontSize:13,color:"#059669",fontWeight:700,cursor:"pointer"}}>LINEリマインドを前日に送る</label>
+      </div>
+      <div style={{display:"flex",gap:10}}>
+        {editId!==null&&<button onClick={onDelete} className="btn btn-danger" style={{flex:1,justifyContent:"center",padding:11,fontSize:14}}>削除</button>}
+        <button onClick={save} className="btn btn-primary" style={{flex:2,justifyContent:"center",padding:11,fontSize:14}}>{editId!==null?"更新する":"予約を確定する"}</button>
       </div>
     </div>
   );
 }
 
-// ===== 各種設定パネル =====
 function SettingsPanel(){
   const [stores,setStores]=React.useState([]);
   const [selStoreId,setSelStoreId]=React.useState(1);
@@ -3695,7 +3685,6 @@ function Dashboard({user,onLogout}){
       )}
 
       {toast&&(<div className="toast" style={{background:toast.type==="delete"?"#1e293b":"#059669",color:"white"}}>{toast.type==="delete"?"削除しました":"✓ "}{toast.msg}</div>)}
-    </div>
     </div>
   );
 }
