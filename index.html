@@ -897,7 +897,7 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
   const [selSub,setSelSub]=React.useState(MENU_CATEGORIES[0].subs[0].id);
 
   const selectedMenus=form.menus||[];
-  const totalPrice=selectedMenus.reduce((s,m)=>s+(MENU_PRICES[m]||0),0);
+  const totalPrice=selectedMenus.reduce((s,m)=>s+(MENU_PRICE[m]||0),0);
   const visitCount=React.useMemo(()=>{
     if(!form.patient_name) return 0;
     const prev=bookings.filter(b=>b.patient_name===form.patient_name&&b.id!==editId);
@@ -3359,10 +3359,6 @@ function Dashboard({user,onLogout}){
               {STAFF_ACCOUNTS.map(s=>(<button key={s.id} onClick={()=>setSelStaff(s.id)} className="staff-chip" style={{background:selStaff===s.id?s.color:"white",color:selStaff===s.id?"white":"#374151",borderColor:selStaff===s.id?s.color:"#e2e8f0",boxShadow:selStaff===s.id?`0 2px 8px ${s.color}55`:"0 1px 3px rgba(0,0,0,.08)"}}>{s.name}</button>))}
             </div>
           )}
-              {isAdmin&&(<button onClick={()=>setSelStaff(null)} className="staff-chip" style={{background:!selStaff?"#1e3a5f":"white",color:!selStaff?"white":"#374151",borderColor:!selStaff?"#1e3a5f":"#e2e8f0",boxShadow:!selStaff?"0 2px 8px rgba(30,58,95,.35)":"0 1px 3px rgba(0,0,0,.08)"}}>全員</button>)}
-              {STAFF_ACCOUNTS.map(s=>(<button key={s.id} onClick={()=>setSelStaff(s.id)} className="staff-chip" style={{background:selStaff===s.id?s.color:"white",color:selStaff===s.id?"white":"#374151",borderColor:selStaff===s.id?s.color:"#e2e8f0",boxShadow:selStaff===s.id?`0 2px 8px ${s.color}55`:"0 1px 3px rgba(0,0,0,.08)"}}>{s.name}</button>))}
-            </div>
-          )}
 
           {/* カレンダービュー */}
           {view==="calendar"&&(()=>{
@@ -3593,7 +3589,6 @@ function Dashboard({user,onLogout}){
           {/* その他準備中ページ */}
           {["user_mgmt"].includes(view)&&(()=>{
             const labels={
-              user_mgmt:{title:"ユーザー管理",desc:"ログインアカウントの追加・編集・削除ができます。"},
               user_mgmt:{title:"ユーザー管理",desc:"ログインアカウントの追加・編集・削除ができます。"},
               settings:{title:"各種設定",desc:"予約受付設定・LINE連携・通知設定などができます。"},
             };
