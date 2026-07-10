@@ -1381,13 +1381,13 @@ function BusinessHoursPanel(){
     setLoading(true);
     try{
       const[bh,tc]=await Promise.all([
-        sb.select("business_hours",`?store_id=eq.${selStoreId}&order=day_of_week.asc`),
+        sb.select("business_hours",`?store_id=eq.${selStoreId}&order=day_of_week.asc,id.desc`),
         sb.select("temp_closures",`?store_id=eq.${selStoreId}&order=date.asc`),
       ]);
       if(Array.isArray(bh)&&bh.length>0){
         const merged=DEFAULT_HOURS.map(def=>{
-          const found=bh.find(h=>h.day_of_week===def.day);
-          return found?{day:def.day,is_open:found.is_open,open_time:found.open_time||"09:00",close_time:found.close_time||"19:00",break_times:found.break_times||[]}:def;
+          const found=bh.find(h=>h.day_of_week===def.day); // id.desc順なので最新の行が先に見つかる
+          return found?{day:def.day,id:found.id,is_open:found.is_open,open_time:found.open_time||"09:00",close_time:found.close_time||"19:00",break_times:found.break_times||[]}:def;
         });
         setHours(merged);
       }else{
@@ -1427,13 +1427,30 @@ function BusinessHoursPanel(){
     setSaving(true);
     try{
       const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      const updatedHours=[];
       for(const h of hours){
-        await fetch(`${SUPABASE_URL}/rest/v1/business_hours`,{
-          method:"POST",
-          headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates"},
-          body:JSON.stringify({store_id:selStoreId,day_of_week:h.day,is_open:h.is_open,open_time:h.open_time,close_time:h.close_time,break_times:h.break_times||[]})
-        });
+        const payload={store_id:selStoreId,day_of_week:h.day,is_open:h.is_open,open_time:h.open_time,close_time:h.close_time,break_times:h.break_times||[]};
+        if(h.id){
+          // 既存行がある場合は更新（重複行を作らない）
+          await fetch(`${SUPABASE_URL}/rest/v1/business_hours?id=eq.${h.id}`,{
+            method:"PATCH",
+            headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
+            body:JSON.stringify(payload)
+          });
+          updatedHours.push(h);
+        }else{
+          // 行がまだ無い場合のみ新規作成
+          const res=await fetch(`${SUPABASE_URL}/rest/v1/business_hours`,{
+            method:"POST",
+            headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
+            body:JSON.stringify(payload)
+          });
+          const created=await res.json().catch(()=>null);
+          const newId=Array.isArray(created)&&created.length>0?created[0].id:null;
+          updatedHours.push({...h,id:newId});
+        }
       }
+      setHours(updatedHours);
       showToast("営業時間を保存しました");
     }catch(e){alert("保存に失敗しました："+e.message);}
     setSaving(false);
