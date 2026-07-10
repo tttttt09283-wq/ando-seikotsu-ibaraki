@@ -159,8 +159,6 @@ function App(){
   var closures = closuresState[0]; var setClosures = closuresState[1];
   var hoursLoadedState = useState(false);
   var hoursLoaded = hoursLoadedState[0]; var setHoursLoaded = hoursLoadedState[1];
-  var debugInfoState = useState({storeId:null,status:"読み込み中...",hoursCount:0,closuresCount:0});
-  var debugInfo = debugInfoState[0]; var setDebugInfo = debugInfoState[1];
 
   var formState = useState({
     name:"",nameKana:"",phone:"",
@@ -203,25 +201,18 @@ function App(){
   // 営業時間・臨時休業日を取得（1回だけ）
   // 店舗IDを決め打ちせず、実際に登録されている店舗（先頭の1件）を使う
   useEffect(function(){
-    var usedStoreId=null;
     sb.select("stores","?order=id.asc&limit=1").then(function(stores){
-      usedStoreId = (Array.isArray(stores)&&stores.length>0) ? stores[0].id : STORE_ID;
+      var usedStoreId = (Array.isArray(stores)&&stores.length>0) ? stores[0].id : STORE_ID;
       return Promise.all([
         sb.select("business_hours","?store_id=eq."+usedStoreId+"&order=day_of_week.asc"),
         sb.select("temp_closures","?store_id=eq."+usedStoreId)
       ]);
     }).then(function(results){
-      var hoursArr=Array.isArray(results[0])?results[0]:[];
-      var closArr=Array.isArray(results[1])?results[1]:[];
-      setBusinessHours(hoursArr);
-      setClosures(closArr);
+      setBusinessHours(Array.isArray(results[0])?results[0]:[]);
+      setClosures(Array.isArray(results[1])?results[1]:[]);
       setHoursLoaded(true);
-      setDebugInfo({storeId:usedStoreId,status:"取得成功",hoursCount:hoursArr.length,closuresCount:closArr.length});
-      console.log("営業時間データ取得:", results[0]);
-    }).catch(function(e){
-      console.error("営業時間の取得に失敗:", e);
+    }).catch(function(){
       setHoursLoaded(true);
-      setDebugInfo({storeId:usedStoreId,status:"エラー："+(e&&e.message?e.message:String(e)),hoursCount:0,closuresCount:0});
     });
   }, []);
 
@@ -625,12 +616,6 @@ function App(){
             React.createElement("div",{style:{fontSize:12,color:"#059669",marginTop:2}}),"日時だけ選べばすぐ予約できます"
         ):null,
 
-        React.createElement("div",{style:{background:"#111827",color:"#a7f3d0",borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:11,fontFamily:"monospace",lineHeight:1.6}},
-          "🔧 DEBUG v3 / 店舗ID:"+(debugInfo.storeId===null?"取得中":debugInfo.storeId)+
-          " / 状態:"+debugInfo.status+
-          " / 営業時間データ:"+debugInfo.hoursCount+"件"+
-          " / 臨時休業:"+debugInfo.closuresCount+"件"
-        ),
         React.createElement("div",{style:{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:16}},"日時を選んでください"),
         React.createElement("div",{style:{marginBottom:20}},
           React.createElement("div",{style:{fontSize:13,fontWeight:700,color:"#555",marginBottom:8}},"📅 日付"),
