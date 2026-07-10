@@ -362,6 +362,8 @@ async function onNBDateChange(i, date){
   if(date) await getAvailableSlots(date, state.nextBookings[i].staffId);
   render();
 }
+
+async function save(){
   if(state.saving) return;
   const total=calcTotal();const paid=calcPaid();
   if(state.payments.length===0){alert("支払方法を追加してください");return;}
