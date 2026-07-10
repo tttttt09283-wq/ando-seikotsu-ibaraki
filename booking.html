@@ -199,15 +199,21 @@ function App(){
   }, []);
 
   // 営業時間・臨時休業日を取得（1回だけ）
+  // 店舗IDを決め打ちせず、実際に登録されている店舗（先頭の1件）を使う
   useEffect(function(){
-    Promise.all([
-      sb.select("business_hours","?store_id=eq."+STORE_ID+"&order=day_of_week.asc"),
-      sb.select("temp_closures","?store_id=eq."+STORE_ID)
-    ]).then(function(results){
+    sb.select("stores","?order=id.asc&limit=1").then(function(stores){
+      var storeId = (Array.isArray(stores)&&stores.length>0) ? stores[0].id : STORE_ID;
+      return Promise.all([
+        sb.select("business_hours","?store_id=eq."+storeId+"&order=day_of_week.asc"),
+        sb.select("temp_closures","?store_id=eq."+storeId)
+      ]);
+    }).then(function(results){
       setBusinessHours(Array.isArray(results[0])?results[0]:[]);
       setClosures(Array.isArray(results[1])?results[1]:[]);
       setHoursLoaded(true);
-    }).catch(function(){
+      console.log("営業時間データ取得:", results[0]);
+    }).catch(function(e){
+      console.error("営業時間の取得に失敗:", e);
       setHoursLoaded(true);
     });
   }, []);
