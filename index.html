@@ -888,7 +888,7 @@ function StatsPanel({bookings,payments,todayStr}){
 }
 
 
-function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,save,onClose,onDelete}){
+function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,save,onClose,onDelete,businessHours,closures}){
   const [searchQ,setSearchQ]=React.useState("");
   const [searchResults,setSearchResults]=React.useState([]);
   const [searching,setSearching]=React.useState(false);
@@ -903,6 +903,33 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
     const prev=bookings.filter(b=>b.patient_name===form.patient_name&&b.id!==editId);
     return prev.length+1;
   },[form.patient_name,bookings,editId]);
+
+  // ===== 営業時間・臨時休業日ヘルパー =====
+  const bh=businessHours||[];
+  const tc=closures||[];
+  function getDayHours(dayOfWeek){
+    return bh.find(h=>h.day_of_week===dayOfWeek)||null;
+  }
+  const dateClosedByTemp=form.date?tc.some(c=>c.date===form.date):false;
+  const dayHoursForDate=form.date?getDayHours(new Date(form.date+"T00:00:00").getDay()):null;
+  const dateClosedByWeekday=bh.length>0&&dayHoursForDate&&dayHoursForDate.is_open===false;
+  const isSelectedDateClosed=dateClosedByTemp||dateClosedByWeekday;
+  function isTimeAllowed(t){
+    if(!form.date) return true;
+    if(bh.length===0) return true;
+    const dh=getDayHours(new Date(form.date+"T00:00:00").getDay());
+    if(!dh||dh.is_open===false) return false;
+    const tm=toMin(t);
+    const openM=toMin(dh.open_time||"09:00");
+    const closeM=toMin(dh.close_time||"19:00");
+    if(tm<openM||tm>=closeM) return false;
+    const brs=dh.break_times||[];
+    for(const br of brs){
+      const bs=toMin(br.start),be=toMin(br.end);
+      if(tm>=bs&&tm<be) return false;
+    }
+    return true;
+  }
 
   function toggleMenu(name,dur){
     const next=selectedMenus.includes(name)?selectedMenus.filter(m=>m!==name):[...selectedMenus,name];
@@ -986,25 +1013,23 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
       )}
       <div className="form-group"><label className="form-label">電話番号</label><input type="tel" className="form-input" value={form.phone||""} placeholder="090-0000-0000" onChange={e=>setForm(f=>({...f,phone:e.target.value}))}/></div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
-        <div><label className="form-label">日付</label><input type="date" className="form-input" value={form.date||""} onChange={e=>{setForm(f=>({...f,date:e.target.value}));setConflict(false);}}/></div>
+        <div><label className="form-label">日付</label><input type="date" className="form-input" value={form.date||""} onChange={e=>{setForm(f=>({...f,date:e.target.value,time:""}));setConflict(false);}}/></div>
         <div>
           <label className="form-label">時間</label>
-          <select className="form-input" value={form.time||""} onChange={e=>{setForm(f=>({...f,time:e.target.value}));setConflict(false);}}>
+          <select className="form-input" value={form.time||""} onChange={e=>{setForm(f=>({...f,time:e.target.value}));setConflict(false);}} disabled={isSelectedDateClosed}>
             <option value="">選択</option>
-            <option value="09:00">09:00</option><option value="09:10">09:10</option><option value="09:20">09:20</option><option value="09:30">09:30</option><option value="09:40">09:40</option><option value="09:50">09:50</option>
-            <option value="10:00">10:00</option><option value="10:10">10:10</option><option value="10:20">10:20</option><option value="10:30">10:30</option><option value="10:40">10:40</option><option value="10:50">10:50</option>
-            <option value="11:00">11:00</option><option value="11:10">11:10</option><option value="11:20">11:20</option><option value="11:30">11:30</option><option value="11:40">11:40</option><option value="11:50">11:50</option>
-            <option value="12:00">12:00</option><option value="12:10">12:10</option><option value="12:20">12:20</option><option value="12:30">12:30</option><option value="12:40">12:40</option><option value="12:50">12:50</option>
-            <option value="13:00">13:00</option><option value="13:10">13:10</option><option value="13:20">13:20</option><option value="13:30">13:30</option><option value="13:40">13:40</option><option value="13:50">13:50</option>
-            <option value="14:00">14:00</option><option value="14:10">14:10</option><option value="14:20">14:20</option><option value="14:30">14:30</option><option value="14:40">14:40</option><option value="14:50">14:50</option>
-            <option value="15:00">15:00</option><option value="15:10">15:10</option><option value="15:20">15:20</option><option value="15:30">15:30</option><option value="15:40">15:40</option><option value="15:50">15:50</option>
-            <option value="16:00">16:00</option><option value="16:10">16:10</option><option value="16:20">16:20</option><option value="16:30">16:30</option><option value="16:40">16:40</option><option value="16:50">16:50</option>
-            <option value="17:00">17:00</option><option value="17:10">17:10</option><option value="17:20">17:20</option><option value="17:30">17:30</option><option value="17:40">17:40</option><option value="17:50">17:50</option>
-            <option value="18:00">18:00</option><option value="18:10">18:10</option><option value="18:20">18:20</option><option value="18:30">18:30</option><option value="18:40">18:40</option><option value="18:50">18:50</option>
-            <option value="19:00">19:00</option>
+            {SLOTS.map(t=>{
+              const allowed=isTimeAllowed(t);
+              return <option key={t} value={t} disabled={!allowed} style={{color:allowed?"inherit":"#d1d5db"}}>{t}{allowed?"":" ×休業"}</option>;
+            })}
           </select>
         </div>
       </div>
+      {isSelectedDateClosed&&(
+        <div style={{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#dc2626",fontSize:13,fontWeight:700}}>
+          ⚠ この日は{dateClosedByTemp?"臨時休業日":"定休日"}に設定されています。予約を入れる場合は営業時間・休憩時間設定をご確認ください。
+        </div>
+      )}
       {isAdmin&&(
         <div className="form-group">
           <label className="form-label">担当スタッフ</label>
@@ -3133,14 +3158,17 @@ function Dashboard({user,onLogout}){
   const [bookingPopup,setBookingPopup]=React.useState(null); // {booking, x, y}
   const [historyPatient,setHistoryPatient]=React.useState(null);
   const [payments,setPayments]=React.useState([]);
+  const [businessHours,setBusinessHours]=React.useState([]);
+  const [closures,setClosures]=React.useState([]);
 
   const isAdmin=user.role==="admin";
   const todayStr=fmtDate(today);
 
   async function fetchAll(){
     try{
-      const [b,br,py]=await Promise.all([sb.select("bookings","?order=date.asc,time.asc"),sb.select("staff_breaks","?order=date.asc,time.asc"),sb.select("payments","?order=payment_date.desc")]);
+      const [b,br,py,bh,tc]=await Promise.all([sb.select("bookings","?order=date.asc,time.asc"),sb.select("staff_breaks","?order=date.asc,time.asc"),sb.select("payments","?order=payment_date.desc"),sb.select("business_hours","?store_id=eq.1&order=day_of_week.asc"),sb.select("temp_closures","?store_id=eq.1")]);
       setBookings(Array.isArray(b)?b:[]);setBreaks(Array.isArray(br)?br:[]);setPayments(Array.isArray(py)?py:[]);
+      setBusinessHours(Array.isArray(bh)?bh:[]);setClosures(Array.isArray(tc)?tc:[]);
     }catch(e){console.error(e);}
     setLoading(false);
   }
@@ -3607,7 +3635,7 @@ function Dashboard({user,onLogout}){
 
           {/* 予約フォーム */}
           {view==="form"&&form&&(
-            <FormPanel form={form} setForm={setForm} editId={editId} conflict={conflict} setConflict={setConflict} isAdmin={isAdmin} bookings={bookings} save={save} onClose={()=>setView("calendar")} onDelete={()=>setDelConfirm(bookings.find(b=>b.id===editId))}/>
+            <FormPanel form={form} setForm={setForm} editId={editId} conflict={conflict} setConflict={setConflict} isAdmin={isAdmin} bookings={bookings} save={save} onClose={()=>setView("calendar")} onDelete={()=>setDelConfirm(bookings.find(b=>b.id===editId))} businessHours={businessHours} closures={closures}/>
           )}
         </div>
       </div>
