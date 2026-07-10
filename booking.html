@@ -24,6 +24,7 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const LINE_GROUP_ID = "Cfd9d54fedc95bbe4ce1a7ac64ec97fa0";
 const LIFF_ID = "2010529910-NlBCzfsM";
 const LINE_OFFICIAL_URL = "https://lin.ee/UmNuuyy";
+const STORE_ID = 1;
 
 const STAFF = [
   {id:1,name:"岩永"},{id:2,name:"大皿"},
@@ -151,6 +152,14 @@ function App(){
   var memoState = useState("");
   var memo = memoState[0]; var setMemo = memoState[1];
 
+  // ===== 営業時間・臨時休業日 =====
+  var businessHoursState = useState([]);
+  var businessHours = businessHoursState[0]; var setBusinessHours = businessHoursState[1];
+  var closuresState = useState([]);
+  var closures = closuresState[0]; var setClosures = closuresState[1];
+  var hoursLoadedState = useState(false);
+  var hoursLoaded = hoursLoadedState[0]; var setHoursLoaded = hoursLoadedState[1];
+
   var formState = useState({
     name:"",nameKana:"",phone:"",
     bodyParts:[],injuryCause:"",injuryCauseDetail:"",
@@ -189,6 +198,20 @@ function App(){
     });
   }, []);
 
+  // 営業時間・臨時休業日を取得（1回だけ）
+  useEffect(function(){
+    Promise.all([
+      sb.select("business_hours","?store_id=eq."+STORE_ID+"&order=day_of_week.asc"),
+      sb.select("temp_closures","?store_id=eq."+STORE_ID)
+    ]).then(function(results){
+      setBusinessHours(Array.isArray(results[0])?results[0]:[]);
+      setClosures(Array.isArray(results[1])?results[1]:[]);
+      setHoursLoaded(true);
+    }).catch(function(){
+      setHoursLoaded(true);
+    });
+  }, []);
+
   useEffect(function(){
     if(!selDate) return;
     var ds = fmtDate(selDate);
@@ -202,6 +225,41 @@ function App(){
       });
     });
   }, [selDate]);
+
+  // ===== 営業時間ヘルパー =====
+  function getDayHours(dayOfWeek){
+    for(var i=0;i<businessHours.length;i++){
+      if(businessHours[i].day_of_week===dayOfWeek) return businessHours[i];
+    }
+    return null;
+  }
+  function isClosedDate(d){
+    var ds = fmtDate(d);
+    for(var i=0;i<closures.length;i++){
+      if(closures[i].date===ds) return true;
+    }
+    // 営業時間データが未設定の場合は制限しない（フェイルセーフ）
+    if(businessHours.length===0) return false;
+    var dh = getDayHours(d.getDay());
+    if(!dh) return false;
+    return dh.is_open===false;
+  }
+  function isTimeAllowed(t){
+    if(!selDate) return true;
+    if(businessHours.length===0) return true;
+    var dh = getDayHours(selDate.getDay());
+    if(!dh || dh.is_open===false) return false;
+    var tm = toMin(t);
+    var openM = toMin(dh.open_time||"09:00");
+    var closeM = toMin(dh.close_time||"19:00");
+    if(tm<openM || tm>=closeM) return false;
+    var brs = dh.break_times||[];
+    for(var i=0;i<brs.length;i++){
+      var bs=toMin(brs[i].start), be=toMin(brs[i].end);
+      if(tm>=bs && tm<be) return false;
+    }
+    return true;
+  }
 
   function isSlotFull(t){
     var booked = slotData.booked.filter(function(b){return b.time===t;}).length;
@@ -561,10 +619,16 @@ function App(){
             days.map(function(d,i){
               var isSat=d.getDay()===6, isSun=d.getDay()===0;
               var isSel=selDate&&fmtDate(selDate)===fmtDate(d);
-              return React.createElement("button",{key:i,onClick:function(){setSelDate(d);setSelTime(null);},
-                style:{padding:"8px 4px",borderRadius:8,border:isSel?"2px solid #1e3a5f":"1.5px solid #e5e7eb",background:isSel?"#1e3a5f":"white",color:isSel?"white":isSun?"#ef4444":isSat?"#3b82f6":"#333",cursor:"pointer",fontSize:12,lineHeight:1.5}},
+              var closed=isClosedDate(d);
+              return React.createElement("button",{key:i,disabled:closed,
+                onClick:function(){if(closed) return;setSelDate(d);setSelTime(null);},
+                style:{padding:"8px 4px",borderRadius:8,
+                  border:isSel?"2px solid #1e3a5f":"1.5px solid #e5e7eb",
+                  background:closed?"#f3f4f6":isSel?"#1e3a5f":"white",
+                  color:closed?"#d1d5db":isSel?"white":isSun?"#ef4444":isSat?"#3b82f6":"#333",
+                  cursor:closed?"not-allowed":"pointer",fontSize:12,lineHeight:1.5}},
                 React.createElement("div",null,i===0?"今日":(d.getMonth()+1)+"/"+d.getDate()),
-                React.createElement("div",{style:{fontSize:10}},"（"+DAYS_JP[d.getDay()]+"）")
+                React.createElement("div",{style:{fontSize:10}},closed?"休診":"（"+DAYS_JP[d.getDay()]+"）")
               );
             })
           )
@@ -573,9 +637,10 @@ function App(){
           React.createElement("div",{style:{fontSize:13,fontWeight:700,color:"#555",marginBottom:8}},"🕐 時間"),
           React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8}},
             SLOTS.map(function(t){
+              var allowed=isTimeAllowed(t);
               var full=isSlotFull(t);
               var past=isPastSlot(t);
-              var disabled=full||past;
+              var disabled=full||past||!allowed;
               var isSel=selTime===t;
               return React.createElement("button",{key:t,disabled:disabled,
                 onClick:function(){if(!disabled)setSelTime(t);},
@@ -591,7 +656,7 @@ function App(){
               );
             })
           ),
-          React.createElement("div",{style:{fontSize:11,color:"#9ca3af",marginTop:8}},"※ ×は満員・休憩中・受付終了です")
+          React.createElement("div",{style:{fontSize:11,color:"#9ca3af",marginTop:8}},"※ ×は満員・休憩中・営業時間外・受付終了です")
         ):null,
 
         // リピーターは「かんたん予約」ボタン、初回は「次へ」
