@@ -3400,6 +3400,7 @@ function Dashboard({user,onLogout}){
   const [showBreakModal,setShowBreakModal]=React.useState(false);
   const [viewIntake,setViewIntake]=React.useState(null);
   const [bookingPopup,setBookingPopup]=React.useState(null); // {booking, x, y}
+  const [timePickerPopup,setTimePickerPopup]=React.useState(null); // {date, staffId, x, y, centerTime}
   const [historyPatient,setHistoryPatient]=React.useState(null);
   const [payments,setPayments]=React.useState([]);
   const [businessHours,setBusinessHours]=React.useState([]);
@@ -3804,7 +3805,10 @@ function Dashboard({user,onLogout}){
                                     const totalMinFromStart=Math.round(x/CELL_W)*10;
                                     const h=9+Math.floor(totalMinFromStart/60);
                                     const m=totalMinFromStart%60;
-                                    if(h>=9&&h<=17){openAdd(wdStr,`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`);setForm(f=>f?{...f,staff_id:staff.id}:f);}
+                                    if(h>=9&&h<=17){
+                                      const centerTime=`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
+                                      setTimePickerPopup({date:wdStr,staffId:staff.id,x:e.clientX,y:e.clientY,centerTime});
+                                    }
                                   }}>
                                   {MINS.filter((_,i)=>i%3===0).map(({h,m,label})=>(
                                     <div key={label} style={{position:"absolute",left:(h-9)*60/10*CELL_W+m/10*CELL_W,top:0,bottom:0,borderLeft:"1px solid #f1f5f9",pointerEvents:"none"}}/>
@@ -3888,6 +3892,35 @@ function Dashboard({user,onLogout}){
           )}
         </div>
       </div>
+
+      {/* 時間選択ポップアップ（カレンダー直接タップ時） */}
+      {timePickerPopup&&(()=>{
+        const centerMin=toMin(timePickerPopup.centerTime);
+        const options=[-20,-10,0,10,20].map(off=>{
+          const totalMin=centerMin+off;
+          if(totalMin<9*60||totalMin>=19*60) return null;
+          const h=Math.floor(totalMin/60),m=totalMin%60;
+          return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
+        }).filter(Boolean);
+        const posLeft=Math.min(timePickerPopup.x-70,window.innerWidth-160);
+        const posTop=Math.min(timePickerPopup.y-90,window.innerHeight-220);
+        return(
+          <>
+            <div onClick={()=>setTimePickerPopup(null)} style={{position:"fixed",inset:0,zIndex:300}}/>
+            <div style={{position:"fixed",left:Math.max(posLeft,8),top:Math.max(posTop,8),zIndex:400,background:"white",borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,.22)",width:150,overflow:"hidden",border:"1px solid #e2e8f0"}}>
+              {options.map(t=>(
+                <button key={t} onClick={()=>{
+                  openAdd(timePickerPopup.date,t);
+                  setForm(f=>f?{...f,staff_id:timePickerPopup.staffId}:f);
+                  setTimePickerPopup(null);
+                }} style={{width:"100%",padding:"12px 16px",border:"none",borderBottom:"1px solid #f1f5f9",background:t===timePickerPopup.centerTime?"#eff6ff":"white",color:t===timePickerPopup.centerTime?"#1e3a5f":"#374151",fontWeight:t===timePickerPopup.centerTime?800:600,fontSize:15,cursor:"pointer",fontFamily:"inherit",textAlign:"center"}}>
+                  {t}
+                </button>
+              ))}
+            </div>
+          </>
+        );
+      })()}
 
       {/* 予約ブロック アクションポップアップ */}
       {bookingPopup&&(()=>{
