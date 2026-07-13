@@ -330,6 +330,7 @@ function render(){
   root.innerHTML=`
     ${renderHeader()}
     <div class="main">
+      ${renderPatientQR()}
       ${renderUpcomingBookings()}
       ${renderPasses()}
       ${renderActions()}
@@ -395,6 +396,26 @@ function renderHeader(){
   `;
 }
 
+function renderPatientQR(){
+  const checkinUrl=`https://ando-seikotsu-ibaraki.vercel.app/mypage.html?uid=${encodeURIComponent(lineUserId)}`;
+  const qrUrl=`https://ando-seikotsu-ibaraki.vercel.app/api/qr?url=${encodeURIComponent(checkinUrl)}`;
+  return`
+    <div class="card">
+      <div class="card-header">
+        <div class="card-header-icon" style="background:#eff6ff;">🪪</div>
+        <div>
+          <div class="card-header-title">診察券QRコード</div>
+          <div class="card-header-sub">来院時にスタッフへご提示ください</div>
+        </div>
+      </div>
+      <div class="card-body" style="text-align:center;">
+        <img src="${qrUrl}" alt="診察券QRコード" style="width:180px;height:180px;border-radius:12px;" onerror="this.style.display='none'"/>
+        <div style="font-size:11px;color:#94a3b8;margin-top:10px;">このQRコードはお客様専用です。<br>毎回同じものをご提示いただけます。</div>
+      </div>
+    </div>
+  `;
+}
+
 function renderUpcomingBookings(){
   const upcoming=state.bookings.filter(b=>isFuture(b.date)&&!b.cancelled).slice(0,3);
   return`
@@ -415,8 +436,6 @@ function renderUpcomingBookings(){
             <div class="empty-desc">下のボタンから新規予約ができます</div>
           </div>
         `:upcoming.map(b=>{
-          const intakeUrl=`https://ando-seikotsu-ibaraki.vercel.app/intake.html?id=${b.id}`;
-          const qrUrl=`https://ando-seikotsu-ibaraki.vercel.app/api/qr?url=${encodeURIComponent(intakeUrl)}`;
           return`
           <div class="booking-item" style="border-left-color:${isToday(b.date)?'#059669':'#2563eb'}">
             <div class="booking-date">
@@ -426,12 +445,6 @@ function renderUpcomingBookings(){
             <div class="booking-info">
               🩺 ${b.menu||"メニュー未設定"}<br>
               👨‍⚕️ 担当：${b.staff_id?['','岩永','大皿','定井','細永','広川'][b.staff_id]||'未定':'未定'}先生
-            </div>
-            <!-- QRコード -->
-            <div style="margin-top:12px;text-align:center;padding:12px;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0;">
-              <div style="font-size:11px;font-weight:700;color:#64748b;margin-bottom:8px;">来院時にこのQRをご提示ください</div>
-              <img src="${qrUrl}" alt="QRコード" style="width:140px;height:140px;border-radius:8px;" onerror="this.style.display='none'"/>
-              <div style="font-size:10px;color:#94a3b8;margin-top:6px;">${b.date} ${b.time}</div>
             </div>
             ${isFuture(b.date)&&!isToday(b.date)?`
               <div class="booking-actions">
