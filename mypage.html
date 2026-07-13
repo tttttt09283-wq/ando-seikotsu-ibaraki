@@ -240,6 +240,10 @@ async function sbPatch(t,id,d){
   const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}?id=eq.${id}`,{method:"PATCH",headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`,"Content-Type":"application/json"},body:JSON.stringify(d)});
   return res.json();
 }
+async function sbRpc(fn,args){
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`,{method:"POST",headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`,"Content-Type":"application/json"},body:JSON.stringify(args)});
+  return res.json();
+}
 
 // ===== ユーティリティ =====
 function fmtDate(ds){
@@ -257,70 +261,148 @@ function showToast(msg){
 async function loadData(){
   if(!lineUserId) return;
   try{
-    const[bk,ps]=await Promise.all([
-      sbGet("bookings",`?line_user_id=eq.${encodeURIComponent(lineUserId)}&order=date.asc,time.asc`),
-      sbGet("passes",`?line_user_id=eq.${encodeURIComponent(lineUserId)}&active=eq.true`),
-    ]);
+    const bk=await sbGet("bookings",`?line_user_id=eq.${encodeURIComponent(lineUserId)}&order=date.asc,time.asc`);
     state.bookings=Array.isArray(bk)?bk:[];
-    state.passes=Array.isArray(ps)?ps:[];
+
+    // passesテーブルには line_user_id 列が無いため、連携済み予約の電話番号で照会する
+    const phone=state.bookings.length>0?state.bookings[0].phone:null;
+    if(phone){
+      const digits=phone.replace(/[^0-9]/g,"");
+      const [withDash,noDash]=await Promise.all([
+        sbGet("passes",`?phone=eq.${encodeURIComponent(phone)}&active=eq.true`),
+        sbGet("passes",`?phone=eq.${encodeURIComponent(digits)}&active=eq.true`),
+      ]);
+      const all=[...(Array.isArray(withDash)?withDash:[]),...(Array.isArray(noDash)?noDash:[])];
+      // id重複を除去
+      const seen=new Set();
+      state.passes=all.filter(p=>{if(seen.has(p.id))return false;seen.add(p.id);return true;});
+    }else{
+      state.passes=[];
+    }
   }catch(e){console.error(e);}
   state.loading=false;
   render();
 }
 
 // ===== 電話番号での連携（初めてLINEでログインした既存患者様向け） =====
-function normalizePhone(p){return (p||"").replace(/[^0-9]/g,"");}
+const LINK_MAX_ATTEMPTS=3;
+if(typeof state.linkAttempts==="undefined") state.linkAttempts=0;
+if(typeof state.linkStep==="undefined") state.linkStep="input"; // "input" | "confirm" | "locked"
+if(typeof state.linkMaskedName==="undefined") state.linkMaskedName="";
 
 async function attemptPhoneLink(){
-  const input=(state.linkPhone||"").trim();
-  if(!input){state.linkError="電話番号を入力してください";render();return;}
+  if(state.linkAttempts>=LINK_MAX_ATTEMPTS){
+    state.linkStep="locked";render();
+    return;
+  }
+  const phone=(state.linkPhone||"").trim();
+  const name=(state.linkName||"").trim();
+  if(!phone||!name){
+    state.linkError="お名前と電話番号の両方を入力してください";render();
+    return;
+  }
   state.linking=true;state.linkError="";render();
   try{
-    const digits=normalizePhone(input);
-    // ハイフンあり・なし両方の表記で既存予約を検索
-    const [withDash,noDash]=await Promise.all([
-      sbGet("bookings",`?phone=eq.${encodeURIComponent(input)}&order=date.desc`),
-      sbGet("bookings",`?phone=eq.${encodeURIComponent(digits)}&order=date.desc`),
-    ]);
-    let matches=[...(Array.isArray(withDash)?withDash:[]),...(Array.isArray(noDash)?noDash:[])];
-    // line_user_idが自分以外に既に紐付いている行は対象外（他人の予約を誤って連携しないため）
-    matches=matches.filter(b=>!b.line_user_id||b.line_user_id===lineUserId);
-    if(matches.length===0){
-      state.linkError="この電話番号に一致する予約が見つかりませんでした。番号をご確認いただくか、スタッフまでお問い合わせください。";
-      state.linking=false;render();
+    const result=await sbRpc("link_patient_account",{p_phone:phone,p_name:name,p_uid:lineUserId,p_commit:false});
+    state.linkAttempts++;
+    if(!result||!result.matched){
+      state.linkError="一致するご予約が見つかりませんでした。お名前・お電話番号をご確認ください。";
+      state.linking=false;
+      if(state.linkAttempts>=LINK_MAX_ATTEMPTS) state.linkStep="locked";
+      render();
       return;
     }
-    const patientName=matches[0].patient_name;
-    // 一致した予約すべてに、今回ログインしたLINEアカウントを紐付け
-    await Promise.all(matches.map(b=>sbPatch("bookings",b.id,{line_user_id:lineUserId})));
-    // 回数券・フリーパスも同じ電話番号で連携
-    try{
-      const passMatches=await sbGet("passes",`?phone=eq.${encodeURIComponent(input)}`);
-      const passMatches2=await sbGet("passes",`?phone=eq.${encodeURIComponent(digits)}`);
-      const allPasses=[...(Array.isArray(passMatches)?passMatches:[]),...(Array.isArray(passMatches2)?passMatches2:[])];
-      await Promise.all(allPasses.map(p=>sbPatch("passes",p.id,{line_user_id:lineUserId})));
-    }catch(e){/* passesの連携失敗は致命的ではないため無視 */}
-
-    state.linkPhone="";state.needsLink=false;
-    showToast(`✅ ${patientName} 様の予約と連携しました`);
-    await loadData();
+    state.linkMaskedName=result.masked_name;
+    state.linkStep="confirm";
+    state.linking=false;
+    render();
   }catch(e){
     state.linkError="連携処理に失敗しました。時間をおいてお試しください。";
     state.linking=false;render();
   }
 }
 
+async function confirmPhoneLink(){
+  const phone=(state.linkPhone||"").trim();
+  const name=(state.linkName||"").trim();
+  state.linking=true;render();
+  try{
+    const result=await sbRpc("link_patient_account",{p_phone:phone,p_name:name,p_uid:lineUserId,p_commit:true});
+    if(result&&result.matched&&result.committed){
+      state.linkPhone="";state.linkName="";state.linkStep="input";state.linkAttempts=0;
+      showToast(`✅ ${result.masked_name} 様として連携しました`);
+      await loadData();
+    }else{
+      state.linkError="連携に失敗しました。お手数ですがスタッフまでお問い合わせください。";
+      state.linking=false;state.linkStep="input";render();
+    }
+  }catch(e){
+    state.linkError="連携処理に失敗しました。時間をおいてお試しください。";
+    state.linking=false;render();
+  }
+}
+
+function cancelPhoneLinkConfirm(){
+  state.linkStep="input";state.linkMaskedName="";render();
+}
+
 function renderLinkAccount(){
+  if(state.linkStep==="locked"){
+    return`
+      <div class="card">
+        <div class="card-header">
+          <div class="card-header-icon" style="background:#fef2f2;">🔒</div>
+          <div>
+            <div class="card-header-title">連携を一時停止しています</div>
+            <div class="card-header-sub">入力の一致が確認できませんでした</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div style="font-size:13px;color:#64748b;line-height:1.8;">お手数ですが、公式LINEまたはお電話にてスタッフまでお問い合わせください。</div>
+        </div>
+      </div>
+    `;
+  }
+  if(state.linkStep==="confirm"){
+    return`
+      <div class="card">
+        <div class="card-header">
+          <div class="card-header-icon" style="background:#fef9ec;">🔗</div>
+          <div>
+            <div class="card-header-title">ご本人確認</div>
+            <div class="card-header-sub">以下のご予約と連携します</div>
+          </div>
+        </div>
+        <div class="card-body">
+          <div style="background:#f8fafc;border-radius:10px;padding:16px;margin-bottom:14px;text-align:center;">
+            <div style="font-size:12px;color:#94a3b8;margin-bottom:4px;">お名前（一部表示）</div>
+            <div style="font-size:20px;font-weight:800;color:#1e293b;">${state.linkMaskedName} 様</div>
+          </div>
+          <div style="font-size:12px;color:#64748b;margin-bottom:14px;text-align:center;">ご本人のご予約で間違いなければ「はい、私です」を押してください。</div>
+          ${state.linkError?`<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:#dc2626;font-weight:600;">${state.linkError}</div>`:""}
+          <button class="btn btn-green" onclick="confirmPhoneLink()" ${state.linking?"disabled":""} style="margin-bottom:10px;opacity:${state.linking?0.7:1};">
+            <span class="btn-icon">✅</span>
+            <span class="btn-label">${state.linking?"連携中...":"はい、私です"}</span>
+          </button>
+          <button class="btn btn-outline" onclick="cancelPhoneLinkConfirm()">いいえ、違います</button>
+        </div>
+      </div>
+    `;
+  }
   return`
     <div class="card">
       <div class="card-header">
         <div class="card-header-icon" style="background:#fef9ec;">🔗</div>
         <div>
           <div class="card-header-title">以前からご来院中の方</div>
-          <div class="card-header-sub">お電話番号でご予約・回数券と連携できます</div>
+          <div class="card-header-sub">お名前・お電話番号でご予約と連携できます</div>
         </div>
       </div>
       <div class="card-body">
+        <div class="form-group" style="margin-bottom:10px;">
+          <label class="form-label">ご登録のお名前</label>
+          <input type="text" class="form-input" id="link-name" placeholder="山本 花子" value="${state.linkName||""}"/>
+        </div>
         <div class="form-group" style="margin-bottom:10px;">
           <label class="form-label">ご登録の電話番号</label>
           <input type="tel" class="form-input" id="link-phone" placeholder="090-0000-0000" value="${state.linkPhone||""}"/>
@@ -328,16 +410,19 @@ function renderLinkAccount(){
         ${state.linkError?`<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 12px;margin-bottom:10px;font-size:12px;color:#dc2626;font-weight:600;">${state.linkError}</div>`:""}
         <button class="btn btn-orange" onclick="submitLinkPhone()" ${state.linking?"disabled":""} style="opacity:${state.linking?0.7:1};">
           <span class="btn-icon">🔗</span>
-          <span class="btn-label">${state.linking?"確認中...":"連携する"}</span>
+          <span class="btn-label">${state.linking?"確認中...":"確認する"}</span>
         </button>
+        <div style="font-size:11px;color:#94a3b8;margin-top:10px;text-align:center;">残り試行回数：${Math.max(LINK_MAX_ATTEMPTS-state.linkAttempts,0)}回</div>
       </div>
     </div>
   `;
 }
 
 function submitLinkPhone(){
-  const el=document.getElementById("link-phone");
-  if(el) state.linkPhone=el.value;
+  const nameEl=document.getElementById("link-name");
+  const phoneEl=document.getElementById("link-phone");
+  if(nameEl) state.linkName=nameEl.value;
+  if(phoneEl) state.linkPhone=phoneEl.value;
   attemptPhoneLink();
 }
 
@@ -702,6 +787,8 @@ function bindEvents(){
   if(ct) ct.onchange=e=>{state.changeForm.time=e.target.value;};
   const lp=document.getElementById("link-phone");
   if(lp) lp.oninput=e=>{state.linkPhone=e.target.value;};
+  const ln=document.getElementById("link-name");
+  if(ln) ln.oninput=e=>{state.linkName=e.target.value;};
 }
 
 function openChangeModal(id){
