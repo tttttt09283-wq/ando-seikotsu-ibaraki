@@ -3089,49 +3089,70 @@ function CheckInPanel({bookings,onOpenPatient,onCheckedIn}){
     }
   }
 
-  function extractBookingId(text){
+  function extractQRPayload(text){
     try{
       const u=new URL(text);
+      const uid=u.searchParams.get("uid");
       const id=u.searchParams.get("id");
-      return id||null;
+      if(uid) return {uid};
+      if(id) return {bookingId:id};
+      return null;
     }catch(e){
-      if(/^\d+$/.test(text.trim())) return text.trim();
+      if(/^\d+$/.test(text.trim())) return {bookingId:text.trim()};
       return null;
     }
   }
 
   async function handleDecoded(text){
     if(!scanningRef.current) return;
-    const id=extractBookingId(text);
-    if(!id){
-      setCameraError("QRコードの内容を読み取れませんでした（予約IDが見つかりません）");
+    const payload=extractQRPayload(text);
+    if(!payload){
+      setCameraError("QRコードの内容を読み取れませんでした");
       return;
     }
     scanningRef.current=false;
     stopCamera();
-    await lookupAndCheckIn(id);
+    await lookupAndCheckIn(payload);
   }
 
-  async function lookupAndCheckIn(id){
+  async function lookupAndCheckIn(payload){
     setCheckingIn(true);
     setCameraError("");
     try{
-      const found=await sb.select("bookings",`?id=eq.${id}`);
-      const booking=Array.isArray(found)&&found.length>0?found[0]:null;
-      if(!booking){
-        setCameraError("予約が見つかりませんでした（QRコードが古い可能性があります）");
-        setCheckingIn(false);
-        return;
+      let booking=null;
+      let visitCount=1;
+      if(payload.uid){
+        // 患者固定QR：本日の予約を検索
+        const todayStr=fmtDate(new Date());
+        const todays=await sb.select("bookings",`?line_user_id=eq.${encodeURIComponent(payload.uid)}&date=eq.${todayStr}&order=time.asc`);
+        if(!Array.isArray(todays)||todays.length===0){
+          setCameraError("本日のご予約が見つかりませんでした。予約状況をご確認ください。");
+          setCheckingIn(false);
+          return;
+        }
+        booking=todays[0];
+        const all=await sb.select("bookings",`?line_user_id=eq.${encodeURIComponent(payload.uid)}`);
+        visitCount=Array.isArray(all)?all.length:1;
+      }else{
+        // 旧式：予約単位QR（後方互換）
+        const found=await sb.select("bookings",`?id=eq.${payload.bookingId}`);
+        booking=Array.isArray(found)&&found.length>0?found[0]:null;
+        if(!booking){
+          setCameraError("予約が見つかりませんでした（QRコードが古い可能性があります）");
+          setCheckingIn(false);
+          return;
+        }
+        visitCount=bookings.filter(b=>b.patient_name===booking.patient_name).length;
       }
-      const patientBookings=bookings.filter(b=>b.patient_name===booking.patient_name);
-      const isNew=patientBookings.length<=1;
+
+      const isNew=visitCount<=1;
 
       try{
         await sb.update("bookings",booking.id,{checked_in_at:new Date().toISOString()});
         if(onCheckedIn) onCheckedIn();
       }catch(e){/* 列が無い場合などは無視 */}
 
-      setResult({booking,isNew,visitCount:patientBookings.length});
+      setResult({booking,isNew,visitCount});
       setCheckingIn(false);
 
       if(isNew){
@@ -3196,7 +3217,7 @@ function CheckInPanel({bookings,onOpenPatient,onCheckedIn}){
     if(!manualId.trim()) return;
     scanningRef.current=false;
     stopCamera();
-    lookupAndCheckIn(manualId.trim());
+    lookupAndCheckIn({bookingId:manualId.trim()});
   }
 
   const staff=result?STAFF_ACCOUNTS.find(s=>s.id===result.booking.staff_id):null;
