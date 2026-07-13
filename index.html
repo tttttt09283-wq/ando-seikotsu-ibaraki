@@ -8,6 +8,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
@@ -3064,6 +3065,210 @@ function ShiftPanel({currentUser}){
   );
 }
 
+// ===== 来院受付パネル（QRコード読み取り） =====
+function CheckInPanel({bookings,onOpenPatient}){
+  const videoRef=React.useRef(null);
+  const canvasRef=React.useRef(null);
+  const streamRef=React.useRef(null);
+  const rafRef=React.useRef(null);
+  const scanningRef=React.useRef(true);
+
+  const [cameraError,setCameraError]=React.useState("");
+  const [result,setResult]=React.useState(null); // {booking, isNew, visitCount}
+  const [checkingIn,setCheckingIn]=React.useState(false);
+  const [manualId,setManualId]=React.useState("");
+
+  function stopCamera(){
+    if(streamRef.current){
+      streamRef.current.getTracks().forEach(t=>t.stop());
+      streamRef.current=null;
+    }
+    if(rafRef.current){
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current=null;
+    }
+  }
+
+  function extractBookingId(text){
+    try{
+      const u=new URL(text);
+      const id=u.searchParams.get("id");
+      return id||null;
+    }catch(e){
+      if(/^\d+$/.test(text.trim())) return text.trim();
+      return null;
+    }
+  }
+
+  async function handleDecoded(text){
+    if(!scanningRef.current) return;
+    const id=extractBookingId(text);
+    if(!id){
+      setCameraError("QRコードの内容を読み取れませんでした（予約IDが見つかりません）");
+      return;
+    }
+    scanningRef.current=false;
+    stopCamera();
+    await lookupAndCheckIn(id);
+  }
+
+  async function lookupAndCheckIn(id){
+    setCheckingIn(true);
+    setCameraError("");
+    try{
+      const found=await sb.select("bookings",`?id=eq.${id}`);
+      const booking=Array.isArray(found)&&found.length>0?found[0]:null;
+      if(!booking){
+        setCameraError("予約が見つかりませんでした（QRコードが古い可能性があります）");
+        setCheckingIn(false);
+        return;
+      }
+      const patientBookings=bookings.filter(b=>b.patient_name===booking.patient_name);
+      const isNew=patientBookings.length<=1;
+
+      try{
+        await sb.update("bookings",booking.id,{checked_in_at:new Date().toISOString()});
+      }catch(e){/* 列が無い場合などは無視 */}
+
+      setResult({booking,isNew,visitCount:patientBookings.length});
+      setCheckingIn(false);
+
+      if(isNew){
+        window.open(`intake.html?id=${booking.id}`,"_blank");
+      }
+    }catch(e){
+      setCameraError("読み取り処理に失敗しました："+e.message);
+      setCheckingIn(false);
+    }
+  }
+
+  function resetScan(){
+    setResult(null);
+    setCameraError("");
+    scanningRef.current=true;
+    startCamera();
+  }
+
+  function startCamera(){
+    if(!window.jsQR){
+      setCameraError("QR読み取りライブラリの読み込みに失敗しました。ページを再読み込みしてください。");
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}})
+      .then(stream=>{
+        streamRef.current=stream;
+        if(videoRef.current){
+          videoRef.current.srcObject=stream;
+          videoRef.current.play();
+        }
+        tick();
+      })
+      .catch(e=>{
+        setCameraError("カメラを起動できませんでした。ブラウザの設定でカメラへのアクセスを許可してください。");
+      });
+  }
+
+  function tick(){
+    if(!scanningRef.current){return;}
+    const video=videoRef.current,canvas=canvasRef.current;
+    if(video&&canvas&&video.readyState===video.HAVE_ENOUGH_DATA){
+      canvas.width=video.videoWidth;
+      canvas.height=video.videoHeight;
+      const ctx=canvas.getContext("2d");
+      ctx.drawImage(video,0,0,canvas.width,canvas.height);
+      const imageData=ctx.getImageData(0,0,canvas.width,canvas.height);
+      const code=window.jsQR(imageData.data,imageData.width,imageData.height,{inversionAttempts:"dontInvert"});
+      if(code&&code.data){
+        handleDecoded(code.data);
+        return;
+      }
+    }
+    rafRef.current=requestAnimationFrame(tick);
+  }
+
+  React.useEffect(()=>{
+    startCamera();
+    return ()=>{stopCamera();};
+  },[]);
+
+  function submitManualId(){
+    if(!manualId.trim()) return;
+    scanningRef.current=false;
+    stopCamera();
+    lookupAndCheckIn(manualId.trim());
+  }
+
+  const staff=result?STAFF_ACCOUNTS.find(s=>s.id===result.booking.staff_id):null;
+
+  return(
+    <div style={{maxWidth:520,margin:"0 auto"}}>
+      <div className="card" style={{marginBottom:14}}>
+        <div className="card-header blue">📷 来院受付（QRコード読み取り）</div>
+        <div className="card-body">
+          {!result&&(
+            <div>
+              <div style={{position:"relative",borderRadius:12,overflow:"hidden",background:"#000",aspectRatio:"1/1",maxHeight:360}}>
+                <video ref={videoRef} playsInline muted style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+                <canvas ref={canvasRef} style={{display:"none"}}/>
+                {checkingIn&&(
+                  <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,.6)",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:700}}>
+                    確認中...
+                  </div>
+                )}
+              </div>
+              <div style={{fontSize:12,color:"#94a3b8",marginTop:10,textAlign:"center"}}>
+                患者様のLINEに届いたQRコードを、カメラに映してください
+              </div>
+              {cameraError&&(
+                <div style={{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:8,padding:"10px 14px",marginTop:12,color:"#dc2626",fontSize:13,fontWeight:700}}>
+                  ⚠ {cameraError}
+                </div>
+              )}
+              <div style={{marginTop:16,paddingTop:16,borderTop:"1px solid #f1f5f9"}}>
+                <div style={{fontSize:12,fontWeight:700,color:"#64748b",marginBottom:6}}>カメラが使えない場合：予約IDを直接入力</div>
+                <div style={{display:"flex",gap:8}}>
+                  <input className="form-input" value={manualId} onChange={e=>setManualId(e.target.value)} placeholder="予約ID"/>
+                  <button className="btn btn-outline" onClick={submitManualId}>確認</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {result&&(
+            <div>
+              <div style={{textAlign:"center",marginBottom:16}}>
+                <div style={{fontSize:40,marginBottom:8}}>{result.isNew?"📋":"✅"}</div>
+                <div style={{fontWeight:800,fontSize:17,color:"#1e3a5f"}}>{result.isNew?"初回の患者様です":"来院受付が完了しました"}</div>
+                {result.isNew&&<div style={{fontSize:12,color:"#94a3b8",marginTop:4}}>問診票を別タブで開きました</div>}
+              </div>
+              <div style={{background:"#f8fafc",borderRadius:10,padding:"14px 16px",border:"1px solid #e2e8f0",marginBottom:16}}>
+                <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #f1f5f9"}}>
+                  <span style={{fontSize:12,color:"#94a3b8",fontWeight:700}}>患者名</span>
+                  <span style={{fontSize:14,fontWeight:800,color:"#1e293b"}}>{result.booking.patient_name} 様</span>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #f1f5f9"}}>
+                  <span style={{fontSize:12,color:"#94a3b8",fontWeight:700}}>本日の予約</span>
+                  <span style={{fontSize:14,fontWeight:700,color:"#1e293b"}}>{result.booking.date} {result.booking.time}</span>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #f1f5f9"}}>
+                  <span style={{fontSize:12,color:"#94a3b8",fontWeight:700}}>担当</span>
+                  <span style={{fontSize:14,fontWeight:700,color:staff?staff.color:"#1e293b"}}>{staff?staff.name:"—"}</span>
+                </div>
+                <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}>
+                  <span style={{fontSize:12,color:"#94a3b8",fontWeight:700}}>メニュー</span>
+                  <span style={{fontSize:14,fontWeight:700,color:"#1e293b"}}>{result.booking.menu}</span>
+                </div>
+              </div>
+              <div style={{fontSize:11,color:"#94a3b8",textAlign:"center",marginBottom:14}}>来院{result.visitCount}回目</div>
+              <button className="btn btn-primary" style={{width:"100%",justifyContent:"center"}} onClick={resetScan}>次の患者様を受付する</button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ===== メイン管理画面 =====
 // ===== 個人週間ビュー =====
 function PersonalWeekView({staff,filtered,payments,visitCounts,setBookingPopup,setView,setForm,setEditId,todayStr,isAdmin,user}){
@@ -3282,6 +3487,7 @@ function Dashboard({user,onLogout}){
     // 予約・顧客
     {section:"予約・顧客"},
     {id:"add",label:"新規予約",special:"btn-add",action:()=>openAdd()},
+    {id:"checkin",label:"📷 来院受付",special:""},
     {id:"calendar",label:"カレンダー",special:""},
     {id:"patients",label:"患者管理",special:""},
     // 分析
@@ -3609,6 +3815,9 @@ function Dashboard({user,onLogout}){
               </div>
             );
           })()}
+
+          {/* 来院受付（QR読み取り） */}
+          {view==="checkin"&&<CheckInPanel bookings={bookings} onOpenPatient={(patientName)=>{setView("patients");}}/>}
 
           {/* 患者管理 */}
           {view==="patients"&&<PatientsPanel bookings={bookings} setView={setView} setForm={setForm} setEditId={setEditId} setConflict={setConflict} todayStr={todayStr}/>}
