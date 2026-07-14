@@ -105,11 +105,14 @@ const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
 
 const STAFF_ACCOUNTS = [
-  {id:1,name:"岩永 先生",email:"iwanaga@ando.jp",password:"iwanaga123",role:"admin",color:"#2563eb",initial:"岩"},
-  {id:2,name:"大皿 先生",email:"osara@ando.jp",password:"osara123",role:"staff",color:"#059669",initial:"大"},
-  {id:3,name:"定井 先生",email:"sadai@ando.jp",password:"sadai123",role:"staff",color:"#d97706",initial:"定"},
-  {id:4,name:"細永 先生",email:"hosonaga@ando.jp",password:"hosonaga123",role:"staff",color:"#7c3aed",initial:"細"},
-  {id:5,name:"広川 先生",email:"hirokawa@ando.jp",password:"hirokawa123",role:"staff",color:"#dc2626",initial:"広"},
+  // storeIds: このスタッフが勤務する店舗のID（stores.id）を配列で指定。
+  // 新しい店舗を追加したら、そこで勤務するスタッフのstoreIdsにその店舗IDを追加してください。
+  // 例：岩永先生が店舗1・2の両方で勤務する場合 → storeIds:[1,2]
+  {id:1,name:"岩永 先生",email:"iwanaga@ando.jp",password:"iwanaga123",role:"admin",color:"#2563eb",initial:"岩",storeIds:[1]},
+  {id:2,name:"大皿 先生",email:"osara@ando.jp",password:"osara123",role:"staff",color:"#059669",initial:"大",storeIds:[1]},
+  {id:3,name:"定井 先生",email:"sadai@ando.jp",password:"sadai123",role:"staff",color:"#d97706",initial:"定",storeIds:[1]},
+  {id:4,name:"細永 先生",email:"hosonaga@ando.jp",password:"hosonaga123",role:"staff",color:"#7c3aed",initial:"細",storeIds:[1]},
+  {id:5,name:"広川 先生",email:"hirokawa@ando.jp",password:"hirokawa123",role:"staff",color:"#dc2626",initial:"広",storeIds:[1]},
 ];
 // ===== メニューマスタ（改定後料金） =====
 const MENU_CATEGORIES = [
@@ -889,7 +892,7 @@ function StatsPanel({bookings,payments,todayStr}){
 }
 
 
-function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,save,onClose,onDelete,businessHours,closures}){
+function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,save,onClose,onDelete,businessHours,closures,storeStaffList}){
   const [searchQ,setSearchQ]=React.useState("");
   const [searchResults,setSearchResults]=React.useState([]);
   const [searching,setSearching]=React.useState(false);
@@ -1035,7 +1038,7 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
         <div className="form-group">
           <label className="form-label">担当スタッフ</label>
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-            {STAFF_ACCOUNTS.map(s=>(
+            {(storeStaffList||STAFF_ACCOUNTS).map(s=>(
               <button key={s.id} onClick={()=>{setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} className="btn" style={{background:form.staff_id===s.id?s.color:"white",color:form.staff_id===s.id?"white":"#374151",border:"2px solid "+s.color,borderRadius:20,padding:"5px 12px",fontSize:12,fontWeight:700,boxShadow:form.staff_id===s.id?"0 2px 8px "+s.color+"55":"none"}}>{s.name}</button>
             ))}
           </div>
@@ -3405,18 +3408,34 @@ function Dashboard({user,onLogout}){
   const [payments,setPayments]=React.useState([]);
   const [businessHours,setBusinessHours]=React.useState([]);
   const [closures,setClosures]=React.useState([]);
+  const [stores,setStores]=React.useState([]);
+  const [selStoreId,setSelStoreId]=React.useState(null);
 
   const isAdmin=user.role==="admin";
   const todayStr=fmtDate(today);
 
   async function fetchAll(){
     try{
-      const [b,br,py,bh,tc]=await Promise.all([sb.select("bookings","?order=date.asc,time.asc"),sb.select("staff_breaks","?order=date.asc,time.asc"),sb.select("payments","?order=payment_date.desc"),sb.select("business_hours","?store_id=eq.1&order=day_of_week.asc"),sb.select("temp_closures","?store_id=eq.1")]);
+      const [b,br,py,st]=await Promise.all([sb.select("bookings","?order=date.asc,time.asc"),sb.select("staff_breaks","?order=date.asc,time.asc"),sb.select("payments","?order=payment_date.desc"),sb.select("stores","?order=id.asc")]);
       setBookings(Array.isArray(b)?b:[]);setBreaks(Array.isArray(br)?br:[]);setPayments(Array.isArray(py)?py:[]);
-      setBusinessHours(Array.isArray(bh)?bh:[]);setClosures(Array.isArray(tc)?tc:[]);
+      const storeList=Array.isArray(st)?st:[];
+      setStores(storeList);
+      setSelStoreId(prev=>prev!==null?prev:(storeList.length>0?storeList[0].id:1));
     }catch(e){console.error(e);}
     setLoading(false);
   }
+
+  // 選択中の店舗の営業時間・臨時休業日を取得
+  React.useEffect(()=>{
+    if(selStoreId===null) return;
+    Promise.all([
+      sb.select("business_hours",`?store_id=eq.${selStoreId}&order=day_of_week.asc`),
+      sb.select("temp_closures",`?store_id=eq.${selStoreId}`)
+    ]).then(([bh,tc])=>{
+      setBusinessHours(Array.isArray(bh)?bh:[]);
+      setClosures(Array.isArray(tc)?tc:[]);
+    }).catch(()=>{});
+  },[selStoreId]);
 
   async function insertTestBooking(){
     const today=new Date();
@@ -3433,6 +3452,7 @@ function Dashboard({user,onLogout}){
       date:dateStr,
       time:timeStr,
       menu:"無料施術体験会（60分）",
+      store_id:selStoreId,
       line_notify:!!lineId,
       line_user_id:lineId||null,
       reminded:false,
@@ -3459,7 +3479,13 @@ function Dashboard({user,onLogout}){
 
   function showToast(msg,type="success"){setToast({msg,type});setTimeout(()=>setToast(null),3000);}
 
-  const filtered=React.useMemo(()=>selStaff?bookings.filter(b=>b.staff_id===selStaff):bookings,[bookings,selStaff]);
+  // 選択中の店舗に紐づく予約のみに絞り込む（store_id未設定の古いデータは最初の店舗として扱う）
+  const firstStoreId=stores.length>0?stores[0].id:1;
+  const storeBookings=React.useMemo(()=>bookings.filter(b=>(b.store_id||firstStoreId)===selStoreId),[bookings,selStoreId,firstStoreId]);
+  // 選択中の店舗で勤務するスタッフのみ表示
+  const storeStaff=React.useMemo(()=>STAFF_ACCOUNTS.filter(s=>!s.storeIds||s.storeIds.indexOf(selStoreId)>-1),[selStoreId]);
+
+  const filtered=React.useMemo(()=>selStaff?storeBookings.filter(b=>b.staff_id===selStaff):storeBookings,[storeBookings,selStaff]);
 
   const visitCounts=React.useMemo(()=>{
     const pb={};
@@ -3473,7 +3499,7 @@ function Dashboard({user,onLogout}){
   const paidBookingIds=React.useMemo(()=>new Set(payments.map(p=>p.booking_id).filter(Boolean)),[payments]);
 
   function openAdd(date=null,time=null,patientName="",phone=""){
-    setForm({patient_name:patientName,phone:phone,staff_id:isAdmin?1:user.id,date:date||todayStr,time:time||"10:00",menu:MENUS[0],line_notify:true,reminded:false});
+    setForm({patient_name:patientName,phone:phone,staff_id:isAdmin?1:user.id,date:date||todayStr,time:time||"10:00",menu:MENUS[0],line_notify:true,reminded:false,store_id:selStoreId});
     setConflict(false);setEditId(null);setView("form");
   }
   function openEdit(b){
@@ -3626,11 +3652,23 @@ function Dashboard({user,onLogout}){
         {/* ===== メインコンテンツ ===== */}
         <div style={{flex:1,padding:16,minWidth:0,overflowY:"auto"}}>
 
+          {/* 店舗タブ（2店舗以上ある場合のみ表示） */}
+          {stores.length>1&&(view==="calendar"||view==="list")&&(
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+              {stores.map(s=>(
+                <button key={s.id} onClick={()=>{setSelStoreId(s.id);setSelStaff(null);}}
+                  style={{padding:"7px 16px",borderRadius:8,border:"1.5px solid",borderColor:selStoreId===s.id?"#1e3a5f":"#e2e8f0",background:selStoreId===s.id?"#1e3a5f":"white",color:selStoreId===s.id?"white":"#374151",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                  {s.name}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* スタッフフィルター（カレンダー・一覧のみ） */}
           {(view==="calendar"||view==="list")&&(
             <div className="staff-filter">
               {isAdmin&&(<button onClick={()=>setSelStaff(null)} className="staff-chip" style={{background:!selStaff?"#1e3a5f":"white",color:!selStaff?"white":"#374151",borderColor:!selStaff?"#1e3a5f":"#e2e8f0",boxShadow:!selStaff?"0 2px 8px rgba(30,58,95,.35)":"0 1px 3px rgba(0,0,0,.08)"}}>全員</button>)}
-              {STAFF_ACCOUNTS.map(s=>(<button key={s.id} onClick={()=>setSelStaff(s.id)} className="staff-chip" style={{background:selStaff===s.id?s.color:"white",color:selStaff===s.id?"white":"#374151",borderColor:selStaff===s.id?s.color:"#e2e8f0",boxShadow:selStaff===s.id?`0 2px 8px ${s.color}55`:"0 1px 3px rgba(0,0,0,.08)"}}>{s.name}</button>))}
+              {storeStaff.map(s=>(<button key={s.id} onClick={()=>setSelStaff(s.id)} className="staff-chip" style={{background:selStaff===s.id?s.color:"white",color:selStaff===s.id?"white":"#374151",borderColor:selStaff===s.id?s.color:"#e2e8f0",boxShadow:selStaff===s.id?`0 2px 8px ${s.color}55`:"0 1px 3px rgba(0,0,0,.08)"}}>{s.name}</button>))}
             </div>
           )}
 
@@ -3652,7 +3690,7 @@ function Dashboard({user,onLogout}){
             const screenW=Math.max(window.innerWidth-130-48,600);
             const CELL_W=Math.max(Math.floor((screenW-HEADER_W)/TOTAL_MINS),12);
 
-            const staffList=STAFF_ACCOUNTS;
+            const staffList=storeStaff;
             const filteredStaff=selStaff?staffList.filter(s=>s.id===selStaff):staffList;
 
             function timeToX(timeStr){const[h,m]=timeStr.split(":").map(Number);return((h-9)*60+m)/10*CELL_W;}
@@ -3705,7 +3743,7 @@ function Dashboard({user,onLogout}){
                     const isSelected=dStr===ds;
                     const isToday=dStr===todayStr;
                     const isSun=d.getDay()===0,isSat=d.getDay()===6;
-                    const cnt=bookings.filter(b=>b.date===dStr).length;
+                    const cnt=storeBookings.filter(b=>b.date===dStr).length;
                     return(
                       <button key={dStr} onClick={()=>setBaseDate(new Date(dStr+"T00:00:00"))}
                         style={{flex:1,minWidth:72,padding:"6px 4px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:800,fontSize:12,textAlign:"center",transition:"all .15s",
@@ -3748,7 +3786,7 @@ function Dashboard({user,onLogout}){
                       const wdStr=fmtDate(wd);
                       const isToday=wdStr===todayStr;
                       const isSun=wd.getDay()===0,isSat=wd.getDay()===6;
-                      const dayBookings=bookings.filter(b=>b.date===wdStr);
+                      const dayBookings=storeBookings.filter(b=>b.date===wdStr);
                       const dayColor=isSun?"#ef4444":isSat?"#7c3aed":"#1e293b";
 
                       // 対応可能・予約数（その日の）
@@ -3888,7 +3926,7 @@ function Dashboard({user,onLogout}){
 
           {/* 予約フォーム */}
           {view==="form"&&form&&(
-            <FormPanel form={form} setForm={setForm} editId={editId} conflict={conflict} setConflict={setConflict} isAdmin={isAdmin} bookings={bookings} save={save} onClose={()=>setView("calendar")} onDelete={()=>setDelConfirm(bookings.find(b=>b.id===editId))} businessHours={businessHours} closures={closures}/>
+            <FormPanel form={form} setForm={setForm} editId={editId} conflict={conflict} setConflict={setConflict} isAdmin={isAdmin} bookings={bookings} save={save} onClose={()=>setView("calendar")} onDelete={()=>setDelConfirm(bookings.find(b=>b.id===editId))} businessHours={businessHours} closures={closures} storeStaffList={storeStaff}/>
           )}
         </div>
       </div>
