@@ -598,10 +598,23 @@ function BreakModal({onClose,bookings,breaks,setBreaks}){
 }
 
 // ===== 分析ダッシュボード =====
-function StatsPanel({bookings,payments,todayStr}){
+function StatsPanel({bookings,payments,todayStr,stores}){
   const today=new Date(todayStr+"T00:00:00");
   const fmt=n=>"¥"+Number(n||0).toLocaleString();
   const DAYS_JP=["日","月","火","水","木","金","土"];
+
+  // ===== 店舗フィルタ（全店舗 / 各店舗） =====
+  const [selStatsStoreId,setSelStatsStoreId]=React.useState(null); // null = 全店舗
+  const firstStoreId=(stores&&stores.length>0)?stores[0].id:1;
+  const scopedBookings=React.useMemo(()=>{
+    if(selStatsStoreId===null) return bookings;
+    return bookings.filter(b=>(b.store_id||firstStoreId)===selStatsStoreId);
+  },[bookings,selStatsStoreId,firstStoreId]);
+  const scopedBookingIds=React.useMemo(()=>new Set(scopedBookings.map(b=>b.id)),[scopedBookings]);
+  const scopedPayments=React.useMemo(()=>{
+    if(selStatsStoreId===null) return payments;
+    return payments.filter(p=>scopedBookingIds.has(p.booking_id));
+  },[payments,selStatsStoreId,scopedBookingIds]);
 
   // 期間設定
   function getRange(type){
@@ -625,8 +638,8 @@ function StatsPanel({bookings,payments,todayStr}){
   const inRange=(d)=>d>=range.start&&d<=range.end;
 
   // 期間内の予約・会計
-  const bks=bookings.filter(b=>b.date&&inRange(b.date));
-  const pays=payments.filter(p=>p.payment_date&&inRange(p.payment_date));
+  const bks=scopedBookings.filter(b=>b.date&&inRange(b.date));
+  const pays=scopedPayments.filter(p=>p.payment_date&&inRange(p.payment_date));
 
   // === 指標計算 ===
   const totalBk=bks.length;
@@ -643,7 +656,7 @@ function StatsPanel({bookings,payments,todayStr}){
   const uniquePatients=[...new Set(bks.map(b=>b.patient_name))];
   const totalUnique=uniquePatients.length;
   const allPatientDates={};
-  bookings.forEach(b=>{if(!allPatientDates[b.patient_name])allPatientDates[b.patient_name]=[];allPatientDates[b.patient_name].push(b.date);});
+  scopedBookings.forEach(b=>{if(!allPatientDates[b.patient_name])allPatientDates[b.patient_name]=[];allPatientDates[b.patient_name].push(b.date);});
   let newCount=0,revisitCount=0;
   uniquePatients.forEach(name=>{
     const all=(allPatientDates[name]||[]).sort();
@@ -660,7 +673,7 @@ function StatsPanel({bookings,payments,todayStr}){
   // 離反（30日以上未来院）
   const cutoff=new Date(today);cutoff.setDate(cutoff.getDate()-30);
   const cutoffStr=cutoff.toISOString().split("T")[0];
-  const allUnique=[...new Set(bookings.map(b=>b.patient_name))];
+  const allUnique=[...new Set(scopedBookings.map(b=>b.patient_name))];
   const churnCount=allUnique.filter(name=>{
     const last=(allPatientDates[name]||[]).sort().slice(-1)[0];
     return last&&last<cutoffStr&&!bks.some(b=>b.patient_name===name);
@@ -686,7 +699,7 @@ function StatsPanel({bookings,payments,todayStr}){
 
   // 月別推移（全期間の月別予約数）
   const monthlyMap={};
-  bookings.forEach(b=>{if(b.date){const m=b.date.slice(0,7);monthlyMap[m]=(monthlyMap[m]||0)+1;}});
+  scopedBookings.forEach(b=>{if(b.date){const m=b.date.slice(0,7);monthlyMap[m]=(monthlyMap[m]||0)+1;}});
   const monthlyEntries=Object.entries(monthlyMap).sort((a,b)=>a[0].localeCompare(b[0])).slice(-12);
   const maxMonthly=Math.max(...monthlyEntries.map(e=>e[1]),1);
 
@@ -722,6 +735,23 @@ function StatsPanel({bookings,payments,todayStr}){
 
   return(
     <div style={{maxWidth:900,margin:"0 auto"}}>
+
+      {/* 店舗切り替え（全店舗 / 各店舗） */}
+      {stores&&stores.length>0&&(
+        <div style={{...cardStyle,marginBottom:12,padding:"12px 16px"}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",marginBottom:8}}>表示範囲</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            <button onClick={()=>setSelStatsStoreId(null)} style={{padding:"7px 16px",borderRadius:20,border:"1.5px solid",borderColor:selStatsStoreId===null?"#1e3a5f":"#e2e8f0",background:selStatsStoreId===null?"#1e3a5f":"white",color:selStatsStoreId===null?"white":"#374151",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+              🏢 全店舗合算
+            </button>
+            {stores.map(s=>(
+              <button key={s.id} onClick={()=>setSelStatsStoreId(s.id)} style={{padding:"7px 16px",borderRadius:20,border:"1.5px solid",borderColor:selStatsStoreId===s.id?"#1e3a5f":"#e2e8f0",background:selStatsStoreId===s.id?"#1e3a5f":"white",color:selStatsStoreId===s.id?"white":"#374151",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                {s.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 期間選択 */}
       <div style={{...cardStyle,marginBottom:16}}>
@@ -4005,7 +4035,7 @@ function Dashboard({user,onLogout}){
           {view==="patients"&&<PatientsPanel bookings={bookings} setView={setView} setForm={setForm} setEditId={setEditId} setConflict={setConflict} todayStr={todayStr} selStoreId={selStoreId}/>}
 
           {/* サマリー */}
-          {view==="stats"&&<StatsPanel bookings={bookings} payments={payments} todayStr={todayStr}/>}
+          {view==="stats"&&<StatsPanel bookings={bookings} payments={payments} todayStr={todayStr} stores={stores}/>}
 
           {/* 店舗管理 */}
           {view==="store_mgmt"&&<StoreMgmtPanel/>}
