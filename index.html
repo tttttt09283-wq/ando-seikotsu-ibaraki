@@ -2450,7 +2450,7 @@ function StoreMgmtPanel(){
 }
 
 // ===== 患者管理パネル =====
-function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr}){
+function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,selStoreId}){
   const [patientQ,setPatientQ]=React.useState("");
   const [selPatient,setSelPatient]=React.useState(null);
   const [activeTab,setActiveTab]=React.useState("intake");
@@ -2666,6 +2666,10 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr}
                     style={{padding:"7px 12px",background:"rgba(255,255,255,.2)",color:"white",border:"1.5px solid rgba(255,255,255,.4)",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
                     ✏️ 情報編集
                   </button>
+                  <button onClick={()=>window.open(`karte.html?patient=${encodeURIComponent(selPatient)}`,"_blank")}
+                    style={{padding:"7px 12px",background:"rgba(255,255,255,.2)",color:"white",border:"1.5px solid rgba(255,255,255,.4)",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                    📋 施術録
+                  </button>
                   <button onClick={()=>{
                     setForm({
                       patient_name:selPatient,
@@ -2676,6 +2680,7 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr}
                       menu:"再診（30分）",
                       line_notify:!!firstBk?.line_user_id,
                       reminded:false,
+                      store_id:selStoreId,
                     });
                     setConflict(false);
                     setEditId(null);
@@ -3360,7 +3365,7 @@ function CheckInPanel({bookings,onOpenPatient,onCheckedIn}){
 
 // ===== メイン管理画面 =====
 // ===== 個人週間ビュー =====
-function PersonalWeekView({staff,filtered,payments,visitCounts,setBookingPopup,setView,setForm,setEditId,todayStr,isAdmin,user}){
+function PersonalWeekView({staff,filtered,payments,visitCounts,setBookingPopup,setView,setForm,setEditId,todayStr,isAdmin,user,selStoreId}){
   const DAYS_JP=["日","月","火","水","木","金","土"];
   const today=new Date();
   const [weekBase,setWeekBase]=React.useState(()=>{const d=new Date();d.setHours(0,0,0,0);return d;});
@@ -3412,7 +3417,7 @@ function PersonalWeekView({staff,filtered,payments,visitCounts,setBookingPopup,s
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
                   <span style={{fontSize:12,fontWeight:700,color:isToday?"rgba(255,255,255,.8)":dayBookings.length>0?"#059669":"#94a3b8"}}>{dayBookings.length}件</span>
                   <button onClick={()=>{
-                    setForm({date:dStr,time:"",staff_id:staff.id,patient_name:"",phone:"",menu:"無料施術体験会（60分）",insurance_rate:"3割",memo:"",line_notify:false});
+                    setForm({date:dStr,time:"",staff_id:staff.id,patient_name:"",phone:"",menu:"無料施術体験会（60分）",insurance_rate:"3割",memo:"",line_notify:false,store_id:selStoreId});
                     setEditId(null);setView("form");
                   }} style={{background:isToday?"rgba(255,255,255,.25)":"#eff6ff",border:"none",borderRadius:6,padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer",color:isToday?"white":"#2563eb",fontFamily:"inherit"}}>
                     + 予約追加
@@ -3603,10 +3608,23 @@ function Dashboard({user,onLogout}){
     if(!form.patient_name.trim())return;
     if(bookings.some(b=>b.id!==editId&&b.staff_id===form.staff_id&&b.date===form.date&&overlaps(b,form))){setConflict(true);return;}
     try{
-      if(editId!==null){try{await sb.update("bookings",editId,form);}catch{}setBookings(prev=>prev.map(b=>b.id===editId?{...form,id:editId}:b));}
-      else{try{await sb.insert("bookings",form);}catch{}setBookings(prev=>[...prev,{...form,id:Date.now()}]);}
+      if(editId!==null){
+        const result=await sb.update("bookings",editId,form);
+        if(!Array.isArray(result)||result.length===0){
+          throw new Error((result&&result.message)||"更新に失敗しました（対象の予約が見つかりませんでした）");
+        }
+        setBookings(prev=>prev.map(b=>b.id===editId?result[0]:b));
+      }else{
+        const result=await sb.insert("bookings",form);
+        if(!Array.isArray(result)||result.length===0){
+          throw new Error((result&&result.message)||"登録に失敗しました");
+        }
+        setBookings(prev=>[...prev,result[0]]);
+      }
       showToast(editId!==null?"予約を更新しました":"予約を登録しました");setView("calendar");
-    }catch{showToast("保存しました");}
+    }catch(e){
+      alert("保存に失敗しました："+(e.message||"不明なエラー"));
+    }
   }
   async function del(id){
     try{await sb.delete("bookings",id);}catch{}
@@ -3827,6 +3845,7 @@ function Dashboard({user,onLogout}){
                   todayStr={todayStr}
                   isAdmin={isAdmin}
                   user={user}
+                  selStoreId={selStoreId}
                 />}
                 {/* 時間軸カレンダー（全員・個人共通） */}
                 {(!selStaff||weekViewMode==="calendar")&&<div style={{display:"flex",alignItems:"center",background:"linear-gradient(135deg,#0f2744,#1e4d8c)",padding:"8px 10px",gap:4,overflowX:"auto"}}>
@@ -3983,7 +4002,7 @@ function Dashboard({user,onLogout}){
           {view==="checkin"&&<CheckInPanel bookings={bookings} onOpenPatient={(patientName)=>{setView("patients");}} onCheckedIn={fetchAll}/>}
 
           {/* 患者管理 */}
-          {view==="patients"&&<PatientsPanel bookings={bookings} setView={setView} setForm={setForm} setEditId={setEditId} setConflict={setConflict} todayStr={todayStr}/>}
+          {view==="patients"&&<PatientsPanel bookings={bookings} setView={setView} setForm={setForm} setEditId={setEditId} setConflict={setConflict} todayStr={todayStr} selStoreId={selStoreId}/>}
 
           {/* サマリー */}
           {view==="stats"&&<StatsPanel bookings={bookings} payments={payments} todayStr={todayStr}/>}
