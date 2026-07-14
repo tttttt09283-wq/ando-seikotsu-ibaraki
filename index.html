@@ -1909,6 +1909,39 @@ function StaffMgmtPanel({currentUser}){
   const [bulkStart,setBulkStart]=React.useState("09:00");
   const [bulkEnd,setBulkEnd]=React.useState("19:00");
 
+  // ===== 勤務地（店舗）管理 =====
+  const [stores,setStores]=React.useState([]);
+  const [staffStoreMap,setStaffStoreMap]=React.useState({}); // {staffId:[storeIds]}
+  const [savingStore,setSavingStore]=React.useState(null); // 保存中のstaffId
+
+  React.useEffect(()=>{
+    Promise.all([
+      sb.select("stores","?order=id.asc"),
+      sb.select("clinic_staff","?select=id,store_ids")
+    ]).then(([st,cs])=>{
+      setStores(Array.isArray(st)?st:[]);
+      const map={};
+      if(Array.isArray(cs)) cs.forEach(row=>{if(row.store_ids) map[row.id]=row.store_ids;});
+      setStaffStoreMap(map);
+    }).catch(()=>{});
+  },[]);
+
+  async function toggleStaffStore(staffId,storeId){
+    const current=staffStoreMap[staffId]||stores.map(s=>s.id); // 未設定なら「全店舗」を初期値とみなす
+    const next=current.indexOf(storeId)>-1?current.filter(id=>id!==storeId):[...current,storeId];
+    setSavingStore(staffId);
+    try{
+      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      await fetch(`${SUPABASE_URL}/rest/v1/clinic_staff?id=eq.${staffId}`,{
+        method:"PATCH",
+        headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json"},
+        body:JSON.stringify({store_ids:next})
+      });
+      setStaffStoreMap(prev=>({...prev,[staffId]:next}));
+    }catch(e){alert("勤務地の保存に失敗しました");}
+    setSavingStore(null);
+  }
+
   // 月次シフト用
   const today=new Date();
   const todayStr=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
@@ -2190,16 +2223,28 @@ function StaffMgmtPanel({currentUser}){
           <button style={{padding:"8px 16px",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:8,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>+ スタッフ追加</button>
         </div>
         {/* テーブルヘッダー */}
-        <div style={{display:"grid",gridTemplateColumns:"2fr 2fr 1fr 1fr 1fr 1fr",background:"#f8fafc",borderBottom:"1px solid #e2e8f0"}}>
-          {["名前","店舗","役職","状態","シフト","操作"].map(h=>(<div key={h} style={{padding:"10px 14px",fontSize:12,fontWeight:700,color:"#64748b"}}>{h}</div>))}
+        <div style={{display:"grid",gridTemplateColumns:"1.6fr 2.2fr 1fr 1fr 1fr 1fr",background:"#f8fafc",borderBottom:"1px solid #e2e8f0"}}>
+          {["名前","勤務地","役職","状態","シフト","操作"].map(h=>(<div key={h} style={{padding:"10px 14px",fontSize:12,fontWeight:700,color:"#64748b"}}>{h}</div>))}
         </div>
-        {STAFF_ACCOUNTS.map(s=>(
-          <div key={s.id} style={{display:"grid",gridTemplateColumns:"2fr 2fr 1fr 1fr 1fr 1fr",borderBottom:"1px solid #f1f5f9",alignItems:"center"}}>
+        {STAFF_ACCOUNTS.map(s=>{
+          const assignedIds=staffStoreMap[s.id]||stores.map(st=>st.id); // 未設定＝全店舗
+          return(
+          <div key={s.id} style={{display:"grid",gridTemplateColumns:"1.6fr 2.2fr 1fr 1fr 1fr 1fr",borderBottom:"1px solid #f1f5f9",alignItems:"center"}}>
             <div style={{padding:"14px",display:"flex",alignItems:"center",gap:10}}>
               <div style={{width:32,height:32,borderRadius:8,background:s.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:13,flexShrink:0}}>{s.initial}</div>
               <span style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{s.name}</span>
             </div>
-            <div style={{padding:"14px",fontSize:13,color:"#64748b"}}>あんど整骨院</div>
+            <div style={{padding:"14px",display:"flex",flexWrap:"wrap",gap:5}}>
+              {stores.length===0?<span style={{fontSize:12,color:"#94a3b8"}}>店舗未登録</span>:stores.map(st=>{
+                const active=assignedIds.indexOf(st.id)>-1;
+                return(
+                  <button key={st.id} onClick={()=>toggleStaffStore(s.id,st.id)} disabled={savingStore===s.id}
+                    style={{padding:"4px 10px",borderRadius:20,border:"1.5px solid "+(active?s.color:"#e2e8f0"),background:active?s.color:"white",color:active?"white":"#94a3b8",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",opacity:savingStore===s.id?0.6:1}}>
+                    {st.name}
+                  </button>
+                );
+              })}
+            </div>
             <div style={{padding:"14px",fontSize:13,color:"#64748b"}}>{s.role==="admin"?"管理者":"スタッフ"}</div>
             <div style={{padding:"14px"}}><span style={{display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:12,fontWeight:700,background:"#dcfce7",color:"#15803d"}}>有効</span></div>
             <div style={{padding:"14px"}}>
@@ -2209,7 +2254,8 @@ function StaffMgmtPanel({currentUser}){
               <button style={{padding:"6px 12px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>編集</button>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -3410,19 +3456,43 @@ function Dashboard({user,onLogout}){
   const [closures,setClosures]=React.useState([]);
   const [stores,setStores]=React.useState([]);
   const [selStoreId,setSelStoreId]=React.useState(null);
+  const [weeklyShifts,setWeeklyShifts]=React.useState([]); // 全スタッフの週固定シフト
+  const [staffStoreMap,setStaffStoreMap]=React.useState({}); // {staffId: [storeIds]}
 
   const isAdmin=user.role==="admin";
   const todayStr=fmtDate(today);
 
   async function fetchAll(){
     try{
-      const [b,br,py,st]=await Promise.all([sb.select("bookings","?order=date.asc,time.asc"),sb.select("staff_breaks","?order=date.asc,time.asc"),sb.select("payments","?order=payment_date.desc"),sb.select("stores","?order=id.asc")]);
+      const [b,br,py,st,ws,cs]=await Promise.all([sb.select("bookings","?order=date.asc,time.asc"),sb.select("staff_breaks","?order=date.asc,time.asc"),sb.select("payments","?order=payment_date.desc"),sb.select("stores","?order=id.asc"),sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc"),sb.select("clinic_staff","?select=id,store_ids")]);
       setBookings(Array.isArray(b)?b:[]);setBreaks(Array.isArray(br)?br:[]);setPayments(Array.isArray(py)?py:[]);
       const storeList=Array.isArray(st)?st:[];
       setStores(storeList);
       setSelStoreId(prev=>prev!==null?prev:(storeList.length>0?storeList[0].id:1));
+      setWeeklyShifts(Array.isArray(ws)?ws:[]);
+      const map={};
+      if(Array.isArray(cs)) cs.forEach(row=>{if(row.store_ids) map[row.id]=row.store_ids;});
+      setStaffStoreMap(map);
     }catch(e){console.error(e);}
     setLoading(false);
+  }
+
+  // 指定スタッフが指定日に出勤しているか（月次シフトの個別調整＞週固定シフトの順で判定）
+  function isStaffWorkingOnDate(staffId,dateObj){
+    const dateStr=fmtDate(dateObj);
+    const monthKey=dateStr.slice(0,7);
+    try{
+      const raw=localStorage.getItem("shifts_"+monthKey);
+      if(raw){
+        const map=JSON.parse(raw);
+        const val=map[staffId+"_"+dateStr];
+        if(val) return val==="出勤";
+      }
+    }catch(e){}
+    const dow=dateObj.getDay();
+    const ws=weeklyShifts.find(w=>w.staff_id===staffId&&w.day_of_week===dow);
+    if(ws) return ws.is_working!==false;
+    return true; // シフトデータが無い場合はフェイルセーフで出勤扱い
   }
 
   // 選択中の店舗の営業時間・臨時休業日を取得
@@ -3482,8 +3552,13 @@ function Dashboard({user,onLogout}){
   // 選択中の店舗に紐づく予約のみに絞り込む（store_id未設定の古いデータは最初の店舗として扱う）
   const firstStoreId=stores.length>0?stores[0].id:1;
   const storeBookings=React.useMemo(()=>bookings.filter(b=>(b.store_id||firstStoreId)===selStoreId),[bookings,selStoreId,firstStoreId]);
-  // 選択中の店舗で勤務するスタッフのみ表示
-  const storeStaff=React.useMemo(()=>STAFF_ACCOUNTS.filter(s=>!s.storeIds||s.storeIds.indexOf(selStoreId)>-1),[selStoreId]);
+  // 選択中の店舗で勤務するスタッフのみ表示（DB上の勤務地設定を優先、未設定ならハードコードのstoreIds、それも無ければ全店舗扱い）
+  const storeStaff=React.useMemo(()=>STAFF_ACCOUNTS.filter(s=>{
+    const dbIds=staffStoreMap[s.id];
+    if(dbIds) return dbIds.indexOf(selStoreId)>-1;
+    if(s.storeIds) return s.storeIds.indexOf(selStoreId)>-1;
+    return true;
+  }),[selStoreId,staffStoreMap]);
 
   const filtered=React.useMemo(()=>selStaff?storeBookings.filter(b=>b.staff_id===selStaff):storeBookings,[storeBookings,selStaff]);
 
@@ -3788,6 +3863,8 @@ function Dashboard({user,onLogout}){
                       const isSun=wd.getDay()===0,isSat=wd.getDay()===6;
                       const dayBookings=storeBookings.filter(b=>b.date===wdStr);
                       const dayColor=isSun?"#ef4444":isSat?"#7c3aed":"#1e293b";
+                      // その日実際に出勤しているスタッフのみ表示（誤予約防止）
+                      const dayStaffList=filteredStaff.filter(s=>isStaffWorkingOnDate(s.id,wd));
 
                       // 対応可能・予約数（その日の）
                       const daySlots30=[];
@@ -3797,7 +3874,7 @@ function Dashboard({user,onLogout}){
                           const label=`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
                           const booked=dayBookings.filter(b=>b.time===label).length;
                           const resting=breaks.filter(b=>b.date===wdStr&&b.time===label).length;
-                          const available=Math.max(0,filteredStaff.length-resting);
+                          const available=Math.max(0,dayStaffList.length-resting);
                           daySlots30.push({label,booked,available,x:(h-9)*60/10*CELL_W+m/10*CELL_W,w:30/10*CELL_W});
                         }
                       }
@@ -3823,8 +3900,11 @@ function Dashboard({user,onLogout}){
                             </div>
                           </div>
 
-                          {/* スタッフ行 */}
-                          {filteredStaff.map(staff=>{
+                          {/* スタッフ行（出勤しているスタッフのみ） */}
+                          {dayStaffList.length===0&&(
+                            <div style={{padding:"10px 8px",textAlign:"center",color:"#94a3b8",fontSize:12,borderBottom:"1px solid #f1f5f9"}}>この日は出勤スタッフがいません</div>
+                          )}
+                          {dayStaffList.map(staff=>{
                             const staffBookings=dayBookings.filter(b=>b.staff_id===staff.id);
                             const staffBreaks=breaks.filter(b=>b.date===wdStr&&b.staff_id===staff.id);
                             return(
