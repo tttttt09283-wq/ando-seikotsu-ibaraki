@@ -516,7 +516,7 @@ function App(){
       bodyParts:["腰部","肩"],injuryCause:"日常生活中のケガ",injuryCauseDetail:"",
       painWhen:"1週間以内",painLevel:"5",symptoms:["痛み","こり・張り"],
       otherClinic:"受診していない",otherClinicName:"",medicalHistory:"なし",
-      wantContinue:"はい、通いたいです",howKnow:"Instagram",howKnowOther:"",
+      wantContinue:"はい、ぜひ通いたいです",howKnow:"Instagram",howKnowOther:"",
       lineNotify:!!lineUserId
     });
     setStep(3);
@@ -907,7 +907,7 @@ function App(){
           React.createElement("div",{style:H.secT},"💭 今後について *"),
           React.createElement("div",{style:{fontSize:13,color:"#555",marginBottom:10,lineHeight:1.7}},"お体の根本改善に向けて、今回の体験会で状態が良くなりそうであれば、今後も継続して通いたいですか？"),
           React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:8}},
-            ["はい、通いたいです","まだわかりません","いいえ"].map(function(v){
+            ["はい、ぜひ通いたいです","できれば通いたいです","また機会があれば検討したいです"].map(function(v){
               return React.createElement("button",{key:v,onClick:function(){setF("wantContinue",v);},
                 style:{padding:"11px 14px",borderRadius:8,border:"1.5px solid "+(form.wantContinue===v?"#1e3a5f":"#ddd"),background:form.wantContinue===v?"#1e3a5f":"white",color:form.wantContinue===v?"white":"#444",cursor:"pointer",fontSize:14,textAlign:"left",fontWeight:form.wantContinue===v?700:400}},v);
             })
