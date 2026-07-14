@@ -1932,13 +1932,22 @@ function StaffMgmtPanel({currentUser}){
     setSavingStore(staffId);
     try{
       const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
-      await fetch(`${SUPABASE_URL}/rest/v1/clinic_staff?id=eq.${staffId}`,{
+      const res=await fetch(`${SUPABASE_URL}/rest/v1/clinic_staff?id=eq.${staffId}`,{
         method:"PATCH",
-        headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json"},
+        headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
         body:JSON.stringify({store_ids:next})
       });
+      const body=await res.text();
+      if(!res.ok){
+        throw new Error(`保存に失敗しました（HTTP ${res.status}）\n${body}`);
+      }
+      let updated=null;
+      try{updated=JSON.parse(body);}catch(e){}
+      if(!Array.isArray(updated)||updated.length===0){
+        throw new Error("スタッフの行が見つからず保存されませんでした。clinic_staffテーブルにid="+staffId+"の行があるかご確認ください。");
+      }
       setStaffStoreMap(prev=>({...prev,[staffId]:next}));
-    }catch(e){alert("勤務地の保存に失敗しました");}
+    }catch(e){alert(e.message||"勤務地の保存に失敗しました");}
     setSavingStore(null);
   }
 
@@ -2226,25 +2235,33 @@ function StaffMgmtPanel({currentUser}){
         <div style={{display:"grid",gridTemplateColumns:"1.6fr 2.2fr 1fr 1fr 1fr 1fr",background:"#f8fafc",borderBottom:"1px solid #e2e8f0"}}>
           {["名前","勤務地","役職","状態","シフト","操作"].map(h=>(<div key={h} style={{padding:"10px 14px",fontSize:12,fontWeight:700,color:"#64748b"}}>{h}</div>))}
         </div>
-        {STAFF_ACCOUNTS.map(s=>{
-          const assignedIds=staffStoreMap[s.id]||stores.map(st=>st.id); // 未設定＝全店舗
-          return(
-          <div key={s.id} style={{display:"grid",gridTemplateColumns:"1.6fr 2.2fr 1fr 1fr 1fr 1fr",borderBottom:"1px solid #f1f5f9",alignItems:"center"}}>
-            <div style={{padding:"14px",display:"flex",alignItems:"center",gap:10}}>
-              <div style={{width:32,height:32,borderRadius:8,background:s.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:13,flexShrink:0}}>{s.initial}</div>
-              <span style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{s.name}</span>
-            </div>
-            <div style={{padding:"14px",display:"flex",flexWrap:"wrap",gap:5}}>
-              {stores.length===0?<span style={{fontSize:12,color:"#94a3b8"}}>店舗未登録</span>:stores.map(st=>{
-                const active=assignedIds.indexOf(st.id)>-1;
-                return(
-                  <button key={st.id} onClick={()=>toggleStaffStore(s.id,st.id)} disabled={savingStore===s.id}
-                    style={{padding:"4px 10px",borderRadius:20,border:"1.5px solid "+(active?s.color:"#e2e8f0"),background:active?s.color:"white",color:active?"white":"#94a3b8",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",opacity:savingStore===s.id?0.6:1}}>
-                    {st.name}
-                  </button>
-                );
-              })}
-            </div>
+        {/* 店舗ごとの固定カラー（店舗の並び順で割り当て） */}
+        {(()=>{
+          const STORE_COLORS=["#2563eb","#059669","#d97706","#7c3aed","#dc2626","#0891b2","#db2777"];
+          function storeColor(storeId){
+            const idx=stores.findIndex(st=>st.id===storeId);
+            return STORE_COLORS[idx>=0?idx%STORE_COLORS.length:0];
+          }
+          return STAFF_ACCOUNTS.map(s=>{
+            const assignedIds=staffStoreMap[s.id]||stores.map(st=>st.id); // 未設定＝全店舗
+            return(
+              <div key={s.id} style={{display:"grid",gridTemplateColumns:"1.6fr 2.2fr 1fr 1fr 1fr 1fr",borderBottom:"1px solid #f1f5f9",alignItems:"center"}}>
+                <div style={{padding:"14px",display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{width:32,height:32,borderRadius:8,background:s.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:13,flexShrink:0}}>{s.initial}</div>
+                  <span style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{s.name}</span>
+                </div>
+                <div style={{padding:"14px",display:"flex",flexWrap:"wrap",gap:5}}>
+                  {stores.length===0?<span style={{fontSize:12,color:"#94a3b8"}}>店舗未登録</span>:stores.map(st=>{
+                    const active=assignedIds.indexOf(st.id)>-1;
+                    const color=storeColor(st.id);
+                    return(
+                      <button key={st.id} onClick={()=>toggleStaffStore(s.id,st.id)} disabled={savingStore===s.id}
+                        style={{padding:"4px 10px",borderRadius:20,border:"1.5px solid "+(active?color:"#e2e8f0"),background:active?color:"white",color:active?"white":"#94a3b8",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",opacity:savingStore===s.id?0.6:1}}>
+                        {st.name}
+                      </button>
+                    );
+                  })}
+                </div>
             <div style={{padding:"14px",fontSize:13,color:"#64748b"}}>{s.role==="admin"?"管理者":"スタッフ"}</div>
             <div style={{padding:"14px"}}><span style={{display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:12,fontWeight:700,background:"#dcfce7",color:"#15803d"}}>有効</span></div>
             <div style={{padding:"14px"}}>
@@ -2255,7 +2272,8 @@ function StaffMgmtPanel({currentUser}){
             </div>
           </div>
           );
-        })}
+        });
+        })()}
       </div>
     </div>
   );
