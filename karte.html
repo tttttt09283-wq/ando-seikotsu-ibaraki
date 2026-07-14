@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>施術録 - あんど整骨院</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#eef2f7;color:#1e293b;}
+.topbar{position:sticky;top:0;z-index:10;background:linear-gradient(135deg,#1e3a5f,#2d6a9f);color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.topbar h1{font-size:16px;font-weight:800;}
+.topbar .sub{font-size:11px;opacity:.75;}
+.topbar-actions{display:flex;gap:8px;}
+.btn{padding:8px 14px;border-radius:8px;border:none;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;}
+.btn-white{background:white;color:#1e3a5f;}
+.btn-outline{background:rgba(255,255,255,.15);color:white;border:1.5px solid rgba(255,255,255,.4);}
+.btn-green{background:#059669;color:white;}
+.wrap{max-width:900px;margin:0 auto;padding:16px;}
+.card{background:white;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:14px;overflow:hidden;}
+.card-h{padding:10px 16px;font-size:13px;font-weight:800;color:#1e3a5f;background:#f8fafc;border-bottom:1px solid #e2e8f0;}
+.card-b{padding:14px 16px;}
+.grid{display:grid;gap:10px;}
+.grid-2{grid-template-columns:1fr 1fr;}
+.grid-3{grid-template-columns:1fr 1fr 1fr;}
+.grid-4{grid-template-columns:1fr 1fr 1fr 1fr;}
+label{display:block;font-size:11px;font-weight:700;color:#64748b;margin-bottom:4px;}
+input,select,textarea{width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;font-family:inherit;background:white;}
+input:disabled,select:disabled,textarea:disabled{background:#f8fafc;color:#374151;}
+textarea{resize:vertical;line-height:1.6;}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th,td{border:1px solid #e2e8f0;padding:6px 8px;text-align:left;}
+th{background:#f8fafc;font-weight:700;color:#64748b;font-size:11px;}
+.chip-row{display:flex;gap:6px;flex-wrap:wrap;}
+.chip{padding:5px 12px;border-radius:20px;border:1.5px solid #e2e8f0;background:white;color:#374151;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;}
+.chip.sel{background:#1e3a5f;color:white;border-color:#1e3a5f;}
+.chip.disabled{cursor:default;opacity:.6;}
+.small{font-size:11px;color:#94a3b8;}
+.auth-wait{text-align:center;padding:60px 20px;color:#9ca3af;}
+@media print{
+  body{background:white;}
+  .topbar,.no-print{display:none!important;}
+  .wrap{max-width:100%;padding:0;}
+  .card{box-shadow:none;border:1px solid #999;break-inside:avoid;margin-bottom:8px;}
+  .card-h{background:white;border-bottom:1px solid #999;}
+  input,select,textarea{border:none;padding:2px 4px;}
+}
+</style>
+</head>
+<body>
+<div class="topbar no-print">
+  <div>
+    <h1>📋 施術録</h1>
+    <div class="sub" id="patientLabel">読み込み中...</div>
+  </div>
+  <div class="topbar-actions">
+    <button class="btn btn-outline" id="editToggleBtn" onclick="toggleEdit()">編集する</button>
+    <button class="btn btn-green" id="saveBtn" onclick="saveKarte()" style="display:none;">💾 保存する</button>
+    <button class="btn btn-white" onclick="window.print()">🖨 印刷する</button>
+    <button class="btn btn-outline" onclick="history.back()">← 戻る</button>
+  </div>
+</div>
+<div class="wrap" id="root">
+  <div style="text-align:center;padding:60px;color:#9ca3af;">読み込み中...</div>
+</div>
+
+<script>
+const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
+
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
+});
+
+const STAFF = {1:"岩永",2:"大皿",3:"定井",4:"細永",5:"広川"};
+const TENKI_OPTIONS = ["","治癒","中止","転医"];
+
+let booking = null;
+let patientName = "";
+let karte = null;
+let visitHistory = [];
+let editing = false;
+let saving = false;
+
+async function getAuthToken(){
+  const {data:{session}} = await supabaseClient.auth.getSession();
+  return session ? session.access_token : SUPABASE_ANON_KEY;
+}
+async function sbGet(table, filter){
+  const token = await getAuthToken();
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}${filter||""}`, {
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` }
+  });
+  return res.json();
+}
+async function sbPost(table, data){
+  const token = await getAuthToken();
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+    method: "POST",
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify(data)
+  });
+  return res.json();
+}
+async function sbPatch(table, id, data){
+  const token = await getAuthToken();
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
+    method: "PATCH",
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify(data)
+  });
+  return res.json();
+}
+
+function emptyKarte(){
+  return {
+    id:null,
+    patient_name: patientName,
+    phone: booking ? booking.phone : "",
+    hoken_shubetsu:"", hoken_honke:"", iryou_shubetsu:"", ichibu_futan:"",
+    kigo:"", bango:"", shikaku_shutoku_date:"", yuko_kigen:"",
+    hihokensha_name:"", hihokensha_kana:"", hihokensha_gender:"", hihokensha_birthdate:"", hihokensha_address:"",
+    jushinsha_name:"", jushinsha_kana:"", jushinsha_birthdate:"", jushinsha_zokugara:"",
+    hokensha_name:"", hokensha_bango:"",
+    shobyomei: [0,1,2,3,4].map(()=>({name:"",date:"",start:"",end:"",tenki:"",jitsunissuu:""})),
+    genin:"", symptom:"", shochi:"", keika:"",
+  };
+}
+
+function toggleEdit(){
+  editing = !editing;
+  document.getElementById("editToggleBtn").textContent = editing ? "編集をやめる" : "編集する";
+  document.getElementById("saveBtn").style.display = editing ? "inline-block" : "none";
+  render();
+}
+
+function setField(key,val){ karte[key]=val; }
+function setShobyo(i,key,val){ karte.shobyomei[i][key]=val; }
+
+async function saveKarte(){
+  if(saving) return;
+  saving = true; render();
+  try{
+    const payload = {...karte};
+    delete payload.id;
+    let result;
+    if(karte.id){
+      result = await sbPatch("patient_karte", karte.id, payload);
+    }else{
+      result = await sbPost("patient_karte", payload);
+    }
+    if(Array.isArray(result) && result.length>0){
+      karte = result[0];
+      alert("保存しました");
+    }else{
+      throw new Error((result&&result.message)||"保存に失敗しました");
+    }
+  }catch(e){
+    alert("保存エラー："+e.message);
+  }
+  saving = false;
+  editing = false;
+  document.getElementById("editToggleBtn").textContent = "編集する";
+  document.getElementById("saveBtn").style.display = "none";
+  render();
+}
+
+function fieldRow(labelText, key, type){
+  type = type || "text";
+  const val = karte[key] || "";
+  if(!editing){
+    return `<div><label>${labelText}</label><div style="padding:8px 10px;font-size:13px;color:#1e293b;min-height:32px;">${val||"<span class=small>未入力</span>"}</div></div>`;
+  }
+  return `<div><label>${labelText}</label><input type="${type}" value="${val}" oninput="setField('${key}',this.value)"/></div>`;
+}
+
+function chipGroup(labelText, key, options){
+  const val = karte[key] || "";
+  return `
+    <div>
+      <label>${labelText}</label>
+      <div class="chip-row">
+        ${options.map(o=>`<button class="chip ${val===o?'sel':''} ${editing?'':'disabled'}" ${editing?`onclick="setField('${key}','${o}');render();"`:''}>${o}</button>`).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderShobyoTable(){
+  const rows = karte.shobyomei.map((s,i)=>{
+    if(!editing){
+      return `
+        <tr>
+          <td>${i+1}. ${s.name||""}</td>
+          <td>${s.date||""}</td>
+          <td>${s.start||""}</td>
+          <td>${s.end||""}</td>
+          <td>${s.tenki||""}</td>
+          <td>${s.jitsunissuu||""}</td>
+        </tr>
+      `;
+    }
+    return `
+      <tr>
+        <td><input value="${s.name||''}" oninput="setShobyo(${i},'name',this.value)" placeholder="傷病名"/></td>
+        <td><input type="date" value="${s.date||''}" oninput="setShobyo(${i},'date',this.value)"/></td>
+        <td><input type="date" value="${s.start||''}" oninput="setShobyo(${i},'start',this.value)"/></td>
+        <td><input type="date" value="${s.end||''}" oninput="setShobyo(${i},'end',this.value)"/></td>
+        <td>
+          <select onchange="setShobyo(${i},'tenki',this.value)">
+            ${TENKI_OPTIONS.map(t=>`<option value="${t}" ${s.tenki===t?'selected':''}>${t||'―'}</option>`).join("")}
+          </select>
+        </td>
+        <td><input type="number" value="${s.jitsunissuu||''}" oninput="setShobyo(${i},'jitsunissuu',this.value)"/></td>
+      </tr>
+    `;
+  }).join("");
+  return `
+    <table>
+      <thead><tr><th>傷病名</th><th>負傷日時</th><th>開始</th><th>終了</th><th>転帰</th><th>実日数</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function renderVisitHistoryTable(){
+  if(visitHistory.length===0){
+    return `<div class="small" style="padding:12px;text-align:center;">来院履歴（施術記録）がまだありません</div>`;
+  }
+  const rows = visitHistory.map(v=>`
+    <tr>
+      <td>${v.date}</td>
+      <td>${v.bodyParts||"—"}</td>
+      <td>${v.treatmentTypes||"—"}</td>
+      <td>${v.staffName||"—"}</td>
+      <td style="text-align:right;">${v.total!=null?"¥"+v.total.toLocaleString():"—"}</td>
+      <td style="text-align:right;">${v.insurance!=null?"¥"+v.insurance.toLocaleString():"—"}</td>
+    </tr>
+  `).join("");
+  return `
+    <table>
+      <thead><tr><th>月日</th><th>部位</th><th>施術内容</th><th>担当</th><th>合計金額</th><th>保険負担額</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function textareaField(labelText,key){
+  const val = karte[key]||"";
+  if(!editing){
+    return `<div style="margin-bottom:14px;"><label>${labelText}</label><div style="white-space:pre-wrap;font-size:13px;padding:8px 10px;background:#f8fafc;border-radius:6px;min-height:40px;">${val||'<span class="small">未入力</span>'}</div></div>`;
+  }
+  return `<div style="margin-bottom:14px;"><label>${labelText}</label><textarea rows="3" oninput="setField('${key}',this.value)">${val}</textarea></div>`;
+}
+
+function render(){
+  const root = document.getElementById("root");
+  if(!karte){ return; }
+
+  root.innerHTML = `
+    <div class="card">
+      <div class="card-h">保険種別・医療種別</div>
+      <div class="card-b grid grid-2">
+        ${chipGroup("保険種別","hoken_shubetsu",["社","国","退","共","後"])}
+        ${chipGroup("本人・家族","hoken_honke",["本","家"])}
+        ${chipGroup("医療種別","iryou_shubetsu",["柔","整","はり","きゅう","あん摩"])}
+        ${chipGroup("一部負担","ichibu_futan",["0割","1割","2割","3割"])}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">被保険者証情報</div>
+      <div class="card-b grid grid-4">
+        ${fieldRow("記号","kigo")}
+        ${fieldRow("番号","bango")}
+        ${fieldRow("資格取得年月日","shikaku_shutoku_date","date")}
+        ${fieldRow("有効期限","yuko_kigen","date")}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">被保険者</div>
+      <div class="card-b grid grid-2">
+        ${fieldRow("氏名","hihokensha_name")}
+        ${fieldRow("フリガナ","hihokensha_kana")}
+        ${chipGroup("性別","hihokensha_gender",["男","女"])}
+        ${fieldRow("生年月日","hihokensha_birthdate","date")}
+        <div style="grid-column:1/3;">${fieldRow("住所","hihokensha_address")}</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">受診者（被保険者とご本人が異なる場合）</div>
+      <div class="card-b grid grid-2">
+        ${fieldRow("氏名","jushinsha_name")}
+        ${fieldRow("フリガナ","jushinsha_kana")}
+        ${fieldRow("生年月日","jushinsha_birthdate","date")}
+        ${fieldRow("被保険者との続柄","jushinsha_zokugara")}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">保険者</div>
+      <div class="card-b grid grid-2">
+        ${fieldRow("保険者名称","hokensha_name")}
+        ${fieldRow("保険者番号","hokensha_bango")}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">傷病名（最大5件）</div>
+      <div class="card-b">${renderShobyoTable()}</div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">処置・その他施術の事実（施術記録・会計より自動集計）</div>
+      <div class="card-b">${renderVisitHistoryTable()}</div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">原因・症状・処置・経過</div>
+      <div class="card-b">
+        ${textareaField("原因","genin")}
+        ${textareaField("症状","symptom")}
+        ${textareaField("処置","shochi")}
+        ${textareaField("経過","keika")}
+      </div>
+    </div>
+  `;
+}
+
+async function loadVisitHistory(){
+  try{
+    const bookings = await sbGet("bookings", `?patient_name=eq.${encodeURIComponent(patientName)}&order=date.asc,time.asc`);
+    const bkList = Array.isArray(bookings) ? bookings : [];
+    if(bkList.length===0){ visitHistory=[]; return; }
+    const ids = bkList.map(b=>b.id).join(",");
+    const [treatments, payments] = await Promise.all([
+      sbGet("treatments", `?booking_id=in.(${ids})&order=treated_at.asc`),
+      sbGet("payments", `?booking_id=in.(${ids})`),
+    ]);
+    const treatList = Array.isArray(treatments) ? treatments : [];
+    const payList = Array.isArray(payments) ? payments : [];
+
+    visitHistory = bkList.map(b=>{
+      const t = treatList.find(tr=>tr.booking_id===b.id);
+      const p = payList.find(py=>py.booking_id===b.id);
+      return {
+        date: b.date,
+        staffName: STAFF[b.staff_id]||"",
+        bodyParts: t ? t.body_parts : "",
+        treatmentTypes: t ? t.treatment_types : "",
+        total: p ? p.total_amount : null,
+        insurance: p ? p.insurance_amount : null,
+      };
+    }).filter(v=>v.total!=null || v.bodyParts);
+  }catch(e){
+    console.error(e);
+    visitHistory = [];
+  }
+}
+
+async function init(){
+  const {data:{session}} = await supabaseClient.auth.getSession();
+  if(!session){
+    document.getElementById("root").innerHTML = `
+      <div class="auth-wait">
+        <div style="font-size:40px;margin-bottom:12px;">🔒</div>
+        <div style="font-weight:700;color:#374151;margin-bottom:10px;">ログインが必要です</div>
+        <div style="font-size:13px;color:#9ca3af;margin-bottom:20px;">管理画面からログインした状態でこのページを開いてください。</div>
+        <button class="btn btn-white" onclick="location.href='/index.html'">管理画面へ</button>
+      </div>`;
+    return;
+  }
+
+  const params = new URLSearchParams(location.search);
+  const bookingId = params.get("id");
+  const patientParam = params.get("patient");
+
+  try{
+    if(bookingId){
+      const data = await sbGet("bookings", `?id=eq.${bookingId}`);
+      if(Array.isArray(data) && data.length>0){
+        booking = data[0];
+        patientName = booking.patient_name;
+      }
+    }else if(patientParam){
+      patientName = decodeURIComponent(patientParam);
+    }
+
+    if(!patientName){
+      document.getElementById("root").innerHTML = '<div style="text-align:center;padding:60px;color:#ef4444;">❌ 患者情報が指定されていません（?id=予約ID または ?patient=患者名 が必要です）</div>';
+      return;
+    }
+
+    document.getElementById("patientLabel").textContent = patientName + " 様";
+
+    const existing = await sbGet("patient_karte", `?patient_name=eq.${encodeURIComponent(patientName)}`);
+    if(Array.isArray(existing) && existing.length>0){
+      karte = existing[0];
+      if(!Array.isArray(karte.shobyomei) || karte.shobyomei.length===0){
+        karte.shobyomei = emptyKarte().shobyomei;
+      }
+      while(karte.shobyomei.length<5) karte.shobyomei.push({name:"",date:"",start:"",end:"",tenki:"",jitsunissuu:""});
+    }else{
+      karte = emptyKarte();
+    }
+
+    await loadVisitHistory();
+    render();
+  }catch(e){
+    document.getElementById("root").innerHTML = `<div style="text-align:center;padding:60px;color:#ef4444;">❌ エラー：${e.message}</div>`;
+  }
+}
+
+init();
+</script>
+</body>
+</html>
