@@ -165,7 +165,7 @@ function App(){
 
   var formState = useState({
     name:"",nameKana:"",phone:"",
-    bodyParts:[],injuryCause:"",injuryCauseDetail:"",
+    bodyParts:[],bodyPartsOther:"",injuryCause:"",injuryCauseDetail:"",
     painWhen:"",painLevel:"",symptoms:[],
     otherClinic:"",otherClinicName:"",medicalHistory:"",
     wantContinue:"",howKnow:"",howKnowOther:"",lineNotify:false
@@ -314,6 +314,10 @@ function App(){
     return getAvailableStaffIdFor(selDate,t);
   }
 
+  function formatBodyParts(parts,other){
+    return parts.map(function(p){return p==="その他"&&other?"その他（"+other+"）":p;}).join("・");
+  }
+
   function toggleArr(key, val){
     var arr = form[key];
     var newArr = arr.indexOf(val)>-1 ? arr.filter(function(x){return x!==val;}) : arr.concat([val]);
@@ -384,7 +388,7 @@ function App(){
       line_notify: !!lineUserId, // LINE連携済みなら自動でリマインド
       line_user_id: lineUserId || null,
       reminded:false,
-      body_parts:form.bodyParts.join("・"),
+      body_parts:formatBodyParts(form.bodyParts,form.bodyPartsOther),
       injury_cause:form.injuryCause,
       injury_cause_detail:form.injuryCauseDetail,
       pain_when:form.painWhen,
@@ -406,7 +410,7 @@ function App(){
         "👤 "+form.name+" 様\n"+
         "📞 "+form.phone+"\n"+
         "📅 "+fmtDateJP(selDate)+" "+selTime+"\n"+
-        "🦴 負傷部位："+form.bodyParts.join("・")+"\n"+
+        "🦴 負傷部位："+formatBodyParts(form.bodyParts,form.bodyPartsOther)+"\n"+
         "⚡ 原因："+form.injuryCause+"\n"+
         "📅 いつから："+form.painWhen+"\n"+
         "💭 継続意思："+form.wantContinue+"\n"+
@@ -452,7 +456,7 @@ function App(){
   function reset(){
     setStep(0); setSelDate(null); setSelTime(null);
     setSlotData({booked:[],breaks:[]});
-    setForm({name:"",nameKana:"",phone:"",bodyParts:[],injuryCause:"",injuryCauseDetail:"",painWhen:"",painLevel:"",symptoms:[],otherClinic:"",otherClinicName:"",medicalHistory:"",wantContinue:"",howKnow:"",howKnowOther:"",lineNotify:false});
+    setForm({name:"",nameKana:"",phone:"",bodyParts:[],bodyPartsOther:"",injuryCause:"",injuryCauseDetail:"",painWhen:"",painLevel:"",symptoms:[],otherClinic:"",otherClinicName:"",medicalHistory:"",wantContinue:"",howKnow:"",howKnowOther:"",lineNotify:false});
     setDone(false); setBookingId(null); setMemo("");
   }
 
@@ -574,7 +578,7 @@ function App(){
       React.createElement("div",{style:{background:"white",borderRadius:14,border:"2px solid #e5e7eb",overflow:"hidden",marginBottom:12}},
         React.createElement("div",{style:{background:"#059669",color:"white",padding:"12px 16px",fontSize:13,fontWeight:700}},"🩺 ご入力いただいた問診内容"),
         [
-          ["負傷部位",form.bodyParts.join("・")||"—"],
+          ["負傷部位",formatBodyParts(form.bodyParts,form.bodyPartsOther)||"—"],
           ["負傷原因",form.injuryCause||"—"],
           ["いつから",form.painWhen||"—"],
           ["痛みの強さ",form.painLevel ? form.painLevel+"/10" : "—"],
@@ -825,8 +829,15 @@ function App(){
               return chip(form.bodyParts.indexOf(p)>-1, p, function(){toggleArr("bodyParts",p);});
             })
           ),
+          form.bodyParts.indexOf("その他")>-1?React.createElement("input",{
+            type:"text",
+            value:form.bodyPartsOther,
+            placeholder:"部位を具体的にご記入ください",
+            onChange:function(e){setF("bodyPartsOther",e.target.value);},
+            style:Object.assign({},H.input,{marginTop:10})
+          }):null,
           errors.bodyParts?React.createElement("div",{style:{color:"#ef4444",fontSize:12,marginTop:8}},"⚠ "+errors.bodyParts):null,
-          form.bodyParts.length>0?React.createElement("div",{style:{marginTop:10,padding:"8px 12px",background:"#eff6ff",borderRadius:8,fontSize:13,color:"#1e3a5f",fontWeight:600}},"選択中："+form.bodyParts.join("・")):null
+          form.bodyParts.length>0?React.createElement("div",{style:{marginTop:10,padding:"8px 12px",background:"#eff6ff",borderRadius:8,fontSize:13,color:"#1e3a5f",fontWeight:600}},"選択中："+form.bodyParts.map(function(p){return p==="その他"&&form.bodyPartsOther?"その他（"+form.bodyPartsOther+"）":p;}).join("・")):null
         ),
 
         React.createElement("div",{style:H.sec},
@@ -944,7 +955,7 @@ function App(){
         React.createElement("div",{style:{background:"white",borderRadius:14,border:"2px solid #e5e7eb",overflow:"hidden",marginBottom:12}},
           React.createElement("div",{style:{background:"#059669",color:"white",padding:"12px 16px",fontSize:13,fontWeight:700}},"🩺 問診情報"),
           [
-            ["負傷部位",form.bodyParts.join("・")],
+            ["負傷部位",formatBodyParts(form.bodyParts,form.bodyPartsOther)],
             ["負傷原因",form.injuryCause],
             ["いつから",form.painWhen],
             ["継続意思",form.wantContinue],
