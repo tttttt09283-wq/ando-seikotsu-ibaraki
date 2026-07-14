@@ -67,7 +67,6 @@ const STAFF = {1:"岩永",2:"大皿",3:"定井",4:"細永",5:"広川"};
 
 const BODY_PARTS = ["頸部（首）","肩","上腕","肘","前腕","手首・手","胸部","腰部","臀部","大腿","膝","下腿","足首・足","その他"];
 
-// 施術種別カテゴリ
 const TREATMENT_CATEGORIES = [
   {
     id:"hoken", label:"保険", color:"#1e3a5f",
@@ -86,7 +85,7 @@ const RESULTS = [
 ];
 
 let booking = null;
-let patientPasses = []; // その患者のアクティブなpass一覧
+let patientPasses = [];
 
 let state = {
   bodyParts: [],
@@ -98,7 +97,7 @@ let state = {
   resultReason: "",
   nextDate: "",
   nextTime: "",
-  nextSlots: [], // 空き時間スロット
+  nextSlots: [],
   memo: "",
   proposalPlan: "",
   proposalMemo: "",
@@ -180,7 +179,6 @@ async function save() {
   render();
 
   try {
-    // 使用中のpass情報
     const selPass = state.usePassId ? patientPasses.find(p=>p.id===state.usePassId) : null;
 
     const treatData = {
@@ -197,7 +195,6 @@ async function save() {
       memo: state.memo || null,
       proposal_plan: state.proposalPlan || null,
       proposal_memo: state.proposalMemo || null,
-      // 成約・持ち帰りのプラン、バツの理由
       result_plan: state.resultPlan || null,
       result_reason: state.resultReason || null,
     };
@@ -206,14 +203,12 @@ async function save() {
       throw new Error(treatResult.message || treatResult.error || "保存に失敗しました");
     }
 
-    // passを使用した場合、残数を1減らす
     if (selPass) {
       const newRemaining = Math.max(0, selPass.remaining_count - 1);
       await sb_patch("passes", selPass.id, {
         remaining_count: newRemaining,
         active: newRemaining > 0,
       });
-      // ローカルも更新
       selPass.remaining_count = newRemaining;
       selPass.active = newRemaining > 0;
     }
@@ -301,6 +296,20 @@ function render() {
   `;
   root.appendChild(infoCard);
 
+  // ===== 施術録（正式カルテ）へのリンク =====
+  const karteLinkCard = document.createElement("div");
+  karteLinkCard.className = "card";
+  karteLinkCard.innerHTML = `
+    <div class="card-body" style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+      <div>
+        <div style="font-weight:800;font-size:13px;color:#1e3a5f;">📋 施術録（保険請求用カルテ）</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:2px;">被保険者情報・傷病名の確認や印刷はこちら</div>
+      </div>
+      <button style="flex-shrink:0;padding:8px 14px;background:#1e3a5f;color:white;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;" onclick="location.href='/karte.html?id=${booking.id}'">開く</button>
+    </div>
+  `;
+  root.appendChild(karteLinkCard);
+
   const partsCard = document.createElement("div");
   partsCard.className = "card";
   const partsHeader = document.createElement("div");
@@ -335,7 +344,6 @@ function render() {
   const typeBody = document.createElement("div");
   typeBody.className = "card-body";
 
-  // カテゴリタブ
   const tabRow = document.createElement("div");
   tabRow.style.cssText = "display:flex;gap:6px;margin-bottom:12px;";
   TREATMENT_CATEGORIES.forEach(cat => {
@@ -347,7 +355,6 @@ function render() {
   });
   typeBody.appendChild(tabRow);
 
-  // 選択中カテゴリのアイテム
   const itemRow = document.createElement("div");
   itemRow.style.cssText = "display:flex;flex-wrap:wrap;gap:7px;";
   const currentCat = TREATMENT_CATEGORIES.find(c=>c.id===state.treatTab)||TREATMENT_CATEGORIES[0];
@@ -375,7 +382,6 @@ function render() {
   typeCard.appendChild(typeBody);
   root.appendChild(typeCard);
 
-  // ===== 回数券・FP使用セクション =====
   const passCard = document.createElement("div");
   passCard.className = "card";
   const passHeader = document.createElement("div");
@@ -396,7 +402,6 @@ function render() {
     desc.textContent = "今回使用する券・パスを選択してください（任意）";
     passBody.appendChild(desc);
 
-    // 「使用しない」ボタン
     const noneBtn = document.createElement("button");
     noneBtn.textContent = "使用しない";
     noneBtn.style.cssText = `width:100%;padding:10px;border-radius:8px;border:2px solid ${state.usePassId===null?'#6b7280':'#e2e8f0'};background:${state.usePassId===null?'#6b7280':'white'};color:${state.usePassId===null?'white':'#374151'};font-size:13px;font-weight:700;cursor:pointer;margin-bottom:8px;font-family:inherit;`;
@@ -454,7 +459,6 @@ function render() {
     });
   }
 
-  // ===== 提案内容カード =====
   const PROPOSAL_PLANS = [
     {id:"",label:"提案なし",color:"#6b7280"},
     {id:"アジャスト5回券 ¥4,400",label:"🎫 アジャスト5回券",sub:"¥4,400",color:"#2563eb"},
@@ -487,7 +491,6 @@ function render() {
   proposalDesc.textContent = "今回患者様に提案したプランを選択してください（クロージング担当に共有されます）";
   proposalBody.appendChild(proposalDesc);
 
-  // プラン選択ボタン
   const planGrid = document.createElement("div");
   planGrid.style.cssText = "display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px;";
   PROPOSAL_PLANS.forEach(plan => {
@@ -508,7 +511,6 @@ function render() {
   });
   proposalBody.appendChild(planGrid);
 
-  // 選択中プランの表示
   if(state.proposalPlan){
     const selectedPlan = PROPOSAL_PLANS.find(p=>p.id===state.proposalPlan);
     if(selectedPlan){
@@ -519,7 +521,6 @@ function render() {
     }
   }
 
-  // 追加メモ
   const proposalMemoLabel = document.createElement("label");
   proposalMemoLabel.style.cssText = "display:block;font-size:12px;font-weight:700;color:#475569;margin-bottom:6px;";
   proposalMemoLabel.textContent = "追加メモ（反応・状況など）";
@@ -537,7 +538,6 @@ function render() {
   proposalCard.appendChild(proposalBody);
   root.appendChild(proposalCard);
 
-  // 結果カード（提案内容の後）
   const RESULT_PLANS = [
     {id:"アジャスト5回券 ¥4,400",label:"アジャスト5回券",sub:"¥4,400",color:"#2563eb"},
     {id:"アジャスト11回券 ¥8,800",label:"アジャスト11回券",sub:"¥8,800",color:"#2563eb"},
@@ -566,7 +566,6 @@ function render() {
   const resultBody = document.createElement("div");
   resultBody.className = "card-body";
 
-  // 結果ボタン（成約・持ち帰り・バツ）
   const resultBtnRow = document.createElement("div");
   resultBtnRow.style.cssText = "display:flex;gap:10px;margin-bottom:16px;";
   RESULTS.forEach(r => {
@@ -583,7 +582,6 @@ function render() {
   });
   resultBody.appendChild(resultBtnRow);
 
-  // 成約・持ち帰り → プラン選択
   if(state.result === "成約" || state.result === "持ち帰り"){
     const planLabel = document.createElement("div");
     const isSeiyaku = state.result === "成約";
@@ -591,17 +589,17 @@ function render() {
     planLabel.textContent = isSeiyaku ? "✅ 成約したプランを選択" : "🤔 検討中のプランを選択";
     resultBody.appendChild(planLabel);
 
-    const planGrid = document.createElement("div");
-    planGrid.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;";
+    const planGrid2 = document.createElement("div");
+    planGrid2.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;";
     RESULT_PLANS.forEach(plan => {
       const sel = state.resultPlan === plan.id;
       const btn = document.createElement("button");
       btn.style.cssText = `padding:7px 12px;border-radius:20px;border:1.5px solid ${sel?plan.color:"#e2e8f0"};background:${sel?plan.color:"white"};color:${sel?"white":plan.color};font-size:12px;font-weight:${sel?700:500};cursor:pointer;font-family:inherit;`;
       btn.textContent = plan.label + " " + plan.sub;
       btn.onclick = () => { state.resultPlan = plan.id; render(); };
-      planGrid.appendChild(btn);
+      planGrid2.appendChild(btn);
     });
-    resultBody.appendChild(planGrid);
+    resultBody.appendChild(planGrid2);
 
     if(state.resultPlan){
       const preview = document.createElement("div");
@@ -612,7 +610,6 @@ function render() {
     }
   }
 
-  // バツ → 理由選択＋自由入力
   if(state.result === "バツ"){
     const reasonLabel = document.createElement("div");
     reasonLabel.style.cssText = "font-size:12px;font-weight:800;color:#ef4444;margin-bottom:10px;";
@@ -631,7 +628,6 @@ function render() {
     });
     resultBody.appendChild(reasonGrid);
 
-    // 「その他」の場合は自由入力
     if(state.resultReason === "その他"){
       const otherInput = document.createElement("textarea");
       otherInput.placeholder = "具体的な理由を入力してください";
@@ -652,7 +648,6 @@ function render() {
   const nextBody = document.createElement("div");
   nextBody.className = "card-body";
 
-  // 日付選択
   const dateWrap = document.createElement("div");
   dateWrap.style.cssText = "margin-bottom:14px;";
   dateWrap.innerHTML = `<label style="display:block;font-size:12px;font-weight:700;color:#374151;margin-bottom:6px;">日付</label>`;
@@ -669,7 +664,6 @@ function render() {
   dateWrap.appendChild(dateInput);
   nextBody.appendChild(dateWrap);
 
-  // 時間スロット選択
   if(state.nextDate){
     const timeWrap = document.createElement("div");
     timeWrap.style.cssText = "margin-bottom:14px;";
@@ -712,7 +706,6 @@ function render() {
     nextBody.appendChild(timeWrap);
   }
 
-  // メモ
   const memoWrap = document.createElement("div");
   memoWrap.innerHTML = `<label style="display:block;font-size:12px;font-weight:700;color:#374151;margin-bottom:6px;">メモ（任意）</label>`;
   const memoInput = document.createElement("textarea");
@@ -774,7 +767,6 @@ async function init() {
     }
     booking = data[0];
 
-    // その患者のアクティブな回数券・FPを取得
     const passes = await sb_get("passes", `?patient_name=eq.${encodeURIComponent(booking.patient_name)}&active=eq.true&order=purchased_date.desc`);
     patientPasses = Array.isArray(passes) ? passes : [];
 
