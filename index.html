@@ -3711,10 +3711,23 @@ function Dashboard({user,onLogout}){
       const moved=dragInfo.moved||Math.abs(dx)>6||Math.abs(dy)>6;
       setDragInfo(prev=>prev?{...prev,curX:e.clientX,curY:e.clientY,moved}:prev);
     }
+    function suppressNextClick(){
+      function killClick(ev){
+        ev.stopPropagation();
+        ev.preventDefault();
+        window.removeEventListener("click",killClick,true);
+      }
+      window.addEventListener("click",killClick,true);
+      // 万一クリックイベントが発生しなかった場合に備えて後片付け
+      setTimeout(()=>window.removeEventListener("click",killClick,true),500);
+    }
     function onUp(e){
       setDragInfo(current=>{
         if(!current) return null;
         if(current.moved){
+          e.preventDefault();
+          e.stopPropagation();
+          suppressNextClick();
           const el=document.elementFromPoint(e.clientX,e.clientY);
           const rowEl=el&&el.closest?el.closest("[data-cal-row]"):null;
           if(rowEl){
