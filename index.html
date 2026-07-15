@@ -922,7 +922,7 @@ function StatsPanel({bookings,payments,todayStr,stores}){
 }
 
 
-function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,save,onClose,onDelete,businessHours,closures,storeStaffList}){
+function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,save,onClose,onDelete,businessHours,closures,storeStaffList,isStaffWorkingOnDate}){
   const [searchQ,setSearchQ]=React.useState("");
   const [searchResults,setSearchResults]=React.useState([]);
   const [searching,setSearching]=React.useState(false);
@@ -1068,10 +1068,19 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
         <div className="form-group">
           <label className="form-label">担当スタッフ</label>
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-            {(storeStaffList||STAFF_ACCOUNTS).map(s=>(
-              <button key={s.id} onClick={()=>{setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} className="btn" style={{background:form.staff_id===s.id?s.color:"white",color:form.staff_id===s.id?"white":"#374151",border:"2px solid "+s.color,borderRadius:20,padding:"5px 12px",fontSize:12,fontWeight:700,boxShadow:form.staff_id===s.id?"0 2px 8px "+s.color+"55":"none"}}>{s.name}</button>
-            ))}
+            {(storeStaffList||STAFF_ACCOUNTS).map(s=>{
+              const working=!form.date||!isStaffWorkingOnDate?true:isStaffWorkingOnDate(s.id,new Date(form.date+"T00:00:00"));
+              return(
+                <button key={s.id} disabled={!working} onClick={()=>{if(!working)return;setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} className="btn"
+                  style={{background:!working?"#f3f4f6":form.staff_id===s.id?s.color:"white",color:!working?"#d1d5db":form.staff_id===s.id?"white":"#374151",border:"2px solid "+(!working?"#e2e8f0":s.color),borderRadius:20,padding:"5px 12px",fontSize:12,fontWeight:700,boxShadow:form.staff_id===s.id&&working?"0 2px 8px "+s.color+"55":"none",cursor:!working?"not-allowed":"pointer"}}>
+                  {s.name}{!working?"（休み）":""}
+                </button>
+              );
+            })}
           </div>
+          {form.staff_id&&isStaffWorkingOnDate&&form.date&&!isStaffWorkingOnDate(form.staff_id,new Date(form.date+"T00:00:00"))&&(
+            <div style={{marginTop:8,fontSize:12,color:"#dc2626",fontWeight:700}}>⚠ 選択中の担当者はこの日休みに設定されています</div>
+          )}
         </div>
       )}
       <div className="form-group">
@@ -4075,7 +4084,7 @@ function Dashboard({user,onLogout}){
 
           {/* 予約フォーム */}
           {view==="form"&&form&&(
-            <FormPanel form={form} setForm={setForm} editId={editId} conflict={conflict} setConflict={setConflict} isAdmin={isAdmin} bookings={bookings} save={save} onClose={()=>setView("calendar")} onDelete={()=>setDelConfirm(bookings.find(b=>b.id===editId))} businessHours={businessHours} closures={closures} storeStaffList={storeStaff}/>
+            <FormPanel form={form} setForm={setForm} editId={editId} conflict={conflict} setConflict={setConflict} isAdmin={isAdmin} bookings={bookings} save={save} onClose={()=>setView("calendar")} onDelete={()=>setDelConfirm(bookings.find(b=>b.id===editId))} businessHours={businessHours} closures={closures} storeStaffList={storeStaff} isStaffWorkingOnDate={isStaffWorkingOnDate}/>
           )}
         </div>
       </div>
