@@ -3512,6 +3512,7 @@ function Dashboard({user,onLogout}){
   const [viewIntake,setViewIntake]=React.useState(null);
   const [bookingPopup,setBookingPopup]=React.useState(null); // {booking, x, y}
   const [timePickerPopup,setTimePickerPopup]=React.useState(null); // {date, staffId, x, y, centerTime}
+  const [dragInfo,setDragInfo]=React.useState(null); // {booking, startX, startY, curX, curY, moved}
   const [historyPatient,setHistoryPatient]=React.useState(null);
   const [payments,setPayments]=React.useState([]);
   const [businessHours,setBusinessHours]=React.useState([]);
@@ -3669,6 +3670,74 @@ function Dashboard({user,onLogout}){
     try{await sb.delete("bookings",id);}catch{}
     setBookings(prev=>prev.filter(b=>b.id!==id));setDelConfirm(null);setView("calendar");showToast("削除しました","delete");
   }
+
+  // ===== カレンダー上でのドラッグ移動 =====
+  const DRAG_TOTAL_SLOTS=54; // 09:00〜18:00を10分刻みにした数（カレンダー表示の時間軸と一致）
+  function computeTimeFromRowX(relX,rowWidth){
+    const cellW=rowWidth/DRAG_TOTAL_SLOTS;
+    const totalMin=Math.max(0,Math.round(relX/cellW))*10;
+    const h=9+Math.floor(totalMin/60),m=totalMin%60;
+    if(h<9||h>17) return null;
+    return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
+  }
+
+  async function attemptMoveBooking(booking,newDate,newTime,newStaffId){
+    const dateObj=new Date(newDate+"T00:00:00");
+    if(!isStaffWorkingOnDate(newStaffId,dateObj)){
+      showToast("移動先のスタッフはこの日休みのため移動できません","delete");
+      return;
+    }
+    const conflict=bookings.some(b=>b.id!==booking.id&&b.staff_id===newStaffId&&b.date===newDate&&overlaps(b,{time:newTime,duration:booking.duration||DURATION[booking.menu]||30}));
+    if(conflict){
+      showToast("その時間はすでに予約が入っています","delete");
+      return;
+    }
+    try{
+      const result=await sb.update("bookings",booking.id,{date:newDate,time:newTime,staff_id:newStaffId});
+      if(!Array.isArray(result)||result.length===0){
+        throw new Error((result&&result.message)||"移動に失敗しました");
+      }
+      setBookings(prev=>prev.map(b=>b.id===booking.id?result[0]:b));
+      showToast("予約を移動しました");
+    }catch(e){
+      alert("移動に失敗しました："+(e.message||"不明なエラー"));
+    }
+  }
+
+  React.useEffect(()=>{
+    if(!dragInfo) return;
+    function onMove(e){
+      const dx=e.clientX-dragInfo.startX,dy=e.clientY-dragInfo.startY;
+      const moved=dragInfo.moved||Math.abs(dx)>6||Math.abs(dy)>6;
+      setDragInfo(prev=>prev?{...prev,curX:e.clientX,curY:e.clientY,moved}:prev);
+    }
+    function onUp(e){
+      setDragInfo(current=>{
+        if(!current) return null;
+        if(current.moved){
+          const el=document.elementFromPoint(e.clientX,e.clientY);
+          const rowEl=el&&el.closest?el.closest("[data-cal-row]"):null;
+          if(rowEl){
+            const targetDate=rowEl.getAttribute("data-date");
+            const targetStaffId=parseInt(rowEl.getAttribute("data-staffid"),10);
+            const rect=rowEl.getBoundingClientRect();
+            const relX=e.clientX-rect.left;
+            const newTime=computeTimeFromRowX(relX,rect.width);
+            if(targetDate&&newTime&&!isNaN(targetStaffId)){
+              attemptMoveBooking(current.booking,targetDate,newTime,targetStaffId);
+            }
+          }
+        }
+        return null;
+      });
+    }
+    window.addEventListener("pointermove",onMove);
+    window.addEventListener("pointerup",onUp);
+    return()=>{
+      window.removeEventListener("pointermove",onMove);
+      window.removeEventListener("pointerup",onUp);
+    };
+  },[dragInfo]);
 
   const todayBreakCount=breaks.filter(b=>b.date===todayStr).length;
 
@@ -3992,7 +4061,7 @@ function Dashboard({user,onLogout}){
                                     <div style={{fontSize:9,color:staff.color,fontWeight:700}}>{staffBookings.length}件</div>
                                   </div>
                                 </div>
-                                <div style={{position:"relative",flex:1,minHeight:48,cursor:"pointer",background:isToday?"#fafeff":"white"}}
+                                <div data-cal-row="1" data-date={wdStr} data-staffid={staff.id} style={{position:"relative",flex:1,minHeight:48,cursor:"pointer",background:isToday?"#fafeff":"white"}}
                                   onClick={e=>{
                                     const rect=e.currentTarget.getBoundingClientRect();
                                     const x=e.clientX-rect.left;
@@ -4017,9 +4086,22 @@ function Dashboard({user,onLogout}){
                                     const isPaid=paidBookingIds.has(b.id);
                                     const isCheckedIn=!!b.checked_in_at;
                                     const isNewPatient=cnt===1;
+                                    const isBeingDragged=dragInfo&&dragInfo.moved&&dragInfo.booking.id===b.id;
                                     return(
-                                      <div key={b.id} onClick={e=>{e.stopPropagation();setBookingPopup({booking:b,x:e.clientX,y:e.clientY});}}
-                                        style={{position:"absolute",left:x,top:3,bottom:3,width:Math.max(w-2,20),background:isPaid?"linear-gradient(135deg,#9ca3af,#6b7280)":isNewPatient?"linear-gradient(135deg,#f97316,#ea580c)":`linear-gradient(135deg,${staff.color},${staff.color}bb)`,borderRadius:6,padding:"2px 5px",cursor:"pointer",boxShadow:isCheckedIn?"0 0 0 2px #facc15,0 2px 6px rgba(0,0,0,.3)":isNewPatient?"0 2px 8px rgba(249,115,22,.6)":(isPaid?"0 1px 3px rgba(0,0,0,.2)":`0 2px 6px ${staff.color}44`),display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden",zIndex:isNewPatient?3:2,opacity:isPaid?.75:1}}>
+                                      <div key={b.id}
+                                        onPointerDown={e=>{
+                                          e.stopPropagation();
+                                          try{e.target.setPointerCapture(e.pointerId);}catch(err){}
+                                          setDragInfo({booking:b,startX:e.clientX,startY:e.clientY,curX:e.clientX,curY:e.clientY,moved:false});
+                                        }}
+                                        onPointerUp={e=>{
+                                          // ドラッグしていない（≒タップ）場合だけポップアップを開く
+                                          if(!dragInfo||!dragInfo.moved){
+                                            e.stopPropagation();
+                                            setBookingPopup({booking:b,x:e.clientX,y:e.clientY});
+                                          }
+                                        }}
+                                        style={{position:"absolute",left:x,top:3,bottom:3,width:Math.max(w-2,20),background:isPaid?"linear-gradient(135deg,#9ca3af,#6b7280)":isNewPatient?"linear-gradient(135deg,#f97316,#ea580c)":`linear-gradient(135deg,${staff.color},${staff.color}bb)`,borderRadius:6,padding:"2px 5px",cursor:"grab",touchAction:"none",boxShadow:isCheckedIn?"0 0 0 2px #facc15,0 2px 6px rgba(0,0,0,.3)":isNewPatient?"0 2px 8px rgba(249,115,22,.6)":(isPaid?"0 1px 3px rgba(0,0,0,.2)":`0 2px 6px ${staff.color}44`),display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden",zIndex:isNewPatient?3:2,opacity:isBeingDragged?.35:isPaid?.75:1}}>
                                         {isNewPatient&&<div style={{position:"absolute",top:-1,right:-1,background:"#fff",color:"#ea580c",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"0 6px 0 4px",lineHeight:1,letterSpacing:0}}>NEW</div>}
                                         <div style={{fontWeight:800,fontSize:10,color:"white",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isCheckedIn?"📷":""}{isPaid?"✓ ":""}{b.patient_name}</div>
                                         <div style={{fontSize:9,color:"rgba(255,255,255,.85)"}}>{b.time}{cnt>1&&<span style={{marginLeft:2,background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}</div>
@@ -4117,6 +4199,13 @@ function Dashboard({user,onLogout}){
           </>
         );
       })()}
+
+      {/* ドラッグ移動中のゴースト表示 */}
+      {dragInfo&&dragInfo.moved&&(
+        <div style={{position:"fixed",left:dragInfo.curX+12,top:dragInfo.curY+12,zIndex:500,pointerEvents:"none",background:"#1e3a5f",color:"white",padding:"6px 12px",borderRadius:8,fontSize:12,fontWeight:800,boxShadow:"0 4px 16px rgba(0,0,0,.3)",whiteSpace:"nowrap"}}>
+          📅 {dragInfo.booking.patient_name} を移動中...
+        </div>
+      )}
 
       {/* 予約ブロック アクションポップアップ */}
       {bookingPopup&&(()=>{
