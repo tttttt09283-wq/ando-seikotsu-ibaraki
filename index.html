@@ -3648,7 +3648,7 @@ function Dashboard({user,onLogout}){
   }
   async function save(){
     if(!form.patient_name.trim())return;
-    if(bookings.some(b=>b.id!==editId&&b.staff_id===form.staff_id&&b.date===form.date&&overlaps(b,form))){setConflict(true);return;}
+    if(bookings.some(b=>b.id!==editId&&b.staff_id===form.staff_id&&b.date===form.date&&!b.cancelled&&overlaps(b,form))){setConflict(true);return;}
     try{
       if(editId!==null){
         const result=await sb.update("bookings",editId,form);
@@ -3689,7 +3689,7 @@ function Dashboard({user,onLogout}){
       showToast("移動先のスタッフはこの日休みのため移動できません","delete");
       return;
     }
-    const conflict=bookings.some(b=>b.id!==booking.id&&b.staff_id===newStaffId&&b.date===newDate&&overlaps(b,{time:newTime,duration:booking.duration||DURATION[booking.menu]||30}));
+    const conflict=bookings.some(b=>b.id!==booking.id&&b.staff_id===newStaffId&&b.date===newDate&&!b.cancelled&&overlaps(b,{time:newTime,duration:booking.duration||DURATION[booking.menu]||30}));
     if(conflict){
       showToast("その時間はすでに予約が入っています","delete");
       return;
@@ -3987,7 +3987,7 @@ function Dashboard({user,onLogout}){
                     const isSelected=dStr===ds;
                     const isToday=dStr===todayStr;
                     const isSun=d.getDay()===0,isSat=d.getDay()===6;
-                    const cnt=storeBookings.filter(b=>b.date===dStr).length;
+                    const cnt=storeBookings.filter(b=>b.date===dStr&&!b.cancelled).length;
                     return(
                       <button key={dStr} onClick={()=>setBaseDate(new Date(dStr+"T00:00:00"))}
                         style={{flex:1,minWidth:72,padding:"6px 4px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:800,fontSize:12,textAlign:"center",transition:"all .15s",
@@ -4030,7 +4030,7 @@ function Dashboard({user,onLogout}){
                       const wdStr=fmtDate(wd);
                       const isToday=wdStr===todayStr;
                       const isSun=wd.getDay()===0,isSat=wd.getDay()===6;
-                      const dayBookings=storeBookings.filter(b=>b.date===wdStr);
+                      const dayBookings=storeBookings.filter(b=>b.date===wdStr&&!b.cancelled);
                       const dayColor=isSun?"#ef4444":isSat?"#7c3aed":"#1e293b";
                       // その日実際に出勤しているスタッフのみ表示（誤予約防止）
                       const dayStaffList=filteredStaff.filter(s=>isStaffWorkingOnDate(s.id,wd));
