@@ -4248,8 +4248,10 @@ function Dashboard({user,onLogout}){
           const h=Math.floor(totalMin/60),m=totalMin%60;
           return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
         }).filter(Boolean);
-        const posLeft=Math.min(timePickerPopup.x-70,window.innerWidth-160);
-        const posTop=Math.min(timePickerPopup.y-90,window.innerHeight-220);
+        const tvw=(window.visualViewport&&window.visualViewport.width)||window.innerWidth;
+        const tvh=(window.visualViewport&&window.visualViewport.height)||window.innerHeight;
+        const posLeft=Math.min(timePickerPopup.x-70,tvw-160);
+        const posTop=Math.min(timePickerPopup.y-90,tvh-220);
         return(
           <>
             <div onClick={()=>setTimePickerPopup(null)} style={{position:"fixed",inset:0,zIndex:300}}/>
@@ -4285,10 +4287,14 @@ function Dashboard({user,onLogout}){
         const s=STAFF_ACCOUNTS.find(x=>x.id===b.staff_id)||{color:"#888",name:"不明"};
         const cnt=visitCounts[b.id]||1;
         const margin=8;
+        // スマホブラウザはアドレスバー等の分だけ window.innerHeight と「実際に見えている高さ」がずれることがあるため、
+        // visualViewport（実表示領域）が使える場合はそちらを優先して使う
+        const vw=(window.visualViewport&&window.visualViewport.width)||window.innerWidth;
+        const vh=(window.visualViewport&&window.visualViewport.height)||window.innerHeight;
         const estPopupHeight=cnt===1?400:340; // 初診バッジ＋問診票ボタンがある分だけ高くなる
-        const posLeft=Math.max(margin,Math.min(bookingPopup.x, window.innerWidth-208));
-        const posTop=Math.max(margin,Math.min(bookingPopup.y, window.innerHeight-Math.min(estPopupHeight,window.innerHeight-margin*2)));
-        const popupMaxHeight=window.innerHeight-posTop-margin; // 実際に残っているスペースに合わせて上限を決める（これがないと下にはみ出す）
+        const posLeft=Math.max(margin,Math.min(bookingPopup.x, vw-208));
+        const posTop=Math.max(margin,Math.min(bookingPopup.y, vh-Math.min(estPopupHeight,vh-margin*2)));
+        const popupMaxHeight=vh-posTop-margin; // 実際に見えているスペースに合わせて上限を決める（これがないと下にはみ出す）
         return(
           <>
             {/* オーバーレイ（クリックで閉じる） */}
