@@ -3512,7 +3512,9 @@ function Dashboard({user,onLogout}){
   const [viewIntake,setViewIntake]=React.useState(null);
   const [bookingPopup,setBookingPopup]=React.useState(null); // {booking, x, y}
   const [timePickerPopup,setTimePickerPopup]=React.useState(null); // {date, staffId, x, y, centerTime}
-  const [dragInfo,setDragInfo]=React.useState(null); // {booking, startX, startY, curX, curY, moved}
+  const [dragBooking,setDragBooking]=React.useState(null); // ドラッグ中の予約（開始〜終了までしか変化しない）
+  const [dragPos,setDragPos]=React.useState({x:0,y:0,moved:false}); // 見た目の追従用（頻繁に変化する）
+  const dragPosRef=React.useRef({x:0,y:0,startX:0,startY:0,moved:false});
   const [historyPatient,setHistoryPatient]=React.useState(null);
   const [payments,setPayments]=React.useState([]);
   const [businessHours,setBusinessHours]=React.useState([]);
@@ -3704,53 +3706,62 @@ function Dashboard({user,onLogout}){
     }
   }
 
-  React.useEffect(()=>{
-    if(!dragInfo) return;
-    function onMove(e){
-      const dx=e.clientX-dragInfo.startX,dy=e.clientY-dragInfo.startY;
-      const moved=dragInfo.moved||Math.abs(dx)>6||Math.abs(dy)>6;
-      setDragInfo(prev=>prev?{...prev,curX:e.clientX,curY:e.clientY,moved}:prev);
+  function suppressNextClick(){
+    function killClick(ev){
+      ev.stopPropagation();
+      ev.preventDefault();
+      window.removeEventListener("click",killClick,true);
     }
-    function suppressNextClick(){
-      function killClick(ev){
-        ev.stopPropagation();
-        ev.preventDefault();
-        window.removeEventListener("click",killClick,true);
-      }
-      window.addEventListener("click",killClick,true);
-      // 万一クリックイベントが発生しなかった場合に備えて後片付け
-      setTimeout(()=>window.removeEventListener("click",killClick,true),500);
+    window.addEventListener("click",killClick,true);
+    setTimeout(()=>window.removeEventListener("click",killClick,true),500);
+  }
+
+  // dragBookingが変化した時（＝ドラッグ開始/終了の時）だけリスナーを付け外しする
+  // （指の移動中にリスナーを毎回付け替えないことで、離した瞬間のイベント取りこぼしを防ぐ）
+  React.useEffect(()=>{
+    if(!dragBooking) return;
+    function onMove(e){
+      const p=dragPosRef.current;
+      const moved=p.moved||Math.abs(e.clientX-p.startX)>10||Math.abs(e.clientY-p.startY)>10;
+      dragPosRef.current={...p,x:e.clientX,y:e.clientY,moved};
+      setDragPos({x:e.clientX,y:e.clientY,moved});
     }
     function onUp(e){
-      setDragInfo(current=>{
-        if(!current) return null;
-        if(current.moved){
-          e.preventDefault();
-          e.stopPropagation();
-          suppressNextClick();
-          const el=document.elementFromPoint(e.clientX,e.clientY);
-          const rowEl=el&&el.closest?el.closest("[data-cal-row]"):null;
-          if(rowEl){
-            const targetDate=rowEl.getAttribute("data-date");
-            const targetStaffId=parseInt(rowEl.getAttribute("data-staffid"),10);
-            const rect=rowEl.getBoundingClientRect();
-            const relX=e.clientX-rect.left;
-            const newTime=computeTimeFromRowX(relX,rect.width);
-            if(targetDate&&newTime&&!isNaN(targetStaffId)){
-              attemptMoveBooking(current.booking,targetDate,newTime,targetStaffId);
-            }
+      const p=dragPosRef.current;
+      const bkg=dragBooking;
+      if(p.moved){
+        e.preventDefault();
+        e.stopPropagation();
+        suppressNextClick();
+        const el=document.elementFromPoint(e.clientX,e.clientY);
+        const rowEl=el&&el.closest?el.closest("[data-cal-row]"):null;
+        if(rowEl){
+          const targetDate=rowEl.getAttribute("data-date");
+          const targetStaffId=parseInt(rowEl.getAttribute("data-staffid"),10);
+          const rect=rowEl.getBoundingClientRect();
+          const relX=e.clientX-rect.left;
+          const newTime=computeTimeFromRowX(relX,rect.width);
+          if(targetDate&&newTime&&!isNaN(targetStaffId)){
+            attemptMoveBooking(bkg,targetDate,newTime,targetStaffId);
           }
         }
-        return null;
-      });
+      }else{
+        // 動いていなければ「タップ」＝予約詳細ポップアップを開く
+        setTimePickerPopup(null);
+        setBookingPopup({booking:bkg,x:e.clientX,y:e.clientY});
+      }
+      setDragBooking(null);
     }
+    function onCancel(){ setDragBooking(null); }
     window.addEventListener("pointermove",onMove);
     window.addEventListener("pointerup",onUp);
+    window.addEventListener("pointercancel",onCancel);
     return()=>{
       window.removeEventListener("pointermove",onMove);
       window.removeEventListener("pointerup",onUp);
+      window.removeEventListener("pointercancel",onCancel);
     };
-  },[dragInfo]);
+  },[dragBooking]);
 
   const todayBreakCount=breaks.filter(b=>b.date===todayStr).length;
 
@@ -4083,6 +4094,7 @@ function Dashboard({user,onLogout}){
                                     const m=totalMinFromStart%60;
                                     if(h>=9&&h<=17){
                                       const centerTime=`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
+                                      setBookingPopup(null);
                                       setTimePickerPopup({date:wdStr,staffId:staff.id,x:e.clientX,y:e.clientY,centerTime});
                                     }
                                   }}>
@@ -4099,21 +4111,17 @@ function Dashboard({user,onLogout}){
                                     const isPaid=paidBookingIds.has(b.id);
                                     const isCheckedIn=!!b.checked_in_at;
                                     const isNewPatient=cnt===1;
-                                    const isBeingDragged=dragInfo&&dragInfo.moved&&dragInfo.booking.id===b.id;
+                                    const isBeingDragged=dragBooking&&dragPos.moved&&dragBooking.id===b.id;
                                     return(
                                       <div key={b.id}
                                         onPointerDown={e=>{
                                           e.stopPropagation();
                                           try{e.target.setPointerCapture(e.pointerId);}catch(err){}
-                                          setDragInfo({booking:b,startX:e.clientX,startY:e.clientY,curX:e.clientX,curY:e.clientY,moved:false});
+                                          dragPosRef.current={x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,moved:false};
+                                          setDragPos({x:e.clientX,y:e.clientY,moved:false});
+                                          setDragBooking(b);
                                         }}
-                                        onPointerUp={e=>{
-                                          // ドラッグしていない（≒タップ）場合だけポップアップを開く
-                                          if(!dragInfo||!dragInfo.moved){
-                                            e.stopPropagation();
-                                            setBookingPopup({booking:b,x:e.clientX,y:e.clientY});
-                                          }
-                                        }}
+                                        onClick={e=>{e.stopPropagation();}}
                                         style={{position:"absolute",left:x,top:3,bottom:3,width:Math.max(w-2,20),background:isPaid?"linear-gradient(135deg,#9ca3af,#6b7280)":isNewPatient?"linear-gradient(135deg,#f97316,#ea580c)":`linear-gradient(135deg,${staff.color},${staff.color}bb)`,borderRadius:6,padding:"2px 5px",cursor:"grab",touchAction:"none",boxShadow:isCheckedIn?"0 0 0 2px #facc15,0 2px 6px rgba(0,0,0,.3)":isNewPatient?"0 2px 8px rgba(249,115,22,.6)":(isPaid?"0 1px 3px rgba(0,0,0,.2)":`0 2px 6px ${staff.color}44`),display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden",zIndex:isNewPatient?3:2,opacity:isBeingDragged?.35:isPaid?.75:1}}>
                                         {isNewPatient&&<div style={{position:"absolute",top:-1,right:-1,background:"#fff",color:"#ea580c",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"0 6px 0 4px",lineHeight:1,letterSpacing:0}}>NEW</div>}
                                         <div style={{fontWeight:800,fontSize:10,color:"white",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isCheckedIn?"📷":""}{isPaid?"✓ ":""}{b.patient_name}</div>
@@ -4214,12 +4222,12 @@ function Dashboard({user,onLogout}){
       })()}
 
       {/* ドラッグ移動中のゴースト表示（実際の予約ブロックに似た見た目でカーソルに追従） */}
-      {dragInfo&&dragInfo.moved&&(()=>{
-        const dragStaff=STAFF_ACCOUNTS.find(s=>s.id===dragInfo.booking.staff_id)||{color:"#1e3a5f"};
+      {dragBooking&&dragPos.moved&&(()=>{
+        const dragStaff=STAFF_ACCOUNTS.find(s=>s.id===dragBooking.staff_id)||{color:"#1e3a5f"};
         return(
-          <div style={{position:"fixed",left:dragInfo.curX-55,top:dragInfo.curY-20,zIndex:500,pointerEvents:"none",width:110,background:`linear-gradient(135deg,${dragStaff.color},${dragStaff.color}bb)`,borderRadius:6,padding:"4px 7px",boxShadow:"0 8px 24px rgba(0,0,0,.4)",transform:"scale(1.08) rotate(-2deg)",border:"2px solid white"}}>
-            <div style={{fontWeight:800,fontSize:11,color:"white",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{dragInfo.booking.patient_name}</div>
-            <div style={{fontSize:10,color:"rgba(255,255,255,.85)"}}>{dragInfo.booking.time}</div>
+          <div style={{position:"fixed",left:dragPos.x-55,top:dragPos.y-20,zIndex:500,pointerEvents:"none",width:110,background:`linear-gradient(135deg,${dragStaff.color},${dragStaff.color}bb)`,borderRadius:6,padding:"4px 7px",boxShadow:"0 8px 24px rgba(0,0,0,.4)",transform:"scale(1.08) rotate(-2deg)",border:"2px solid white"}}>
+            <div style={{fontWeight:800,fontSize:11,color:"white",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{dragBooking.patient_name}</div>
+            <div style={{fontSize:10,color:"rgba(255,255,255,.85)"}}>{dragBooking.time}</div>
           </div>
         );
       })()}
