@@ -4213,12 +4213,16 @@ function Dashboard({user,onLogout}){
         );
       })()}
 
-      {/* ドラッグ移動中のゴースト表示 */}
-      {dragInfo&&dragInfo.moved&&(
-        <div style={{position:"fixed",left:dragInfo.curX+12,top:dragInfo.curY+12,zIndex:500,pointerEvents:"none",background:"#1e3a5f",color:"white",padding:"6px 12px",borderRadius:8,fontSize:12,fontWeight:800,boxShadow:"0 4px 16px rgba(0,0,0,.3)",whiteSpace:"nowrap"}}>
-          📅 {dragInfo.booking.patient_name} を移動中...
-        </div>
-      )}
+      {/* ドラッグ移動中のゴースト表示（実際の予約ブロックに似た見た目でカーソルに追従） */}
+      {dragInfo&&dragInfo.moved&&(()=>{
+        const dragStaff=STAFF_ACCOUNTS.find(s=>s.id===dragInfo.booking.staff_id)||{color:"#1e3a5f"};
+        return(
+          <div style={{position:"fixed",left:dragInfo.curX-55,top:dragInfo.curY-20,zIndex:500,pointerEvents:"none",width:110,background:`linear-gradient(135deg,${dragStaff.color},${dragStaff.color}bb)`,borderRadius:6,padding:"4px 7px",boxShadow:"0 8px 24px rgba(0,0,0,.4)",transform:"scale(1.08) rotate(-2deg)",border:"2px solid white"}}>
+            <div style={{fontWeight:800,fontSize:11,color:"white",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{dragInfo.booking.patient_name}</div>
+            <div style={{fontSize:10,color:"rgba(255,255,255,.85)"}}>{dragInfo.booking.time}</div>
+          </div>
+        );
+      })()}
 
       {/* 予約ブロック アクションポップアップ */}
       {bookingPopup&&(()=>{
