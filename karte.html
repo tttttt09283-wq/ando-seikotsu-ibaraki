@@ -37,6 +37,7 @@ th{background:#f8fafc;font-weight:700;color:#64748b;font-size:11px;}
 .chip.disabled{cursor:default;opacity:.6;}
 .small{font-size:11px;color:#94a3b8;}
 .auth-wait{text-align:center;padding:60px 20px;color:#9ca3af;}
+.page-break{height:0;}
 @media print{
   body{background:white;}
   .topbar,.no-print{display:none!important;}
@@ -44,6 +45,7 @@ th{background:#f8fafc;font-weight:700;color:#64748b;font-size:11px;}
   .card{box-shadow:none;border:1px solid #999;break-inside:avoid;margin-bottom:8px;}
   .card-h{background:white;border-bottom:1px solid #999;}
   input,select,textarea{border:none;padding:2px 4px;}
+  .page-break{page-break-before:always;break-before:page;}
 }
 </style>
 </head>
@@ -117,13 +119,20 @@ function emptyKarte(){
     id:null,
     patient_name: patientName,
     phone: booking ? booking.phone : "",
+    futan_bango:"", jukyusha_bango:"",
     hoken_shubetsu:"", hoken_honke:"", iryou_shubetsu:"", ichibu_futan:"",
     kigo:"", bango:"", shikaku_shutoku_date:"", yuko_kigen:"",
     hihokensha_name:"", hihokensha_kana:"", hihokensha_gender:"", hihokensha_birthdate:"", hihokensha_address:"",
+    jigyosho_address:"", jigyosho_name:"",
     jushinsha_name:"", jushinsha_kana:"", jushinsha_birthdate:"", jushinsha_zokugara:"",
-    hokensha_name:"", hokensha_bango:"",
+    hokensha_name:"", hokensha_bango:"", hokensha_address:"",
     shobyomei: [0,1,2,3,4].map(()=>({name:"",date:"",start:"",end:"",tenki:"",jitsunissuu:""})),
+    visit_records: [],
     genin:"", symptom:"", shochi:"", keika:"",
+    soudan_shien: {seikatsu:false,seikatsu_note:"",kanbu:false,kanbu_note:"",juryoi:false,juryoi_note:"",other:false,other_note:""},
+    roumu_byomei:"", roumu_from:"", roumu_to:"", roumu_jisshitsu:"",
+    ryoshusho_date:"", ryoshusho_amount:"",
+    biko:"",
   };
 }
 
@@ -136,6 +145,33 @@ function toggleEdit(){
 
 function setField(key,val){ karte[key]=val; }
 function setShobyo(i,key,val){ karte.shobyomei[i][key]=val; }
+function setSoudan(key,val){ karte.soudan_shien[key]=val; }
+function setVisitRecord(i,key,val){ karte.visit_records[i][key]=val; }
+function addVisitRecordRow(){
+  karte.visit_records.push({date:"",shokai:"",seifuku:"",kouryo:"",denryo:"",goukei:"",futan:""});
+  render();
+}
+function removeVisitRecordRow(i){
+  karte.visit_records.splice(i,1);
+  render();
+}
+function autoFillVisitRecords(){
+  const existingDates = new Set(karte.visit_records.map(v=>v.date));
+  visitHistory.forEach((v,idx)=>{
+    if(existingDates.has(v.date)) return;
+    karte.visit_records.push({
+      date: v.date,
+      shokai: idx===0 ? "初" : "再",
+      seifuku: "",
+      kouryo: "",
+      denryo: "",
+      goukei: v.total!=null ? String(v.total) : "",
+      futan: v.insurance!=null ? String(v.insurance) : "",
+    });
+  });
+  karte.visit_records.sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+  render();
+}
 
 async function saveKarte(){
   if(saving) return;
@@ -223,25 +259,59 @@ function renderShobyoTable(){
   `;
 }
 
-function renderVisitHistoryTable(){
-  if(visitHistory.length===0){
-    return `<div class="small" style="padding:12px;text-align:center;">来院履歴（施術記録）がまだありません</div>`;
-  }
-  const rows = visitHistory.map(v=>`
-    <tr>
-      <td>${v.date}</td>
-      <td>${v.bodyParts||"—"}</td>
-      <td>${v.treatmentTypes||"—"}</td>
-      <td>${v.staffName||"—"}</td>
-      <td style="text-align:right;">${v.total!=null?"¥"+v.total.toLocaleString():"—"}</td>
-      <td style="text-align:right;">${v.insurance!=null?"¥"+v.insurance.toLocaleString():"—"}</td>
-    </tr>
-  `).join("");
+function renderVisitRecordsTable(){
+  const rows = karte.visit_records.map((v,i)=>{
+    if(!editing){
+      return `
+        <tr>
+          <td>${v.date||""}</td>
+          <td style="text-align:center;">${v.shokai||""}</td>
+          <td style="text-align:center;">${v.seifuku||""}</td>
+          <td style="text-align:center;">${v.kouryo||""}</td>
+          <td style="text-align:center;">${v.denryo||""}</td>
+          <td style="text-align:right;">${v.goukei?"¥"+Number(v.goukei).toLocaleString():""}</td>
+          <td style="text-align:right;">${v.futan?"¥"+Number(v.futan).toLocaleString():""}</td>
+        </tr>
+      `;
+    }
+    return `
+      <tr>
+        <td><input type="date" value="${v.date||''}" oninput="setVisitRecord(${i},'date',this.value)"/></td>
+        <td><input value="${v.shokai||''}" placeholder="初/再" oninput="setVisitRecord(${i},'shokai',this.value)" style="width:44px;"/></td>
+        <td><input value="${v.seifuku||''}" placeholder="✓" oninput="setVisitRecord(${i},'seifuku',this.value)" style="width:44px;"/></td>
+        <td><input value="${v.kouryo||''}" placeholder="冷/温" oninput="setVisitRecord(${i},'kouryo',this.value)" style="width:50px;"/></td>
+        <td><input value="${v.denryo||''}" placeholder="✓" oninput="setVisitRecord(${i},'denryo',this.value)" style="width:44px;"/></td>
+        <td><input type="number" value="${v.goukei||''}" oninput="setVisitRecord(${i},'goukei',this.value)"/></td>
+        <td><input type="number" value="${v.futan||''}" oninput="setVisitRecord(${i},'futan',this.value)"/></td>
+        <td class="no-print"><button class="btn btn-outline" style="padding:3px 8px;font-size:11px;" onclick="removeVisitRecordRow(${i});render();">✕</button></td>
+      </tr>
+    `;
+  }).join("");
   return `
     <table>
-      <thead><tr><th>月日</th><th>部位</th><th>施術内容</th><th>担当</th><th>合計金額</th><th>保険負担額</th></tr></thead>
-      <tbody>${rows}</tbody>
+      <thead><tr><th>月日</th><th>初検<br/>再検</th><th>整復<br/>固定施療</th><th>後療<br/>(冷罨法/温罨法)</th><th>電療</th><th>合計金額</th><th>負担金額</th><th class="no-print"></th></tr></thead>
+      <tbody>${rows||'<tr><td colspan="8" class="small" style="text-align:center;padding:12px;">記録がありません</td></tr>'}</tbody>
     </table>
+    ${editing?`
+      <div class="no-print" style="margin-top:10px;display:flex;gap:8px;">
+        <button class="btn btn-outline" style="color:#1e3a5f;border-color:#e2e8f0;" onclick="autoFillVisitRecords();">📥 施術記録・会計から自動取得</button>
+        <button class="btn btn-outline" style="color:#1e3a5f;border-color:#e2e8f0;" onclick="addVisitRecordRow();">＋ 行を追加</button>
+      </div>
+    `:""}
+  `;
+}
+
+function renderSoudanCheckbox(labelText,key,noteKey){
+  const checked = !!karte.soudan_shien[key];
+  const note = karte.soudan_shien[noteKey]||"";
+  return `
+    <div style="margin-bottom:10px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#1e293b;font-weight:600;">
+        <input type="checkbox" style="width:auto;" ${checked?'checked':''} ${editing?`onchange="setSoudan('${key}',this.checked);render();"`:'disabled'}/>
+        ${labelText}
+      </label>
+      ${editing?`<input value="${note}" placeholder="補足（任意）" oninput="setSoudan('${noteKey}',this.value)" style="margin-top:4px;"/>`:(note?`<div class="small" style="margin-top:2px;padding-left:24px;">${note}</div>`:"")}
+    </div>
   `;
 }
 
@@ -258,6 +328,14 @@ function render(){
   if(!karte){ return; }
 
   root.innerHTML = `
+    <div class="card">
+      <div class="card-h">負担者番号・受給者番号</div>
+      <div class="card-b grid grid-2">
+        ${fieldRow("負担者番号","futan_bango")}
+        ${fieldRow("受給者番号","jukyusha_bango")}
+      </div>
+    </div>
+
     <div class="card">
       <div class="card-h">保険種別・医療種別</div>
       <div class="card-b grid grid-2">
@@ -290,6 +368,14 @@ function render(){
     </div>
 
     <div class="card">
+      <div class="card-h">事業所</div>
+      <div class="card-b grid grid-2">
+        ${fieldRow("所在地","jigyosho_address")}
+        ${fieldRow("名称","jigyosho_name")}
+      </div>
+    </div>
+
+    <div class="card">
       <div class="card-h">受診者（被保険者とご本人が異なる場合）</div>
       <div class="card-b grid grid-2">
         ${fieldRow("氏名","jushinsha_name")}
@@ -302,8 +388,9 @@ function render(){
     <div class="card">
       <div class="card-h">保険者</div>
       <div class="card-b grid grid-2">
-        ${fieldRow("保険者名称","hokensha_name")}
-        ${fieldRow("保険者番号","hokensha_bango")}
+        ${fieldRow("所在地","hokensha_address")}
+        ${fieldRow("名称","hokensha_name")}
+        <div style="grid-column:1/3;">${fieldRow("保険者番号","hokensha_bango")}</div>
       </div>
     </div>
 
@@ -313,8 +400,8 @@ function render(){
     </div>
 
     <div class="card">
-      <div class="card-h">処置・その他施術の事実（施術記録・会計より自動集計）</div>
-      <div class="card-b">${renderVisitHistoryTable()}</div>
+      <div class="card-h">処置・その他施術の事実</div>
+      <div class="card-b">${renderVisitRecordsTable()}</div>
     </div>
 
     <div class="card">
@@ -324,6 +411,42 @@ function render(){
         ${textareaField("症状","symptom")}
         ${textareaField("処置","shochi")}
         ${textareaField("経過","keika")}
+      </div>
+    </div>
+
+    <div class="page-break"></div>
+
+    <div class="card">
+      <div class="card-h">初検時相談支援・日常生活等留意事項</div>
+      <div class="card-b">
+        ${renderSoudanCheckbox("日常生活動作上の事項","seikatsu","seikatsu_note")}
+        ${renderSoudanCheckbox("患部の状態・施術方法等詳細説明","kanbu","kanbu_note")}
+        ${renderSoudanCheckbox("受領委任の説明","juryoi","juryoi_note")}
+        ${renderSoudanCheckbox("その他必要と認める相談支援","other","other_note")}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">備考（同意医師の住所氏名その他等）</div>
+      <div class="card-b">${textareaField("備考","biko")}</div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">労務不能に関する意見</div>
+      <div class="card-b grid grid-2">
+        ${fieldRow("傷病名","roumu_byomei")}
+        <div></div>
+        ${fieldRow("意見書に記入した労務不能期間（自）","roumu_from","date")}
+        ${fieldRow("（至）","roumu_to","date")}
+        ${fieldRow("実日数","roumu_jisshitsu","number")}
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-h">領収書・文書料</div>
+      <div class="card-b grid grid-2">
+        ${fieldRow("発行日","ryoshusho_date","date")}
+        ${fieldRow("金額","ryoshusho_amount","number")}
       </div>
     </div>
   `;
@@ -397,11 +520,14 @@ async function init(){
 
     const existing = await sbGet("patient_karte", `?patient_name=eq.${encodeURIComponent(patientName)}`);
     if(Array.isArray(existing) && existing.length>0){
-      karte = existing[0];
+      const base = emptyKarte();
+      karte = {...base, ...existing[0]};
       if(!Array.isArray(karte.shobyomei) || karte.shobyomei.length===0){
-        karte.shobyomei = emptyKarte().shobyomei;
+        karte.shobyomei = base.shobyomei;
       }
       while(karte.shobyomei.length<5) karte.shobyomei.push({name:"",date:"",start:"",end:"",tenki:"",jitsunissuu:""});
+      if(!Array.isArray(karte.visit_records)) karte.visit_records = [];
+      if(!karte.soudan_shien || typeof karte.soudan_shien!=="object") karte.soudan_shien = base.soudan_shien;
     }else{
       karte = emptyKarte();
     }
