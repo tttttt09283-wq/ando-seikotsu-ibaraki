@@ -213,6 +213,20 @@ const DURATION = Object.fromEntries(MENU_CATEGORIES.flatMap(c=>allCatItems(c).ma
 const MENU_PRICE = Object.fromEntries(MENU_CATEGORIES.flatMap(c=>allCatItems(c).map(i=>[i.name,i.price])));
 const DURATION_OPTIONS = Array.from({length:12},(_,i)=>(i+1)*10); // 10〜120分
 
+// ===== 回数券・フリーパス設定（メニュー名 → 券種の内容） =====
+const PASS_MENU_CONFIG = {
+  "回数券 10回":{pass_type:"回数券10回",total_count:10,months:null},
+  "回数券 24回":{pass_type:"回数券24回",total_count:24,months:null},
+  "フリーパス 1ヶ月":{pass_type:"FP（フリーパス）1ヶ月",total_count:null,months:1},
+  "フリーパス 3ヶ月":{pass_type:"FP（フリーパス）3ヶ月",total_count:null,months:3},
+  "フリーパス 3ヶ月（特別）":{pass_type:"FP（フリーパス）3ヶ月（特別）",total_count:null,months:3},
+};
+function addMonths(dateStr,months){
+  const d=new Date(dateStr+"T00:00:00");
+  d.setMonth(d.getMonth()+months);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+
 const SLOTS = (()=>{const s=[];for(let h=9;h<=19;h++){for(let m=0;m<60;m+=10){if(h===19&&m>0) break;s.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);}}return s;})();
 
 // Supabase公式クライアント（Authセッション管理付き）
@@ -1131,6 +1145,11 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
               ))}
             </div>
             {totalPrice>0&&<div style={{textAlign:"right",fontWeight:800,fontSize:15,color:"#d97706"}}>{"合計 "+totalPrice.toLocaleString()+"円"}</div>}
+            {selectedMenus.some(m=>PASS_MENU_CONFIG[m])&&(
+              <div style={{marginTop:8,padding:"8px 10px",background:"#fef9ec",border:"1px solid #fde68a",borderRadius:8,fontSize:11,color:"#92400e",fontWeight:700}}>
+                🎫 回数券・フリーパスが含まれています。確定するとマイページの残数・期限に反映されます。
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -3494,6 +3513,177 @@ function PersonalWeekView({staff,filtered,payments,visitCounts,setBookingPopup,s
   );
 }
 
+// ===== 離反防止アラートパネル =====
+// 最終来院から指定日数以上経過し、LINE連携済みで、かつ次回予約が入っていない患者を検出し、
+// 除外（送信不要）した人を除いて一斉LINE送信できるパネル。
+function ChurnAlertPanel({bookings,todayStr}){
+  const CHURN_DAYS=14; // 何日空いたら対象にするか
+  const [exclusions,setExclusions]=React.useState([]); // line_user_idの配列
+  const [loadingExclusions,setLoadingExclusions]=React.useState(true);
+  const [message,setMessage]=React.useState("ご無沙汰しております、あんど整骨院です😊\nお身体の調子はいかがですか？お時間ございましたらお気軽にご来院ください。\nご予約はこちらから：https://ando-seikotsu-ibaraki.vercel.app/booking.html");
+  const [sending,setSending]=React.useState(false);
+  const [toast,setToast]=React.useState("");
+  const [sendResult,setSendResult]=React.useState(null); // {success, failed}
+
+  function showToast(msg){setToast(msg);setTimeout(()=>setToast(""),3000);}
+
+  // 除外リストを読み込み（Supabaseの churn_alert_exclusions テーブル。無ければ空扱い）
+  React.useEffect(()=>{
+    sb.select("churn_alert_exclusions","?select=line_user_id").then(data=>{
+      setExclusions(Array.isArray(data)?data.map(r=>r.line_user_id):[]);
+    }).catch(()=>{setExclusions([]);}).finally(()=>setLoadingExclusions(false));
+  },[]);
+
+  // 患者ごとに最終来院日・次回予約有無を集計
+  const candidates=React.useMemo(()=>{
+    const byUid={};
+    bookings.forEach(b=>{
+      if(!b.line_user_id) return;
+      if(!byUid[b.line_user_id]){
+        byUid[b.line_user_id]={line_user_id:b.line_user_id,patient_name:b.patient_name,phone:b.phone,lastDate:null,hasFuture:false};
+      }
+      const rec=byUid[b.line_user_id];
+      if(!b.cancelled){
+        if(b.date<=todayStr){
+          if(!rec.lastDate||b.date>rec.lastDate) rec.lastDate=b.date;
+        }else{
+          rec.hasFuture=true;
+        }
+      }
+    });
+    const cutoff=new Date(todayStr+"T00:00:00");
+    cutoff.setDate(cutoff.getDate()-CHURN_DAYS);
+    const cutoffStr=fmtDate(cutoff);
+    return Object.values(byUid).filter(r=>r.lastDate&&r.lastDate<=cutoffStr&&!r.hasFuture)
+      .sort((a,b)=>a.lastDate.localeCompare(b.lastDate));
+  },[bookings,todayStr]);
+
+  const daysAgo=(dateStr)=>{
+    const d1=new Date(dateStr+"T00:00:00"),d2=new Date(todayStr+"T00:00:00");
+    return Math.round((d2-d1)/86400000);
+  };
+
+  const targetList=candidates.filter(c=>!exclusions.includes(c.line_user_id));
+  const excludedList=candidates.filter(c=>exclusions.includes(c.line_user_id));
+
+  async function toggleExclude(lineUserId,exclude){
+    try{
+      if(exclude){
+        await sb.insert("churn_alert_exclusions",{line_user_id:lineUserId,excluded_at:new Date().toISOString()});
+        setExclusions(prev=>[...prev,lineUserId]);
+      }else{
+        await sb.query("churn_alert_exclusions","DELETE",null,`?line_user_id=eq.${encodeURIComponent(lineUserId)}`);
+        setExclusions(prev=>prev.filter(id=>id!==lineUserId));
+      }
+    }catch(e){
+      showToast("除外設定の保存にはchurn_alert_exclusionsテーブルが必要です");
+    }
+  }
+
+  async function sendBulk(){
+    if(targetList.length===0){showToast("送信対象がいません");return;}
+    if(!message.trim()){showToast("メッセージを入力してください");return;}
+    if(!confirm(`${targetList.length}名にLINEメッセージを一斉送信します。よろしいですか？`)) return;
+    setSending(true);setSendResult(null);
+    try{
+      const res=await fetch("/api/send-line-push",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({userIds:targetList.map(t=>t.line_user_id),message}),
+      });
+      const data=await res.json().catch(()=>null);
+      if(!res.ok) throw new Error((data&&data.error)||`送信に失敗しました（HTTP ${res.status}）`);
+      setSendResult({success:data.success||targetList.length,failed:data.failed||0});
+      showToast("送信しました");
+    }catch(e){
+      showToast("送信エラー："+e.message);
+    }
+    setSending(false);
+  }
+
+  return(
+    <div style={{maxWidth:700,margin:"0 auto"}}>
+      {toast&&<div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#dc2626",fontWeight:700,fontSize:13}}>{toast}</div>}
+
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{padding:"14px 16px",borderBottom:"1px solid #f1f5f9",background:"linear-gradient(135deg,#7c3aed,#6d28d9)"}}>
+          <div style={{color:"white",fontWeight:800,fontSize:15}}>🔔 離反防止アラート</div>
+          <div style={{color:"rgba(255,255,255,.75)",fontSize:12,marginTop:2}}>最終来院から{CHURN_DAYS}日以上空き、次回予約が未定のLINE連携患者を検出します</div>
+        </div>
+        <div style={{padding:"16px",display:"flex",gap:16,flexWrap:"wrap"}}>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:28,fontWeight:800,color:"#7c3aed"}}>{candidates.length}</div>
+            <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>対象患者</div>
+          </div>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:28,fontWeight:800,color:"#059669"}}>{targetList.length}</div>
+            <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>送信対象</div>
+          </div>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:28,fontWeight:800,color:"#9ca3af"}}>{excludedList.length}</div>
+            <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>送信不要に設定済み</div>
+          </div>
+        </div>
+      </div>
+
+      {/* メッセージ編集＋一斉送信 */}
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>送信メッセージ</div>
+        <div style={{padding:16}}>
+          <textarea value={message} onChange={e=>setMessage(e.target.value)} rows={5} className="form-input" style={{resize:"vertical",marginBottom:12}}/>
+          <button onClick={sendBulk} disabled={sending||targetList.length===0} className="btn"
+            style={{width:"100%",justifyContent:"center",padding:12,fontSize:14,borderRadius:9,background:"linear-gradient(135deg,#7c3aed,#6d28d9)",color:"white",fontWeight:800,opacity:(sending||targetList.length===0)?0.6:1}}>
+            {sending?"送信中...":`📤 送信対象 ${targetList.length}名へ一斉送信する`}
+          </button>
+          {sendResult&&(
+            <div style={{marginTop:10,fontSize:12,color:"#059669",fontWeight:700}}>
+              ✅ 成功：{sendResult.success}件{sendResult.failed>0&&<span style={{color:"#dc2626",marginLeft:8}}>❌ 失敗：{sendResult.failed}件</span>}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 送信対象リスト */}
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>送信対象一覧（{targetList.length}名）</div>
+        <div style={{padding:"8px 16px"}}>
+          {loadingExclusions?(
+            <div style={{textAlign:"center",padding:20,color:"#94a3b8"}}>読み込み中...</div>
+          ):targetList.length===0?(
+            <div style={{textAlign:"center",padding:24,color:"#94a3b8",fontSize:13}}>該当する患者はいません</div>
+          ):targetList.map(c=>(
+            <div key={c.line_user_id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid #f1f5f9",gap:10}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{c.patient_name}</div>
+                <div style={{fontSize:11,color:"#94a3b8"}}>最終来院：{c.lastDate}（{daysAgo(c.lastDate)}日前）{c.phone?`　${c.phone}`:""}</div>
+              </div>
+              <button onClick={()=>toggleExclude(c.line_user_id,true)} className="btn btn-outline btn-xs" style={{whiteSpace:"nowrap"}}>送信不要にする</button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 除外済み一覧 */}
+      {excludedList.length>0&&(
+        <div className="card">
+          <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#94a3b8"}}>送信不要に設定済み（{excludedList.length}名）</div>
+          <div style={{padding:"8px 16px"}}>
+            {excludedList.map(c=>(
+              <div key={c.line_user_id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid #f1f5f9",gap:10,opacity:0.7}}>
+                <div>
+                  <div style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{c.patient_name}</div>
+                  <div style={{fontSize:11,color:"#94a3b8"}}>最終来院：{c.lastDate}（{daysAgo(c.lastDate)}日前）</div>
+                </div>
+                <button onClick={()=>toggleExclude(c.line_user_id,false)} className="btn btn-outline btn-xs" style={{whiteSpace:"nowrap"}}>対象に戻す</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Dashboard({user,onLogout}){
   const [bookings,setBookings]=React.useState([]);
   const [breaks,setBreaks]=React.useState([]);
@@ -3646,6 +3836,32 @@ function Dashboard({user,onLogout}){
     if(!isAdmin&&b.staff_id!==user.id)return;
     setForm({...b});setEditId(b.id);setConflict(false);setView("form");
   }
+
+  // ===== 回数券・フリーパスをpassesテーブルへ反映 =====
+  async function syncPassesFromMenus(formData){
+    if(!formData.phone) return; // マイページ側は電話番号でpassesを照会するため必須
+    const passMenus=(formData.menus||[]).filter(m=>PASS_MENU_CONFIG[m]);
+    if(passMenus.length===0) return;
+    const baseDateStr=formData.date||fmtDate(new Date());
+    for(const menuName of passMenus){
+      const cfg=PASS_MENU_CONFIG[menuName];
+      const payload={
+        phone:formData.phone,
+        pass_type:cfg.pass_type,
+        total_count:cfg.total_count,
+        remaining_count:cfg.total_count,
+        expiry_date:cfg.months?addMonths(baseDateStr,cfg.months):null,
+        purchased_at:baseDateStr,
+        active:true,
+      };
+      try{
+        await sb.insert("passes",payload);
+      }catch(e){
+        console.error("パス登録に失敗しました：",menuName,e);
+      }
+    }
+  }
+
   async function save(){
     if(!form.patient_name.trim())return;
     if(bookings.some(b=>b.id!==editId&&b.staff_id===form.staff_id&&b.date===form.date&&!b.cancelled&&overlaps(b,form))){setConflict(true);return;}
@@ -3663,6 +3879,8 @@ function Dashboard({user,onLogout}){
         }
         setBookings(prev=>[...prev,result[0]]);
       }
+      // 回数券・フリーパスが選択されていればpassesテーブルへ反映（マイページの残数・期限表示用）
+      await syncPassesFromMenus(form);
       showToast(editId!==null?"予約を更新しました":"予約を登録しました");setView("calendar");
     }catch(e){
       alert("保存に失敗しました："+(e.message||"不明なエラー"));
@@ -3785,6 +4003,7 @@ function Dashboard({user,onLogout}){
     // 分析
     {section:"分析"},
     {id:"stats",label:"予約分析・サマリー",special:""},
+    {id:"churn_alert",label:"🔔 離反防止アラート",special:""},
     // スタッフ・シフト
     {section:"スタッフ"},
     {id:"staff_mgmt",label:"スタッフ・シフト管理",special:""},
@@ -4151,6 +4370,9 @@ function Dashboard({user,onLogout}){
           {/* サマリー */}
           {view==="stats"&&<StatsPanel bookings={bookings} payments={payments} todayStr={todayStr} stores={stores}/>}
 
+          {/* 離反防止アラート */}
+          {view==="churn_alert"&&<ChurnAlertPanel bookings={bookings} todayStr={todayStr}/>}
+
           {/* 店舗管理 */}
           {view==="store_mgmt"&&<StoreMgmtPanel/>}
 
@@ -4201,8 +4423,10 @@ function Dashboard({user,onLogout}){
           const h=Math.floor(totalMin/60),m=totalMin%60;
           return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
         }).filter(Boolean);
-        const posLeft=Math.min(timePickerPopup.x-70,window.innerWidth-160);
-        const posTop=Math.min(timePickerPopup.y-90,window.innerHeight-220);
+        const tvw=(window.visualViewport&&window.visualViewport.width)||window.innerWidth;
+        const tvh=(window.visualViewport&&window.visualViewport.height)||window.innerHeight;
+        const posLeft=Math.min(timePickerPopup.x-70,tvw-160);
+        const posTop=Math.min(timePickerPopup.y-90,tvh-220);
         return(
           <>
             <div onClick={()=>setTimePickerPopup(null)} style={{position:"fixed",inset:0,zIndex:300}}/>
@@ -4237,16 +4461,23 @@ function Dashboard({user,onLogout}){
         const b=bookingPopup.booking;
         const s=STAFF_ACCOUNTS.find(x=>x.id===b.staff_id)||{color:"#888",name:"不明"};
         const cnt=visitCounts[b.id]||1;
-        const posLeft=Math.min(bookingPopup.x, window.innerWidth-200);
-        const posTop=Math.min(bookingPopup.y, window.innerHeight-220);
+        const margin=8;
+        // スマホブラウザはアドレスバー等の分だけ window.innerHeight と「実際に見えている高さ」がずれることがあるため、
+        // visualViewport（実表示領域）が使える場合はそちらを優先して使う
+        const vw=(window.visualViewport&&window.visualViewport.width)||window.innerWidth;
+        const vh=(window.visualViewport&&window.visualViewport.height)||window.innerHeight;
+        const estPopupHeight=cnt===1?400:340; // 初診バッジ＋問診票ボタンがある分だけ高くなる
+        const posLeft=Math.max(margin,Math.min(bookingPopup.x, vw-208));
+        const posTop=Math.max(margin,Math.min(bookingPopup.y, vh-Math.min(estPopupHeight,vh-margin*2)));
+        const popupMaxHeight=vh-posTop-margin; // 実際に見えているスペースに合わせて上限を決める（これがないと下にはみ出す）
         return(
           <>
             {/* オーバーレイ（クリックで閉じる） */}
             <div onClick={()=>setBookingPopup(null)} style={{position:"fixed",inset:0,zIndex:300}}/>
             {/* ポップアップ */}
-            <div style={{position:"fixed",left:posLeft,top:posTop,zIndex:400,background:"white",borderRadius:14,boxShadow:"0 8px 32px rgba(0,0,0,.2)",width:190,overflow:"hidden",border:"1px solid #e2e8f0"}}>
+            <div style={{position:"fixed",left:posLeft,top:posTop,zIndex:400,background:"white",borderRadius:14,boxShadow:"0 8px 32px rgba(0,0,0,.2)",width:190,maxHeight:popupMaxHeight,overflowY:"auto",WebkitOverflowScrolling:"touch",border:"1px solid #e2e8f0"}}>
               {/* ヘッダー */}
-              <div style={{background:`linear-gradient(135deg,${s.color},${s.color}cc)`,padding:"10px 14px"}}>
+              <div style={{background:`linear-gradient(135deg,${s.color},${s.color}cc)`,padding:"10px 14px",borderRadius:"14px 14px 0 0"}}>
                 <div style={{fontWeight:800,fontSize:14,color:"white"}}>{b.patient_name}</div>
                 <div style={{fontSize:11,color:"rgba(255,255,255,.8)",marginTop:2}}>{b.date}　{b.time}　{s.name}</div>
                 {cnt>1&&<div style={{fontSize:10,color:"rgba(255,255,255,.7)",marginTop:1}}>{cnt}回目</div>}
