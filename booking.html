@@ -787,11 +787,20 @@ function App(){
               style:{background:"none",border:"none",color:"#94a3b8",fontSize:12,cursor:"pointer",textDecoration:"underline"}
             },"初回の方・情報を変更する場合はこちら")
           )
-        ):React.createElement("button",{
-          onClick:function(){setStep(isRepeat?0:1);if(!isRepeat)setStep(1);},
-          disabled:!selDate||!selTime,
-          style:Object.assign({},H.btn,{opacity:(!selDate||!selTime)?0.4:1})
-        },"次へ →"),
+        ):React.createElement("div",null,
+          selDate&&selTime?React.createElement("div",{style:{background:"#eff6ff",border:"1.5px solid #93c5fd",borderRadius:12,padding:"14px 16px",marginBottom:14,display:"flex",alignItems:"center",gap:10}},
+            React.createElement("span",{style:{fontSize:22}},"✅"),
+            React.createElement("div",null,
+              React.createElement("div",{style:{fontSize:11,fontWeight:700,color:"#1e40af"}},"選択した日時"),
+              React.createElement("div",{style:{fontSize:16,fontWeight:800,color:"#1e3a5f"}},fmtDateJP(selDate)+"　"+selTime)
+            )
+          ):null,
+          React.createElement("button",{
+            onClick:function(){setStep(isRepeat?0:1);if(!isRepeat)setStep(1);},
+            disabled:!selDate||!selTime,
+            style:Object.assign({},H.btn,{opacity:(!selDate||!selTime)?0.4:1})
+          },"次へ →")
+        ),
 
         // テスト用ワンタップボタン
         React.createElement("button",{
