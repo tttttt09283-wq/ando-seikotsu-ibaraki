@@ -662,7 +662,7 @@ function App(){
     React.createElement("div",{style:{maxWidth:480,margin:"0 auto",padding:"20px 16px"}},
 
       // ===== STEP 0: 日時選択 =====
-      step===0?React.createElement("div",null,
+      step===0?React.createElement("div",{style:{paddingBottom:96}},
         // リピーター向けバナー
         isRepeat?React.createElement("div",{style:{background:"linear-gradient(135deg,#f0fdf4,#dcfce7)",border:"1.5px solid #86efac",borderRadius:12,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}},
           React.createElement("span",{style:{fontSize:24}},"👋"),
@@ -776,30 +776,20 @@ function App(){
               "📞 "+pastBooking.phone,
             ].join("\n"))
           ),
-          React.createElement("button",{
-            onClick:submitRepeat,
-            disabled:submitting,
-            style:Object.assign({},H.btn,{fontSize:16,padding:"16px",opacity:submitting?0.7:1,background:"linear-gradient(180deg,#059669,#047857)",boxShadow:"0 4px 0 #065f46,0 6px 16px rgba(5,150,105,.35)"})
-          },submitting?"送信中...":"⚡ かんたん予約する"),
-          React.createElement("div",{style:{textAlign:"center",marginTop:12}},
+          React.createElement("div",{style:{textAlign:"center"}},
             React.createElement("button",{
               onClick:function(){setIsRepeat(false);setStep(1);},
               style:{background:"none",border:"none",color:"#94a3b8",fontSize:12,cursor:"pointer",textDecoration:"underline"}
             },"初回の方・情報を変更する場合はこちら")
           )
-        ):React.createElement("div",null,
+        ):(
           selDate&&selTime?React.createElement("div",{style:{background:"#eff6ff",border:"1.5px solid #93c5fd",borderRadius:12,padding:"14px 16px",marginBottom:14,display:"flex",alignItems:"center",gap:10}},
             React.createElement("span",{style:{fontSize:22}},"✅"),
             React.createElement("div",null,
               React.createElement("div",{style:{fontSize:11,fontWeight:700,color:"#1e40af"}},"選択した日時"),
               React.createElement("div",{style:{fontSize:16,fontWeight:800,color:"#1e3a5f"}},fmtDateJP(selDate)+"　"+selTime)
             )
-          ):null,
-          React.createElement("button",{
-            onClick:function(){setStep(isRepeat?0:1);if(!isRepeat)setStep(1);},
-            disabled:!selDate||!selTime,
-            style:Object.assign({},H.btn,{opacity:(!selDate||!selTime)?0.4:1})
-          },"次へ →")
+          ):null
         ),
 
         // テスト用ワンタップボタン
@@ -807,6 +797,21 @@ function App(){
           onClick:quickTest,
           style:{marginTop:12,width:"100%",padding:"10px",borderRadius:10,border:"2px dashed #d97706",background:"#fef9ec",color:"#92400e",fontSize:13,fontWeight:700,cursor:"pointer"}
         },"🧪 テスト用：ワンタップで確認画面へ")
+      ):null,
+
+      // ===== STEP 0 用：画面下部に固定される操作バー（スクロールしなくても常に押せる）=====
+      step===0?React.createElement("div",{style:{position:"fixed",left:0,right:0,bottom:0,background:"white",boxShadow:"0 -6px 20px rgba(0,0,0,.1)",padding:"12px 16px",zIndex:60}},
+        React.createElement("div",{style:{maxWidth:480,margin:"0 auto"}},
+          isRepeat&&selDate&&selTime?React.createElement("button",{
+            onClick:submitRepeat,
+            disabled:submitting,
+            style:Object.assign({},H.btn,{fontSize:16,padding:"16px",opacity:submitting?0.7:1,background:"linear-gradient(180deg,#059669,#047857)",boxShadow:"0 4px 0 #065f46,0 6px 16px rgba(5,150,105,.35)"})
+          },submitting?"送信中...":"⚡ かんたん予約する"):React.createElement("button",{
+            onClick:function(){setStep(isRepeat?0:1);if(!isRepeat)setStep(1);},
+            disabled:!selDate||!selTime,
+            style:Object.assign({},H.btn,{opacity:(!selDate||!selTime)?0.4:1})
+          },selDate&&selTime?"次へ →":"日時を選択してください")
+        )
       ):null,
 
       // ===== STEP 1: 基本情報 =====
