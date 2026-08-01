@@ -802,6 +802,10 @@ function App(){
       // ===== STEP 0 用：画面下部に固定される操作バー（スクロールしなくても常に押せる）=====
       step===0?React.createElement("div",{style:{position:"fixed",left:0,right:0,bottom:0,background:"white",boxShadow:"0 -6px 20px rgba(0,0,0,.1)",padding:"12px 16px",zIndex:60}},
         React.createElement("div",{style:{maxWidth:480,margin:"0 auto"}},
+          selDate&&selTime?React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:8,padding:"6px 10px",background:"#eff6ff",borderRadius:8}},
+            React.createElement("span",{style:{fontSize:14}},"📅"),
+            React.createElement("span",{style:{fontSize:13,fontWeight:800,color:"#1e3a5f"}},fmtDateJP(selDate)+"　"+selTime)
+          ):null,
           isRepeat&&selDate&&selTime?React.createElement("button",{
             onClick:submitRepeat,
             disabled:submitting,
