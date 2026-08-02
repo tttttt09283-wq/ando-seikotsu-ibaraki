@@ -282,6 +282,14 @@ function overlaps(a,b){
   return as<be&&bs<ae;
 }
 
+// 指定した患者の「次回予約」（今日以降の、キャンセルされていない、対象自身を除く予約のうち一番早いもの）を探す
+function findNextBookingFor(patientName,excludeId,bookingsList,todayStr){
+  const upcoming=bookingsList
+    .filter(b=>b.patient_name===patientName&&b.id!==excludeId&&!b.cancelled&&b.date>=todayStr)
+    .sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time));
+  return upcoming.length>0?upcoming[0]:null;
+}
+
 // ===== 患者履歴モーダル =====
 function PatientHistoryModal({patientName,bookings,onClose}){
   const [treatments,setTreatments]=React.useState([]);
@@ -615,23 +623,38 @@ function BreakModal({onClose,bookings,breaks,setBreaks}){
 }
 
 // ===== キャンセルモーダル =====
-function CancelModal({booking,onClose,onConfirm}){
+function CancelModal({booking,bookings,todayStr,storeStaffList,isAdmin,onClose,onConfirm}){
   const [reason,setReason]=React.useState("");
   const [customReason,setCustomReason]=React.useState("");
   const [saving,setSaving]=React.useState(false);
   const staff=STAFF_ACCOUNTS.find(s=>s.id===booking.staff_id)||{name:"不明",color:"#888"};
+  const nextBooking=React.useMemo(()=>findNextBookingFor(booking.patient_name,booking.id,bookings,todayStr),[booking,bookings,todayStr]);
+
+  const [wantRebook,setWantRebook]=React.useState(false);
+  const [rebookDate,setRebookDate]=React.useState("");
+  const [rebookTime,setRebookTime]=React.useState("");
+  const [rebookStaffId,setRebookStaffId]=React.useState(booking.staff_id);
+
+  const rebookConflict=React.useMemo(()=>{
+    if(!wantRebook||!rebookDate||!rebookTime) return false;
+    return bookings.some(b=>!b.cancelled&&b.id!==booking.id&&b.staff_id===rebookStaffId&&b.date===rebookDate&&overlaps(b,{time:rebookTime,duration:booking.duration||DURATION[booking.menu]||30}));
+  },[wantRebook,rebookDate,rebookTime,rebookStaffId,bookings,booking]);
 
   async function confirm(){
     const finalReason=reason==="その他"?(customReason.trim()||"その他"):reason;
     if(!finalReason){alert("キャンセル理由を選択してください");return;}
+    if(wantRebook){
+      if(!rebookDate||!rebookTime){alert("次回予約の日付・時間を選択してください");return;}
+      if(rebookConflict){alert("その日時はすでに予約が入っています。別の日時を選んでください");return;}
+    }
     setSaving(true);
-    await onConfirm(finalReason);
+    await onConfirm(finalReason, wantRebook?{date:rebookDate,time:rebookTime,staff_id:rebookStaffId}:null);
     setSaving(false);
   }
 
   return(
     <div className="modal-overlay">
-      <div className="modal-box" style={{maxWidth:420}}>
+      <div className="modal-box" style={{maxWidth:440,maxHeight:"90vh",overflowY:"auto"}}>
         <div className="modal-header" style={{background:"linear-gradient(135deg,#dc2626,#991b1b)"}}>
           <div>
             <div style={{fontWeight:800,fontSize:16,color:"white"}}>予約をキャンセル</div>
@@ -640,10 +663,17 @@ function CancelModal({booking,onClose,onConfirm}){
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div style={{padding:20}}>
-          <div style={{background:"#f8fafc",borderRadius:10,padding:"12px 14px",marginBottom:16,border:"1px solid #e2e8f0"}}>
+          <div style={{background:"#f8fafc",borderRadius:10,padding:"12px 14px",marginBottom:12,border:"1px solid #e2e8f0"}}>
             <div style={{fontWeight:800,fontSize:15,color:"#1e293b"}}>{booking.patient_name} 様</div>
             <div style={{fontSize:13,color:"#64748b",marginTop:2}}>{booking.date}　{booking.time}　{staff.name}</div>
             <div style={{fontSize:12,color:"#94a3b8",marginTop:2}}>{booking.menu}</div>
+          </div>
+          <div style={{borderRadius:10,padding:"10px 14px",marginBottom:16,border:`1.5px solid ${nextBooking?"#bbf7d0":"#fed7aa"}`,background:nextBooking?"#f0fdf4":"#fff7ed"}}>
+            {nextBooking?(
+              <div style={{fontSize:12,color:"#065f46",fontWeight:700}}>✅ 次回予約あり：{nextBooking.date}　{nextBooking.time}</div>
+            ):(
+              <div style={{fontSize:12,color:"#9a3412",fontWeight:700}}>⚠ 次回予約なし（フォローが必要かもしれません）</div>
+            )}
           </div>
           <div className="form-group">
             <label className="form-label">キャンセル理由 *</label>
@@ -659,10 +689,60 @@ function CancelModal({booking,onClose,onConfirm}){
               <input className="form-input" style={{marginTop:10}} placeholder="理由を入力してください" value={customReason} onChange={e=>setCustomReason(e.target.value)}/>
             )}
           </div>
+
+          {/* 次回予約をその場で作成 */}
+          <div style={{marginTop:16,marginBottom:6,padding:"12px 14px",background:wantRebook?"#eff6ff":"#f8fafc",borderRadius:10,border:`1.5px solid ${wantRebook?"#93c5fd":"#e2e8f0"}`}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}} onClick={()=>setWantRebook(v=>!v)}>
+              <div style={{width:40,height:22,borderRadius:11,background:wantRebook?"#2563eb":"#d1d5db",position:"relative",flexShrink:0,transition:"background .15s"}}>
+                <div style={{position:"absolute",top:2,left:wantRebook?20:2,width:18,height:18,borderRadius:"50%",background:"white",transition:"left .15s",boxShadow:"0 1px 3px rgba(0,0,0,.2)"}}/>
+              </div>
+              <div>
+                <div style={{fontSize:13,fontWeight:800,color:"#1e3a5f"}}>📅 この場で次回予約も作成する</div>
+                <div style={{fontSize:11,color:"#94a3b8"}}>キャンセルと同時に新しい予約を登録します</div>
+              </div>
+            </div>
+
+            {wantRebook&&(
+              <div style={{marginTop:14}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+                  <div>
+                    <label className="form-label">日付</label>
+                    <input type="date" className="form-input" value={rebookDate} onChange={e=>setRebookDate(e.target.value)}/>
+                  </div>
+                  <div>
+                    <label className="form-label">時間</label>
+                    <select className="form-input" value={rebookTime} onChange={e=>setRebookTime(e.target.value)}>
+                      <option value="">選択</option>
+                      {SLOTS.map(t=><option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                </div>
+                {isAdmin&&storeStaffList&&storeStaffList.length>0&&(
+                  <div style={{marginBottom:10}}>
+                    <label className="form-label">担当スタッフ</label>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      {storeStaffList.map(s=>(
+                        <button key={s.id} onClick={()=>setRebookStaffId(s.id)} className="btn"
+                          style={{padding:"5px 12px",borderRadius:20,border:`2px solid ${rebookStaffId===s.id?s.color:"#e2e8f0"}`,background:rebookStaffId===s.id?s.color:"white",color:rebookStaffId===s.id?"white":"#374151",fontSize:12,fontWeight:700}}>
+                          {s.name}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {rebookConflict&&(
+                  <div style={{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:8,padding:"8px 12px",fontSize:12,color:"#dc2626",fontWeight:700}}>
+                    ⚠ その日時はすでに予約が入っています
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <div style={{display:"flex",gap:10,marginTop:20}}>
             <button onClick={onClose} className="btn btn-outline" style={{flex:1,justifyContent:"center",padding:11}}>戻る</button>
-            <button onClick={confirm} disabled={saving||!reason} className="btn btn-danger" style={{flex:2,justifyContent:"center",padding:11,opacity:(saving||!reason)?0.6:1}}>
-              {saving?"処理中...":"キャンセルを確定する"}
+            <button onClick={confirm} disabled={saving||!reason||(wantRebook&&rebookConflict)} className="btn btn-danger" style={{flex:2,justifyContent:"center",padding:11,opacity:(saving||!reason||(wantRebook&&rebookConflict))?0.6:1}}>
+              {saving?"処理中...":wantRebook?"キャンセル＋次回予約を確定する":"キャンセルを確定する"}
             </button>
           </div>
         </div>
@@ -3536,7 +3616,7 @@ function PersonalWeekView({staff,filtered,payments,visitCounts,setBookingPopup,s
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
                   <span style={{fontSize:12,fontWeight:700,color:isToday?"rgba(255,255,255,.8)":dayBookings.length>0?"#059669":"#94a3b8"}}>{dayBookings.length}件</span>
                   <button onClick={()=>{
-                    setForm({date:dStr,time:"",staff_id:staff.id,patient_name:"",phone:"",menu:"無料施術体験会（60分）",insurance_rate:"3割",memo:"",line_notify:false,store_id:selStoreId});
+                    setForm({date:dStr,time:"",staff_id:staff.id,patient_name:"",phone:"",menu:"ワンコイン施術体験会（60分）",insurance_rate:"3割",memo:"",line_notify:false,store_id:selStoreId});
                     setEditId(null);setView("form");
                   }} style={{background:isToday?"rgba(255,255,255,.25)":"#eff6ff",border:"none",borderRadius:6,padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer",color:isToday?"white":"#2563eb",fontFamily:"inherit"}}>
                     + 予約追加
@@ -3578,7 +3658,7 @@ function PersonalWeekView({staff,filtered,payments,visitCounts,setBookingPopup,s
 // 最終来院から指定日数以上経過し、LINE連携済みで、かつ次回予約が入っていない患者を検出し、
 // 除外（送信不要）した人を除いて一斉LINE送信できるパネル。
 // ===== キャンセル一覧パネル =====
-function CancelledListPanel({bookings,onRestore}){
+function CancelledListPanel({bookings,todayStr,onRestore}){
   const cancelledList=React.useMemo(()=>{
     return bookings.filter(b=>b.cancelled).sort((a,b)=>(b.cancelled_at||b.date).localeCompare(a.cancelled_at||a.date));
   },[bookings]);
@@ -3612,12 +3692,16 @@ function CancelledListPanel({bookings,onRestore}){
             <div style={{textAlign:"center",padding:30,color:"#94a3b8",fontSize:13}}>キャンセルされた予約はありません</div>
           ):cancelledList.map(b=>{
             const staff=STAFF_ACCOUNTS.find(s=>s.id===b.staff_id)||{name:"不明",color:"#888"};
+            const nextBooking=findNextBookingFor(b.patient_name,b.id,bookings,todayStr);
             return(
               <div key={b.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid #f1f5f9",gap:10}}>
                 <div>
                   <div style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{b.patient_name}</div>
                   <div style={{fontSize:11,color:"#94a3b8"}}>{b.date} {b.time}　{staff.name}　{b.menu}</div>
                   <div style={{fontSize:11,color:"#dc2626",fontWeight:700,marginTop:2}}>理由：{b.cancel_reason||"未記録"}</div>
+                  <div style={{fontSize:11,fontWeight:700,marginTop:2,color:nextBooking?"#059669":"#d97706"}}>
+                    {nextBooking?`次回予約あり：${nextBooking.date} ${nextBooking.time}`:"次回予約なし"}
+                  </div>
                 </div>
                 <button onClick={()=>onRestore(b.id)} className="btn btn-outline btn-xs" style={{whiteSpace:"nowrap"}}>予約に戻す</button>
               </div>
@@ -3890,7 +3974,7 @@ function Dashboard({user,onLogout}){
       staff_id:user.id||1,
       date:dateStr,
       time:timeStr,
-      menu:"無料施術体験会（60分）",
+      menu:"ワンコイン施術体験会（60分）",
       store_id:selStoreId,
       line_notify:!!lineId,
       line_user_id:lineId||null,
@@ -4004,36 +4088,86 @@ function Dashboard({user,onLogout}){
     try{await sb.delete("bookings",id);}catch{}
     setBookings(prev=>prev.filter(b=>b.id!==id));setDelConfirm(null);setView("calendar");showToast("削除しました","delete");
   }
-  async function cancelBooking(reason){
+  async function cancelBooking(reason,rebookInfo){
     if(!cancelModalBooking) return;
     try{
-      const result=await sb.update("bookings",cancelModalBooking.id,{cancelled:true,cancel_reason:reason,cancelled_at:new Date().toISOString()});
-      if(Array.isArray(result)&&result.length>0){
-        setBookings(prev=>prev.map(b=>b.id===cancelModalBooking.id?result[0]:b));
-      }else{
-        setBookings(prev=>prev.map(b=>b.id===cancelModalBooking.id?{...b,cancelled:true,cancel_reason:reason}:b));
+      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      const res=await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${cancelModalBooking.id}`,{
+        method:"PATCH",
+        headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
+        body:JSON.stringify({cancelled:true,cancel_reason:reason,cancelled_at:new Date().toISOString()})
+      });
+      const bodyText=await res.text();
+      if(!res.ok){
+        throw new Error(`保存に失敗しました（HTTP ${res.status}）\n${bodyText}`);
       }
-      showToast("予約をキャンセルしました","delete");
+      let updated=null;
+      try{updated=JSON.parse(bodyText);}catch(e){}
+      if(!Array.isArray(updated)||updated.length===0){
+        throw new Error("対象の予約が見つからず、キャンセルが保存されませんでした。");
+      }
+      setBookings(prev=>prev.map(b=>b.id===cancelModalBooking.id?updated[0]:b));
+
+      // 「この場で次回予約も作成する」が選ばれていれば、続けて新しい予約を登録する
+      let rebookOk=false;
+      if(rebookInfo&&rebookInfo.date&&rebookInfo.time){
+        try{
+          const original=cancelModalBooking;
+          const newBookingData={
+            patient_name:original.patient_name,
+            phone:original.phone||"",
+            staff_id:rebookInfo.staff_id||original.staff_id,
+            date:rebookInfo.date,
+            time:rebookInfo.time,
+            menu:original.menu,
+            store_id:original.store_id,
+            line_notify:!!original.line_user_id,
+            line_user_id:original.line_user_id||null,
+            reminded:false,
+            karte_no:original.karte_no||null,
+          };
+          const rebookResult=await sb.insert("bookings",newBookingData);
+          if(Array.isArray(rebookResult)&&rebookResult.length>0){
+            setBookings(prev=>[...prev,rebookResult[0]]);
+            rebookOk=true;
+          }
+        }catch(e){
+          console.error(e);
+        }
+      }
+
+      showToast(rebookInfo?(rebookOk?"キャンセルし、次回予約を登録しました":"キャンセルしましたが、次回予約の登録に失敗しました"):"予約をキャンセルしました",rebookOk?"success":"delete");
       setCancelModalBooking(null);
       setBookingPopup(null);
       if(view==="form") setView("calendar");
     }catch(e){
-      alert("キャンセル処理に失敗しました："+(e.message||"不明なエラー"));
+      alert("キャンセル処理に失敗しました：\n"+(e.message||"不明なエラー")+"\n\nSupabaseのbookingsテーブルにcancel_reason・cancelled_at列が追加されているかご確認ください。");
     }
   }
   async function restoreBooking(id){
     try{
-      const result=await sb.update("bookings",id,{cancelled:false,cancel_reason:null,cancelled_at:null});
-      if(Array.isArray(result)&&result.length>0){
-        setBookings(prev=>prev.map(b=>b.id===id?result[0]:b));
-      }else{
-        setBookings(prev=>prev.map(b=>b.id===id?{...b,cancelled:false,cancel_reason:null}:b));
+      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      const res=await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${id}`,{
+        method:"PATCH",
+        headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
+        body:JSON.stringify({cancelled:false,cancel_reason:null,cancelled_at:null})
+      });
+      const bodyText=await res.text();
+      if(!res.ok){
+        throw new Error(`復元に失敗しました（HTTP ${res.status}）\n${bodyText}`);
       }
+      let updated=null;
+      try{updated=JSON.parse(bodyText);}catch(e){}
+      if(!Array.isArray(updated)||updated.length===0){
+        throw new Error("対象の予約が見つからず、復元が保存されませんでした。");
+      }
+      setBookings(prev=>prev.map(b=>b.id===id?updated[0]:b));
       showToast("予約に戻しました");
     }catch(e){
-      alert("復元に失敗しました："+(e.message||"不明なエラー"));
+      alert("復元に失敗しました：\n"+(e.message||"不明なエラー"));
     }
   }
+
 
   // ===== カレンダー上でのドラッグ移動 =====
   const DRAG_TOTAL_SLOTS=54; // 09:00〜18:00を10分刻みにした数（カレンダー表示の時間軸と一致）
@@ -4522,7 +4656,7 @@ function Dashboard({user,onLogout}){
           {view==="churn_alert"&&<ChurnAlertPanel bookings={bookings} todayStr={todayStr}/>}
 
           {/* キャンセル一覧 */}
-          {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} onRestore={restoreBooking}/>}
+          {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} todayStr={todayStr} onRestore={restoreBooking}/>}
 
           {/* 店舗管理 */}
           {view==="store_mgmt"&&<StoreMgmtPanel/>}
@@ -4691,7 +4825,7 @@ function Dashboard({user,onLogout}){
 
       {/* PatientHistoryModal removed - now shown inline in PatientsPanel */}
       {showBreakModal&&<BreakModal onClose={()=>setShowBreakModal(false)} bookings={bookings} breaks={breaks} setBreaks={setBreaks}/>}
-      {cancelModalBooking&&<CancelModal booking={cancelModalBooking} onClose={()=>setCancelModalBooking(null)} onConfirm={cancelBooking}/>}
+      {cancelModalBooking&&<CancelModal booking={cancelModalBooking} bookings={bookings} todayStr={todayStr} storeStaffList={storeStaff} isAdmin={isAdmin} onClose={()=>setCancelModalBooking(null)} onConfirm={cancelBooking}/>}
 
       {delConfirm&&(
         <div className="confirm-box">
