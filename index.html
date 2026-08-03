@@ -227,6 +227,62 @@ function addMonths(dateStr,months){
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
 
+// ===== 紹介特典の自動発行 =====
+// 「紹介された患者」が初来院チェックインした瞬間に、紹介者へ特典を自動発行する。
+// ・毎回：施術1回無料
+// ・3人紹介ごと：回数券1回分ボーナス
+// ・5人紹介ごと：フリーパス1ヶ月プレゼント
+// 戻り値：{issued:boolean, referrerName, count, error}
+async function processReferralBonus(booking,allBookings){
+  const referrerName=(booking.referrer_name||"").trim();
+  if(!referrerName) return {issued:false};
+
+  try{
+    // 二重付与防止：この予約に対してすでに紹介実績が記録されていないか確認
+    const existing=await sb.select("referrals",`?referred_booking_id=eq.${booking.id}`);
+    if(Array.isArray(existing)&&existing.length>0) return {issued:false,already:true};
+
+    // 紹介者の連絡先を過去の予約データから検索（同姓同名の可能性があるため、最新の予約を採用）
+    const referrerBookings=allBookings.filter(b=>b.patient_name===referrerName).sort((a,b)=>b.date.localeCompare(a.date));
+    const referrerPhone=referrerBookings.length>0?referrerBookings[0].phone:null;
+    if(!referrerPhone){
+      return {issued:false,error:`紹介者「${referrerName}」の連絡先が見つからず、特典を自動発行できませんでした。手動でご対応ください。`};
+    }
+
+    const todayStr=fmtDate(new Date());
+
+    // 紹介実績を記録
+    await sb.insert("referrals",{
+      referrer_name:referrerName,
+      referrer_phone:referrerPhone,
+      referred_patient_name:booking.patient_name,
+      referred_booking_id:booking.id,
+    });
+
+    // これまでの紹介実績数をカウント
+    const allReferrals=await sb.select("referrals",`?referrer_name=eq.${encodeURIComponent(referrerName)}`);
+    const count=Array.isArray(allReferrals)?allReferrals.length:1;
+
+    const passesToIssue=[
+      {phone:referrerPhone,pass_type:"紹介特典：施術1回無料",total_count:1,remaining_count:1,expiry_date:addMonths(todayStr,3),purchased_at:todayStr,active:true},
+    ];
+    if(count%3===0){
+      passesToIssue.push({phone:referrerPhone,pass_type:"紹介ボーナス：回数券1回分",total_count:1,remaining_count:1,expiry_date:addMonths(todayStr,3),purchased_at:todayStr,active:true});
+    }
+    if(count%5===0){
+      passesToIssue.push({phone:referrerPhone,pass_type:"紹介ボーナス：FP（フリーパス）1ヶ月",total_count:null,remaining_count:null,expiry_date:addMonths(todayStr,1),purchased_at:todayStr,active:true});
+    }
+    for(const p of passesToIssue){
+      await sb.insert("passes",p);
+    }
+
+    return {issued:true,referrerName,count,bonusCount:passesToIssue.length-1};
+  }catch(e){
+    console.error("紹介特典の発行に失敗しました",e);
+    return {issued:false,error:"紹介特典の発行処理でエラーが発生しました："+(e.message||"不明なエラー")};
+  }
+}
+
 // ===== キャンセル理由の選択肢 =====
 const CANCEL_REASONS=["体調不良","仕事都合","急用","天候不良","無断キャンセル","予約間違い","他院・他予約と重複","スタッフ都合","その他"];
 
@@ -3346,6 +3402,7 @@ function CheckInPanel({bookings,onOpenPatient,onCheckedIn}){
 
   const [cameraError,setCameraError]=React.useState("");
   const [result,setResult]=React.useState(null); // {booking, isNew, visitCount}
+  const [referralInfo,setReferralInfo]=React.useState(null); // {issued, referrerName, count, bonusCount, error}
   const [checkingIn,setCheckingIn]=React.useState(false);
   const [manualId,setManualId]=React.useState("");
 
@@ -3428,6 +3485,11 @@ function CheckInPanel({bookings,onOpenPatient,onCheckedIn}){
 
       if(isNew){
         window.open(`intake.html?id=${booking.id}`,"_blank");
+        // 紹介経由の初来院であれば、紹介者へ特典を自動発行する
+        if((booking.referrer_name||"").trim()){
+          const bonusResult=await processReferralBonus(booking,bookings);
+          setReferralInfo(bonusResult);
+        }
       }
     }catch(e){
       setCameraError("読み取り処理に失敗しました："+e.message);
@@ -3437,6 +3499,7 @@ function CheckInPanel({bookings,onOpenPatient,onCheckedIn}){
 
   function resetScan(){
     setResult(null);
+    setReferralInfo(null);
     setCameraError("");
     scanningRef.current=true;
     startCamera();
@@ -3547,11 +3610,28 @@ function CheckInPanel({bookings,onOpenPatient,onCheckedIn}){
                   <span style={{fontSize:12,color:"#94a3b8",fontWeight:700}}>担当</span>
                   <span style={{fontSize:14,fontWeight:700,color:staff?staff.color:"#1e293b"}}>{staff?staff.name:"—"}</span>
                 </div>
-                <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}>
+                <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #f1f5f9"}}>
                   <span style={{fontSize:12,color:"#94a3b8",fontWeight:700}}>メニュー</span>
                   <span style={{fontSize:14,fontWeight:700,color:"#1e293b"}}>{result.booking.menu}</span>
                 </div>
+                {result.booking.referrer_name&&(
+                  <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0"}}>
+                    <span style={{fontSize:12,color:"#94a3b8",fontWeight:700}}>紹介者</span>
+                    <span style={{fontSize:14,fontWeight:700,color:"#7c3aed"}}>{result.booking.referrer_name} 様</span>
+                  </div>
+                )}
               </div>
+              {referralInfo&&referralInfo.issued&&(
+                <div style={{background:"#faf5ff",border:"1.5px solid #ddd6fe",borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+                  <div style={{fontSize:13,fontWeight:800,color:"#6d28d9",marginBottom:2}}>🎉 紹介者「{referralInfo.referrerName}」様に特典を発行しました</div>
+                  <div style={{fontSize:12,color:"#7c3aed"}}>累計{referralInfo.count}人紹介　施術1回無料券を発行{referralInfo.bonusCount>0?`（節目ボーナスも${referralInfo.bonusCount}件追加発行）`:""}</div>
+                </div>
+              )}
+              {referralInfo&&referralInfo.error&&(
+                <div style={{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:10,padding:"12px 14px",marginBottom:14}}>
+                  <div style={{fontSize:12,fontWeight:700,color:"#dc2626"}}>⚠ {referralInfo.error}</div>
+                </div>
+              )}
               <div style={{fontSize:11,color:"#94a3b8",textAlign:"center",marginBottom:14}}>来院{result.visitCount}回目</div>
               <button className="btn btn-primary" style={{width:"100%",justifyContent:"center"}} onClick={resetScan}>次の患者様を受付する</button>
             </div>
@@ -4768,6 +4848,7 @@ function Dashboard({user,onLogout}){
                 {cnt>1&&<div style={{fontSize:10,color:"rgba(255,255,255,.7)",marginTop:1}}>{cnt}回目</div>}
                 {cnt===1&&<div style={{fontSize:10,fontWeight:800,color:"#7c2d12",background:"#fed7aa",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4}}>🆕 初診</div>}
                 {b.checked_in_at&&<div style={{fontSize:10,fontWeight:800,color:"#111",background:"#facc15",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4}}>📷 来院済み</div>}
+                {b.referrer_name&&<div style={{fontSize:10,fontWeight:800,color:"#6d28d9",background:"#ede9fe",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>🎁 紹介：{b.referrer_name}</div>}
               </div>
               {/* アクション */}
               <div style={{padding:8,display:"flex",flexDirection:"column",gap:4}}>
