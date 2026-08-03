@@ -176,7 +176,7 @@ function App(){
   var hoursLoaded = hoursLoadedState[0]; var setHoursLoaded = hoursLoadedState[1];
 
   var formState = useState({
-    name:"",nameKana:"",phone:"",
+    name:"",nameKana:"",phone:"",referrerName:"",
     bodyParts:[],bodyPartsOther:"",injuryCause:"",injuryCauseDetail:"",
     painWhen:"",painLevel:"",symptoms:[],
     otherClinic:"",otherClinicName:"",medicalHistory:"",
@@ -333,6 +333,14 @@ function App(){
   function formatWantContinue(){
     return form.wantContinue==="その他"?"その他："+(form.wantContinueOther||""):form.wantContinue;
   }
+  function isReferred(){
+    return !!(form.referrerName&&form.referrerName.trim());
+  }
+  function formatMenuPrice(){
+    return isReferred()
+      ? "🎁 "+EVENT_MENU_NAME+"　紹介特典で無料！"
+      : "🪙 "+EVENT_MENU_NAME+"　¥"+EVENT_MENU_PRICE;
+  }
 
   function toggleArr(key, val){
     var arr = form[key];
@@ -401,6 +409,7 @@ function App(){
       date:fmtDate(selDate),
       time:selTime,
       menu:EVENT_MENU_NAME,
+      referrer_name:form.referrerName.trim()||null,
       line_notify: !!lineUserId, // LINE連携済みなら自動でリマインド
       line_user_id: lineUserId || null,
       reminded:false,
@@ -431,7 +440,8 @@ function App(){
         "📅 いつから："+form.painWhen+"\n"+
         "💭 継続意思："+formatWantContinue()+"\n"+
         "📣 経路："+howKnowText+"\n"+
-        "🔔 LINE連携："+(form.lineNotify && lineUserId ? "あり" : "なし");
+        "🔔 LINE連携："+(form.lineNotify && lineUserId ? "あり" : "なし")+
+        (form.referrerName.trim()?"\n🎁 紹介者："+form.referrerName+" 様（体験会無料）":"");
 
       fetch("/api/line-notify",{
         method:"POST",
@@ -472,7 +482,7 @@ function App(){
   function reset(){
     setStep(0); setSelDate(null); setSelTime(null);
     setSlotData({booked:[],breaks:[]});
-    setForm({name:"",nameKana:"",phone:"",bodyParts:[],bodyPartsOther:"",injuryCause:"",injuryCauseDetail:"",painWhen:"",painLevel:"",symptoms:[],otherClinic:"",otherClinicName:"",medicalHistory:"",wantContinue:"",wantContinueOther:"",howKnow:"",howKnowOther:"",lineNotify:false});
+    setForm({name:"",nameKana:"",phone:"",referrerName:"",bodyParts:[],bodyPartsOther:"",injuryCause:"",injuryCauseDetail:"",painWhen:"",painLevel:"",symptoms:[],otherClinic:"",otherClinicName:"",medicalHistory:"",wantContinue:"",wantContinueOther:"",howKnow:"",howKnowOther:"",lineNotify:false});
     setDone(false); setBookingId(null); setMemo("");
   }
 
@@ -576,7 +586,7 @@ function App(){
       React.createElement("div",{style:{background:"white",borderRadius:14,border:"2px solid #e5e7eb",overflow:"hidden",marginBottom:12}},
         React.createElement("div",{style:{background:"#1e3a5f",color:"white",padding:"12px 16px",fontSize:13,fontWeight:700}},"📅 予約情報"),
         [
-          ["メニュー","🪙 "+EVENT_MENU_NAME+"　¥"+EVENT_MENU_PRICE],
+          ["メニュー",formatMenuPrice()],
           ["日付",selDate?fmtDateJP(selDate):""],
           ["時間",selTime||""],
           ["お名前",form.name+" 様"],
@@ -643,7 +653,7 @@ function App(){
       React.createElement("div",{style:{fontSize:12,opacity:0.75,marginTop:2}},"ワンコイン施術体験会 オンライン予約")
     ),
     React.createElement("div",{style:{background:"#fef9ec",borderBottom:"2px solid #fde68a",padding:"10px 16px",textAlign:"center"}},
-      React.createElement("span",{style:{fontWeight:800,color:"#92400e",fontSize:14}},"🪙 "+EVENT_MENU_NAME+"　¥"+EVENT_MENU_PRICE),
+      React.createElement("span",{style:{fontWeight:800,color:"#92400e",fontSize:14}},formatMenuPrice()),
       React.createElement("span",{style:{fontSize:12,color:"#a16207",marginLeft:8}},"初めての方限定")
     ),
     React.createElement("div",{style:{background:"white",borderBottom:"1px solid #eee",padding:"12px 16px"}},
@@ -840,6 +850,19 @@ function App(){
             );
           })
         ),
+
+        // ===== 紹介者のお名前（任意） =====
+        React.createElement("div",{style:H.sec},
+          React.createElement("div",{style:H.secT},"🎁 紹介者のお名前（任意）"),
+          React.createElement("div",{style:{fontSize:12,color:"#9ca3af",marginBottom:10,lineHeight:1.7}},"あんど整骨院にすでに通われている方からのご紹介の場合、そのお名前をご記入ください。"+EVENT_MENU_NAME+"が無料になります🎉"),
+          React.createElement("input",{type:"text",value:form.referrerName,placeholder:"例：山本 花子",
+            onChange:function(e){setF("referrerName",e.target.value);},
+            style:H.input
+          }),
+          form.referrerName.trim()?React.createElement("div",{style:{marginTop:10,background:"#f5f3ff",border:"1px solid #ddd6fe",borderRadius:8,padding:"10px 12px",fontSize:13,color:"#6d28d9",fontWeight:700}},
+            "🎉 "+form.referrerName+"様のご紹介で、今回の体験会が無料になります！"
+          ):null
+        ),
         React.createElement("div",{style:{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12,padding:16,marginBottom:20}},
           React.createElement("div",{style:{fontWeight:800,fontSize:14,color:"#065f46",marginBottom:6}},"🔔 前日リマインドについて"),
           React.createElement("div",{style:{fontSize:13,color:"#059669",lineHeight:1.7}},"ご予約の前日に自動でLINEリマインドをお送りします。"),
@@ -989,7 +1012,7 @@ function App(){
         React.createElement("div",{style:{background:"white",borderRadius:14,border:"2px solid #e5e7eb",overflow:"hidden",marginBottom:12}},
           React.createElement("div",{style:{background:"#1e3a5f",color:"white",padding:"12px 16px",fontSize:13,fontWeight:700}},"📅 予約情報"),
           [
-            ["メニュー","🪙 "+EVENT_MENU_NAME+"　¥"+EVENT_MENU_PRICE],
+            ["メニュー",formatMenuPrice()],
             ["日付",selDate?fmtDateJP(selDate):""],
             ["時間",selTime],
             ["お名前",form.name+" 様"],
