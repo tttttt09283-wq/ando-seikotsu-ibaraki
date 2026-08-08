@@ -106,13 +106,13 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 const STAFF_ACCOUNTS = [
   // storeIds: このスタッフが勤務する店舗のID（stores.id）を配列で指定。
-  // 新しい店舗を追加したら、そこで勤務するスタッフのstoreIdsにその店舗IDを追加してください。
-  // 例：岩永先生が店舗1・2の両方で勤務する場合 → storeIds:[1,2]
-  {id:1,name:"岩永 先生",email:"iwanaga@ando.jp",password:"iwanaga123",role:"admin",color:"#2563eb",initial:"岩",storeIds:[1]},
-  {id:2,name:"大皿 先生",email:"osara@ando.jp",password:"osara123",role:"staff",color:"#059669",initial:"大",storeIds:[1]},
-  {id:3,name:"定井 先生",email:"sadai@ando.jp",password:"sadai123",role:"staff",color:"#d97706",initial:"定",storeIds:[1]},
-  {id:4,name:"細永 先生",email:"hosonaga@ando.jp",password:"hosonaga123",role:"staff",color:"#7c3aed",initial:"細",storeIds:[1]},
-  {id:5,name:"広川 先生",email:"hirokawa@ando.jp",password:"hirokawa123",role:"staff",color:"#dc2626",initial:"広",storeIds:[1]},
+  // 未指定（storeIdsを書かない）の場合は「全店舗で勤務」として扱われます。
+  // 実際の勤務地は、管理画面の「スタッフ・シフト管理」→勤務地の設定で店舗ごとに割り当ててください（そちらが優先されます）。
+  {id:1,name:"奥田 貴明",email:"okuda@ando.jp",password:"okuda123",role:"staff",color:"#2563eb",initial:"奥"},
+  {id:2,name:"山﨑 航平",email:"yamazaki@ando.jp",password:"yamazaki123",role:"staff",color:"#059669",initial:"山"},
+  {id:3,name:"細永 育代",email:"hosonaga@ando.jp",password:"hosonaga123",role:"staff",color:"#d97706",initial:"細"},
+  {id:4,name:"田中 夕賀",email:"tanaka@ando.jp",password:"tanaka123",role:"staff",color:"#7c3aed",initial:"田"},
+  {id:5,name:"岩永 拓己",email:"iwanaga@ando.jp",password:"iwanaga123",role:"admin",color:"#dc2626",initial:"岩"},
 ];
 // ===== メニューマスタ（改定後料金） =====
 const MENU_CATEGORIES = [
@@ -2148,6 +2148,152 @@ function MenuMgmtPanel(){
 }
 
 // ===== スタッフ管理パネル =====
+// ===== スタッフ追加モーダル =====
+function AddStaffModal({onClose,onCreated,existingIds}){
+  const PALETTE=["#2563eb","#059669","#d97706","#7c3aed","#dc2626","#0891b2","#db2777"];
+  const nextId=(existingIds&&existingIds.length>0?Math.max(...existingIds):0)+1;
+  const [idNum,setIdNum]=React.useState(nextId);
+  const [name,setName]=React.useState("");
+  const [email,setEmail]=React.useState("");
+  const [password,setPassword]=React.useState("");
+  const [role,setRole]=React.useState("staff");
+  const [color,setColor]=React.useState(PALETTE[(nextId-1)%PALETTE.length]);
+  const [initial,setInitial]=React.useState("");
+  const [saving,setSaving]=React.useState(false);
+  const [err,setErr]=React.useState("");
+  const [doneInfo,setDoneInfo]=React.useState(null);
+
+  function autoInitial(v){setName(v);if(!initial||initial===name.charAt(0))setInitial(v.charAt(0));}
+
+  async function submit(){
+    setErr("");
+    if(!name.trim()){setErr("名前を入力してください");return;}
+    if(!email.trim()){setErr("メールアドレスを入力してください");return;}
+    if(!password||password.length<6){setErr("パスワードは6文字以上で入力してください");return;}
+    setSaving(true);
+    try{
+      // ① Authアカウントを作成（サーバー関数経由・即ログイン可能な状態で作成）
+      const res=await fetch("/api/create-staff",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({email:email.trim(),password}),
+      });
+      const data=await res.json().catch(()=>null);
+      if(!res.ok||!data||!data.authUid){
+        throw new Error((data&&data.error)||`アカウント作成に失敗しました（HTTP ${res.status}）`);
+      }
+
+      // ② clinic_staffテーブルへ登録
+      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      const insertRes=await fetch(`${SUPABASE_URL}/rest/v1/clinic_staff`,{
+        method:"POST",
+        headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
+        body:JSON.stringify({id:idNum,auth_uid:data.authUid,email:email.trim(),name:name.trim(),role,store_ids:[]}),
+      });
+      const insertBody=await insertRes.text();
+      if(!insertRes.ok){
+        throw new Error(`Authアカウントは作成できましたが、clinic_staffへの登録に失敗しました（HTTP ${insertRes.status}）\n${insertBody}\n\n※Authアカウント自体は作成済みです。列名の違いが原因の可能性があるので、このエラー内容を開発担当に共有してください。`);
+      }
+
+      setDoneInfo({id:idNum,name:name.trim(),email:email.trim(),color,initial:initial||name.charAt(0),role});
+    }catch(e){
+      setErr(e.message||"不明なエラーが発生しました");
+    }
+    setSaving(false);
+  }
+
+  if(doneInfo){
+    return(
+      <div className="modal-overlay">
+        <div className="modal-box" style={{maxWidth:440}}>
+          <div className="modal-header" style={{background:"linear-gradient(135deg,#059669,#047857)"}}>
+            <div style={{fontWeight:800,fontSize:16,color:"white"}}>スタッフを追加しました</div>
+            <button className="modal-close" onClick={onClose}>✕</button>
+          </div>
+          <div style={{padding:20}}>
+            <div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:10,padding:"14px 16px",marginBottom:16}}>
+              <div style={{fontWeight:800,fontSize:15,color:"#065f46"}}>{doneInfo.name} 様のアカウントを作成しました</div>
+              <div style={{fontSize:12,color:"#059669",marginTop:4}}>メール：{doneInfo.email}　/　ID：{doneInfo.id}</div>
+            </div>
+            <div style={{background:"#fef9ec",border:"1px solid #fde68a",borderRadius:10,padding:"14px 16px",marginBottom:16,fontSize:12,color:"#92400e",lineHeight:1.8}}>
+              ⚠ ログイン自体はこれでできるようになりましたが、カレンダーへの表示・色分けを完全に有効にするには、開発担当（Claude）にもう一段階コード側の登録をしてもらう必要があります。<br/>
+              以下の内容をそのままコピーして伝えてください：<br/>
+              <div style={{marginTop:8,padding:"8px 10px",background:"white",borderRadius:6,fontFamily:"monospace",fontSize:11,color:"#374151"}}>
+                ID:{doneInfo.id} 名前:{doneInfo.name} メール:{doneInfo.email} 色:{doneInfo.color} イニシャル:{doneInfo.initial} 役職:{doneInfo.role}
+              </div>
+            </div>
+            <button onClick={onClose} className="btn btn-primary" style={{width:"100%",justifyContent:"center",padding:11}}>閉じる</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return(
+    <div className="modal-overlay">
+      <div className="modal-box" style={{maxWidth:440,maxHeight:"90vh",overflowY:"auto"}}>
+        <div className="modal-header" style={{background:"linear-gradient(135deg,#059669,#047857)"}}>
+          <div>
+            <div style={{fontWeight:800,fontSize:16,color:"white"}}>スタッフを追加</div>
+            <div style={{fontSize:12,color:"rgba(255,255,255,.75)",marginTop:2}}>ログインアカウントも同時に作成されます</div>
+          </div>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div style={{padding:20}}>
+          {err&&<div style={{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#dc2626",fontSize:12,fontWeight:700,whiteSpace:"pre-wrap"}}>{err}</div>}
+          <div className="form-group">
+            <label className="form-label">お名前 *</label>
+            <input className="form-input" value={name} onChange={e=>autoInitial(e.target.value)} placeholder="山本 花子"/>
+          </div>
+          <div className="form-group">
+            <label className="form-label">メールアドレス *</label>
+            <input className="form-input" type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="yamamoto@ando.jp"/>
+          </div>
+          <div className="form-group">
+            <label className="form-label">パスワード *（6文字以上）</label>
+            <input className="form-input" type="text" value={password} onChange={e=>setPassword(e.target.value)} placeholder="仮パスワードを入力"/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+            <div>
+              <label className="form-label">ID番号</label>
+              <input className="form-input" type="number" value={idNum} onChange={e=>setIdNum(parseInt(e.target.value)||nextId)}/>
+            </div>
+            <div>
+              <label className="form-label">イニシャル表示</label>
+              <input className="form-input" value={initial} onChange={e=>setInitial(e.target.value.slice(0,2))} placeholder="山"/>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">役職</label>
+            <div style={{display:"flex",gap:8}}>
+              {[{v:"staff",l:"スタッフ"},{v:"admin",l:"管理者"}].map(r=>(
+                <button key={r.v} onClick={()=>setRole(r.v)} className="btn"
+                  style={{padding:"7px 16px",borderRadius:8,border:`2px solid ${role===r.v?"#059669":"#e2e8f0"}`,background:role===r.v?"#059669":"white",color:role===r.v?"white":"#374151",fontSize:13,fontWeight:700}}>
+                  {r.l}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">表示カラー</label>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+              {PALETTE.map(c=>(
+                <button key={c} onClick={()=>setColor(c)} style={{width:32,height:32,borderRadius:"50%",background:c,border:color===c?"3px solid #1e293b":"3px solid white",boxShadow:"0 0 0 1px #e2e8f0",cursor:"pointer"}}/>
+              ))}
+            </div>
+          </div>
+          <div style={{display:"flex",gap:10,marginTop:20}}>
+            <button onClick={onClose} className="btn btn-outline" style={{flex:1,justifyContent:"center",padding:11}}>キャンセル</button>
+            <button onClick={submit} disabled={saving} className="btn btn-success" style={{flex:2,justifyContent:"center",padding:11,opacity:saving?0.6:1}}>
+              {saving?"作成中...":"スタッフを追加する"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StaffMgmtPanel({currentUser}){
   const DAYS_JP=["日","月","火","水","木","金","土"];
   const DAY_COLORS=["#ef4444","#374151","#374151","#374151","#374151","#374151","#7c3aed"];
@@ -2163,6 +2309,7 @@ function StaffMgmtPanel({currentUser}){
   const [bulkOpen,setBulkOpen]=React.useState(false);
   const [bulkStart,setBulkStart]=React.useState("09:00");
   const [bulkEnd,setBulkEnd]=React.useState("19:00");
+  const [showAddStaff,setShowAddStaff]=React.useState(false);
 
   // ===== 勤務地（店舗）管理 =====
   const [stores,setStores]=React.useState([]);
@@ -2484,7 +2631,7 @@ function StaffMgmtPanel({currentUser}){
       <div style={{background:"white",borderRadius:12,boxShadow:"0 1px 4px rgba(0,0,0,.06)",border:"1px solid #f1f5f9",overflow:"hidden"}}>
         <div style={{padding:"16px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid #f1f5f9"}}>
           <div style={{fontSize:15,fontWeight:800,color:"#1e3a5f"}}>スタッフ一覧</div>
-          <button style={{padding:"8px 16px",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:8,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>+ スタッフ追加</button>
+          <button onClick={()=>setShowAddStaff(true)} style={{padding:"8px 16px",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:8,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>+ スタッフ追加</button>
         </div>
         {/* テーブルヘッダー */}
         <div style={{display:"grid",gridTemplateColumns:"1.6fr 2.2fr 1fr 1fr 1fr 1fr",background:"#f8fafc",borderBottom:"1px solid #e2e8f0"}}>
@@ -2530,6 +2677,7 @@ function StaffMgmtPanel({currentUser}){
         });
         })()}
       </div>
+      {showAddStaff&&<AddStaffModal onClose={()=>setShowAddStaff(false)} existingIds={STAFF_ACCOUNTS.map(s=>s.id)}/>}
     </div>
   );
 }
