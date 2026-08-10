@@ -2188,7 +2188,7 @@ function AddStaffModal({onClose,onCreated,existingIds}){
       const insertRes=await fetch(`${SUPABASE_URL}/rest/v1/clinic_staff`,{
         method:"POST",
         headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
-        body:JSON.stringify({id:idNum,auth_uid:data.authUid,email:email.trim(),name:name.trim(),role,store_ids:[]}),
+        body:JSON.stringify({id:idNum,auth_uid:data.authUid,email:email.trim(),password,name:name.trim(),role,store_ids:[]}),
       });
       const insertBody=await insertRes.text();
       if(!insertRes.ok){
