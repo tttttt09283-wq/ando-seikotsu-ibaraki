@@ -42,13 +42,29 @@ const STAFF = [
 const SLOTS = (()=>{
   const slots=[];
   for(let h=9;h<=19;h++){
-    for(let m=0;m<60;m+=10){
+    for(let m=0;m<60;m+=20){
       if(h===19&&m>0) break;
       slots.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
     }
   }
   return slots;
 })();
+
+// ===== 1枠あたりの同時受付可能数 =====
+// 通常は1枠につき1件のみ受付。特定の日だけ増やしたい場合は
+// DATE_CAPACITY_OVERRIDES に "YYYY-MM-DD": 件数 を追記してください。
+// （スタッフの人数までしか実際には埋まらないので、人数以上の数字を入れても意味はありません）
+const SLOT_CAPACITY = 1;
+const DATE_CAPACITY_OVERRIDES = {
+  // 例：オープニングイベント期間中は1枠3件まで同時受付にする場合
+  // "2026-10-01": 3,
+  // "2026-10-02": 3,
+  // "2026-10-03": 3,
+  // "2026-10-04": 3,
+};
+function getSlotCapacity(dateStr){
+  return DATE_CAPACITY_OVERRIDES[dateStr] || SLOT_CAPACITY;
+}
 
 const DAYS_JP = ["日","月","火","水","木","金","土"];
 const STEPS = ["日時","お客様情報","症状・問診","確認"];
@@ -335,25 +351,34 @@ function App(){
     var nowMin = now.getHours()*60 + now.getMinutes();
     return toMin(t) <= nowMin;
   }
-  // 指定した日付・時間の「空いているスタッフ数」を返す（同一スタッフの重複はカウントしない）
-  function getRemainingCount(d,t){
+  // 指定した日時に既に入っている予約数（キャンセル除く）
+  function getBookedCountAt(d,t){
+    var ds = fmtDate(d);
+    return weekData.booked.filter(function(b){return b.date===ds && b.time===t;}).length;
+  }
+  // 指定した日時に対応可能なスタッフ一覧（休憩・既存予約が入っている人を除く）
+  function getFreeStaffListFor(d,t){
     var ds = fmtDate(d);
     var unavail = {};
     weekData.booked.forEach(function(b){if(b.date===ds&&b.time===t) unavail[b.staff_id]=true;});
     weekData.breaks.forEach(function(b){if(b.date===ds&&b.time===t) unavail[b.staff_id]=true;});
-    return STAFF.length - Object.keys(unavail).length;
+    return STAFF.filter(function(s){return !unavail[s.id];});
+  }
+  // 指定した日時の残り受付可能数（「1枠あたりの上限」と「対応できるスタッフの人数」のうち小さい方）
+  function getRemainingCount(d,t){
+    var capacity = getSlotCapacity(fmtDate(d));
+    var capacityLeft = capacity - getBookedCountAt(d,t);
+    var freeStaffCount = getFreeStaffListFor(d,t).length;
+    return Math.max(0, Math.min(capacityLeft, freeStaffCount));
   }
   function getAvailableStaffIdFor(d,t){
-    var ds = fmtDate(d);
-    var unavail = {};
-    weekData.booked.forEach(function(b){if(b.date===ds&&b.time===t) unavail[b.staff_id]=true;});
-    weekData.breaks.forEach(function(b){if(b.date===ds&&b.time===t) unavail[b.staff_id]=true;});
-    var found = STAFF.find(function(s){return !unavail[s.id];});
-    return found ? found.id : 1;
+    if(getRemainingCount(d,t)<=0) return null;
+    var free = getFreeStaffListFor(d,t);
+    return free.length>0 ? free[0].id : null;
   }
 
   function getAvailableStaffId(t){
-    if(!selDate) return 1;
+    if(!selDate) return null;
     return getAvailableStaffIdFor(selDate,t);
   }
 
@@ -368,8 +393,14 @@ function App(){
     ]).then(function(results){
       var dayBookings = Array.isArray(results[0]) ? results[0] : [];
       var dayBreaks = Array.isArray(results[1]) ? results[1] : [];
+      var activeBookings = dayBookings.filter(function(b){return !b.cancelled;});
+
+      // 1枠あたりの上限に達していないか確認
+      var capacity = getSlotCapacity(dateStr);
+      if(activeBookings.length >= capacity) return null;
+
       var unavail = {};
-      dayBookings.forEach(function(b){ if(!b.cancelled) unavail[b.staff_id]=true; });
+      activeBookings.forEach(function(b){ unavail[b.staff_id]=true; });
       dayBreaks.forEach(function(b){ unavail[b.staff_id]=true; });
       var found = STAFF.find(function(s){return !unavail[s.id];});
       return found ? found.id : null;
@@ -476,6 +507,15 @@ function App(){
       }
       // 通信エラーで判定できなかった場合は、これまで通り画面上の情報から選ぶ（フォールバック）
       var staffId = (freshStaffId===undefined) ? getAvailableStaffId(selTime) : freshStaffId;
+      if(!staffId){
+        setSubmitting(false);
+        setSlotFullMsg("大変申し訳ございません、ちょうどこの日時が埋まってしまいました。お手数ですが別の日時をお選びください。");
+        setSelDate(null);
+        setSelTime(null);
+        setStep(0);
+        refreshWeekData();
+        return;
+      }
       doSubmitBooking(staffId, dateStr);
     });
   }
@@ -585,6 +625,14 @@ function App(){
         return;
       }
       var staffId=(freshStaffId===undefined)?getAvailableStaffId(selTime):freshStaffId;
+      if(!staffId){
+        setSubmitting(false);
+        setSlotFullMsg("大変申し訳ございません、ちょうどこの日時が埋まってしまいました。お手数ですが別の日時をお選びください。");
+        setSelDate(null);
+        setSelTime(null);
+        refreshWeekData();
+        return;
+      }
       doSubmitRepeatBooking(staffId, dateStr);
     });
   }
