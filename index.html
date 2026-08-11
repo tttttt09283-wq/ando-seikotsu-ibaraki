@@ -1132,7 +1132,7 @@ function StatsPanel({bookings,payments,todayStr,stores}){
 }
 
 
-function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,save,onClose,onDelete,onCancel,businessHours,closures,storeStaffList,isStaffWorkingOnDate}){
+function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,save,onClose,onDelete,onCancel,businessHours,closures,storeStaffList,isStaffWorkingOnDate,staffCanDoMenus}){
   const [searchQ,setSearchQ]=React.useState("");
   const [searchResults,setSearchResults]=React.useState([]);
   const [searching,setSearching]=React.useState(false);
@@ -1280,16 +1280,21 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             {(storeStaffList||STAFF_ACCOUNTS).map(s=>{
               const working=!form.date||!isStaffWorkingOnDate?true:isStaffWorkingOnDate(s.id,new Date(form.date+"T00:00:00"));
+              const canDoMenu=!staffCanDoMenus||staffCanDoMenus(s.id,selectedMenus);
+              const selectable=working&&canDoMenu;
               return(
-                <button key={s.id} disabled={!working} onClick={()=>{if(!working)return;setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} className="btn"
-                  style={{background:!working?"#f3f4f6":form.staff_id===s.id?s.color:"white",color:!working?"#d1d5db":form.staff_id===s.id?"white":"#374151",border:"2px solid "+(!working?"#e2e8f0":s.color),borderRadius:20,padding:"5px 12px",fontSize:12,fontWeight:700,boxShadow:form.staff_id===s.id&&working?"0 2px 8px "+s.color+"55":"none",cursor:!working?"not-allowed":"pointer"}}>
-                  {s.name}{!working?"（休み）":""}
+                <button key={s.id} disabled={!selectable} onClick={()=>{if(!selectable)return;setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} className="btn"
+                  style={{background:!selectable?"#f3f4f6":form.staff_id===s.id?s.color:"white",color:!selectable?"#d1d5db":form.staff_id===s.id?"white":"#374151",border:"2px solid "+(!selectable?"#e2e8f0":s.color),borderRadius:20,padding:"5px 12px",fontSize:12,fontWeight:700,boxShadow:form.staff_id===s.id&&selectable?"0 2px 8px "+s.color+"55":"none",cursor:!selectable?"not-allowed":"pointer"}}>
+                  {s.name}{!working?"（休み）":!canDoMenu?"（非対応）":""}
                 </button>
               );
             })}
           </div>
           {form.staff_id&&isStaffWorkingOnDate&&form.date&&!isStaffWorkingOnDate(form.staff_id,new Date(form.date+"T00:00:00"))&&(
             <div style={{marginTop:8,fontSize:12,color:"#dc2626",fontWeight:700}}>⚠ 選択中の担当者はこの日休みに設定されています</div>
+          )}
+          {form.staff_id&&staffCanDoMenus&&!staffCanDoMenus(form.staff_id,selectedMenus)&&(
+            <div style={{marginTop:8,fontSize:12,color:"#dc2626",fontWeight:700}}>⚠ 選択中の担当者は、選ばれているメニューに対応していません</div>
           )}
         </div>
       )}
@@ -2294,6 +2299,129 @@ function AddStaffModal({onClose,onCreated,existingIds}){
   );
 }
 
+// ===== スタッフ対応メニュー設定モーダル =====
+function StaffMenuPermissionsModal({staff,onClose}){
+  const [mode,setMode]=React.useState("all"); // "all"=全メニュー対応 / "restricted"=特定のみ
+  const [selected,setSelected]=React.useState([]); // 対応可能なメニュー名の配列
+  const [loading,setLoading]=React.useState(true);
+  const [saving,setSaving]=React.useState(false);
+  const [err,setErr]=React.useState("");
+
+  React.useEffect(()=>{
+    sb.select("clinic_staff",`?id=eq.${staff.id}&select=allowed_menus`).then(data=>{
+      const row=Array.isArray(data)&&data.length>0?data[0]:null;
+      if(row&&row.allowed_menus&&row.allowed_menus.length>0){
+        setMode("restricted");
+        setSelected(row.allowed_menus);
+      }else{
+        setMode("all");
+        setSelected([]);
+      }
+    }).catch(()=>{}).finally(()=>setLoading(false));
+  },[staff.id]);
+
+  function toggleMenu(name){
+    setSelected(prev=>prev.includes(name)?prev.filter(m=>m!==name):[...prev,name]);
+  }
+
+  async function save(){
+    if(mode==="restricted"&&selected.length===0){
+      setErr("少なくとも1つはメニューを選択してください（0件にしたい場合は「全メニュー対応」を選んでください）");
+      return;
+    }
+    setErr("");
+    setSaving(true);
+    try{
+      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      const res=await fetch(`${SUPABASE_URL}/rest/v1/clinic_staff?id=eq.${staff.id}`,{
+        method:"PATCH",
+        headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
+        body:JSON.stringify({allowed_menus:mode==="all"?[]:selected}),
+      });
+      const bodyText=await res.text();
+      if(!res.ok){
+        throw new Error(`保存に失敗しました（HTTP ${res.status}）\n${bodyText}\n\n※clinic_staffテーブルにallowed_menus列（text[]）が必要です。`);
+      }
+      onClose(true);
+    }catch(e){
+      setErr(e.message||"不明なエラー");
+    }
+    setSaving(false);
+  }
+
+  return(
+    <div className="modal-overlay">
+      <div className="modal-box" style={{maxWidth:520,maxHeight:"88vh",overflowY:"auto"}}>
+        <div className="modal-header" style={{background:`linear-gradient(135deg,${staff.color},${staff.color}cc)`}}>
+          <div>
+            <div style={{fontWeight:800,fontSize:16,color:"white"}}>{staff.name} の対応メニュー設定</div>
+            <div style={{fontSize:12,color:"rgba(255,255,255,.75)",marginTop:2}}>予約作成時、対応できないメニューが選ばれていると担当に選べなくなります</div>
+          </div>
+          <button className="modal-close" onClick={()=>onClose(false)}>✕</button>
+        </div>
+        <div style={{padding:20}}>
+          {loading?(
+            <div style={{textAlign:"center",padding:30,color:"#94a3b8"}}>読み込み中...</div>
+          ):(
+            <>
+              {err&&<div style={{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#dc2626",fontSize:12,fontWeight:700,whiteSpace:"pre-wrap"}}>{err}</div>}
+              <div style={{display:"flex",gap:8,marginBottom:16}}>
+                <button onClick={()=>setMode("all")} className="btn"
+                  style={{flex:1,padding:"10px",borderRadius:8,border:`2px solid ${mode==="all"?"#059669":"#e2e8f0"}`,background:mode==="all"?"#059669":"white",color:mode==="all"?"white":"#374151",fontWeight:700,fontSize:13,justifyContent:"center"}}>
+                  ✅ 全メニュー対応
+                </button>
+                <button onClick={()=>setMode("restricted")} className="btn"
+                  style={{flex:1,padding:"10px",borderRadius:8,border:`2px solid ${mode==="restricted"?"#d97706":"#e2e8f0"}`,background:mode==="restricted"?"#d97706":"white",color:mode==="restricted"?"white":"#374151",fontWeight:700,fontSize:13,justifyContent:"center"}}>
+                  🎯 特定のメニューのみ
+                </button>
+              </div>
+
+              {mode==="restricted"&&(
+                <div>
+                  {MENU_CATEGORIES.map(cat=>(
+                    <div key={cat.id} style={{marginBottom:16}}>
+                      <div style={{fontSize:12,fontWeight:800,color:cat.color,marginBottom:8,paddingBottom:4,borderBottom:`2px solid ${cat.color}22`}}>{cat.label}</div>
+                      {cat.subs.map(sub=>(
+                        <div key={sub.id} style={{marginBottom:8}}>
+                          {cat.subs.length>1&&<div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:4}}>{sub.label}</div>}
+                          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                            {sub.items.map(item=>{
+                              const isSel=selected.includes(item.name);
+                              return(
+                                <button key={item.name} onClick={()=>toggleMenu(item.name)}
+                                  style={{padding:"5px 10px",borderRadius:16,border:`1.5px solid ${isSel?cat.color:"#e2e8f0"}`,background:isSel?cat.color+"18":"white",color:isSel?cat.color:"#64748b",fontSize:11,fontWeight:isSel?700:500,cursor:"pointer",fontFamily:"inherit"}}>
+                                  {item.name}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                  <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>選択中：{selected.length}件</div>
+                </div>
+              )}
+              {mode==="all"&&(
+                <div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:10,padding:"14px 16px",fontSize:12,color:"#065f46"}}>
+                  制限なし。どのメニューの予約でもこのスタッフを担当に選べます。
+                </div>
+              )}
+
+              <div style={{display:"flex",gap:10,marginTop:20}}>
+                <button onClick={()=>onClose(false)} className="btn btn-outline" style={{flex:1,justifyContent:"center",padding:11}}>キャンセル</button>
+                <button onClick={save} disabled={saving} className="btn btn-success" style={{flex:2,justifyContent:"center",padding:11,opacity:saving?0.6:1}}>
+                  {saving?"保存中...":"保存する"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function StaffMgmtPanel({currentUser}){
   const DAYS_JP=["日","月","火","水","木","金","土"];
   const DAY_COLORS=["#ef4444","#374151","#374151","#374151","#374151","#374151","#7c3aed"];
@@ -2310,6 +2438,7 @@ function StaffMgmtPanel({currentUser}){
   const [bulkStart,setBulkStart]=React.useState("09:00");
   const [bulkEnd,setBulkEnd]=React.useState("19:00");
   const [showAddStaff,setShowAddStaff]=React.useState(false);
+  const [menuEditStaff,setMenuEditStaff]=React.useState(null);
 
   // ===== 勤務地（店舗）管理 =====
   const [stores,setStores]=React.useState([]);
@@ -2634,8 +2763,8 @@ function StaffMgmtPanel({currentUser}){
           <button onClick={()=>setShowAddStaff(true)} style={{padding:"8px 16px",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:8,fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>+ スタッフ追加</button>
         </div>
         {/* テーブルヘッダー */}
-        <div style={{display:"grid",gridTemplateColumns:"1.6fr 2.2fr 1fr 1fr 1fr 1fr",background:"#f8fafc",borderBottom:"1px solid #e2e8f0"}}>
-          {["名前","勤務地","役職","状態","シフト","操作"].map(h=>(<div key={h} style={{padding:"10px 14px",fontSize:12,fontWeight:700,color:"#64748b"}}>{h}</div>))}
+        <div style={{display:"grid",gridTemplateColumns:"1.4fr 1.8fr 0.9fr 0.9fr 1fr 1.1fr 0.9fr",background:"#f8fafc",borderBottom:"1px solid #e2e8f0"}}>
+          {["名前","勤務地","役職","状態","シフト","対応メニュー","操作"].map(h=>(<div key={h} style={{padding:"10px 14px",fontSize:12,fontWeight:700,color:"#64748b"}}>{h}</div>))}
         </div>
         {/* 店舗ごとの固定カラー（店舗の並び順で割り当て） */}
         {(()=>{
@@ -2647,7 +2776,7 @@ function StaffMgmtPanel({currentUser}){
           return STAFF_ACCOUNTS.map(s=>{
             const assignedIds=staffStoreMap[s.id]||stores.map(st=>st.id); // 未設定＝全店舗
             return(
-              <div key={s.id} style={{display:"grid",gridTemplateColumns:"1.6fr 2.2fr 1fr 1fr 1fr 1fr",borderBottom:"1px solid #f1f5f9",alignItems:"center"}}>
+              <div key={s.id} style={{display:"grid",gridTemplateColumns:"1.4fr 1.8fr 0.9fr 0.9fr 1fr 1.1fr 0.9fr",borderBottom:"1px solid #f1f5f9",alignItems:"center"}}>
                 <div style={{padding:"14px",display:"flex",alignItems:"center",gap:10}}>
                   <div style={{width:32,height:32,borderRadius:8,background:s.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:13,flexShrink:0}}>{s.initial}</div>
                   <span style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{s.name}</span>
@@ -2670,6 +2799,9 @@ function StaffMgmtPanel({currentUser}){
               <button onClick={()=>openShift(s)} style={{padding:"6px 12px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>シフト設定</button>
             </div>
             <div style={{padding:"14px"}}>
+              <button onClick={()=>setMenuEditStaff(s)} style={{padding:"6px 12px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>メニュー設定</button>
+            </div>
+            <div style={{padding:"14px"}}>
               <button style={{padding:"6px 12px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>編集</button>
             </div>
           </div>
@@ -2678,6 +2810,7 @@ function StaffMgmtPanel({currentUser}){
         })()}
       </div>
       {showAddStaff&&<AddStaffModal onClose={()=>setShowAddStaff(false)} existingIds={STAFF_ACCOUNTS.map(s=>s.id)}/>}
+      {menuEditStaff&&<StaffMenuPermissionsModal staff={menuEditStaff} onClose={(saved)=>{setMenuEditStaff(null);if(saved)showToast("対応メニューを保存しました（反映まで最大30秒かかる場合があります）");}}/>}
     </div>
   );
 }
@@ -4139,23 +4272,38 @@ function Dashboard({user,onLogout}){
   const [selStoreId,setSelStoreId]=React.useState(null);
   const [weeklyShifts,setWeeklyShifts]=React.useState([]); // 全スタッフの週固定シフト
   const [staffStoreMap,setStaffStoreMap]=React.useState({}); // {staffId: [storeIds]}
+  const [staffMenuMap,setStaffMenuMap]=React.useState({}); // {staffId: [対応可能メニュー名] | undefined(=全メニュー対応)}
 
   const isAdmin=user.role==="admin";
   const todayStr=fmtDate(today);
 
   async function fetchAll(){
     try{
-      const [b,br,py,st,ws,cs]=await Promise.all([sb.select("bookings","?order=date.asc,time.asc"),sb.select("staff_breaks","?order=date.asc,time.asc"),sb.select("payments","?order=payment_date.desc"),sb.select("stores","?order=id.asc"),sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc"),sb.select("clinic_staff","?select=id,store_ids")]);
+      const [b,br,py,st,ws,cs]=await Promise.all([sb.select("bookings","?order=date.asc,time.asc"),sb.select("staff_breaks","?order=date.asc,time.asc"),sb.select("payments","?order=payment_date.desc"),sb.select("stores","?order=id.asc"),sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc"),sb.select("clinic_staff","?select=id,store_ids,allowed_menus")]);
       setBookings(Array.isArray(b)?b:[]);setBreaks(Array.isArray(br)?br:[]);setPayments(Array.isArray(py)?py:[]);
       const storeList=Array.isArray(st)?st:[];
       setStores(storeList);
       setSelStoreId(prev=>prev!==null?prev:(storeList.length>0?storeList[0].id:1));
       setWeeklyShifts(Array.isArray(ws)?ws:[]);
       const map={};
-      if(Array.isArray(cs)) cs.forEach(row=>{if(row.store_ids) map[row.id]=row.store_ids;});
+      const menuMap={};
+      if(Array.isArray(cs)) cs.forEach(row=>{
+        if(row.store_ids) map[row.id]=row.store_ids;
+        if(row.allowed_menus) menuMap[row.id]=row.allowed_menus;
+      });
       setStaffStoreMap(map);
+      setStaffMenuMap(menuMap);
     }catch(e){console.error(e);}
     setLoading(false);
+  }
+
+  // 指定スタッフが指定メニュー（複数可）すべてに対応できるか。
+  // staffMenuMapに登録が無いスタッフは「全メニュー対応」として扱う（後方互換のため）。
+  function staffCanDoMenus(staffId,menuNames){
+    const allowed=staffMenuMap[staffId];
+    if(!allowed||allowed.length===0) return true; // 未設定＝全メニュー対応
+    if(!menuNames||menuNames.length===0) return true;
+    return menuNames.every(m=>allowed.includes(m));
   }
 
   // 指定スタッフが指定日に出勤しているか（月次シフトの個別調整＞週固定シフトの順で判定）
@@ -4398,10 +4546,10 @@ function Dashboard({user,onLogout}){
 
 
   // ===== カレンダー上でのドラッグ移動 =====
-  const DRAG_TOTAL_SLOTS=54; // 09:00〜18:00を10分刻みにした数（カレンダー表示の時間軸と一致）
+  const DRAG_TOTAL_SLOTS=27; // 09:00〜18:00を20分刻みにした数（カレンダー表示の時間軸と一致）
   function computeTimeFromRowX(relX,rowWidth){
     const cellW=rowWidth/DRAG_TOTAL_SLOTS;
-    const totalMin=Math.max(0,Math.round(relX/cellW))*10;
+    const totalMin=Math.max(0,Math.round(relX/cellW))*20;
     const h=9+Math.floor(totalMin/60),m=totalMin%60;
     if(h<9||h>17) return null;
     return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
@@ -4656,7 +4804,7 @@ function Dashboard({user,onLogout}){
             function prevWeek(){const d=new Date(baseDate);d.setDate(d.getDate()-7);setBaseDate(d);}
             function nextWeek(){const d=new Date(baseDate);d.setDate(d.getDate()+7);setBaseDate(d);}
 
-            const MINS=Array.from({length:54},(_,i)=>{const totalMin=i*10,h=9+Math.floor(totalMin/60),m=totalMin%60;if(h>18||(h===18&&m>0))return null;return{h,m,label:`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`};}).filter(Boolean);
+            const MINS=Array.from({length:27},(_,i)=>{const totalMin=i*20,h=9+Math.floor(totalMin/60),m=totalMin%60;if(h>18||(h===18&&m>0))return null;return{h,m,label:`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`};}).filter(Boolean);
             const TOTAL_MINS=MINS.length;
             const HEADER_W=100;
             const screenW=Math.max(window.innerWidth-130-48,600);
@@ -4665,8 +4813,8 @@ function Dashboard({user,onLogout}){
             const staffList=storeStaff;
             const filteredStaff=selStaff?staffList.filter(s=>s.id===selStaff):staffList;
 
-            function timeToX(timeStr){const[h,m]=timeStr.split(":").map(Number);return((h-9)*60+m)/10*CELL_W;}
-            function durationToW(b){return(b.duration||DURATION[b.menu]||30)/10*CELL_W;}
+            function timeToX(timeStr){const[h,m]=timeStr.split(":").map(Number);return((h-9)*60+m)/20*CELL_W;}
+            function durationToW(b){return(b.duration||DURATION[b.menu]||30)/20*CELL_W;}
 
             // 30分スロット集計
             const timeSlots30=[];
@@ -4675,7 +4823,7 @@ function Dashboard({user,onLogout}){
               const booked=bookings.filter(b=>{if(b.date!==ds)return false;const bs=toMin(b.time),be=bs+(b.duration||DURATION[b.menu]||30),ss=toMin(label),se=ss+30;return bs<se&&ss<be;}).length;
               const resting=breaks.filter(b=>b.date===ds&&b.time===label).length;
               const available=Math.max(0,filteredStaff.length-resting);
-              timeSlots30.push({label,booked,available,x:(h-9)*60/10*CELL_W+m/10*CELL_W,w:30/10*CELL_W});
+              timeSlots30.push({label,booked,available,x:(h-9)*60/20*CELL_W+m/20*CELL_W,w:30/20*CELL_W});
             }}
 
             return(
@@ -4747,7 +4895,7 @@ function Dashboard({user,onLogout}){
                       <div style={{width:HEADER_W,flexShrink:0,padding:"5px 8px",fontWeight:700,fontSize:11,color:"#64748b",borderRight:"1px solid #e2e8f0"}}>スタッフ</div>
                       <div style={{position:"relative",height:24,flex:1}}>
                         {MINS.filter((_,i)=>i%3===0).map(({h,m,label})=>(
-                          <div key={label} style={{position:"absolute",left:(h-9)*60/10*CELL_W+m/10*CELL_W,top:0,height:"100%",borderLeft:"1px solid #e2e8f0",paddingLeft:2,display:"flex",alignItems:"center"}}>
+                          <div key={label} style={{position:"absolute",left:(h-9)*60/20*CELL_W+m/20*CELL_W,top:0,height:"100%",borderLeft:"1px solid #e2e8f0",paddingLeft:2,display:"flex",alignItems:"center"}}>
                             <span style={{fontSize:9,fontWeight:600,color:"#94a3b8",whiteSpace:"nowrap"}}>{label}</span>
                           </div>
                         ))}
@@ -4773,7 +4921,7 @@ function Dashboard({user,onLogout}){
                           const booked=dayBookings.filter(b=>b.time===label).length;
                           const resting=breaks.filter(b=>b.date===wdStr&&b.time===label).length;
                           const available=Math.max(0,dayStaffList.length-resting);
-                          daySlots30.push({label,booked,available,x:(h-9)*60/10*CELL_W+m/10*CELL_W,w:30/10*CELL_W});
+                          daySlots30.push({label,booked,available,x:(h-9)*60/20*CELL_W+m/20*CELL_W,w:30/20*CELL_W});
                         }
                       }
 
@@ -4818,7 +4966,7 @@ function Dashboard({user,onLogout}){
                                   onClick={e=>{
                                     const rect=e.currentTarget.getBoundingClientRect();
                                     const x=e.clientX-rect.left;
-                                    const totalMinFromStart=Math.round(x/CELL_W)*10;
+                                    const totalMinFromStart=Math.round(x/CELL_W)*20;
                                     const h=9+Math.floor(totalMinFromStart/60);
                                     const m=totalMinFromStart%60;
                                     if(h>=9&&h<=17){
@@ -4828,7 +4976,7 @@ function Dashboard({user,onLogout}){
                                     }
                                   }}>
                                   {MINS.filter((_,i)=>i%3===0).map(({h,m,label})=>(
-                                    <div key={label} style={{position:"absolute",left:(h-9)*60/10*CELL_W+m/10*CELL_W,top:0,bottom:0,borderLeft:"1px solid #f1f5f9",pointerEvents:"none"}}/>
+                                    <div key={label} style={{position:"absolute",left:(h-9)*60/20*CELL_W+m/20*CELL_W,top:0,bottom:0,borderLeft:"1px solid #f1f5f9",pointerEvents:"none"}}/>
                                   ))}
                                   {staffBreaks.map(br=>(
                                     <div key={`br-${br.id}`} style={{position:"absolute",left:timeToX(br.time),top:4,bottom:4,width:CELL_W*3,background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1,pointerEvents:"none"}}>
@@ -4922,7 +5070,7 @@ function Dashboard({user,onLogout}){
 
           {/* 予約フォーム */}
           {view==="form"&&form&&(
-            <FormPanel form={form} setForm={setForm} editId={editId} conflict={conflict} setConflict={setConflict} isAdmin={isAdmin} bookings={bookings} save={save} onClose={()=>setView("calendar")} onDelete={()=>setDelConfirm(bookings.find(b=>b.id===editId))} onCancel={()=>setCancelModalBooking(bookings.find(b=>b.id===editId))} businessHours={businessHours} closures={closures} storeStaffList={storeStaff} isStaffWorkingOnDate={isStaffWorkingOnDate}/>
+            <FormPanel form={form} setForm={setForm} editId={editId} conflict={conflict} setConflict={setConflict} isAdmin={isAdmin} bookings={bookings} save={save} onClose={()=>setView("calendar")} onDelete={()=>setDelConfirm(bookings.find(b=>b.id===editId))} onCancel={()=>setCancelModalBooking(bookings.find(b=>b.id===editId))} businessHours={businessHours} closures={closures} storeStaffList={storeStaff} isStaffWorkingOnDate={isStaffWorkingOnDate} staffCanDoMenus={staffCanDoMenus}/>
           )}
         </div>
       </div>
@@ -4930,7 +5078,7 @@ function Dashboard({user,onLogout}){
       {/* 時間選択ポップアップ（カレンダー直接タップ時） */}
       {timePickerPopup&&(()=>{
         const centerMin=toMin(timePickerPopup.centerTime);
-        const options=[-20,-10,0,10,20].map(off=>{
+        const options=[-40,-20,0,20,40].map(off=>{
           const totalMin=centerMin+off;
           if(totalMin<9*60||totalMin>=19*60) return null;
           const h=Math.floor(totalMin/60),m=totalMin%60;
