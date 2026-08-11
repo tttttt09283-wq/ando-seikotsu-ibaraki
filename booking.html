@@ -35,8 +35,8 @@ const EVENT_MENU_PRICE = 500; // イベント価格（円）
 
 
 const STAFF = [
-  {id:1,name:"岩永"},{id:2,name:"大皿"},
-  {id:3,name:"定井"},{id:4,name:"細永"},{id:5,name:"広川"}
+  {id:1,name:"奥田"},{id:2,name:"山﨑"},
+  {id:3,name:"細永"},{id:4,name:"田中"},{id:5,name:"岩永"}
 ];
 
 const SLOTS = (()=>{
@@ -157,6 +157,13 @@ function App(){
   var liffReadyState = useState(false);
   var liffReady = liffReadyState[0]; var setLiffReady = liffReadyState[1];
 
+  var toastState = useState("");
+  var toastMsg = toastState[0]; var setToastMsg = toastState[1];
+  function showToast(msg){
+    setToastMsg(msg);
+    setTimeout(function(){setToastMsg("");}, 3200);
+  }
+
   // リピーター判定・過去予約情報
   var isRepeatState = useState(false);
   var isRepeat = isRepeatState[0]; var setIsRepeat = isRepeatState[1];
@@ -191,9 +198,11 @@ function App(){
       setLiffReady(true);
 
       // LINEログインへの遷移前に保存しておいた入力内容があれば復元する
+      var hadDraft=false;
       try{
         var saved=sessionStorage.getItem("booking_draft");
         if(saved){
+          hadDraft=true;
           var draft=JSON.parse(saved);
           if(draft.selDate) setSelDate(new Date(draft.selDate+"T00:00:00"));
           if(draft.selTime) setSelTime(draft.selTime);
@@ -206,6 +215,11 @@ function App(){
       if(liff.isLoggedIn()){
         liff.getProfile().then(function(profile){
           setLineUserId(profile.userId);
+          // LINEログイン画面から戻ってきた直後であれば、連携完了をお知らせする
+          if(hadDraft){
+            setF("lineNotify", true);
+            showToast("✅ LINEリマインドの登録が完了しました！");
+          }
           // 過去予約を確認してリピーター判定
           sb.select("bookings","?line_user_id=eq."+encodeURIComponent(profile.userId)+"&order=date.desc&limit=1")
             .then(function(past){
@@ -354,12 +368,23 @@ function App(){
     setForm(Object.assign({}, form, upd));
   }
 
+  function renderToast(){
+    if(!toastMsg) return null;
+    return React.createElement("div",{style:{
+      position:"fixed",left:"50%",bottom:24,transform:"translateX(-50%)",
+      background:"#1e293b",color:"white",padding:"12px 20px",borderRadius:10,
+      fontSize:13,fontWeight:700,boxShadow:"0 8px 24px rgba(0,0,0,.25)",
+      zIndex:999,whiteSpace:"nowrap",maxWidth:"90vw",textAlign:"center"
+    }},toastMsg);
+  }
+
   function handleLineLogin(){
     if(!liffReady) return;
     if(liff.isInClient()){
       liff.getProfile().then(function(profile){
         setLineUserId(profile.userId);
         setF("lineNotify", true);
+        showToast("✅ LINEリマインドの登録が完了しました！");
       }).catch(function(){});
     } else {
       // ページ全体がLINEログイン画面へ遷移してしまうため、戻ってきた時に
@@ -642,7 +667,8 @@ function App(){
           React.createElement("span",{style:{fontSize:18}},"💬"),
           "公式LINEに戻る"
         )
-      )
+      ),
+      renderToast()
     )
   );
 
@@ -1052,7 +1078,8 @@ function App(){
           )
         )
       ):null
-    )
+    ),
+    renderToast()
   );
 }
 
