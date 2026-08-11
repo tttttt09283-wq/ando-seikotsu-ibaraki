@@ -148,6 +148,9 @@ function App(){
   var errState = useState({});
   var errors = errState[0]; var setErrors = errState[1];
 
+  var slotFullState = useState("");
+  var slotFullMsg = slotFullState[0]; var setSlotFullMsg = slotFullState[1];
+
   var bookingIdState = useState(null);
   var bookingId = bookingIdState[0]; var setBookingId = bookingIdState[1];
 
@@ -269,18 +272,26 @@ function App(){
   }
   var weekDays = getWeekDays(weekStart);
 
-  useEffect(function(){
-    var startStr = fmtDate(weekDays[0]);
-    var endStr = fmtDate(weekDays[6]);
-    Promise.all([
-      sb.select("bookings","?date=gte."+startStr+"&date=lte."+endStr+"&menu=eq."+encodeURIComponent(EVENT_MENU_NAME)),
+  function refreshWeekData(){
+    var wd = getWeekDays(weekStart);
+    var startStr = fmtDate(wd[0]);
+    var endStr = fmtDate(wd[6]);
+    return Promise.all([
+      // メニューを問わず、その日時にスタッフが埋まっているかどうかを見る必要があるため、
+      // 特定メニューだけに絞り込まず全予約を取得する（キャンセル済みは除外）
+      sb.select("bookings","?date=gte."+startStr+"&date=lte."+endStr),
       sb.select("staff_breaks","?date=gte."+startStr+"&date=lte."+endStr)
     ]).then(function(results){
+      var allBookings = Array.isArray(results[0]) ? results[0] : [];
       setWeekData({
-        booked: Array.isArray(results[0])?results[0]:[],
+        booked: allBookings.filter(function(b){return !b.cancelled;}),
         breaks: Array.isArray(results[1])?results[1]:[]
       });
     });
+  }
+
+  useEffect(function(){
+    refreshWeekData();
   }, [fmtDate(weekStart)]);
 
   // ===== 営業時間ヘルパー =====
@@ -345,6 +356,28 @@ function App(){
     if(!selDate) return 1;
     return getAvailableStaffIdFor(selDate,t);
   }
+
+  // 予約を確定する直前に、その場でもう一度Supabaseへ空き状況を問い合わせて確認する。
+  // 画面表示中の空き情報は多少タイムラグがあるため、ほぼ同時に他の方が同じ枠を
+  // 予約してしまう「かぶり」を防ぐための最終チェック。
+  // 空いていれば staff_id を、埋まっていれば null を返す。
+  function checkStaffAvailabilityNow(dateStr,time){
+    return Promise.all([
+      sb.select("bookings","?date=eq."+dateStr+"&time=eq."+time),
+      sb.select("staff_breaks","?date=eq."+dateStr+"&time=eq."+time)
+    ]).then(function(results){
+      var dayBookings = Array.isArray(results[0]) ? results[0] : [];
+      var dayBreaks = Array.isArray(results[1]) ? results[1] : [];
+      var unavail = {};
+      dayBookings.forEach(function(b){ if(!b.cancelled) unavail[b.staff_id]=true; });
+      dayBreaks.forEach(function(b){ unavail[b.staff_id]=true; });
+      var found = STAFF.find(function(s){return !unavail[s.id];});
+      return found ? found.id : null;
+    }).catch(function(){
+      return undefined; // 通信エラー時は判定不能。呼び出し側でフォールバックする
+    });
+  }
+
 
   function formatBodyParts(parts,other){
     return parts.map(function(p){return p==="その他"&&other?"その他（"+other+"）":p;}).join("・");
@@ -428,7 +461,26 @@ function App(){
   function submit(){
     if(!validate3()) return;
     setSubmitting(true);
-    var staffId = getAvailableStaffId(selTime);
+    setSlotFullMsg("");
+    var dateStr = fmtDate(selDate);
+    checkStaffAvailabilityNow(dateStr, selTime).then(function(freshStaffId){
+      if(freshStaffId===null){
+        // 直前で他の方に予約が埋まってしまった
+        setSubmitting(false);
+        setSlotFullMsg("大変申し訳ございません、ちょうどこの日時が埋まってしまいました。お手数ですが別の日時をお選びください。");
+        setSelDate(null);
+        setSelTime(null);
+        setStep(0);
+        refreshWeekData();
+        return;
+      }
+      // 通信エラーで判定できなかった場合は、これまで通り画面上の情報から選ぶ（フォールバック）
+      var staffId = (freshStaffId===undefined) ? getAvailableStaffId(selTime) : freshStaffId;
+      doSubmitBooking(staffId, dateStr);
+    });
+  }
+
+  function doSubmitBooking(staffId, dateStr){
     var howKnowText = form.howKnow==="その他" ? "その他："+form.howKnowOther : form.howKnow;
     var newBookingId = null;
 
@@ -436,7 +488,7 @@ function App(){
       patient_name:form.name,
       phone:form.phone,
       staff_id:staffId,
-      date:fmtDate(selDate),
+      date:dateStr,
       time:selTime,
       menu:EVENT_MENU_NAME,
       store_id:resolvedStoreId,
@@ -521,13 +573,29 @@ function App(){
   function submitRepeat(){
     if(!selDate||!selTime) return;
     setSubmitting(true);
-    var staffId=getAvailableStaffId(selTime);
+    setSlotFullMsg("");
+    var dateStr=fmtDate(selDate);
+    checkStaffAvailabilityNow(dateStr, selTime).then(function(freshStaffId){
+      if(freshStaffId===null){
+        setSubmitting(false);
+        setSlotFullMsg("大変申し訳ございません、ちょうどこの日時が埋まってしまいました。お手数ですが別の日時をお選びください。");
+        setSelDate(null);
+        setSelTime(null);
+        refreshWeekData();
+        return;
+      }
+      var staffId=(freshStaffId===undefined)?getAvailableStaffId(selTime):freshStaffId;
+      doSubmitRepeatBooking(staffId, dateStr);
+    });
+  }
+
+  function doSubmitRepeatBooking(staffId, dateStr){
     var newBookingId=null;
     sb.insert("bookings",{
       patient_name:pastBooking.patient_name,
       phone:pastBooking.phone||"",
       staff_id:staffId,
-      date:fmtDate(selDate),
+      date:dateStr,
       time:selTime,
       menu:"再診（30分）",
       store_id:resolvedStoreId,
@@ -717,6 +785,12 @@ function App(){
         ):null,
 
         React.createElement("div",{style:{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:16}},"日時を選んでください"),
+
+        // ===== 直前チェックで埋まっていた場合の警告 =====
+        slotFullMsg?React.createElement("div",{style:{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:12,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}},
+          React.createElement("span",{style:{fontSize:20}},"⚠️"),
+          React.createElement("div",{style:{fontSize:13,color:"#991b1b",fontWeight:700}},slotFullMsg)
+        ):null,
 
         // ===== イベント開催のお知らせ =====
         React.createElement("div",{style:{background:"linear-gradient(135deg,#fef2f2,#fff1f2)",border:"1.5px solid #fecaca",borderRadius:12,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}},
