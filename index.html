@@ -5092,8 +5092,8 @@ function Dashboard({user,onLogout}){
                                       setTimePickerPopup({date:wdStr,staffId:staff.id,x:e.clientX,y:e.clientY,centerTime});
                                     }
                                   }}>
-                                  {MINS.filter((_,i)=>i%3===0).map(({h,m,label})=>(
-                                    <div key={label} style={{position:"absolute",left:(h-9)*60/10*CELL_W+m/10*CELL_W,top:0,bottom:0,borderLeft:"1px solid #f1f5f9",pointerEvents:"none"}}/>
+                                  {MINS.map(({h,m,label})=>(
+                                    <div key={label} style={{position:"absolute",left:(h-9)*60/10*CELL_W+m/10*CELL_W,top:0,bottom:0,borderLeft:`1px solid ${m%30===0?"#e2e8f0":"#f6f7f9"}`,pointerEvents:"none"}}/>
                                   ))}
                                   {totalLanes>1&&Array.from({length:totalLanes-1}).map((_,i)=>(
                                     <div key={`lane-${i}`} style={{position:"absolute",left:0,right:0,top:(i+1)*laneH,height:1,background:"#f1f5f9",pointerEvents:"none"}}/>
