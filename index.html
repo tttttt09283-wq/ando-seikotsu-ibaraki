@@ -1424,7 +1424,7 @@ function SettingsPanel(){
   async function loadSettings(){
     setLoading(true);
     try{
-      const data=await sb.select("store_settings",`?store_id=eq.${selStoreId}`);
+      const data=await sb.select("store_settings",`?store_id=eq.${selStoreId}&order=updated_at.desc.nullslast,id.desc&limit=1`);
       if(Array.isArray(data)&&data.length>0){
         const s=data[0];
         setSettings({
