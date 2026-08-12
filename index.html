@@ -286,7 +286,7 @@ async function processReferralBonus(booking,allBookings){
 // ===== キャンセル理由の選択肢 =====
 const CANCEL_REASONS=["体調不良","仕事都合","急用","天候不良","無断キャンセル","予約間違い","他院・他予約と重複","スタッフ都合","その他"];
 
-const SLOTS = (()=>{const s=[];for(let h=9;h<=19;h++){for(let m=0;m<60;m+=20){if(h===19&&m>0) break;s.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);}}return s;})();
+const SLOTS = (()=>{const s=[];for(let h=9;h<=19;h++){for(let m=0;m<60;m+=10){if(h===19&&m>0) break;s.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);}}return s;})();
 
 // Supabase公式クライアント（Authセッション管理付き）
 // storage を sessionStorage にすることで「タブを閉じるまでログイン維持」を実現
@@ -336,6 +336,26 @@ function toMin(t){const[h,m]=t.split(":").map(Number);return h*60+m;}
 function overlaps(a,b){
   const as=toMin(a.time),ae=as+(a.duration||DURATION[a.menu]||30),bs=toMin(b.time),be=bs+(b.duration||DURATION[b.menu]||30);
   return as<be&&bs<ae;
+}
+
+// 同じスタッフの予約を、時間が重ならないよう「レーン」に振り分ける（ベッド・アシスタント等で同時に複数人を担当できる場合用）。
+// 戻り値：{ laneOf:{bookingId:レーン番号(0始まり)}, laneCount:実際に必要だったレーン数 }
+function assignLanes(bookingsForStaff){
+  const sorted=[...bookingsForStaff].sort((a,b)=>a.time.localeCompare(b.time));
+  const laneEndTimes=[];
+  const laneOf={};
+  sorted.forEach(b=>{
+    const startMin=toMin(b.time);
+    const endMin=startMin+(b.duration||DURATION[b.menu]||30);
+    let placed=-1;
+    for(let i=0;i<laneEndTimes.length;i++){
+      if(laneEndTimes[i]<=startMin){placed=i;break;}
+    }
+    if(placed===-1){laneEndTimes.push(endMin);placed=laneEndTimes.length-1;}
+    else laneEndTimes[placed]=endMin;
+    laneOf[b.id]=placed;
+  });
+  return {laneOf,laneCount:laneEndTimes.length};
 }
 
 // 指定した患者の「次回予約」（今日以降の、キャンセルされていない、対象自身を除く予約のうち一番早いもの）を探す
@@ -4311,13 +4331,33 @@ function Dashboard({user,onLogout}){
   const [weeklyShifts,setWeeklyShifts]=React.useState([]); // 全スタッフの週固定シフト
   const [staffStoreMap,setStaffStoreMap]=React.useState({}); // {staffId: [storeIds]}
   const [staffMenuMap,setStaffMenuMap]=React.useState({}); // {staffId: [対応可能メニュー名] | undefined(=全メニュー対応)}
+  const [staffLaneMap,setStaffLaneMap]=React.useState({}); // {staffId: 同時受付レーン数（未設定は1）}
 
   const isAdmin=user.role==="admin";
   const todayStr=fmtDate(today);
 
+  function getLaneCount(staffId){
+    return staffLaneMap[staffId]||1;
+  }
+
+  async function changeLaneCount(staffId,delta){
+    const next=Math.max(1,Math.min(6,getLaneCount(staffId)+delta));
+    setStaffLaneMap(prev=>({...prev,[staffId]:next})); // 即座に画面へ反映
+    try{
+      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      await fetch(`${SUPABASE_URL}/rest/v1/clinic_staff?id=eq.${staffId}`,{
+        method:"PATCH",
+        headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json"},
+        body:JSON.stringify({lane_count:next}),
+      });
+    }catch(e){
+      console.error("レーン数の保存に失敗しました",e);
+    }
+  }
+
   async function fetchAll(){
     try{
-      const [b,br,py,st,ws,cs]=await Promise.all([sb.select("bookings","?order=date.asc,time.asc"),sb.select("staff_breaks","?order=date.asc,time.asc"),sb.select("payments","?order=payment_date.desc"),sb.select("stores","?order=id.asc"),sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc"),sb.select("clinic_staff","?select=id,store_ids,allowed_menus")]);
+      const [b,br,py,st,ws,cs]=await Promise.all([sb.select("bookings","?order=date.asc,time.asc"),sb.select("staff_breaks","?order=date.asc,time.asc"),sb.select("payments","?order=payment_date.desc"),sb.select("stores","?order=id.asc"),sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc"),sb.select("clinic_staff","?select=id,store_ids,allowed_menus,lane_count")]);
       setBookings(Array.isArray(b)?b:[]);setBreaks(Array.isArray(br)?br:[]);setPayments(Array.isArray(py)?py:[]);
       const storeList=Array.isArray(st)?st:[];
       setStores(storeList);
@@ -4325,12 +4365,15 @@ function Dashboard({user,onLogout}){
       setWeeklyShifts(Array.isArray(ws)?ws:[]);
       const map={};
       const menuMap={};
+      const laneMap={};
       if(Array.isArray(cs)) cs.forEach(row=>{
         if(row.store_ids) map[row.id]=row.store_ids;
         if(row.allowed_menus) menuMap[row.id]=row.allowed_menus;
+        if(row.lane_count) laneMap[row.id]=row.lane_count;
       });
       setStaffStoreMap(map);
       setStaffMenuMap(menuMap);
+      setStaffLaneMap(laneMap);
     }catch(e){console.error(e);}
     setLoading(false);
   }
@@ -4476,7 +4519,22 @@ function Dashboard({user,onLogout}){
 
   async function save(){
     if(!form.patient_name.trim())return;
-    if(bookings.some(b=>b.id!==editId&&b.staff_id===form.staff_id&&b.date===form.date&&!b.cancelled&&overlaps(b,form))){setConflict(true);return;}
+    const laneCapacity=getLaneCount(form.staff_id);
+    const overlapCountLocal=bookings.filter(b=>b.id!==editId&&b.staff_id===form.staff_id&&b.date===form.date&&!b.cancelled&&overlaps(b,form)).length;
+    if(overlapCountLocal>=laneCapacity){setConflict(true);return;}
+    // 保存直前にもう一度サーバーへ問い合わせて、ほぼ同時に他のスタッフが同じ枠を
+    // 確保してしまっていないか最終確認する（画面上のデータには多少タイムラグがあるため）
+    try{
+      const freshSameDay=await sb.select("bookings",`?staff_id=eq.${form.staff_id}&date=eq.${form.date}`);
+      const overlapCountFresh=(Array.isArray(freshSameDay)?freshSameDay:[]).filter(b=>b.id!==editId&&!b.cancelled&&overlaps(b,form)).length;
+      if(overlapCountFresh>=laneCapacity){
+        setConflict(true);
+        showToast("ちょうど別の予約が入ってしまいました。時間をご確認ください","delete");
+        return;
+      }
+    }catch(e){
+      // 確認自体が失敗した場合は、これまで通りクライアント側のチェックのみで進める
+    }
     try{
       if(editId!==null){
         const result=await sb.update("bookings",editId,form);
@@ -4584,10 +4642,10 @@ function Dashboard({user,onLogout}){
 
 
   // ===== カレンダー上でのドラッグ移動 =====
-  const DRAG_TOTAL_SLOTS=27; // 09:00〜18:00を20分刻みにした数（カレンダー表示の時間軸と一致）
+  const DRAG_TOTAL_SLOTS=54; // 09:00〜18:00を10分刻みにした数（カレンダー表示の時間軸と一致）
   function computeTimeFromRowX(relX,rowWidth){
     const cellW=rowWidth/DRAG_TOTAL_SLOTS;
-    const totalMin=Math.max(0,Math.round(relX/cellW))*20;
+    const totalMin=Math.max(0,Math.round(relX/cellW))*10;
     const h=9+Math.floor(totalMin/60),m=totalMin%60;
     if(h<9||h>17) return null;
     return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
@@ -4599,12 +4657,20 @@ function Dashboard({user,onLogout}){
       showToast("移動先のスタッフはこの日休みのため移動できません","delete");
       return;
     }
-    const conflict=bookings.some(b=>b.id!==booking.id&&b.staff_id===newStaffId&&b.date===newDate&&!b.cancelled&&overlaps(b,{time:newTime,duration:booking.duration||DURATION[booking.menu]||30}));
-    if(conflict){
-      showToast("その時間はすでに予約が入っています","delete");
+    const laneCapacity=getLaneCount(newStaffId);
+    const overlapCountLocal=bookings.filter(b=>b.id!==booking.id&&b.staff_id===newStaffId&&b.date===newDate&&!b.cancelled&&overlaps(b,{time:newTime,duration:booking.duration||DURATION[booking.menu]||30})).length;
+    if(overlapCountLocal>=laneCapacity){
+      showToast("その時間はすでに予約枠が埋まっています","delete");
       return;
     }
     try{
+      // 保存直前にもう一度サーバーへ問い合わせて最終確認（かぶり移動を防ぐ）
+      const freshSameDay=await sb.select("bookings",`?staff_id=eq.${newStaffId}&date=eq.${newDate}`);
+      const overlapCountFresh=(Array.isArray(freshSameDay)?freshSameDay:[]).filter(b=>b.id!==booking.id&&!b.cancelled&&overlaps(b,{time:newTime,duration:booking.duration||DURATION[booking.menu]||30})).length;
+      if(overlapCountFresh>=laneCapacity){
+        showToast("ちょうど別の予約が入ってしまいました。時間をご確認ください","delete");
+        return;
+      }
       const result=await sb.update("bookings",booking.id,{date:newDate,time:newTime,staff_id:newStaffId});
       if(!Array.isArray(result)||result.length===0){
         throw new Error((result&&result.message)||"移動に失敗しました");
@@ -4842,7 +4908,7 @@ function Dashboard({user,onLogout}){
             function prevWeek(){const d=new Date(baseDate);d.setDate(d.getDate()-7);setBaseDate(d);}
             function nextWeek(){const d=new Date(baseDate);d.setDate(d.getDate()+7);setBaseDate(d);}
 
-            const MINS=Array.from({length:27},(_,i)=>{const totalMin=i*20,h=9+Math.floor(totalMin/60),m=totalMin%60;if(h>18||(h===18&&m>0))return null;return{h,m,label:`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`};}).filter(Boolean);
+            const MINS=Array.from({length:54},(_,i)=>{const totalMin=i*10,h=9+Math.floor(totalMin/60),m=totalMin%60;if(h>18||(h===18&&m>0))return null;return{h,m,label:`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`};}).filter(Boolean);
             const TOTAL_MINS=MINS.length;
             const HEADER_W=100;
             const screenW=Math.max(window.innerWidth-130-48,600);
@@ -4851,8 +4917,8 @@ function Dashboard({user,onLogout}){
             const staffList=storeStaff;
             const filteredStaff=selStaff?staffList.filter(s=>s.id===selStaff):staffList;
 
-            function timeToX(timeStr){const[h,m]=timeStr.split(":").map(Number);return((h-9)*60+m)/20*CELL_W;}
-            function durationToW(b){return(b.duration||DURATION[b.menu]||30)/20*CELL_W;}
+            function timeToX(timeStr){const[h,m]=timeStr.split(":").map(Number);return((h-9)*60+m)/10*CELL_W;}
+            function durationToW(b){return(b.duration||DURATION[b.menu]||30)/10*CELL_W;}
 
             // 30分スロット集計
             const timeSlots30=[];
@@ -4861,7 +4927,7 @@ function Dashboard({user,onLogout}){
               const booked=bookings.filter(b=>{if(b.date!==ds)return false;const bs=toMin(b.time),be=bs+(b.duration||DURATION[b.menu]||30),ss=toMin(label),se=ss+30;return bs<se&&ss<be;}).length;
               const resting=breaks.filter(b=>b.date===ds&&b.time===label).length;
               const available=Math.max(0,filteredStaff.length-resting);
-              timeSlots30.push({label,booked,available,x:(h-9)*60/20*CELL_W+m/20*CELL_W,w:30/20*CELL_W});
+              timeSlots30.push({label,booked,available,x:(h-9)*60/10*CELL_W+m/10*CELL_W,w:30/10*CELL_W});
             }}
 
             return(
@@ -4933,7 +4999,7 @@ function Dashboard({user,onLogout}){
                       <div style={{width:HEADER_W,flexShrink:0,padding:"5px 8px",fontWeight:700,fontSize:11,color:"#64748b",borderRight:"1px solid #e2e8f0"}}>スタッフ</div>
                       <div style={{position:"relative",height:24,flex:1}}>
                         {MINS.filter((_,i)=>i%3===0).map(({h,m,label})=>(
-                          <div key={label} style={{position:"absolute",left:(h-9)*60/20*CELL_W+m/20*CELL_W,top:0,height:"100%",borderLeft:"1px solid #e2e8f0",paddingLeft:2,display:"flex",alignItems:"center"}}>
+                          <div key={label} style={{position:"absolute",left:(h-9)*60/10*CELL_W+m/10*CELL_W,top:0,height:"100%",borderLeft:"1px solid #e2e8f0",paddingLeft:2,display:"flex",alignItems:"center"}}>
                             <span style={{fontSize:9,fontWeight:600,color:"#94a3b8",whiteSpace:"nowrap"}}>{label}</span>
                           </div>
                         ))}
@@ -4959,7 +5025,7 @@ function Dashboard({user,onLogout}){
                           const booked=dayBookings.filter(b=>b.time===label).length;
                           const resting=breaks.filter(b=>b.date===wdStr&&b.time===label).length;
                           const available=Math.max(0,dayStaffList.length-resting);
-                          daySlots30.push({label,booked,available,x:(h-9)*60/20*CELL_W+m/20*CELL_W,w:30/20*CELL_W});
+                          daySlots30.push({label,booked,available,x:(h-9)*60/10*CELL_W+m/10*CELL_W,w:30/10*CELL_W});
                         }
                       }
 
@@ -4991,20 +5057,33 @@ function Dashboard({user,onLogout}){
                           {dayStaffList.map(staff=>{
                             const staffBookings=dayBookings.filter(b=>b.staff_id===staff.id);
                             const staffBreaks=breaks.filter(b=>b.date===wdStr&&b.staff_id===staff.id);
+                            const configuredLanes=getLaneCount(staff.id);
+                            const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings);
+                            const totalLanes=Math.max(configuredLanes,neededLanes,1);
+                            const rowH=Math.max(48,totalLanes*40);
+                            const laneH=rowH/totalLanes;
                             return(
-                              <div key={staff.id} style={{display:"flex",borderBottom:"1px solid #f1f5f9",minHeight:48}}>
+                              <div key={staff.id} style={{display:"flex",borderBottom:"1px solid #f1f5f9",minHeight:rowH}}>
                                 <div style={{width:HEADER_W,flexShrink:0,padding:"4px 8px",borderRight:"1px solid #e2e8f0",background:"#fafbfc",display:"flex",alignItems:"center",gap:5}}>
                                   <div style={{width:22,height:22,borderRadius:6,background:`linear-gradient(135deg,${staff.color},${staff.color}99)`,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:10,flexShrink:0}}>{staff.initial}</div>
-                                  <div>
+                                  <div style={{flex:1,minWidth:0}}>
                                     <div style={{fontWeight:700,fontSize:10,color:"#1e293b",lineHeight:1.2}}>{staff.name}</div>
                                     <div style={{fontSize:9,color:staff.color,fontWeight:700}}>{staffBookings.length}件</div>
                                   </div>
+                                  {isAdmin&&(
+                                    <div style={{display:"flex",flexDirection:"column",gap:1,flexShrink:0}}>
+                                      <button onClick={()=>changeLaneCount(staff.id,1)} title="同時受付レーンを増やす"
+                                        style={{width:16,height:14,lineHeight:"12px",fontSize:9,fontWeight:900,border:"1px solid #d1d5db",background:"white",color:"#374151",borderRadius:3,cursor:"pointer",padding:0}}>＋</button>
+                                      <button onClick={()=>changeLaneCount(staff.id,-1)} title="同時受付レーンを減らす"
+                                        style={{width:16,height:14,lineHeight:"12px",fontSize:9,fontWeight:900,border:"1px solid #d1d5db",background:"white",color:"#374151",borderRadius:3,cursor:"pointer",padding:0}}>－</button>
+                                    </div>
+                                  )}
                                 </div>
-                                <div data-cal-row="1" data-date={wdStr} data-staffid={staff.id} style={{position:"relative",flex:1,minHeight:48,cursor:"pointer",background:isToday?"#fafeff":"white"}}
+                                <div data-cal-row="1" data-date={wdStr} data-staffid={staff.id} style={{position:"relative",flex:1,minHeight:rowH,cursor:"pointer",background:isToday?"#fafeff":"white"}}
                                   onClick={e=>{
                                     const rect=e.currentTarget.getBoundingClientRect();
                                     const x=e.clientX-rect.left;
-                                    const totalMinFromStart=Math.round(x/CELL_W)*20;
+                                    const totalMinFromStart=Math.round(x/CELL_W)*10;
                                     const h=9+Math.floor(totalMinFromStart/60);
                                     const m=totalMinFromStart%60;
                                     if(h>=9&&h<=17){
@@ -5014,7 +5093,10 @@ function Dashboard({user,onLogout}){
                                     }
                                   }}>
                                   {MINS.filter((_,i)=>i%3===0).map(({h,m,label})=>(
-                                    <div key={label} style={{position:"absolute",left:(h-9)*60/20*CELL_W+m/20*CELL_W,top:0,bottom:0,borderLeft:"1px solid #f1f5f9",pointerEvents:"none"}}/>
+                                    <div key={label} style={{position:"absolute",left:(h-9)*60/10*CELL_W+m/10*CELL_W,top:0,bottom:0,borderLeft:"1px solid #f1f5f9",pointerEvents:"none"}}/>
+                                  ))}
+                                  {totalLanes>1&&Array.from({length:totalLanes-1}).map((_,i)=>(
+                                    <div key={`lane-${i}`} style={{position:"absolute",left:0,right:0,top:(i+1)*laneH,height:1,background:"#f1f5f9",pointerEvents:"none"}}/>
                                   ))}
                                   {staffBreaks.map(br=>(
                                     <div key={`br-${br.id}`} style={{position:"absolute",left:timeToX(br.time),top:4,bottom:4,width:CELL_W*3,background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1,pointerEvents:"none"}}>
@@ -5027,8 +5109,10 @@ function Dashboard({user,onLogout}){
                                     const isCheckedIn=!!b.checked_in_at;
                                     const isNewPatient=cnt===1;
                                     const isBeingDragged=dragBooking&&dragPos.moved&&dragBooking.id===b.id;
+                                    const lane=laneOf[b.id]||0;
                                     return(
                                       <div key={b.id}
+                                        title={b.memo?`📝 メモ：${b.memo}`:undefined}
                                         onPointerDown={e=>{
                                           e.stopPropagation();
                                           try{e.target.setPointerCapture(e.pointerId);}catch(err){}
@@ -5037,8 +5121,9 @@ function Dashboard({user,onLogout}){
                                           setDragBooking(b);
                                         }}
                                         onClick={e=>{e.stopPropagation();}}
-                                        style={{position:"absolute",left:x,top:3,bottom:3,width:Math.max(w-2,20),background:isPaid?"linear-gradient(135deg,#9ca3af,#6b7280)":isNewPatient?"linear-gradient(135deg,#f97316,#ea580c)":`linear-gradient(135deg,${staff.color},${staff.color}bb)`,borderRadius:6,padding:"2px 5px",cursor:"grab",touchAction:"none",boxShadow:isCheckedIn?"0 0 0 2px #facc15,0 2px 6px rgba(0,0,0,.3)":isNewPatient?"0 2px 8px rgba(249,115,22,.6)":(isPaid?"0 1px 3px rgba(0,0,0,.2)":`0 2px 6px ${staff.color}44`),display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden",zIndex:isNewPatient?3:2,opacity:isBeingDragged?.35:isPaid?.75:1}}>
+                                        style={{position:"absolute",left:x,top:lane*laneH+3,height:laneH-6,width:Math.max(w-2,20),background:isPaid?"linear-gradient(135deg,#9ca3af,#6b7280)":isNewPatient?"linear-gradient(135deg,#f97316,#ea580c)":`linear-gradient(135deg,${staff.color},${staff.color}bb)`,borderRadius:6,padding:"2px 5px",cursor:"grab",touchAction:"none",boxShadow:isCheckedIn?"0 0 0 2px #facc15,0 2px 6px rgba(0,0,0,.3)":isNewPatient?"0 2px 8px rgba(249,115,22,.6)":(isPaid?"0 1px 3px rgba(0,0,0,.2)":`0 2px 6px ${staff.color}44`),display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden",zIndex:isNewPatient?3:2,opacity:isBeingDragged?.35:isPaid?.75:1}}>
                                         {isNewPatient&&<div style={{position:"absolute",top:-1,right:-1,background:"#fff",color:"#ea580c",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"0 6px 0 4px",lineHeight:1,letterSpacing:0}}>NEW</div>}
+                                        {b.memo&&<div style={{position:"absolute",bottom:-1,left:-1,background:"#fff",color:"#1e3a5f",fontSize:8,fontWeight:900,padding:"0 3px",borderRadius:"6px 4px 0 0",lineHeight:1.4}}>📝</div>}
                                         <div style={{fontWeight:800,fontSize:10,color:"white",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isCheckedIn?"📷":""}{isPaid?"✓ ":""}{b.patient_name}</div>
                                         <div style={{fontSize:9,color:"rgba(255,255,255,.85)"}}>{b.time}{cnt>1&&<span style={{marginLeft:2,background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}</div>
                                       </div>
@@ -5116,7 +5201,7 @@ function Dashboard({user,onLogout}){
       {/* 時間選択ポップアップ（カレンダー直接タップ時） */}
       {timePickerPopup&&(()=>{
         const centerMin=toMin(timePickerPopup.centerTime);
-        const options=[-40,-20,0,20,40].map(off=>{
+        const options=[-20,-10,0,10,20].map(off=>{
           const totalMin=centerMin+off;
           if(totalMin<9*60||totalMin>=19*60) return null;
           const h=Math.floor(totalMin/60),m=totalMin%60;
@@ -5183,6 +5268,7 @@ function Dashboard({user,onLogout}){
                 {cnt===1&&<div style={{fontSize:10,fontWeight:800,color:"#7c2d12",background:"#fed7aa",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4}}>🆕 初診</div>}
                 {b.checked_in_at&&<div style={{fontSize:10,fontWeight:800,color:"#111",background:"#facc15",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4}}>📷 来院済み</div>}
                 {b.referrer_name&&<div style={{fontSize:10,fontWeight:800,color:"#6d28d9",background:"#ede9fe",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>🎁 紹介：{b.referrer_name}</div>}
+                {b.memo&&<div style={{fontSize:11,color:"white",background:"rgba(255,255,255,.18)",borderRadius:6,padding:"5px 8px",marginTop:6,lineHeight:1.5}}>📝 {b.memo}</div>}
               </div>
               {/* アクション */}
               <div style={{padding:8,display:"flex",flexDirection:"column",gap:4}}>
