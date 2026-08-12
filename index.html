@@ -835,6 +835,7 @@ function StatsPanel({bookings,payments,todayStr,stores}){
 
   // ===== 店舗フィルタ（全店舗 / 各店舗） =====
   const [selStatsStoreId,setSelStatsStoreId]=React.useState(null); // null = 全店舗
+  const [listModal,setListModal]=React.useState(null); // {title, items:[{name,sub}]} | null
   const firstStoreId=(stores&&stores.length>0)?stores[0].id:1;
   const scopedBookings=React.useMemo(()=>{
     if(selStatsStoreId===null) return bookings;
@@ -888,10 +889,11 @@ function StatsPanel({bookings,payments,todayStr,stores}){
   const allPatientDates={};
   scopedBookings.forEach(b=>{if(!allPatientDates[b.patient_name])allPatientDates[b.patient_name]=[];allPatientDates[b.patient_name].push(b.date);});
   let newCount=0,revisitCount=0;
+  const newPatientsList=[];
   uniquePatients.forEach(name=>{
     const all=(allPatientDates[name]||[]).sort();
     const first=all[0];
-    if(first&&first>=range.start&&first<=range.end) newCount++;
+    if(first&&first>=range.start&&first<=range.end){newCount++;newPatientsList.push({name,sub:`初回来院：${first}`});}
     else revisitCount++;
   });
   const newRate=totalUnique>0?Math.round(newCount/totalUnique*100):0;
@@ -904,10 +906,16 @@ function StatsPanel({bookings,payments,todayStr,stores}){
   const cutoff=new Date(today);cutoff.setDate(cutoff.getDate()-30);
   const cutoffStr=cutoff.toISOString().split("T")[0];
   const allUnique=[...new Set(scopedBookings.map(b=>b.patient_name))];
-  const churnCount=allUnique.filter(name=>{
+  const churnedNames=allUnique.filter(name=>{
     const last=(allPatientDates[name]||[]).sort().slice(-1)[0];
     return last&&last<cutoffStr&&!bks.some(b=>b.patient_name===name);
-  }).length;
+  });
+  const churnedPatientsList=churnedNames.map(name=>{
+    const last=(allPatientDates[name]||[]).sort().slice(-1)[0];
+    const daysSince=Math.round((today-new Date(last+"T00:00:00"))/86400000);
+    return{name,sub:`最終来院：${last}（${daysSince}日前）`};
+  });
+  const churnCount=churnedNames.length;
   const churnRate=allUnique.length>0?((churnCount/allUnique.length)*100).toFixed(1):"0";
 
   // 曜日別
@@ -1033,11 +1041,11 @@ function StatsPanel({bookings,payments,todayStr,stores}){
           {[
             {label:"全体単価",val:fmt(allUnitPrice),sub:"会計1件あたり",color:"#1e3a5f"},
             {label:"LTV（月間）",val:fmt(ltv),sub:"売上÷患者数",color:"#d97706"},
-            {label:"新規来院率",val:newRate+"%",sub:`新規${newCount}名 / 全${totalUnique}名`,color:"#059669"},
-            {label:"離反率",val:churnRate+"%",sub:`${churnCount}名が30日以上未来院`,color:"#ef4444"},
+            {label:"新規来院率",val:newRate+"%",sub:`新規${newCount}名 / 全${totalUnique}名`,color:"#059669",onClick:newPatientsList.length>0?()=>setListModal({title:`新規患者（${newPatientsList.length}名）`,items:newPatientsList}):null},
+            {label:"離反率",val:churnRate+"%",sub:`${churnCount}名が30日以上未来院`,color:"#ef4444",onClick:churnedPatientsList.length>0?()=>setListModal({title:`離反患者（${churnedPatientsList.length}名）`,items:churnedPatientsList}):null},
           ].map(item=>(
-            <div key={item.label} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid #f1f5f9"}}>
-              <div><div style={{fontSize:12,color:"#64748b"}}>{item.label}</div><div style={{fontSize:10,color:"#94a3b8"}}>{item.sub}</div></div>
+            <div key={item.label} onClick={item.onClick||undefined} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid #f1f5f9",cursor:item.onClick?"pointer":"default"}}>
+              <div><div style={{fontSize:12,color:"#64748b"}}>{item.label}{item.onClick&&<span style={{color:"#94a3b8",marginLeft:4}}>›</span>}</div><div style={{fontSize:10,color:"#94a3b8"}}>{item.sub}</div></div>
               <span style={{fontSize:15,fontWeight:800,color:item.color}}>{item.val}</span>
             </div>
           ))}
@@ -1133,19 +1141,39 @@ function StatsPanel({bookings,payments,todayStr,stores}){
           {[
             {label:"予約が多い曜日",value:dayCount.some(c=>c>0)?DAYS_JP[peakDay]+"曜日":"—",sub:dayCount[peakDay]+"件",color:"#059669"},
             {label:"予約が多い時間帯",value:peakHour?peakHour[0]+"時台":"—",sub:peakHour?peakHour[1]+"件":"",color:"#2563eb"},
-            {label:"新規来院率",value:newRate+"%",sub:`新規${newCount}名`,color:"#d97706"},
+            {label:"新規来院率",value:newRate+"%",sub:`新規${newCount}名`,color:"#d97706",onClick:newPatientsList.length>0?()=>setListModal({title:`新規患者（${newPatientsList.length}名）`,items:newPatientsList}):null},
             {label:"平均単価",value:fmt(allUnitPrice),sub:"1件あたり",color:"#1e3a5f"},
-            {label:"離反率",value:churnRate+"%",sub:churnCount+"名が離反",color:parseFloat(churnRate)>20?"#ef4444":"#374151"},
+            {label:"離反率",value:churnRate+"%",sub:churnCount+"名が離反",color:parseFloat(churnRate)>20?"#ef4444":"#374151",onClick:churnedPatientsList.length>0?()=>setListModal({title:`離反患者（${churnedPatientsList.length}名）`,items:churnedPatientsList}):null},
             {label:"LTV（月間）",value:fmt(ltv),sub:"売上÷患者数",color:"#7c3aed"},
           ].map(item=>(
-            <div key={item.label} style={{background:"white",borderRadius:10,padding:"12px 14px",border:"1px solid #dcfce7"}}>
-              <div style={{fontSize:10,color:"#94a3b8",fontWeight:600,marginBottom:4}}>{item.label}</div>
+            <div key={item.label} onClick={item.onClick||undefined} style={{background:"white",borderRadius:10,padding:"12px 14px",border:"1px solid #dcfce7",cursor:item.onClick?"pointer":"default"}}>
+              <div style={{fontSize:10,color:"#94a3b8",fontWeight:600,marginBottom:4}}>{item.label}{item.onClick&&<span style={{color:"#94a3b8",marginLeft:4}}>›</span>}</div>
               <div style={{fontSize:20,fontWeight:800,color:item.color}}>{item.value}</div>
               <div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>{item.sub}</div>
             </div>
           ))}
         </div>
       </div>
+
+      {/* 新規・離反 内訳一覧モーダル */}
+      {listModal&&(
+        <div onClick={()=>setListModal(null)} style={{position:"fixed",inset:0,background:"rgba(15,23,42,.55)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"white",borderRadius:14,width:"100%",maxWidth:380,maxHeight:"80vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 50px rgba(0,0,0,.3)"}}>
+            <div style={{padding:"14px 18px",borderBottom:"1px solid #f1f5f9",display:"flex",justifyContent:"space-between",alignItems:"center",flexShrink:0}}>
+              <div style={{fontWeight:800,fontSize:14,color:"#1e3a5f"}}>{listModal.title}</div>
+              <button onClick={()=>setListModal(null)} style={{background:"#f1f5f9",border:"none",borderRadius:"50%",width:26,height:26,cursor:"pointer",color:"#64748b",fontSize:14}}>✕</button>
+            </div>
+            <div style={{overflowY:"auto",padding:"6px 18px"}}>
+              {listModal.items.map((it,i)=>(
+                <div key={i} style={{padding:"10px 0",borderBottom:i<listModal.items.length-1?"1px solid #f1f5f9":"none"}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#1e293b"}}>{it.name}</div>
+                  <div style={{fontSize:11,color:"#94a3b8",marginTop:1}}>{it.sub}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
