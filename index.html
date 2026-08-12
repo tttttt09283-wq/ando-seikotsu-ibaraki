@@ -2324,6 +2324,22 @@ function StaffMenuPermissionsModal({staff,onClose}){
     setSelected(prev=>prev.includes(name)?prev.filter(m=>m!==name):[...prev,name]);
   }
 
+  // 指定した名前一覧が「すべて選択済みか」を判定
+  function allSelected(names){
+    return names.length>0&&names.every(n=>selected.includes(n));
+  }
+  // 指定した名前一覧を、全部選択済みなら解除、そうでなければ全部選択にする
+  function toggleAll(names){
+    setSelected(prev=>{
+      if(names.every(n=>prev.includes(n))){
+        return prev.filter(m=>!names.includes(m));
+      }
+      const merged=[...prev];
+      names.forEach(n=>{if(!merged.includes(n))merged.push(n);});
+      return merged;
+    });
+  }
+
   async function save(){
     if(mode==="restricted"&&selected.length===0){
       setErr("少なくとも1つはメニューを選択してください（0件にしたい場合は「全メニュー対応」を選んでください）");
@@ -2378,12 +2394,32 @@ function StaffMenuPermissionsModal({staff,onClose}){
 
               {mode==="restricted"&&(
                 <div>
-                  {MENU_CATEGORIES.map(cat=>(
+                  {MENU_CATEGORIES.map(cat=>{
+                    const catNames=cat.subs.flatMap(s=>s.items.map(i=>i.name));
+                    const catAllSel=allSelected(catNames);
+                    return(
                     <div key={cat.id} style={{marginBottom:16}}>
-                      <div style={{fontSize:12,fontWeight:800,color:cat.color,marginBottom:8,paddingBottom:4,borderBottom:`2px solid ${cat.color}22`}}>{cat.label}</div>
-                      {cat.subs.map(sub=>(
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,paddingBottom:4,borderBottom:`2px solid ${cat.color}22`}}>
+                        <div style={{fontSize:12,fontWeight:800,color:cat.color}}>{cat.label}</div>
+                        <button onClick={()=>toggleAll(catNames)}
+                          style={{padding:"2px 10px",borderRadius:12,border:`1.5px solid ${cat.color}`,background:catAllSel?cat.color:"white",color:catAllSel?"white":cat.color,fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                          {catAllSel?"すべて解除":"すべて選択"}
+                        </button>
+                      </div>
+                      {cat.subs.map(sub=>{
+                        const subNames=sub.items.map(i=>i.name);
+                        const subAllSel=allSelected(subNames);
+                        return(
                         <div key={sub.id} style={{marginBottom:8}}>
-                          {cat.subs.length>1&&<div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:4}}>{sub.label}</div>}
+                          {cat.subs.length>1&&(
+                            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                              <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>{sub.label}</div>
+                              <button onClick={()=>toggleAll(subNames)}
+                                style={{padding:"1px 8px",borderRadius:10,border:"1px solid #d1d5db",background:subAllSel?"#64748b":"white",color:subAllSel?"white":"#94a3b8",fontSize:9,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                                {subAllSel?"解除":"全選択"}
+                              </button>
+                            </div>
+                          )}
                           <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                             {sub.items.map(item=>{
                               const isSel=selected.includes(item.name);
@@ -2396,9 +2432,11 @@ function StaffMenuPermissionsModal({staff,onClose}){
                             })}
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
-                  ))}
+                    );
+                  })}
                   <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>選択中：{selected.length}件</div>
                 </div>
               )}
