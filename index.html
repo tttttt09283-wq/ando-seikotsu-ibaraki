@@ -836,6 +836,7 @@ function StatsPanel({bookings,payments,todayStr,stores}){
   // ===== 店舗フィルタ（全店舗 / 各店舗） =====
   const [selStatsStoreId,setSelStatsStoreId]=React.useState(null); // null = 全店舗
   const [selStatsStaffId,setSelStatsStaffId]=React.useState(null); // null = 全スタッフ
+  const [filterTab,setFilterTab]=React.useState("store"); // "store" | "staff"
   const [listModal,setListModal]=React.useState(null); // {title, items:[{name,sub}]} | null
   const [funnelModal,setFunnelModal]=React.useState(null); // {title, funnel, color} | null
   const firstStoreId=(stores&&stores.length>0)?stores[0].id:1;
@@ -1082,47 +1083,52 @@ function StatsPanel({bookings,payments,todayStr,stores}){
   return(
     <div style={{maxWidth:900,margin:"0 auto"}}>
 
-      {/* フィルター（期間・店舗・担当スタッフ）をまとめて1枚に */}
-      <div style={{...cardStyle,marginBottom:16,padding:"14px 16px",display:"flex",flexWrap:"wrap",gap:16,alignItems:"flex-start"}}>
+      {/* フィルター（期間・店舗・担当スタッフ） */}
+      <div style={{...cardStyle,marginBottom:16,padding:"14px 16px"}}>
         {/* 期間選択 */}
-        <div style={{minWidth:260}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <input type="date" value={customStart} onChange={e=>{setCustomStart(e.target.value);setRangeType("custom");}}
-                style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:600}}/>
-              <span style={{color:"#94a3b8",fontSize:13}}>〜</span>
-              <input type="date" value={customEnd} onChange={e=>{setCustomEnd(e.target.value);setRangeType("custom");}}
-                style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:600}}/>
-            </div>
-            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-              {rangeButtons.filter(b=>b.id!=="custom").map(b=>(
-                <button key={b.id} onClick={()=>setRangeType(b.id)} style={{padding:"6px 14px",borderRadius:8,fontSize:12,fontWeight:700,border:"1.5px solid",borderColor:rangeType===b.id?"#059669":"#e2e8f0",background:rangeType===b.id?"#059669":"white",color:rangeType===b.id?"white":"#374151",cursor:"pointer",fontFamily:"inherit"}}>{b.label}</button>
-              ))}
-            </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <input type="date" value={customStart} onChange={e=>{setCustomStart(e.target.value);setRangeType("custom");}}
+              style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:600}}/>
+            <span style={{color:"#94a3b8",fontSize:13}}>〜</span>
+            <input type="date" value={customEnd} onChange={e=>{setCustomEnd(e.target.value);setRangeType("custom");}}
+              style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:600}}/>
           </div>
-          <div style={{fontSize:11,color:"#94a3b8",marginTop:8}}>期間：{range.start} 〜 {range.end}</div>
+          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+            {rangeButtons.filter(b=>b.id!=="custom").map(b=>(
+              <button key={b.id} onClick={()=>setRangeType(b.id)} style={{padding:"6px 14px",borderRadius:8,fontSize:12,fontWeight:700,border:"1.5px solid",borderColor:rangeType===b.id?"#059669":"#e2e8f0",background:rangeType===b.id?"#059669":"white",color:rangeType===b.id?"white":"#374151",cursor:"pointer",fontFamily:"inherit"}}>{b.label}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{fontSize:11,color:"#94a3b8",marginTop:8,marginBottom:14}}>期間：{range.start} 〜 {range.end}</div>
+
+        {/* 店舗／スタッフ タブ切り替え */}
+        <div style={{display:"flex",gap:4,borderBottom:"1.5px solid #f1f5f9",marginBottom:12}}>
+          {[
+            {id:"store",label:"🏢 店舗"},
+            {id:"staff",label:"👥 担当スタッフ"},
+          ].map(t=>(
+            <button key={t.id} onClick={()=>setFilterTab(t.id)}
+              style={{padding:"7px 16px",border:"none",borderBottom:`2px solid ${filterTab===t.id?"#1e3a5f":"transparent"}`,background:"none",fontSize:13,fontWeight:filterTab===t.id?800:600,color:filterTab===t.id?"#1e3a5f":"#94a3b8",cursor:"pointer",fontFamily:"inherit",marginBottom:-2}}>
+              {t.label}
+            </button>
+          ))}
         </div>
 
-        {/* 店舗切り替え（全店舗 / 各店舗） */}
-        {stores&&stores.length>0&&(
-          <div style={{borderLeft:"1px solid #f1f5f9",paddingLeft:16,minWidth:220}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",marginBottom:8}}>表示範囲</div>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              <button onClick={()=>setSelStatsStoreId(null)} style={{padding:"7px 16px",borderRadius:20,border:"1.5px solid",borderColor:selStatsStoreId===null?"#1e3a5f":"#e2e8f0",background:selStatsStoreId===null?"#1e3a5f":"white",color:selStatsStoreId===null?"white":"#374151",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
-                🏢 全店舗合算
+        {filterTab==="store"&&stores&&stores.length>0&&(
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            <button onClick={()=>setSelStatsStoreId(null)} style={{padding:"7px 16px",borderRadius:20,border:"1.5px solid",borderColor:selStatsStoreId===null?"#1e3a5f":"#e2e8f0",background:selStatsStoreId===null?"#1e3a5f":"white",color:selStatsStoreId===null?"white":"#374151",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+              🏢 全店舗合算
+            </button>
+            {stores.map(s=>(
+              <button key={s.id} onClick={()=>setSelStatsStoreId(s.id)} style={{padding:"7px 16px",borderRadius:20,border:"1.5px solid",borderColor:selStatsStoreId===s.id?"#1e3a5f":"#e2e8f0",background:selStatsStoreId===s.id?"#1e3a5f":"white",color:selStatsStoreId===s.id?"white":"#374151",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                {s.name}
               </button>
-              {stores.map(s=>(
-                <button key={s.id} onClick={()=>setSelStatsStoreId(s.id)} style={{padding:"7px 16px",borderRadius:20,border:"1.5px solid",borderColor:selStatsStoreId===s.id?"#1e3a5f":"#e2e8f0",background:selStatsStoreId===s.id?"#1e3a5f":"white",color:selStatsStoreId===s.id?"white":"#374151",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                  {s.name}
-                </button>
-              ))}
-            </div>
+            ))}
           </div>
         )}
 
-        {/* スタッフ切り替え（全スタッフ / 各スタッフ） */}
-        <div style={{borderLeft:"1px solid #f1f5f9",paddingLeft:16,minWidth:220}}>
-          <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",marginBottom:8}}>担当スタッフ</div>
+        {filterTab==="staff"&&(
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             <button onClick={()=>setSelStatsStaffId(null)} style={{padding:"7px 16px",borderRadius:20,border:"1.5px solid",borderColor:selStatsStaffId===null?"#1e3a5f":"#e2e8f0",background:selStatsStaffId===null?"#1e3a5f":"white",color:selStatsStaffId===null?"white":"#374151",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
               👥 全スタッフ
@@ -1133,6 +1139,11 @@ function StatsPanel({bookings,payments,todayStr,stores}){
               </button>
             ))}
           </div>
+        )}
+
+        {/* 現在の絞り込み状態の要約（タブを切り替えても選択内容がわかるように） */}
+        <div style={{marginTop:10,fontSize:11,color:"#94a3b8"}}>
+          選択中：{selStatsStoreId===null?"全店舗合算":(stores.find(s=>s.id===selStatsStoreId)?.name||"")}　／　{selStatsStaffId===null?"全スタッフ":(STAFF_ACCOUNTS.find(s=>s.id===selStatsStaffId)?.name||"")}
         </div>
       </div>
 
