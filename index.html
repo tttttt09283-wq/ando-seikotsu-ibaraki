@@ -4597,6 +4597,9 @@ function Dashboard({user,onLogout}){
   const [dragBooking,setDragBooking]=React.useState(null); // ドラッグ中の予約（開始〜終了までしか変化しない）
   const [dragPos,setDragPos]=React.useState({x:0,y:0,moved:false}); // 見た目の追従用（頻繁に変化する）
   const dragPosRef=React.useRef({x:0,y:0,startX:0,startY:0,moved:false});
+  const [resizeBooking,setResizeBooking]=React.useState(null); // 右端ドラッグで時間調整中の予約
+  const [resizeDeltaPx,setResizeDeltaPx]=React.useState(0); // 見た目の追従用（横方向の移動量）
+  const resizeRef=React.useRef({startX:0,deltaPx:0});
   const [historyPatient,setHistoryPatient]=React.useState(null);
   const [payments,setPayments]=React.useState([]);
   const [businessHours,setBusinessHours]=React.useState([]);
@@ -4957,6 +4960,33 @@ function Dashboard({user,onLogout}){
     }
   }
 
+  async function attemptResizeBooking(booking,newDuration){
+    const clamped=Math.max(10,Math.min(240,newDuration)); // 10分〜4時間の範囲に収める
+    if(clamped===(booking.duration||DURATION[booking.menu]||30)) return; // 変化なし
+    const laneCapacity=getLaneCount(booking.staff_id);
+    const overlapCountLocal=bookings.filter(b=>b.id!==booking.id&&b.staff_id===booking.staff_id&&b.date===booking.date&&!b.cancelled&&overlaps(b,{time:booking.time,duration:clamped})).length;
+    if(overlapCountLocal>=laneCapacity){
+      showToast("その時間はすでに予約枠が埋まっています","delete");
+      return;
+    }
+    try{
+      const freshSameDay=await sb.select("bookings",`?staff_id=eq.${booking.staff_id}&date=eq.${booking.date}`);
+      const overlapCountFresh=(Array.isArray(freshSameDay)?freshSameDay:[]).filter(b=>b.id!==booking.id&&!b.cancelled&&overlaps(b,{time:booking.time,duration:clamped})).length;
+      if(overlapCountFresh>=laneCapacity){
+        showToast("ちょうど別の予約が入ってしまいました。時間をご確認ください","delete");
+        return;
+      }
+      const result=await sb.update("bookings",booking.id,{duration:clamped});
+      if(!Array.isArray(result)||result.length===0){
+        throw new Error((result&&result.message)||"時間の変更に失敗しました");
+      }
+      setBookings(prev=>prev.map(b=>b.id===booking.id?result[0]:b));
+      showToast(`対応時間を${clamped}分に変更しました`);
+    }catch(e){
+      alert("時間の変更に失敗しました："+(e.message||"不明なエラー"));
+    }
+  }
+
   function suppressNextClick(){
     function killClick(ev){
       ev.stopPropagation();
@@ -5013,6 +5043,40 @@ function Dashboard({user,onLogout}){
       window.removeEventListener("pointercancel",onCancel);
     };
   },[dragBooking]);
+
+  // 予約枠の右端をドラッグして対応時間を伸縮する
+  React.useEffect(()=>{
+    if(!resizeBooking) return;
+    function onMove(e){
+      const deltaPx=e.clientX-resizeRef.current.startX;
+      resizeRef.current.deltaPx=deltaPx;
+      setResizeDeltaPx(deltaPx);
+    }
+    function onUp(e){
+      e.preventDefault();
+      e.stopPropagation();
+      suppressNextClick();
+      const b=resizeBooking;
+      const currentDuration=b.duration||DURATION[b.menu]||30;
+      // カレンダー本体のCELL_W計算と同じ式（10分刻み・54枠分）をここでも再現する
+      const headerW=100;
+      const screenW=Math.max(window.innerWidth-130-48,600);
+      const cellW=Math.max(Math.floor((screenW-headerW)/54),12);
+      const deltaMin=Math.round(resizeRef.current.deltaPx/cellW)*10;
+      attemptResizeBooking(b,currentDuration+deltaMin);
+      setResizeBooking(null);
+      setResizeDeltaPx(0);
+    }
+    function onCancel(){ setResizeBooking(null); setResizeDeltaPx(0); }
+    window.addEventListener("pointermove",onMove);
+    window.addEventListener("pointerup",onUp);
+    window.addEventListener("pointercancel",onCancel);
+    return()=>{
+      window.removeEventListener("pointermove",onMove);
+      window.removeEventListener("pointerup",onUp);
+      window.removeEventListener("pointercancel",onCancel);
+    };
+  },[resizeBooking]);
 
   const todayBreakCount=breaks.filter(b=>b.date===todayStr).length;
 
@@ -5384,6 +5448,8 @@ function Dashboard({user,onLogout}){
                                     const isCheckedIn=!!b.checked_in_at;
                                     const isNewPatient=cnt===1;
                                     const isBeingDragged=dragBooking&&dragPos.moved&&dragBooking.id===b.id;
+                                    const isBeingResized=resizeBooking&&resizeBooking.id===b.id;
+                                    const liveW=isBeingResized?Math.max(w+resizeDeltaPx,20):w;
                                     const lane=laneOf[b.id]||0;
                                     return(
                                       <div key={b.id}
@@ -5396,11 +5462,26 @@ function Dashboard({user,onLogout}){
                                           setDragBooking(b);
                                         }}
                                         onClick={e=>{e.stopPropagation();}}
-                                        style={{position:"absolute",left:x,top:lane*laneH+3,height:laneH-6,width:Math.max(w-2,20),background:isPaid?"linear-gradient(135deg,#9ca3af,#6b7280)":isNewPatient?"linear-gradient(135deg,#f97316,#ea580c)":`linear-gradient(135deg,${staff.color},${staff.color}bb)`,borderRadius:6,padding:"2px 5px",cursor:"grab",touchAction:"none",boxShadow:isCheckedIn?"0 0 0 2px #facc15,0 2px 6px rgba(0,0,0,.3)":isNewPatient?"0 2px 8px rgba(249,115,22,.6)":(isPaid?"0 1px 3px rgba(0,0,0,.2)":`0 2px 6px ${staff.color}44`),display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden",zIndex:isNewPatient?3:2,opacity:isBeingDragged?.35:isPaid?.75:1}}>
+                                        style={{position:"absolute",left:x,top:lane*laneH+3,height:laneH-6,width:Math.max(liveW-2,20),background:isPaid?"linear-gradient(135deg,#9ca3af,#6b7280)":isNewPatient?"linear-gradient(135deg,#f97316,#ea580c)":`linear-gradient(135deg,${staff.color},${staff.color}bb)`,borderRadius:6,padding:"2px 5px",cursor:"grab",touchAction:"none",boxShadow:isBeingResized?"0 0 0 2px #2563eb,0 2px 8px rgba(37,99,235,.5)":isCheckedIn?"0 0 0 2px #facc15,0 2px 6px rgba(0,0,0,.3)":isNewPatient?"0 2px 8px rgba(249,115,22,.6)":(isPaid?"0 1px 3px rgba(0,0,0,.2)":`0 2px 6px ${staff.color}44`),display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden",zIndex:isBeingResized?4:isNewPatient?3:2,opacity:isBeingDragged?.35:isPaid?.75:1}}>
                                         {isNewPatient&&<div style={{position:"absolute",top:-1,right:-1,background:"#fff",color:"#ea580c",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"0 6px 0 4px",lineHeight:1,letterSpacing:0}}>NEW</div>}
                                         {b.memo&&<div style={{position:"absolute",bottom:-1,left:-1,background:"#fff",color:"#1e3a5f",fontSize:8,fontWeight:900,padding:"0 3px",borderRadius:"6px 4px 0 0",lineHeight:1.4}}>📝</div>}
                                         <div style={{fontWeight:800,fontSize:10,color:"white",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isCheckedIn?"📷":""}{isPaid?"✓ ":""}{b.patient_name}</div>
-                                        <div style={{fontSize:9,color:"rgba(255,255,255,.85)"}}>{b.time}{cnt>1&&<span style={{marginLeft:2,background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}</div>
+                                        <div style={{fontSize:9,color:"rgba(255,255,255,.85)"}}>{b.time}{cnt>1&&<span style={{marginLeft:2,background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}{isBeingResized&&<span style={{marginLeft:2,fontWeight:800}}>{Math.max(10,(b.duration||DURATION[b.menu]||30)+Math.round(resizeDeltaPx/CELL_W)*10)}分</span>}</div>
+                                        {/* 右端のリサイズハンドル：ここをドラッグすると対応時間を伸縮できる */}
+                                        <div
+                                          onPointerDown={e=>{
+                                            e.stopPropagation();
+                                            try{e.target.setPointerCapture(e.pointerId);}catch(err){}
+                                            resizeRef.current={startX:e.clientX,deltaPx:0};
+                                            setResizeDeltaPx(0);
+                                            setResizeBooking(b);
+                                          }}
+                                          onClick={e=>{e.stopPropagation();}}
+                                          title="ドラッグで対応時間を変更"
+                                          style={{position:"absolute",right:0,top:0,bottom:0,width:8,cursor:"ew-resize",touchAction:"none",background:"rgba(255,255,255,.001)"}}
+                                        >
+                                          <div style={{position:"absolute",right:2,top:"50%",transform:"translateY(-50%)",width:2,height:"60%",background:"rgba(255,255,255,.7)",borderRadius:1}}/>
+                                        </div>
                                       </div>
                                     );
                                   })}
