@@ -1427,7 +1427,7 @@ function StatsPanel({bookings,payments,todayStr,stores}){
 }
 
 
-function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,save,onClose,onDelete,onCancel,businessHours,closures,storeStaffList,isStaffWorkingOnDate,staffCanDoMenus}){
+function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,save,onClose,onDelete,onCancel,businessHours,closures,storeStaffList,isStaffWorkingOnDate,staffCanDoMenus,getLaneCount}){
   const [searchQ,setSearchQ]=React.useState("");
   const [searchResults,setSearchResults]=React.useState([]);
   const [searching,setSearching]=React.useState(false);
@@ -1576,11 +1576,18 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
             {(storeStaffList||STAFF_ACCOUNTS).map(s=>{
               const working=!form.date||!isStaffWorkingOnDate?true:isStaffWorkingOnDate(s.id,new Date(form.date+"T00:00:00"));
               const canDoMenu=!staffCanDoMenus||staffCanDoMenus(s.id,selectedMenus);
-              const selectable=working&&canDoMenu;
+              // 既にこの日時で予約枠（レーン数）が埋まっているスタッフは選べないようにする
+              let isBooked=false;
+              if(form.date&&form.time){
+                const laneCapacity=getLaneCount?getLaneCount(s.id):1;
+                const overlapCount=bookings.filter(b=>b.id!==editId&&b.staff_id===s.id&&b.date===form.date&&!b.cancelled&&overlaps(b,form)).length;
+                isBooked=overlapCount>=laneCapacity;
+              }
+              const selectable=working&&canDoMenu&&!isBooked;
               return(
                 <button key={s.id} disabled={!selectable} onClick={()=>{if(!selectable)return;setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} className="btn"
                   style={{background:!selectable?"#f3f4f6":form.staff_id===s.id?s.color:"white",color:!selectable?"#d1d5db":form.staff_id===s.id?"white":"#374151",border:"2px solid "+(!selectable?"#e2e8f0":s.color),borderRadius:20,padding:"5px 12px",fontSize:12,fontWeight:700,boxShadow:form.staff_id===s.id&&selectable?"0 2px 8px "+s.color+"55":"none",cursor:!selectable?"not-allowed":"pointer"}}>
-                  {s.name}{!working?"（休み）":!canDoMenu?"（非対応）":""}
+                  {s.name}{!working?"（休み）":!canDoMenu?"（非対応）":isBooked?"（予約済み）":""}
                 </button>
               );
             })}
@@ -1590,6 +1597,9 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
           )}
           {form.staff_id&&staffCanDoMenus&&!staffCanDoMenus(form.staff_id,selectedMenus)&&(
             <div style={{marginTop:8,fontSize:12,color:"#dc2626",fontWeight:700}}>⚠ 選択中の担当者は、選ばれているメニューに対応していません</div>
+          )}
+          {form.staff_id&&form.date&&form.time&&bookings.filter(b=>b.id!==editId&&b.staff_id===form.staff_id&&b.date===form.date&&!b.cancelled&&overlaps(b,form)).length>=(getLaneCount?getLaneCount(form.staff_id):1)&&(
+            <div style={{marginTop:8,fontSize:12,color:"#dc2626",fontWeight:700}}>⚠ 選択中の担当者はこの時間帯、既に予約枠が埋まっています</div>
           )}
         </div>
       )}
@@ -5549,7 +5559,7 @@ function Dashboard({user,onLogout}){
 
           {/* 予約フォーム */}
           {view==="form"&&form&&(
-            <FormPanel form={form} setForm={setForm} editId={editId} conflict={conflict} setConflict={setConflict} isAdmin={isAdmin} bookings={bookings} save={save} onClose={()=>setView("calendar")} onDelete={()=>setDelConfirm(bookings.find(b=>b.id===editId))} onCancel={()=>setCancelModalBooking(bookings.find(b=>b.id===editId))} businessHours={businessHours} closures={closures} storeStaffList={storeStaff} isStaffWorkingOnDate={isStaffWorkingOnDate} staffCanDoMenus={staffCanDoMenus}/>
+            <FormPanel form={form} setForm={setForm} editId={editId} conflict={conflict} setConflict={setConflict} isAdmin={isAdmin} bookings={bookings} save={save} onClose={()=>setView("calendar")} onDelete={()=>setDelConfirm(bookings.find(b=>b.id===editId))} onCancel={()=>setCancelModalBooking(bookings.find(b=>b.id===editId))} businessHours={businessHours} closures={closures} storeStaffList={storeStaff} isStaffWorkingOnDate={isStaffWorkingOnDate} staffCanDoMenus={staffCanDoMenus} getLaneCount={getLaneCount}/>
           )}
         </div>
       </div>
