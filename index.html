@@ -338,6 +338,12 @@ function overlaps(a,b){
   return as<be&&bs<ae;
 }
 
+// 「予約日」と「予約が作成された日」が同じかどうか＝当日予約かどうかを判定する
+function isSameDayBooking(b){
+  if(!b.created_at) return false;
+  return fmtDate(new Date(b.created_at))===b.date;
+}
+
 // 同じスタッフの予約を、時間が重ならないよう「レーン」に振り分ける（ベッド・アシスタント等で同時に複数人を担当できる場合用）。
 // 戻り値：{ laneOf:{bookingId:レーン番号(0始まり)}, laneCount:実際に必要だったレーン数 }
 function assignLanes(bookingsForStaff){
@@ -5461,9 +5467,10 @@ function Dashboard({user,onLogout}){
                                     const isBeingResized=resizeBooking&&resizeBooking.id===b.id;
                                     const liveW=isBeingResized?Math.max(w+resizeDeltaPx,20):w;
                                     const lane=laneOf[b.id]||0;
+                                    const sameDay=isSameDayBooking(b);
                                     return(
                                       <div key={b.id}
-                                        title={b.memo?`📝 メモ：${b.memo}`:undefined}
+                                        title={(sameDay?"⚡当日予約\n":"")+(b.memo?`📝 メモ：${b.memo}`:"")||undefined}
                                         onPointerDown={e=>{
                                           e.stopPropagation();
                                           try{e.target.setPointerCapture(e.pointerId);}catch(err){}
@@ -5472,8 +5479,9 @@ function Dashboard({user,onLogout}){
                                           setDragBooking(b);
                                         }}
                                         onClick={e=>{e.stopPropagation();}}
-                                        style={{position:"absolute",left:x,top:lane*laneH+3,height:laneH-6,width:Math.max(liveW-2,20),background:isPaid?"linear-gradient(135deg,#9ca3af,#6b7280)":isNewPatient?"linear-gradient(135deg,#f97316,#ea580c)":`linear-gradient(135deg,${staff.color},${staff.color}bb)`,borderRadius:6,padding:"2px 5px",cursor:"grab",touchAction:"none",boxShadow:isBeingResized?"0 0 0 2px #2563eb,0 2px 8px rgba(37,99,235,.5)":isCheckedIn?"0 0 0 2px #facc15,0 2px 6px rgba(0,0,0,.3)":isNewPatient?"0 2px 8px rgba(249,115,22,.6)":(isPaid?"0 1px 3px rgba(0,0,0,.2)":`0 2px 6px ${staff.color}44`),display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden",zIndex:isBeingResized?4:isNewPatient?3:2,opacity:isBeingDragged?.35:isPaid?.75:1}}>
+                                        style={{position:"absolute",left:x,top:lane*laneH+3,height:laneH-6,width:Math.max(liveW-2,20),background:isPaid?"linear-gradient(135deg,#9ca3af,#6b7280)":isNewPatient?"linear-gradient(135deg,#f97316,#ea580c)":`linear-gradient(135deg,${staff.color},${staff.color}bb)`,borderRadius:6,padding:"2px 5px",cursor:"grab",touchAction:"none",boxShadow:isBeingResized?"0 0 0 2px #2563eb,0 2px 8px rgba(37,99,235,.5)":sameDay?"0 0 0 2px #eab308,0 2px 6px rgba(234,179,8,.5)":isCheckedIn?"0 0 0 2px #facc15,0 2px 6px rgba(0,0,0,.3)":isNewPatient?"0 2px 8px rgba(249,115,22,.6)":(isPaid?"0 1px 3px rgba(0,0,0,.2)":`0 2px 6px ${staff.color}44`),display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden",zIndex:isBeingResized?4:isNewPatient?3:2,opacity:isBeingDragged?.35:isPaid?.75:1}}>
                                         {isNewPatient&&<div style={{position:"absolute",top:-1,right:-1,background:"#fff",color:"#ea580c",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"0 6px 0 4px",lineHeight:1,letterSpacing:0}}>NEW</div>}
+                                        {sameDay&&<div style={{position:"absolute",top:-1,left:-1,background:"#fff",color:"#a16207",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"6px 0 4px 0",lineHeight:1,letterSpacing:0}}>⚡当日</div>}
                                         {b.memo&&<div style={{position:"absolute",bottom:-1,left:-1,background:"#fff",color:"#1e3a5f",fontSize:8,fontWeight:900,padding:"0 3px",borderRadius:"6px 4px 0 0",lineHeight:1.4}}>📝</div>}
                                         <div style={{fontWeight:800,fontSize:10,color:"white",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isCheckedIn?"📷":""}{isPaid?"✓ ":""}{b.patient_name}</div>
                                         <div style={{fontSize:9,color:"rgba(255,255,255,.85)"}}>{b.time}{cnt>1&&<span style={{marginLeft:2,background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}{isBeingResized&&<span style={{marginLeft:2,fontWeight:800}}>{Math.max(10,(b.duration||DURATION[b.menu]||30)+Math.round(resizeDeltaPx/CELL_W)*10)}分</span>}</div>
@@ -5633,6 +5641,7 @@ function Dashboard({user,onLogout}){
                 {cnt>1&&<div style={{fontSize:10,color:"rgba(255,255,255,.7)",marginTop:1}}>{cnt}回目</div>}
                 {cnt===1&&<div style={{fontSize:10,fontWeight:800,color:"#7c2d12",background:"#fed7aa",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4}}>🆕 初診</div>}
                 {b.checked_in_at&&<div style={{fontSize:10,fontWeight:800,color:"#111",background:"#facc15",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4}}>📷 来院済み</div>}
+                {isSameDayBooking(b)&&<div style={{fontSize:10,fontWeight:800,color:"#a16207",background:"#fef9c3",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>⚡ 当日予約</div>}
                 {b.referrer_name&&<div style={{fontSize:10,fontWeight:800,color:"#6d28d9",background:"#ede9fe",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>🎁 紹介：{b.referrer_name}</div>}
                 {b.memo&&<div style={{fontSize:11,color:"white",background:"rgba(255,255,255,.18)",borderRadius:6,padding:"5px 8px",marginTop:6,lineHeight:1.5}}>📝 {b.memo}</div>}
               </div>
