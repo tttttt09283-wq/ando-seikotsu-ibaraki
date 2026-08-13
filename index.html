@@ -1082,6 +1082,25 @@ function StatsPanel({bookings,payments,todayStr,stores}){
   return(
     <div style={{maxWidth:900,margin:"0 auto"}}>
 
+      {/* 期間選択 */}
+      <div style={{...cardStyle,marginBottom:16}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <input type="date" value={customStart} onChange={e=>{setCustomStart(e.target.value);setRangeType("custom");}}
+              style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:600}}/>
+            <span style={{color:"#94a3b8",fontSize:13}}>〜</span>
+            <input type="date" value={customEnd} onChange={e=>{setCustomEnd(e.target.value);setRangeType("custom");}}
+              style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:600}}/>
+          </div>
+          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+            {rangeButtons.filter(b=>b.id!=="custom").map(b=>(
+              <button key={b.id} onClick={()=>setRangeType(b.id)} style={{padding:"6px 14px",borderRadius:8,fontSize:12,fontWeight:700,border:"1.5px solid",borderColor:rangeType===b.id?"#059669":"#e2e8f0",background:rangeType===b.id?"#059669":"white",color:rangeType===b.id?"white":"#374151",cursor:"pointer",fontFamily:"inherit"}}>{b.label}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{fontSize:11,color:"#94a3b8",marginTop:8}}>期間：{range.start} 〜 {range.end}</div>
+      </div>
+
       {/* 店舗切り替え（全店舗 / 各店舗） */}
       {stores&&stores.length>0&&(
         <div style={{...cardStyle,marginBottom:12,padding:"12px 16px"}}>
@@ -1173,25 +1192,6 @@ function StatsPanel({bookings,payments,todayStr,stores}){
             })}
           </div>
         )}
-      </div>
-
-      {/* 期間選択 */}
-      <div style={{...cardStyle,marginBottom:16}}>
-        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-          <div style={{display:"flex",alignItems:"center",gap:6}}>
-            <input type="date" value={customStart} onChange={e=>{setCustomStart(e.target.value);setRangeType("custom");}}
-              style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:600}}/>
-            <span style={{color:"#94a3b8",fontSize:13}}>〜</span>
-            <input type="date" value={customEnd} onChange={e=>{setCustomEnd(e.target.value);setRangeType("custom");}}
-              style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:600}}/>
-          </div>
-          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-            {rangeButtons.filter(b=>b.id!=="custom").map(b=>(
-              <button key={b.id} onClick={()=>setRangeType(b.id)} style={{padding:"6px 14px",borderRadius:8,fontSize:12,fontWeight:700,border:"1.5px solid",borderColor:rangeType===b.id?"#059669":"#e2e8f0",background:rangeType===b.id?"#059669":"white",color:rangeType===b.id?"white":"#374151",cursor:"pointer",fontFamily:"inherit"}}>{b.label}</button>
-            ))}
-          </div>
-        </div>
-        <div style={{fontSize:11,color:"#94a3b8",marginTop:8}}>期間：{range.start} 〜 {range.end}</div>
       </div>
 
       {/* 予約サマリー */}
