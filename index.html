@@ -1194,8 +1194,8 @@ function StatsPanel({bookings,payments,todayStr,stores}){
         ))}
       </div>
 
-      {/* 売上・単価 */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10,marginBottom:12}}>
+      {/* 売上・単価・曜日・時間帯・月別推移・コース別（まとめて3列表示） */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:12}}>
         <div style={{...cardStyle,marginBottom:0}}>
           <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:12}}>売上サマリー</div>
           {[{label:"月計売上",val:totalSales,color:"#d97706"},{label:"保険窓口計",val:insSales,color:"#2563eb"},{label:"自費売上計",val:jifeeSales,color:"#059669"}].map(item=>(
@@ -1219,10 +1219,7 @@ function StatsPanel({bookings,payments,todayStr,stores}){
             </div>
           ))}
         </div>
-      </div>
 
-      {/* 曜日・時間帯 */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
         <div style={{...cardStyle,marginBottom:0}}>
           <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:12}}>予約希望の曜日</div>
           <div style={{fontSize:11,color:"#94a3b8",marginBottom:10}}>曜日別</div>
@@ -1239,10 +1236,7 @@ function StatsPanel({bookings,payments,todayStr,stores}){
             ))
           }
         </div>
-      </div>
 
-      {/* 月別推移・コース別 */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
         <div style={{...cardStyle,marginBottom:0}}>
           <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:16}}>月別予約数推移</div>
           {monthlyEntries.length===0?<div style={{textAlign:"center",color:"#94a3b8",fontSize:12,padding:16}}>データなし</div>:(
