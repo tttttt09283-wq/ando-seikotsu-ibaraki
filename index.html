@@ -909,6 +909,37 @@ function StatsPanel({bookings,payments,todayStr,stores}){
   }).sort((a,b)=>b.total-a.total);
   const maxStaffSales=Math.max(...salesByStaffList.map(s=>s.total),1);
 
+  // 性別・年代の集計（患者ごとに一番新しい入力値を採用。期間に関わらず店舗/スタッフ絞り込みは反映）
+  const patientDemo={};
+  [...scopedBookings].sort((a,b)=>a.date.localeCompare(b.date)).forEach(b=>{
+    if(!patientDemo[b.patient_name]) patientDemo[b.patient_name]={gender:null,age:null};
+    if(b.gender) patientDemo[b.patient_name].gender=b.gender;
+    if(b.age!=null && b.age!=="") patientDemo[b.patient_name].age=Number(b.age);
+  });
+  const demoEntries=Object.values(patientDemo);
+  const genderCounts={"女性":0,"男性":0,"回答しない":0,"未回答":0};
+  demoEntries.forEach(d=>{
+    if(d.gender&&genderCounts[d.gender]!==undefined) genderCounts[d.gender]++;
+    else genderCounts["未回答"]++;
+  });
+  const genderTotal=demoEntries.length;
+  const AGE_BANDS=[
+    {label:"10代未満",min:0,max:9},
+    {label:"10代",min:10,max:19},
+    {label:"20代",min:20,max:29},
+    {label:"30代",min:30,max:39},
+    {label:"40代",min:40,max:49},
+    {label:"50代",min:50,max:59},
+    {label:"60代",min:60,max:69},
+    {label:"70代以上",min:70,max:999},
+  ];
+  const ageCounts=AGE_BANDS.map(band=>({
+    ...band,
+    count:demoEntries.filter(d=>d.age!=null&&d.age>=band.min&&d.age<=band.max).length
+  }));
+  const ageUnknownCount=demoEntries.filter(d=>d.age==null).length;
+  const maxAgeCount=Math.max(...ageCounts.map(a=>a.count),1);
+
   // ユニーク患者
   const uniquePatients=[...new Set(bks.map(b=>b.patient_name))];
   const totalUnique=uniquePatients.length;
@@ -1105,6 +1136,45 @@ function StatsPanel({bookings,payments,todayStr,stores}){
       </div>
       )}
 
+      {/* 患者様の男女比・年代分布 */}
+      <div style={{...cardStyle,marginBottom:16}}>
+        <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:4}}>🧑‍🤝‍🧑 患者様の男女比・年代分布</div>
+        <div style={{fontSize:11,color:"#94a3b8",marginBottom:14}}>全期間・現在の絞り込み条件での患者数（{genderTotal}名）</div>
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
+          {[
+            {label:"女性",count:genderCounts["女性"],color:"#ec4899"},
+            {label:"男性",count:genderCounts["男性"],color:"#3b82f6"},
+          ].map(g=>(
+            <div key={g.label} style={{textAlign:"center",background:"#f8fafc",borderRadius:10,padding:"14px 8px"}}>
+              <div style={{fontSize:26,fontWeight:800,color:g.color}}>{g.count}<span style={{fontSize:12}}>名</span></div>
+              <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginTop:2}}>{g.label}　{genderTotal>0?Math.round(g.count/genderTotal*100):0}%</div>
+            </div>
+          ))}
+        </div>
+        {(genderCounts["回答しない"]+genderCounts["未回答"])>0&&(
+          <div style={{fontSize:11,color:"#94a3b8",marginBottom:16}}>回答しない／未回答：{genderCounts["回答しない"]+genderCounts["未回答"]}名</div>
+        )}
+
+        <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:8}}>年代別（未回答：{ageUnknownCount}名）</div>
+        {genderTotal===0?(
+          <div style={{textAlign:"center",color:"#94a3b8",fontSize:12,padding:16}}>対象データなし</div>
+        ):(
+          <div style={{display:"flex",alignItems:"flex-end",gap:6,height:110,padding:"0 2px"}}>
+            {ageCounts.map(band=>{
+              const pct=Math.round(band.count/maxAgeCount*100);
+              return(
+                <div key={band.label} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+                  <div style={{fontSize:11,fontWeight:800,color:"#374151"}}>{band.count}</div>
+                  <div style={{width:"100%",height:`${Math.max(pct,4)}%`,background:"#7c3aed",borderRadius:"4px 4px 0 0",minHeight:4}}/>
+                  <div style={{fontSize:9,color:"#94a3b8",whiteSpace:"nowrap",writingMode:"horizontal-tb"}}>{band.label}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {/* 期間選択 */}
       <div style={{...cardStyle,marginBottom:16}}>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
@@ -1262,7 +1332,7 @@ function StatsPanel({bookings,payments,todayStr,stores}){
           <div style={{textAlign:"center",color:"#94a3b8",fontSize:12,padding:16}}>対象データなし</div>
         ):renderVisitFunnel(overallFunnel,"#059669")}
 
-        {eightByStaffList.length>0&&(
+        {selStatsStaffId===null&&eightByStaffList.length>0&&(
           <div style={{marginTop:18,paddingTop:14,borderTop:"1px solid #f1f5f9"}}>
             <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:8}}>担当スタッフ別（初回担当ベース・タップでファネル表示）</div>
             {eightByStaffList.map(row=>(
