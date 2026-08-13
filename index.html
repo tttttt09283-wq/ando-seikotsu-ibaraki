@@ -884,6 +884,28 @@ function StatsPanel({bookings,payments,todayStr,stores}){
   const insSales=pays.reduce((s,p)=>s+(p.insurance_amount||0),0);
   const jifeeSales=pays.reduce((s,p)=>s+(p.jifee_amount||0),0);
 
+  // スタッフ別売上（会計に紐づく予約の担当スタッフで集計）
+  const bookingByIdForStats=React.useMemo(()=>{
+    const map={};
+    scopedBookings.forEach(b=>{map[b.id]=b;});
+    return map;
+  },[scopedBookings]);
+  const salesByStaffMap={};
+  pays.forEach(p=>{
+    const booking=bookingByIdForStats[p.booking_id];
+    const sid=(booking&&booking.staff_id)||0;
+    if(!salesByStaffMap[sid]) salesByStaffMap[sid]={total:0,insurance:0,jifee:0,count:0};
+    salesByStaffMap[sid].total+=(p.total_amount||0);
+    salesByStaffMap[sid].insurance+=(p.insurance_amount||0);
+    salesByStaffMap[sid].jifee+=(p.jifee_amount||0);
+    salesByStaffMap[sid].count++;
+  });
+  const salesByStaffList=Object.entries(salesByStaffMap).map(([sid,v])=>{
+    const staffInfo=STAFF_ACCOUNTS.find(s=>s.id===Number(sid))||{name:"担当未定",color:"#888",initial:"？"};
+    return{staffId:Number(sid),staffInfo,...v};
+  }).sort((a,b)=>b.total-a.total);
+  const maxStaffSales=Math.max(...salesByStaffList.map(s=>s.total),1);
+
   // ユニーク患者
   const uniquePatients=[...new Set(bks.map(b=>b.patient_name))];
   const totalUnique=uniquePatients.length;
@@ -1042,6 +1064,26 @@ function StatsPanel({bookings,payments,todayStr,stores}){
           </div>
         </div>
       )}
+
+      {/* スタッフ別売上 */}
+      <div style={{...cardStyle,marginBottom:16}}>
+        <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:12}}>👤 スタッフ別売上</div>
+        {salesByStaffList.length===0?(
+          <div style={{textAlign:"center",color:"#94a3b8",fontSize:12,padding:16}}>この期間の会計データがありません</div>
+        ):salesByStaffList.map(row=>(
+          <div key={row.staffId} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid #f1f5f9"}}>
+            <div style={{width:24,height:24,borderRadius:6,background:row.staffInfo.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:11,flexShrink:0}}>{row.staffInfo.initial}</div>
+            <div style={{fontSize:12,fontWeight:700,color:"#374151",minWidth:70}}>{row.staffInfo.name}</div>
+            <div style={{flex:1,height:10,background:"#f1f5f9",borderRadius:5,overflow:"hidden"}}>
+              <div style={{height:"100%",width:`${Math.round(row.total/maxStaffSales*100)}%`,background:row.staffInfo.color,borderRadius:5}}/>
+            </div>
+            <div style={{textAlign:"right",minWidth:110}}>
+              <div style={{fontSize:13,fontWeight:800,color:"#1e3a5f"}}>{fmt(row.total)}</div>
+              <div style={{fontSize:9,color:"#94a3b8"}}>{row.count}件（保険{fmt(row.insurance)}／自費{fmt(row.jifee)}）</div>
+            </div>
+          </div>
+        ))}
+      </div>
 
       {/* 期間選択 */}
       <div style={{...cardStyle,marginBottom:16}}>
