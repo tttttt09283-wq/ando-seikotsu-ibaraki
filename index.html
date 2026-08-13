@@ -836,6 +836,7 @@ function StatsPanel({bookings,payments,todayStr,stores}){
   // ===== 店舗フィルタ（全店舗 / 各店舗） =====
   const [selStatsStoreId,setSelStatsStoreId]=React.useState(null); // null = 全店舗
   const [listModal,setListModal]=React.useState(null); // {title, items:[{name,sub}]} | null
+  const [funnelModal,setFunnelModal]=React.useState(null); // {title, funnel, color} | null
   const firstStoreId=(stores&&stores.length>0)?stores[0].id:1;
   const scopedBookings=React.useMemo(()=>{
     if(selStatsStoreId===null) return bookings;
@@ -908,17 +909,46 @@ function StatsPanel({bookings,payments,todayStr,stores}){
   // 新規患者の8回継続数・率（全体・スタッフ別）
   const eightVisitCount=newPatientsList.filter(p=>p.reached8).length;
   const eightVisitRate=newPatientsList.length>0?Math.round(eightVisitCount/newPatientsList.length*100):0;
+  // 1〜8回目それぞれで「その回数まで到達した人数」を数える（継続ファネル）
+  function buildVisitFunnel(patients){
+    const steps=[];
+    for(let n=1;n<=8;n++){
+      steps.push({step:n,count:patients.filter(p=>p.totalVisits>=n).length});
+    }
+    return steps;
+  }
+  const overallFunnel=buildVisitFunnel(newPatientsList);
   const eightByStaff={};
   newPatientsList.forEach(p=>{
     const sid=p.staffId||0;
-    if(!eightByStaff[sid]) eightByStaff[sid]={total:0,reached8:0};
+    if(!eightByStaff[sid]) eightByStaff[sid]={total:0,reached8:0,patients:[]};
     eightByStaff[sid].total++;
+    eightByStaff[sid].patients.push(p);
     if(p.reached8) eightByStaff[sid].reached8++;
   });
   const eightByStaffList=Object.entries(eightByStaff).map(([sid,v])=>{
     const staffInfo=STAFF_ACCOUNTS.find(s=>s.id===Number(sid))||{name:"担当未定",color:"#888",initial:"？"};
-    return{staffId:Number(sid),staffInfo,total:v.total,reached8:v.reached8,rate:v.total>0?Math.round(v.reached8/v.total*100):0};
+    return{staffId:Number(sid),staffInfo,total:v.total,reached8:v.reached8,rate:v.total>0?Math.round(v.reached8/v.total*100):0,funnel:buildVisitFunnel(v.patients)};
   }).sort((a,b)=>b.total-a.total);
+
+  // 継続ファネルの棒グラフを描画するヘルパー
+  function renderVisitFunnel(funnel,color){
+    const max=Math.max(...funnel.map(f=>f.count),1);
+    return(
+      <div style={{display:"flex",alignItems:"flex-end",gap:6,height:100,padding:"0 2px"}}>
+        {funnel.map(f=>{
+          const pct=Math.round(f.count/max*100);
+          return(
+            <div key={f.step} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+              <div style={{fontSize:11,fontWeight:800,color:"#374151"}}>{f.count}</div>
+              <div style={{width:"100%",height:`${Math.max(pct,4)}%`,background:color,borderRadius:"4px 4px 0 0",minHeight:4}}/>
+              <div style={{fontSize:9,color:"#94a3b8",whiteSpace:"nowrap"}}>{f.step}回目</div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
 
   // 単価・LTV
   const allUnitPrice=paidBk>0?Math.round(totalSales/paidBk):0;
@@ -1156,32 +1186,25 @@ function StatsPanel({bookings,payments,todayStr,stores}){
         </div>
       </div>
 
-      {/* 新規患者の8回継続率 */}
+      {/* 新規患者の継続ファネル（1〜8回目） */}
       <div style={{...cardStyle,marginBottom:12}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-          <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f"}}>🎯 新規患者の継続率（8回来院達成）</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+          <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f"}}>🎯 新規患者の継続ファネル（1〜8回目）</div>
           {eightVisitCount>0&&(
             <button onClick={()=>setListModal({title:`8回来院達成（${eightVisitCount}名）`,items:newPatientsList.filter(p=>p.reached8).map(p=>({name:p.name,sub:p.sub}))})}
-              style={{fontSize:11,color:"#2563eb",background:"none",border:"none",cursor:"pointer",fontWeight:700,fontFamily:"inherit"}}>一覧を見る ›</button>
+              style={{fontSize:11,color:"#2563eb",background:"none",border:"none",cursor:"pointer",fontWeight:700,fontFamily:"inherit",whiteSpace:"nowrap"}}>8回達成者を見る ›</button>
           )}
         </div>
-        <div style={{display:"flex",gap:16,marginBottom:16}}>
-          <div style={{textAlign:"center"}}>
-            <div style={{fontSize:28,fontWeight:800,color:"#059669"}}>{eightVisitCount}<span style={{fontSize:14}}>/{newPatientsList.length}名</span></div>
-            <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>8回達成数</div>
-          </div>
-          <div style={{textAlign:"center"}}>
-            <div style={{fontSize:28,fontWeight:800,color:"#d97706"}}>{eightVisitRate}%</div>
-            <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>継続率</div>
-          </div>
-        </div>
-        {eightByStaffList.length===0?(
-          <div style={{textAlign:"center",color:"#94a3b8",fontSize:12,padding:12}}>対象データなし</div>
-        ):(
-          <div>
-            <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:8}}>担当スタッフ別（初回担当ベース）</div>
+        <div style={{fontSize:11,color:"#94a3b8",marginBottom:12}}>新規{newPatientsList.length}名のうち、各回数まで来院した人数の推移　最終8回達成：{eightVisitCount}名（{eightVisitRate}%）</div>
+        {newPatientsList.length===0?(
+          <div style={{textAlign:"center",color:"#94a3b8",fontSize:12,padding:16}}>対象データなし</div>
+        ):renderVisitFunnel(overallFunnel,"#059669")}
+
+        {eightByStaffList.length>0&&(
+          <div style={{marginTop:18,paddingTop:14,borderTop:"1px solid #f1f5f9"}}>
+            <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:8}}>担当スタッフ別（初回担当ベース・タップでファネル表示）</div>
             {eightByStaffList.map(row=>(
-              <div key={row.staffId} onClick={()=>setListModal({title:`${row.staffInfo.name}の新規患者（${row.total}名）`,items:newPatientsList.filter(p=>(p.staffId||0)===row.staffId).map(p=>({name:p.name,sub:p.sub+(p.reached8?"　✅8回達成":"")}))})}
+              <div key={row.staffId} onClick={()=>setFunnelModal({title:`${row.staffInfo.name} の継続ファネル`,funnel:row.funnel,color:row.staffInfo.color,total:row.total,reached8:row.reached8,rate:row.rate})}
                 style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid #f1f5f9",cursor:"pointer"}}>
                 <div style={{width:22,height:22,borderRadius:6,background:row.staffInfo.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:10,flexShrink:0}}>{row.staffInfo.initial}</div>
                 <div style={{fontSize:12,fontWeight:700,color:"#374151",minWidth:64}}>{row.staffInfo.name}</div>
@@ -1189,6 +1212,7 @@ function StatsPanel({bookings,payments,todayStr,stores}){
                   <div style={{height:"100%",width:`${row.rate}%`,background:row.staffInfo.color,borderRadius:4}}/>
                 </div>
                 <div style={{fontSize:12,fontWeight:700,color:"#374151",whiteSpace:"nowrap",minWidth:90,textAlign:"right"}}>{row.reached8}/{row.total}名（{row.rate}%）</div>
+                <span style={{color:"#94a3b8",fontSize:13}}>›</span>
               </div>
             ))}
           </div>
@@ -1215,6 +1239,22 @@ function StatsPanel({bookings,payments,todayStr,stores}){
           ))}
         </div>
       </div>
+
+      {/* スタッフ別 継続ファネル モーダル */}
+      {funnelModal&&(
+        <div onClick={()=>setFunnelModal(null)} style={{position:"fixed",inset:0,background:"rgba(15,23,42,.55)",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"white",borderRadius:14,width:"100%",maxWidth:420,boxShadow:"0 20px 50px rgba(0,0,0,.3)"}}>
+            <div style={{padding:"14px 18px",borderBottom:"1px solid #f1f5f9",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{fontWeight:800,fontSize:14,color:"#1e3a5f"}}>{funnelModal.title}</div>
+              <button onClick={()=>setFunnelModal(null)} style={{background:"#f1f5f9",border:"none",borderRadius:"50%",width:26,height:26,cursor:"pointer",color:"#64748b",fontSize:14}}>✕</button>
+            </div>
+            <div style={{padding:"16px 18px"}}>
+              <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>新規{funnelModal.total}名のうち、最終8回達成：<strong style={{color:"#1e293b"}}>{funnelModal.reached8}名（{funnelModal.rate}%）</strong></div>
+              {renderVisitFunnel(funnelModal.funnel,funnelModal.color)}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 新規・離反 内訳一覧モーダル */}
       {listModal&&(
