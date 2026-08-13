@@ -204,7 +204,7 @@ function App(){
   var resolvedStoreId = resolvedStoreIdState[0]; var setResolvedStoreId = resolvedStoreIdState[1];
 
   var formState = useState({
-    name:"",nameKana:"",phone:"",referrerName:"",
+    name:"",nameKana:"",phone:"",gender:"",age:"",referrerName:"",
     bodyParts:[],bodyPartsOther:"",injuryCause:"",injuryCauseDetail:"",
     painWhen:"",painLevel:"",symptoms:[],
     otherClinic:"",otherClinicName:"",medicalHistory:"",
@@ -527,6 +527,8 @@ function App(){
     sb.insert("bookings",{
       patient_name:form.name,
       phone:form.phone,
+      gender:form.gender||null,
+      age:form.age?parseInt(form.age):null,
       staff_id:staffId,
       date:dateStr,
       time:selTime,
@@ -605,7 +607,7 @@ function App(){
   function reset(){
     setStep(0); setSelDate(null); setSelTime(null);
     setSlotData({booked:[],breaks:[]});
-    setForm({name:"",nameKana:"",phone:"",referrerName:"",bodyParts:[],bodyPartsOther:"",injuryCause:"",injuryCauseDetail:"",painWhen:"",painLevel:"",symptoms:[],otherClinic:"",otherClinicName:"",medicalHistory:"",wantContinue:"",wantContinueOther:"",howKnow:"",howKnowOther:"",lineNotify:false});
+    setForm({name:"",nameKana:"",phone:"",gender:"",age:"",referrerName:"",bodyParts:[],bodyPartsOther:"",injuryCause:"",injuryCauseDetail:"",painWhen:"",painLevel:"",symptoms:[],otherClinic:"",otherClinicName:"",medicalHistory:"",wantContinue:"",wantContinueOther:"",howKnow:"",howKnowOther:"",lineNotify:false});
     setDone(false); setBookingId(null); setMemo("");
   }
 
@@ -642,6 +644,8 @@ function App(){
     sb.insert("bookings",{
       patient_name:pastBooking.patient_name,
       phone:pastBooking.phone||"",
+      gender:pastBooking.gender||null,
+      age:pastBooking.age||null,
       staff_id:staffId,
       date:dateStr,
       time:selTime,
@@ -1003,7 +1007,25 @@ function App(){
               }),
               errors[f.key]?React.createElement("div",{style:{color:"#ef4444",fontSize:12,marginTop:4}},"⚠ "+errors[f.key]):null
             );
-          })
+          }),
+          React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:4}},
+            React.createElement("div",null,
+              React.createElement("label",{style:H.label},"性別（任意）"),
+              React.createElement("div",{style:{display:"flex",gap:6}},
+                ["女性","男性","回答しない"].map(function(v){
+                  return React.createElement("button",{key:v,type:"button",onClick:function(){setF("gender",v);},
+                    style:{flex:1,padding:"10px 4px",borderRadius:8,border:"1.5px solid "+(form.gender===v?"#1e3a5f":"#ddd"),background:form.gender===v?"#1e3a5f":"white",color:form.gender===v?"white":"#444",cursor:"pointer",fontSize:12,fontWeight:form.gender===v?700:400}},v);
+                })
+              )
+            ),
+            React.createElement("div",null,
+              React.createElement("label",{style:H.label},"年齢（任意）"),
+              React.createElement("input",{type:"number",inputMode:"numeric",min:"0",max:"120",value:form.age,placeholder:"例：34",
+                onChange:function(e){setF("age",e.target.value);},
+                style:H.input
+              })
+            )
+          )
         ),
 
         // ===== 紹介者のお名前（任意） =====
