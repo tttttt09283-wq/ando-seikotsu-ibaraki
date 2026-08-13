@@ -888,6 +888,9 @@ function StatsPanel({bookings,payments,todayStr,stores}){
   const paidBk=pays.length;
   const cancelledBk=bks.filter(b=>b.cancelled).length;
   const confirmedBk=totalBk-cancelledBk;
+  // 当日キャンセル（予約日そのものにキャンセルされたもの）
+  const sameDayCancelList=bks.filter(b=>b.cancelled&&b.cancelled_at&&fmtDate(new Date(b.cancelled_at))===b.date);
+  const sameDayCancelCount=sameDayCancelList.length;
 
   // 売上
   const totalSales=pays.reduce((s,p)=>s+(p.total_amount||0),0);
@@ -1176,15 +1179,16 @@ function StatsPanel({bookings,payments,todayStr,stores}){
       )}
 
       {/* 予約サマリー */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:12}}>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:12}}>
         {[
           {label:"総予約数",value:totalBk,color:"#374151",icon:"📋"},
           {label:"来院済み",value:paidBk,color:"#059669",icon:"✅"},
           {label:"確定・受付",value:confirmedBk,color:"#2563eb",icon:"📅"},
           {label:"キャンセル",value:cancelledBk,color:"#ef4444",icon:"❌"},
+          {label:"当日キャンセル",value:sameDayCancelCount,color:"#dc2626",icon:"⚡",onClick:sameDayCancelCount>0?()=>setListModal({title:`当日キャンセル（${sameDayCancelCount}名）`,items:sameDayCancelList.map(b=>({name:b.patient_name,sub:`${b.date} ${b.time}　理由：${b.cancel_reason||"未記録"}`}))}):null},
         ].map(item=>(
-          <div key={item.label} style={{...cardStyle,textAlign:"center",marginBottom:0,padding:"14px 10px"}}>
-            <div style={{fontSize:11,color:"#94a3b8",fontWeight:600,marginBottom:6}}>{item.label}</div>
+          <div key={item.label} onClick={item.onClick||undefined} style={{...cardStyle,textAlign:"center",marginBottom:0,padding:"14px 10px",cursor:item.onClick?"pointer":"default"}}>
+            <div style={{fontSize:11,color:"#94a3b8",fontWeight:600,marginBottom:6}}>{item.label}{item.onClick&&<span style={{marginLeft:2}}>›</span>}</div>
             <div style={{fontSize:28,fontWeight:800,color:item.color}}>{item.value}</div>
           </div>
         ))}
@@ -4379,12 +4383,16 @@ function CancelledListPanel({bookings,todayStr,onRestore}){
     return Object.entries(counts).sort((a,b)=>b[1]-a[1]);
   },[cancelledList]);
 
+  const sameDayCount=React.useMemo(()=>{
+    return cancelledList.filter(b=>b.cancelled_at&&fmtDate(new Date(b.cancelled_at))===b.date).length;
+  },[cancelledList]);
+
   return(
     <div style={{maxWidth:800,margin:"0 auto"}}>
       <div className="card" style={{marginBottom:14}}>
         <div style={{padding:"14px 16px",borderBottom:"1px solid #f1f5f9",background:"linear-gradient(135deg,#dc2626,#991b1b)"}}>
           <div style={{color:"white",fontWeight:800,fontSize:15}}>🚫 キャンセル一覧</div>
-          <div style={{color:"rgba(255,255,255,.75)",fontSize:12,marginTop:2}}>全{cancelledList.length}件</div>
+          <div style={{color:"rgba(255,255,255,.75)",fontSize:12,marginTop:2}}>全{cancelledList.length}件　（うち当日キャンセル：{sameDayCount}件）</div>
         </div>
         {reasonCounts.length>0&&(
           <div style={{padding:"14px 16px",display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -4403,10 +4411,11 @@ function CancelledListPanel({bookings,todayStr,onRestore}){
           ):cancelledList.map(b=>{
             const staff=STAFF_ACCOUNTS.find(s=>s.id===b.staff_id)||{name:"不明",color:"#888"};
             const nextBooking=findNextBookingFor(b.patient_name,b.id,bookings,todayStr);
+            const isSameDay=b.cancelled_at&&fmtDate(new Date(b.cancelled_at))===b.date;
             return(
               <div key={b.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid #f1f5f9",gap:10}}>
                 <div>
-                  <div style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{b.patient_name}</div>
+                  <div style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{b.patient_name}{isSameDay&&<span className="badge badge-red" style={{marginLeft:6,fontSize:9}}>⚡当日キャンセル</span>}</div>
                   <div style={{fontSize:11,color:"#94a3b8"}}>{b.date} {b.time}　{staff.name}　{b.menu}</div>
                   <div style={{fontSize:11,color:"#dc2626",fontWeight:700,marginTop:2}}>理由：{b.cancel_reason||"未記録"}</div>
                   <div style={{fontSize:11,fontWeight:700,marginTop:2,color:nextBooking?"#059669":"#d97706"}}>
@@ -4424,10 +4433,26 @@ function CancelledListPanel({bookings,todayStr,onRestore}){
 }
 
 function ChurnAlertPanel({bookings,todayStr}){
-  const CHURN_DAYS=14; // 何日空いたら対象にするか
-  const [exclusions,setExclusions]=React.useState([]); // line_user_idの配列
+  // 期間ごとの区分（日数の範囲）とデフォルトの文面
+  const CHURN_BANDS=[
+    {id:"2w",label:"2週間経過",min:14,max:20,color:"#0891b2",
+      defaultMessage:"ご無沙汰しております、あんど整骨院です😊\n前回のご来院から2週間ほど経ちました。お身体の調子はいかがですか？お気軽にご来院ください。\nご予約はこちらから：https://ando-seikotsu-ibaraki.vercel.app/booking.html"},
+    {id:"3w",label:"3週間経過",min:21,max:29,color:"#2563eb",
+      defaultMessage:"あんど整骨院です😊\n前回のご来院から3週間ほど経ちました。せっかく良くなってきたお身体を維持するためにも、そろそろメンテナンスにいらしてください。\nご予約はこちらから：https://ando-seikotsu-ibaraki.vercel.app/booking.html"},
+    {id:"1m",label:"1ヶ月以上",min:30,max:89,color:"#7c3aed",
+      defaultMessage:"あんど整骨院です。\n1ヶ月以上ご来院がないようでしたので、ご連絡させていただきました。お身体の調子はその後いかがでしょうか？お気軽にご相談ください。\nご予約はこちらから：https://ando-seikotsu-ibaraki.vercel.app/booking.html"},
+    {id:"3m",label:"3ヶ月以上",min:90,max:179,color:"#d97706",
+      defaultMessage:"あんど整骨院です。\n3ヶ月以上お会いできておらず、お身体の調子が心配になりご連絡いたしました。よろしければまたお顔を見せてください🙏\nご予約はこちらから：https://ando-seikotsu-ibaraki.vercel.app/booking.html"},
+    {id:"6m",label:"半年以上",min:180,max:999999,color:"#dc2626",
+      defaultMessage:"あんど整骨院です。\n半年以上のご無沙汰、お元気にお過ごしでしょうか？お得な再来院キャンペーンもご用意していますので、お気軽にご連絡ください。\nご予約はこちらから：https://ando-seikotsu-ibaraki.vercel.app/booking.html"},
+  ];
+
+  const [activeBandId,setActiveBandId]=React.useState(CHURN_BANDS[0].id);
+  const [exclusions,setExclusions]=React.useState([]); // line_user_idの配列（全バンド共通）
   const [loadingExclusions,setLoadingExclusions]=React.useState(true);
-  const [message,setMessage]=React.useState("ご無沙汰しております、あんど整骨院です😊\nお身体の調子はいかがですか？お時間ございましたらお気軽にご来院ください。\nご予約はこちらから：https://ando-seikotsu-ibaraki.vercel.app/booking.html");
+  const [messages,setMessages]=React.useState(()=>{
+    const init={};CHURN_BANDS.forEach(b=>{init[b.id]=b.defaultMessage;});return init;
+  });
   const [sending,setSending]=React.useState(false);
   const [toast,setToast]=React.useState("");
   const [sendResult,setSendResult]=React.useState(null); // {success, failed}
@@ -4441,8 +4466,13 @@ function ChurnAlertPanel({bookings,todayStr}){
     }).catch(()=>{setExclusions([]);}).finally(()=>setLoadingExclusions(false));
   },[]);
 
-  // 患者ごとに最終来院日・次回予約有無を集計
-  const candidates=React.useMemo(()=>{
+  const daysAgo=(dateStr)=>{
+    const d1=new Date(dateStr+"T00:00:00"),d2=new Date(todayStr+"T00:00:00");
+    return Math.round((d2-d1)/86400000);
+  };
+
+  // 患者ごとに最終来院日・次回予約有無・経過日数を集計（バンドに関わらず共通の下ごしらえ）
+  const allCandidates=React.useMemo(()=>{
     const byUid={};
     bookings.forEach(b=>{
       if(!b.line_user_id) return;
@@ -4458,20 +4488,20 @@ function ChurnAlertPanel({bookings,todayStr}){
         }
       }
     });
-    const cutoff=new Date(todayStr+"T00:00:00");
-    cutoff.setDate(cutoff.getDate()-CHURN_DAYS);
-    const cutoffStr=fmtDate(cutoff);
-    return Object.values(byUid).filter(r=>r.lastDate&&r.lastDate<=cutoffStr&&!r.hasFuture)
-      .sort((a,b)=>a.lastDate.localeCompare(b.lastDate));
+    return Object.values(byUid).filter(r=>r.lastDate&&!r.hasFuture).map(r=>({...r,days:daysAgo(r.lastDate)}));
   },[bookings,todayStr]);
 
-  const daysAgo=(dateStr)=>{
-    const d1=new Date(dateStr+"T00:00:00"),d2=new Date(todayStr+"T00:00:00");
-    return Math.round((d2-d1)/86400000);
-  };
+  // 期間バンドごとの対象者一覧
+  const bandCandidates={};
+  CHURN_BANDS.forEach(band=>{
+    bandCandidates[band.id]=allCandidates.filter(c=>c.days>=band.min&&c.days<=band.max).sort((a,b)=>a.lastDate.localeCompare(b.lastDate));
+  });
 
+  const activeBand=CHURN_BANDS.find(b=>b.id===activeBandId);
+  const candidates=bandCandidates[activeBandId]||[];
   const targetList=candidates.filter(c=>!exclusions.includes(c.line_user_id));
   const excludedList=candidates.filter(c=>exclusions.includes(c.line_user_id));
+  const totalAllBands=CHURN_BANDS.reduce((s,b)=>s+bandCandidates[b.id].length,0);
 
   async function toggleExclude(lineUserId,exclude){
     try{
@@ -4489,8 +4519,9 @@ function ChurnAlertPanel({bookings,todayStr}){
 
   async function sendBulk(){
     if(targetList.length===0){showToast("送信対象がいません");return;}
+    const message=messages[activeBandId]||"";
     if(!message.trim()){showToast("メッセージを入力してください");return;}
-    if(!confirm(`${targetList.length}名にLINEメッセージを一斉送信します。よろしいですか？`)) return;
+    if(!confirm(`「${activeBand.label}」の送信対象 ${targetList.length}名にLINEメッセージを一斉送信します。よろしいですか？`)) return;
     setSending(true);setSendResult(null);
     try{
       const res=await fetch("/api/send-line-push",{
@@ -4509,38 +4540,54 @@ function ChurnAlertPanel({bookings,todayStr}){
   }
 
   return(
-    <div style={{maxWidth:700,margin:"0 auto"}}>
+    <div style={{maxWidth:760,margin:"0 auto"}}>
       {toast&&<div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#dc2626",fontWeight:700,fontSize:13}}>{toast}</div>}
 
       <div className="card" style={{marginBottom:14}}>
         <div style={{padding:"14px 16px",borderBottom:"1px solid #f1f5f9",background:"linear-gradient(135deg,#7c3aed,#6d28d9)"}}>
           <div style={{color:"white",fontWeight:800,fontSize:15}}>🔔 離反防止アラート</div>
-          <div style={{color:"rgba(255,255,255,.75)",fontSize:12,marginTop:2}}>最終来院から{CHURN_DAYS}日以上空き、次回予約が未定のLINE連携患者を検出します</div>
+          <div style={{color:"rgba(255,255,255,.75)",fontSize:12,marginTop:2}}>最終来院からの経過期間ごとに区分し、期間に応じた文面でLINE連携患者へ送信します（対象は全期間合計{totalAllBands}名）</div>
         </div>
-        <div style={{padding:"16px",display:"flex",gap:16,flexWrap:"wrap"}}>
-          <div style={{textAlign:"center"}}>
-            <div style={{fontSize:28,fontWeight:800,color:"#7c3aed"}}>{candidates.length}</div>
-            <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>対象患者</div>
-          </div>
-          <div style={{textAlign:"center"}}>
-            <div style={{fontSize:28,fontWeight:800,color:"#059669"}}>{targetList.length}</div>
-            <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>送信対象</div>
-          </div>
-          <div style={{textAlign:"center"}}>
-            <div style={{fontSize:28,fontWeight:800,color:"#9ca3af"}}>{excludedList.length}</div>
-            <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>送信不要に設定済み</div>
-          </div>
+        {/* 期間タブ */}
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,padding:"14px 16px"}}>
+          {CHURN_BANDS.map(band=>{
+            const count=bandCandidates[band.id].length;
+            const isActive=activeBandId===band.id;
+            return(
+              <button key={band.id} onClick={()=>{setActiveBandId(band.id);setSendResult(null);}}
+                style={{padding:"8px 14px",borderRadius:20,border:`2px solid ${isActive?band.color:"#e2e8f0"}`,background:isActive?band.color:"white",color:isActive?"white":"#374151",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
+                {band.label}
+                <span style={{background:isActive?"rgba(255,255,255,.3)":"#f1f5f9",color:isActive?"white":"#64748b",borderRadius:10,padding:"1px 7px",fontSize:11,fontWeight:800}}>{count}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* メッセージ編集＋一斉送信 */}
+      {/* 選択中バンドの詳細 */}
       <div className="card" style={{marginBottom:14}}>
-        <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>送信メッセージ</div>
+        <div style={{padding:"14px 16px",display:"flex",gap:16,flexWrap:"wrap",borderBottom:"1px solid #f1f5f9"}}>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:26,fontWeight:800,color:activeBand.color}}>{candidates.length}</div>
+            <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>{activeBand.label}・対象患者</div>
+          </div>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:26,fontWeight:800,color:"#059669"}}>{targetList.length}</div>
+            <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>送信対象</div>
+          </div>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:26,fontWeight:800,color:"#9ca3af"}}>{excludedList.length}</div>
+            <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>送信不要に設定済み</div>
+          </div>
+        </div>
+
+        {/* メッセージ編集＋一斉送信（バンドごとに文面を保持） */}
         <div style={{padding:16}}>
-          <textarea value={message} onChange={e=>setMessage(e.target.value)} rows={5} className="form-input" style={{resize:"vertical",marginBottom:12}}/>
+          <div style={{fontSize:12,fontWeight:700,color:"#374151",marginBottom:6}}>「{activeBand.label}」向けの送信メッセージ</div>
+          <textarea value={messages[activeBandId]} onChange={e=>setMessages(prev=>({...prev,[activeBandId]:e.target.value}))} rows={5} className="form-input" style={{resize:"vertical",marginBottom:12}}/>
           <button onClick={sendBulk} disabled={sending||targetList.length===0} className="btn"
-            style={{width:"100%",justifyContent:"center",padding:12,fontSize:14,borderRadius:9,background:"linear-gradient(135deg,#7c3aed,#6d28d9)",color:"white",fontWeight:800,opacity:(sending||targetList.length===0)?0.6:1}}>
-            {sending?"送信中...":`📤 送信対象 ${targetList.length}名へ一斉送信する`}
+            style={{width:"100%",justifyContent:"center",padding:12,fontSize:14,borderRadius:9,background:`linear-gradient(135deg,${activeBand.color},${activeBand.color}cc)`,color:"white",fontWeight:800,opacity:(sending||targetList.length===0)?0.6:1}}>
+            {sending?"送信中...":`📤 ${activeBand.label}の対象 ${targetList.length}名へ一斉送信する`}
           </button>
           {sendResult&&(
             <div style={{marginTop:10,fontSize:12,color:"#059669",fontWeight:700}}>
@@ -4552,7 +4599,7 @@ function ChurnAlertPanel({bookings,todayStr}){
 
       {/* 送信対象リスト */}
       <div className="card" style={{marginBottom:14}}>
-        <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>送信対象一覧（{targetList.length}名）</div>
+        <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>{activeBand.label}・送信対象一覧（{targetList.length}名）</div>
         <div style={{padding:"8px 16px"}}>
           {loadingExclusions?(
             <div style={{textAlign:"center",padding:20,color:"#94a3b8"}}>読み込み中...</div>
@@ -4562,7 +4609,7 @@ function ChurnAlertPanel({bookings,todayStr}){
             <div key={c.line_user_id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid #f1f5f9",gap:10}}>
               <div>
                 <div style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{c.patient_name}</div>
-                <div style={{fontSize:11,color:"#94a3b8"}}>最終来院：{c.lastDate}（{daysAgo(c.lastDate)}日前）{c.phone?`　${c.phone}`:""}</div>
+                <div style={{fontSize:11,color:"#94a3b8"}}>最終来院：{c.lastDate}（{c.days}日前）{c.phone?`　${c.phone}`:""}</div>
               </div>
               <button onClick={()=>toggleExclude(c.line_user_id,true)} className="btn btn-outline btn-xs" style={{whiteSpace:"nowrap"}}>送信不要にする</button>
             </div>
@@ -4573,13 +4620,13 @@ function ChurnAlertPanel({bookings,todayStr}){
       {/* 除外済み一覧 */}
       {excludedList.length>0&&(
         <div className="card">
-          <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#94a3b8"}}>送信不要に設定済み（{excludedList.length}名）</div>
+          <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#94a3b8"}}>{activeBand.label}・送信不要に設定済み（{excludedList.length}名）</div>
           <div style={{padding:"8px 16px"}}>
             {excludedList.map(c=>(
               <div key={c.line_user_id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid #f1f5f9",gap:10,opacity:0.7}}>
                 <div>
                   <div style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{c.patient_name}</div>
-                  <div style={{fontSize:11,color:"#94a3b8"}}>最終来院：{c.lastDate}（{daysAgo(c.lastDate)}日前）</div>
+                  <div style={{fontSize:11,color:"#94a3b8"}}>最終来院：{c.lastDate}（{c.days}日前）</div>
                 </div>
                 <button onClick={()=>toggleExclude(c.line_user_id,false)} className="btn btn-outline btn-xs" style={{whiteSpace:"nowrap"}}>対象に戻す</button>
               </div>
