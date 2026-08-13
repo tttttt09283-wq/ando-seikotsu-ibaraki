@@ -47,10 +47,23 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 .remaining-box{background:#fef2f2;border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;margin-top:6px;}
 .btn-confirm{width:100%;padding:15px;background:linear-gradient(135deg,#059669,#047857);color:white;border:none;border-radius:10px;font-size:15px;font-weight:800;cursor:pointer;margin-bottom:8px;}
 .btn-back{width:100%;padding:11px;background:white;color:#666;border:1.5px solid #ddd;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px;}
-.receipt-area{background:#fffbf0;border:1px dashed #d97706;border-radius:10px;padding:14px;font-size:13px;line-height:1.8;margin-bottom:14px;}
-.receipt-title{text-align:center;font-weight:800;font-size:14px;margin-bottom:6px;border-bottom:1px solid #ddd;padding-bottom:6px;}
-.receipt-row{display:flex;justify-content:space-between;}
-.receipt-total{display:flex;justify-content:space-between;font-weight:800;font-size:14px;border-top:1px solid #ddd;padding-top:6px;margin-top:4px;}
+/* ===== 印刷用レシート（実際のレジレシートに近い書式） ===== */
+.pr-wrap{font-family:'MS Gothic','Osaka-Mono','Courier New',monospace;width:280px;margin:0 auto;padding:14px 10px;background:white;color:#111;font-size:12px;line-height:1.7;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,0.1);}
+.pr-center{text-align:center;}
+.pr-line{border-top:1px dashed #333;margin:6px 0;}
+.pr-dline{border-top:3px double #333;margin:6px 0;}
+.pr-row{display:flex;justify-content:space-between;}
+.pr-row .l{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.pr-row .r{flex-shrink:0;text-align:right;margin-left:8px;}
+.pr-title{font-size:16px;font-weight:800;letter-spacing:6px;text-align:center;margin:8px 0;}
+.pr-section-label{margin-top:6px;margin-bottom:2px;}
+.pr-total-row{display:flex;justify-content:space-between;font-weight:800;font-size:15px;}
+
+@media print{
+  body *{visibility:hidden;}
+  #receiptPrintArea, #receiptPrintArea *{visibility:visible;}
+  #receiptPrintArea{display:block;position:absolute;left:0;top:0;box-shadow:none;}
+}
 .next-booking-item{background:#f0f9ff;border:1.5px solid #bae6fd;border-radius:10px;padding:12px 14px;margin-bottom:8px;position:relative;}
 .next-booking-item .remove-btn{position:absolute;top:10px;right:10px;background:#fef2f2;color:#ef4444;border:none;border-radius:6px;padding:3px 8px;cursor:pointer;font-size:11px;}
 .nb-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;}
@@ -161,8 +174,9 @@ async function sbPost(t,d){
 }
 function fmt(n){return"¥"+Number(n||0).toLocaleString();}
 
-let booking=null,treatment=null,visitCount=1;
+let booking=null,treatment=null,visitCount=1,storeInfo=null;
 let state={insuranceAmount:0,jifeeItems:[],payments:[],done:false,saving:false,nextBookings:[],savingBookings:false,bookingsSaved:false,jifeeTab:"spot"};
+const CLINIC_NAME_FALLBACK="あんど整骨院";
 
 function getMenuByVisit(visit){if(visit===1) return "初診（60分）";if(visit===2) return "初診（60分）";return "再診（30分）";}
 function getInsMenuByVisit(visit){if(visit===1) return "初診（60分）";if(visit===2) return "初診（60分）";if(visit===3) return "再診（30分）";return "3回目以降";}
@@ -244,22 +258,57 @@ function renderSummary(){const el=document.getElementById("summaryArea");if(el) 
 
 function renderReceipt(){
   const total=calcTotal();const ins=parseInt(state.insuranceAmount)||0;const now=new Date();const change=calcChange();
+  const DAYS_JP=["日","月","火","水","木","金","土"];
+  const bd=new Date(booking.date+"T00:00:00");
+  const dateLabel=`${bd.getFullYear()}年${String(bd.getMonth()+1).padStart(2,"0")}月${String(bd.getDate()).padStart(2,"0")}日（${DAYS_JP[bd.getDay()]}）`;
+  const denNo=String(booking.id).padStart(8,"0");
+  const clinicName=(storeInfo&&storeInfo.name)?storeInfo.name:CLINIC_NAME_FALLBACK;
+  const clinicAddr=storeInfo&&storeInfo.address?storeInfo.address:"";
+  const clinicTel=storeInfo&&storeInfo.tel?storeInfo.tel:"";
+  // 内税8%を前提に、合計額から税額を逆算して表示（現状の合計は税込金額として扱っています）
+  const taxIncluded=Math.round(total*8/108);
+  const items=[
+    ...(ins>0?[{label:booking.menu||"保険窓口負担",amount:ins}]:[]),
+    ...state.jifeeItems.map(i=>({label:i.label,amount:i.amount})),
+  ];
+
   return`
-    <div class="receipt-area">
-      <div class="receipt-title">領　収　書</div>
-      <div style="text-align:center;font-size:11px;color:#666;margin-bottom:6px;">${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日</div>
-      <div class="receipt-row"><span>${booking.patient_name} 様</span><span>${booking.date} ${booking.time}</span></div>
-      <div style="border-top:1px solid #ddd;margin:6px 0;"></div>
-      ${ins>0?`<div class="receipt-row"><span>保険窓口負担</span><span>${fmt(ins)}</span></div>`:""}
-      ${state.jifeeItems.map(i=>`<div class="receipt-row"><span>${i.label}</span><span>${fmt(i.amount)}</span></div>`).join("")}
-      <div class="receipt-total"><span>合　計</span><span>${fmt(total)}</span></div>
-      <div style="border-top:1px dashed #ddd;margin-top:6px;padding-top:6px;">
-        ${state.payments.map(p=>`<div class="receipt-row"><span>${p.method}</span><span>${fmt(p.amount)}</span></div>`).join("")}
-        ${change>0?`<div class="receipt-row" style="color:#059669;font-weight:700;"><span>お釣り</span><span>${fmt(change)}</span></div>`:""}
+    <div id="receiptPrintArea" class="pr-wrap">
+      <div class="pr-center" style="font-weight:700;">${clinicName}</div>
+      ${clinicAddr?`<div class="pr-center" style="font-size:11px;">${clinicAddr}</div>`:""}
+      ${clinicTel?`<div class="pr-center" style="font-size:11px;">TEL：${clinicTel}</div>`:""}
+
+      <div class="pr-title">レ　シ　ー　ト</div>
+      <div class="pr-dline"></div>
+
+      <div>${booking.patient_name} 様</div>
+      <div class="pr-line"></div>
+
+      <div class="pr-row"><span class="l">伝票No.</span><span class="r">${denNo}</span></div>
+      <div class="pr-row"><span class="l">${dateLabel}</span><span class="r">${booking.time}</span></div>
+      <div class="pr-row"><span class="l">主担当</span><span class="r">${STAFF[booking.staff_id]||""}</span></div>
+      <div class="pr-row"><span class="l">来院回数</span><span class="r">${visitCount}回目</span></div>
+      <div class="pr-line"></div>
+
+      <div class="pr-section-label">【ご利用メニュー】</div>
+      ${items.length>0?items.map(i=>`<div class="pr-row"><span class="l">${i.label}</span><span class="r">${fmt(i.amount)}</span></div>`).join(""):`<div class="pr-row"><span class="l">－</span><span class="r">－</span></div>`}
+      <div class="pr-line"></div>
+
+      <div class="pr-row"><span class="l">値引</span><span class="r">${fmt(0)}</span></div>
+      <div class="pr-row"><span class="l">小計（税込）</span><span class="r">${fmt(total)}</span></div>
+      <div class="pr-row"><span class="l">消費税（内8%対象）</span><span class="r">${fmt(taxIncluded)}</span></div>
+      <div class="pr-dline"></div>
+      <div class="pr-total-row"><span>合　計</span><span>${fmt(total)}</span></div>
+      <div class="pr-line"></div>
+
+      ${state.payments.map(p=>`<div class="pr-row"><span class="l">お預かり（${p.method}）</span><span class="r">${fmt(p.amount)}</span></div>`).join("")}
+      ${change>0?`<div class="pr-row" style="font-weight:700;"><span class="l">お釣り</span><span class="r">${fmt(change)}</span></div>`:""}
+      <div class="pr-line"></div>
+
+      <div class="pr-center" style="font-size:11px;color:#555;margin-top:6px;">
+        ${dateLabel} ${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")} 発行
       </div>
-      <div style="border-top:1px solid #ddd;margin-top:6px;padding-top:6px;font-size:11px;color:#9ca3af;text-align:center;">
-        あんど整骨院 香里園駅前院　担当：${STAFF[booking.staff_id]||""}
-      </div>
+      <div class="pr-center" style="margin-top:8px;">ご来院ありがとうございました</div>
     </div>`;
 }
 
@@ -558,6 +607,13 @@ async function init(){
         if(JIFEE_PRICES[t]!==undefined&&t!=="保険") state.jifeeItems.push({label:t,amount:JIFEE_PRICES[t]});
       });
     }
+    // 店舗情報（住所・電話番号）をレシート用に取得。取得できなければ店舗名のみで表示する
+    try{
+      if(booking.store_id){
+        const stores=await sbGet("stores",`?id=eq.${booking.store_id}`);
+        storeInfo=Array.isArray(stores)&&stores.length>0?stores[0]:null;
+      }
+    }catch(e){storeInfo=null;}
     render();
   }catch(e){document.getElementById("root").innerHTML=`<div style="text-align:center;padding:60px;color:#ef4444;">❌ エラー：${e.message}</div>`;}
 }
