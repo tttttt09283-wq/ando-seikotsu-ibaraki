@@ -893,10 +893,32 @@ function StatsPanel({bookings,payments,todayStr,stores}){
   uniquePatients.forEach(name=>{
     const all=(allPatientDates[name]||[]).sort();
     const first=all[0];
-    if(first&&first>=range.start&&first<=range.end){newCount++;newPatientsList.push({name,sub:`初回来院：${first}`});}
+    if(first&&first>=range.start&&first<=range.end){
+      newCount++;
+      // 累計来院数（キャンセル除く・店舗内の全期間）と、初回担当スタッフを調べる
+      const patientVisits=scopedBookings.filter(b=>b.patient_name===name&&!b.cancelled).sort((a,b2)=>a.date.localeCompare(b2.date)||(a.time||"").localeCompare(b2.time||""));
+      const totalVisits=patientVisits.length;
+      const firstStaffId=patientVisits.length>0?patientVisits[0].staff_id:null;
+      newPatientsList.push({name,sub:`初回来院：${first}　累計${totalVisits}回`,totalVisits,staffId:firstStaffId,reached8:totalVisits>=8});
+    }
     else revisitCount++;
   });
   const newRate=totalUnique>0?Math.round(newCount/totalUnique*100):0;
+
+  // 新規患者の8回継続数・率（全体・スタッフ別）
+  const eightVisitCount=newPatientsList.filter(p=>p.reached8).length;
+  const eightVisitRate=newPatientsList.length>0?Math.round(eightVisitCount/newPatientsList.length*100):0;
+  const eightByStaff={};
+  newPatientsList.forEach(p=>{
+    const sid=p.staffId||0;
+    if(!eightByStaff[sid]) eightByStaff[sid]={total:0,reached8:0};
+    eightByStaff[sid].total++;
+    if(p.reached8) eightByStaff[sid].reached8++;
+  });
+  const eightByStaffList=Object.entries(eightByStaff).map(([sid,v])=>{
+    const staffInfo=STAFF_ACCOUNTS.find(s=>s.id===Number(sid))||{name:"担当未定",color:"#888",initial:"？"};
+    return{staffId:Number(sid),staffInfo,total:v.total,reached8:v.reached8,rate:v.total>0?Math.round(v.reached8/v.total*100):0};
+  }).sort((a,b)=>b.total-a.total);
 
   // 単価・LTV
   const allUnitPrice=paidBk>0?Math.round(totalSales/paidBk):0;
@@ -1132,6 +1154,45 @@ function StatsPanel({bookings,payments,todayStr,stores}){
             );
           })}
         </div>
+      </div>
+
+      {/* 新規患者の8回継続率 */}
+      <div style={{...cardStyle,marginBottom:12}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+          <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f"}}>🎯 新規患者の継続率（8回来院達成）</div>
+          {eightVisitCount>0&&(
+            <button onClick={()=>setListModal({title:`8回来院達成（${eightVisitCount}名）`,items:newPatientsList.filter(p=>p.reached8).map(p=>({name:p.name,sub:p.sub}))})}
+              style={{fontSize:11,color:"#2563eb",background:"none",border:"none",cursor:"pointer",fontWeight:700,fontFamily:"inherit"}}>一覧を見る ›</button>
+          )}
+        </div>
+        <div style={{display:"flex",gap:16,marginBottom:16}}>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:28,fontWeight:800,color:"#059669"}}>{eightVisitCount}<span style={{fontSize:14}}>/{newPatientsList.length}名</span></div>
+            <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>8回達成数</div>
+          </div>
+          <div style={{textAlign:"center"}}>
+            <div style={{fontSize:28,fontWeight:800,color:"#d97706"}}>{eightVisitRate}%</div>
+            <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>継続率</div>
+          </div>
+        </div>
+        {eightByStaffList.length===0?(
+          <div style={{textAlign:"center",color:"#94a3b8",fontSize:12,padding:12}}>対象データなし</div>
+        ):(
+          <div>
+            <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:8}}>担当スタッフ別（初回担当ベース）</div>
+            {eightByStaffList.map(row=>(
+              <div key={row.staffId} onClick={()=>setListModal({title:`${row.staffInfo.name}の新規患者（${row.total}名）`,items:newPatientsList.filter(p=>(p.staffId||0)===row.staffId).map(p=>({name:p.name,sub:p.sub+(p.reached8?"　✅8回達成":"")}))})}
+                style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid #f1f5f9",cursor:"pointer"}}>
+                <div style={{width:22,height:22,borderRadius:6,background:row.staffInfo.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:10,flexShrink:0}}>{row.staffInfo.initial}</div>
+                <div style={{fontSize:12,fontWeight:700,color:"#374151",minWidth:64}}>{row.staffInfo.name}</div>
+                <div style={{flex:1,height:8,background:"#f1f5f9",borderRadius:4,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${row.rate}%`,background:row.staffInfo.color,borderRadius:4}}/>
+                </div>
+                <div style={{fontSize:12,fontWeight:700,color:"#374151",whiteSpace:"nowrap",minWidth:90,textAlign:"right"}}>{row.reached8}/{row.total}名（{row.rate}%）</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* インサイト */}
