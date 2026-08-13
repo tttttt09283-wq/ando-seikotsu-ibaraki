@@ -835,18 +835,21 @@ function StatsPanel({bookings,payments,todayStr,stores}){
 
   // ===== 店舗フィルタ（全店舗 / 各店舗） =====
   const [selStatsStoreId,setSelStatsStoreId]=React.useState(null); // null = 全店舗
+  const [selStatsStaffId,setSelStatsStaffId]=React.useState(null); // null = 全スタッフ
   const [listModal,setListModal]=React.useState(null); // {title, items:[{name,sub}]} | null
   const [funnelModal,setFunnelModal]=React.useState(null); // {title, funnel, color} | null
   const firstStoreId=(stores&&stores.length>0)?stores[0].id:1;
   const scopedBookings=React.useMemo(()=>{
-    if(selStatsStoreId===null) return bookings;
-    return bookings.filter(b=>(b.store_id||firstStoreId)===selStatsStoreId);
-  },[bookings,selStatsStoreId,firstStoreId]);
+    let list=bookings;
+    if(selStatsStoreId!==null) list=list.filter(b=>(b.store_id||firstStoreId)===selStatsStoreId);
+    if(selStatsStaffId!==null) list=list.filter(b=>b.staff_id===selStatsStaffId);
+    return list;
+  },[bookings,selStatsStoreId,selStatsStaffId,firstStoreId]);
   const scopedBookingIds=React.useMemo(()=>new Set(scopedBookings.map(b=>b.id)),[scopedBookings]);
   const scopedPayments=React.useMemo(()=>{
-    if(selStatsStoreId===null) return payments;
+    if(selStatsStoreId===null&&selStatsStaffId===null) return payments;
     return payments.filter(p=>scopedBookingIds.has(p.booking_id));
-  },[payments,selStatsStoreId,scopedBookingIds]);
+  },[payments,selStatsStoreId,selStatsStaffId,scopedBookingIds]);
 
   // 期間設定
   function getRange(type){
@@ -1065,7 +1068,23 @@ function StatsPanel({bookings,payments,todayStr,stores}){
         </div>
       )}
 
-      {/* スタッフ別売上 */}
+      {/* スタッフ切り替え（全スタッフ / 各スタッフ） */}
+      <div style={{...cardStyle,marginBottom:12,padding:"12px 16px"}}>
+        <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",marginBottom:8}}>担当スタッフ</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          <button onClick={()=>setSelStatsStaffId(null)} style={{padding:"7px 16px",borderRadius:20,border:"1.5px solid",borderColor:selStatsStaffId===null?"#1e3a5f":"#e2e8f0",background:selStatsStaffId===null?"#1e3a5f":"white",color:selStatsStaffId===null?"white":"#374151",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
+            👥 全スタッフ
+          </button>
+          {STAFF_ACCOUNTS.map(s=>(
+            <button key={s.id} onClick={()=>setSelStatsStaffId(s.id)} style={{padding:"7px 16px",borderRadius:20,border:"1.5px solid",borderColor:selStatsStaffId===s.id?s.color:"#e2e8f0",background:selStatsStaffId===s.id?s.color:"white",color:selStatsStaffId===s.id?"white":"#374151",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+              {s.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* スタッフ別売上（全スタッフ表示中のみ・個別選択時は下の各カードがそのスタッフの数値になるので非表示） */}
+      {selStatsStaffId===null&&(
       <div style={{...cardStyle,marginBottom:16}}>
         <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:12}}>👤 スタッフ別売上</div>
         {salesByStaffList.length===0?(
@@ -1084,6 +1103,7 @@ function StatsPanel({bookings,payments,todayStr,stores}){
           </div>
         ))}
       </div>
+      )}
 
       {/* 期間選択 */}
       <div style={{...cardStyle,marginBottom:16}}>
