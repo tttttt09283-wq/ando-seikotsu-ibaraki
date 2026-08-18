@@ -109,7 +109,7 @@ const STAFF_ACCOUNTS = [
   // 未指定（storeIdsを書かない）の場合は「全店舗で勤務」として扱われます。
   // 実際の勤務地は、管理画面の「スタッフ・シフト管理」→勤務地の設定で店舗ごとに割り当ててください（そちらが優先されます）。
   {id:1,name:"奥田 貴明",email:"okuda@ando.jp",password:"okuda123",role:"staff",color:"#2563eb",initial:"奥"},
-  {id:2,name:"山﨑 航平",email:"yamazaki@ando.jp",password:"yamazaki123",role:"staff",color:"#059669",initial:"山"},
+  {id:2,name:"佐藤 幸輝",email:"sato@ando.jp",password:"sato123",role:"staff",color:"#059669",initial:"佐"},
   {id:3,name:"細永 育代",email:"hosonaga@ando.jp",password:"hosonaga123",role:"staff",color:"#d97706",initial:"細"},
   {id:4,name:"田中 夕賀",email:"tanaka@ando.jp",password:"tanaka123",role:"staff",color:"#7c3aed",initial:"田"},
   {id:5,name:"岩永 拓己",email:"iwanaga@ando.jp",password:"iwanaga123",role:"admin",color:"#dc2626",initial:"岩"},
@@ -879,6 +879,28 @@ function StatsPanel({bookings,payments,todayStr,stores}){
   const range=rangeType==="custom"?{start:customStart,end:customEnd}:getRange(rangeType);
   const inRange=(d)=>d>=range.start&&d<=range.end;
 
+  // ===== 期間の進捗（選んでいる期間のうち、今日までどれだけ経過したか） =====
+  const rangeStartDate=new Date(range.start+"T00:00:00");
+  const rangeEndDate=new Date(range.end+"T00:00:00");
+  const totalRangeDays=Math.max(1,Math.round((rangeEndDate-rangeStartDate)/86400000)+1);
+  const todayForRange=new Date(todayStr+"T00:00:00");
+  let elapsedRangeDays;
+  if(todayForRange<rangeStartDate) elapsedRangeDays=0;
+  else if(todayForRange>rangeEndDate) elapsedRangeDays=totalRangeDays;
+  else elapsedRangeDays=Math.round((todayForRange-rangeStartDate)/86400000)+1;
+  const rangeProgressPct=Math.round(elapsedRangeDays/totalRangeDays*100);
+
+  // ===== 月間売上目標（店舗・期間ごとにブラウザへ保存） =====
+  const targetKey=`ando_sales_target_${selStatsStoreId||"all"}_${range.start.slice(0,7)}`;
+  const [salesTarget,setSalesTarget]=React.useState("");
+  React.useEffect(()=>{
+    try{ setSalesTarget(localStorage.getItem(targetKey)||""); }catch(e){ setSalesTarget(""); }
+  },[targetKey]);
+  function updateSalesTarget(val){
+    setSalesTarget(val);
+    try{ localStorage.setItem(targetKey,val); }catch(e){}
+  }
+
   // 期間内の予約・会計
   const bks=scopedBookings.filter(b=>b.date&&inRange(b.date));
   const pays=scopedPayments.filter(p=>p.payment_date&&inRange(p.payment_date));
@@ -1194,78 +1216,108 @@ function StatsPanel({bookings,payments,todayStr,stores}){
         ))}
       </div>
 
-      {/* 売上・単価・曜日・時間帯・月別推移・コース別（まとめて3列表示） */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:12}}>
-        <div style={{...cardStyle,marginBottom:0}}>
-          <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:12}}>売上サマリー</div>
-          {[{label:"月計売上",val:totalSales,color:"#d97706"},{label:"保険窓口計",val:insSales,color:"#2563eb"},{label:"自費売上計",val:jifeeSales,color:"#059669"}].map(item=>(
-            <div key={item.label} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #f1f5f9"}}>
-              <span style={{fontSize:12,color:"#64748b"}}>{item.label}</span>
-              <span style={{fontSize:14,fontWeight:800,color:item.color}}>{fmt(item.val)}</span>
+      {/* 売上サマリー・単価LTV（大きく強調表示） */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+        <div style={{background:"white",borderRadius:14,padding:"20px 22px",boxShadow:"0 4px 16px rgba(217,119,6,.12)",border:"1.5px solid #fde68a"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+            <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f"}}>💰 売上サマリー</div>
+            <div style={{fontSize:11,color:"#94a3b8"}}>期間の進捗　{elapsedRangeDays}/{totalRangeDays}日（{rangeProgressPct}%）</div>
+          </div>
+          <div style={{height:8,background:"#f1f5f9",borderRadius:4,overflow:"hidden",marginBottom:16}}>
+            <div style={{height:"100%",width:`${Math.min(rangeProgressPct,100)}%`,background:"linear-gradient(90deg,#fbbf24,#d97706)",borderRadius:4}}/>
+          </div>
+          {[{label:"月計売上",val:totalSales,color:"#d97706",big:true},{label:"保険窓口計",val:insSales,color:"#2563eb"},{label:"自費売上計",val:jifeeSales,color:"#059669"}].map(item=>(
+            <div key={item.label} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:item.big?"8px 0":"7px 0",borderBottom:"1px solid #f1f5f9"}}>
+              <span style={{fontSize:item.big?14:13,color:"#64748b",fontWeight:item.big?700:400}}>{item.label}</span>
+              <span style={{fontSize:item.big?30:16,fontWeight:800,color:item.color}}>{fmt(item.val)}</span>
             </div>
           ))}
+          <div style={{marginTop:14,paddingTop:14,borderTop:"1px dashed #e2e8f0"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+              <span style={{fontSize:12,color:"#64748b",fontWeight:700,whiteSpace:"nowrap"}}>今期の目標売上</span>
+              <input type="number" value={salesTarget} onChange={e=>updateSalesTarget(e.target.value)} placeholder="未設定"
+                style={{flex:1,padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700,textAlign:"right"}}/>
+              <span style={{fontSize:12,color:"#94a3b8"}}>円</span>
+            </div>
+            {salesTarget&&Number(salesTarget)>0&&(()=>{
+              const achievePct=Math.round(totalSales/Number(salesTarget)*100);
+              return(
+                <div>
+                  <div style={{height:10,background:"#f1f5f9",borderRadius:5,overflow:"hidden",marginBottom:4}}>
+                    <div style={{height:"100%",width:`${Math.min(achievePct,100)}%`,background:achievePct>=100?"#059669":achievePct>=rangeProgressPct?"#2563eb":"#ef4444",borderRadius:5}}/>
+                  </div>
+                  <div style={{fontSize:11,color:"#64748b",display:"flex",justifyContent:"space-between"}}>
+                    <span>達成率 {achievePct}%</span>
+                    <span>期間進捗 {rangeProgressPct}%（{achievePct>=rangeProgressPct?"順調":"やや遅れ気味"}）</span>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
         </div>
-        <div style={{...cardStyle,marginBottom:0}}>
-          <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:12}}>単価・LTV</div>
+
+        <div style={{background:"white",borderRadius:14,padding:"20px 22px",boxShadow:"0 4px 16px rgba(30,58,95,.1)",border:"1.5px solid #dbeafe"}}>
+          <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f",marginBottom:16}}>📊 単価・LTV</div>
           {[
-            {label:"全体単価",val:fmt(allUnitPrice),sub:"会計1件あたり",color:"#1e3a5f"},
+            {label:"全体単価",val:fmt(allUnitPrice),sub:"会計1件あたり",color:"#1e3a5f",big:true},
             {label:"LTV（月間）",val:fmt(ltv),sub:"売上÷患者数",color:"#d97706"},
             {label:"新規来院率",val:newRate+"%",sub:`新規${newCount}名 / 全${totalUnique}名`,color:"#059669",onClick:newPatientsList.length>0?()=>setListModal({title:`新規患者（${newPatientsList.length}名）`,items:newPatientsList}):null},
             {label:"離反率",val:churnRate+"%",sub:`${churnCount}名が30日以上未来院`,color:"#ef4444",onClick:churnedPatientsList.length>0?()=>setListModal({title:`離反患者（${churnedPatientsList.length}名）`,items:churnedPatientsList}):null},
           ].map(item=>(
-            <div key={item.label} onClick={item.onClick||undefined} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",borderBottom:"1px solid #f1f5f9",cursor:item.onClick?"pointer":"default"}}>
-              <div><div style={{fontSize:12,color:"#64748b"}}>{item.label}{item.onClick&&<span style={{color:"#94a3b8",marginLeft:4}}>›</span>}</div><div style={{fontSize:10,color:"#94a3b8"}}>{item.sub}</div></div>
-              <span style={{fontSize:15,fontWeight:800,color:item.color}}>{item.val}</span>
+            <div key={item.label} onClick={item.onClick||undefined} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:item.big?"9px 0":"7px 0",borderBottom:"1px solid #f1f5f9",cursor:item.onClick?"pointer":"default"}}>
+              <div><div style={{fontSize:item.big?14:13,color:"#64748b",fontWeight:item.big?700:400}}>{item.label}{item.onClick&&<span style={{color:"#94a3b8",marginLeft:4}}>›</span>}</div><div style={{fontSize:11,color:"#94a3b8"}}>{item.sub}</div></div>
+              <span style={{fontSize:item.big?30:18,fontWeight:800,color:item.color}}>{item.val}</span>
             </div>
           ))}
         </div>
+      </div>
 
-        <div style={{...cardStyle,marginBottom:0}}>
-          <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:12}}>予約希望の曜日</div>
-          <div style={{fontSize:11,color:"#94a3b8",marginBottom:10}}>曜日別</div>
+      {/* 曜日別・時間帯別・月別推移・コース別（コンパクトに4列表示） */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:12}}>
+        <div style={{...cardStyle,marginBottom:0,padding:"12px 14px"}}>
+          <div style={{fontWeight:800,fontSize:12,color:"#1e3a5f",marginBottom:8}}>曜日別</div>
           {DAYS_JP.map((d,i)=>(
             <HBar key={d} label={d} count={dayCount[i]} max={maxDay} color={i===0?"#ef4444":i===6?"#7c3aed":"#059669"} highlight={dayCount[i]===Math.max(...dayCount)&&dayCount[i]>0}/>
           ))}
         </div>
-        <div style={{...cardStyle,marginBottom:0}}>
-          <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:12}}>予約希望の時間帯</div>
-          <div style={{fontSize:11,color:"#94a3b8",marginBottom:10}}>時間帯別</div>
-          {hourEntries.length===0?<div style={{textAlign:"center",color:"#94a3b8",fontSize:12,padding:16}}>データなし</div>:
+        <div style={{...cardStyle,marginBottom:0,padding:"12px 14px"}}>
+          <div style={{fontWeight:800,fontSize:12,color:"#1e3a5f",marginBottom:8}}>時間帯別</div>
+          {hourEntries.length===0?<div style={{textAlign:"center",color:"#94a3b8",fontSize:11,padding:12}}>データなし</div>:
             hourEntries.map(([h,c])=>(
               <HBar key={h} label={h+"時"} count={c} max={maxHour} color="#7c3aed" highlight={c===maxHour}/>
             ))
           }
         </div>
 
-        <div style={{...cardStyle,marginBottom:0}}>
-          <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:16}}>月別予約数推移</div>
-          {monthlyEntries.length===0?<div style={{textAlign:"center",color:"#94a3b8",fontSize:12,padding:16}}>データなし</div>:(
-            <div style={{display:"flex",alignItems:"flex-end",gap:4,height:100,padding:"0 4px"}}>
+        <div style={{...cardStyle,marginBottom:0,padding:"12px 14px"}}>
+          <div style={{fontWeight:800,fontSize:12,color:"#1e3a5f",marginBottom:10}}>月別予約数推移</div>
+          {monthlyEntries.length===0?<div style={{textAlign:"center",color:"#94a3b8",fontSize:11,padding:12}}>データなし</div>:(
+            <div style={{display:"flex",alignItems:"flex-end",gap:3,height:80,padding:"0 2px"}}>
               {monthlyEntries.map(([m,c])=>{
                 const pct=maxMonthly>0?Math.round(c/maxMonthly*100):0;
                 const isCurrent=m===todayStr.slice(0,7);
                 return(
                   <div key={m} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                    <div style={{fontSize:9,color:"#94a3b8",fontWeight:600}}>{c}</div>
+                    <div style={{fontSize:8,color:"#94a3b8",fontWeight:600}}>{c}</div>
                     <div style={{width:"100%",height:`${Math.max(pct,4)}%`,background:isCurrent?"#059669":"#bfdbfe",borderRadius:"3px 3px 0 0",minHeight:4}}/>
-                    <div style={{fontSize:9,color:"#94a3b8",whiteSpace:"nowrap"}}>{m.slice(5)}月</div>
+                    <div style={{fontSize:8,color:"#94a3b8",whiteSpace:"nowrap"}}>{m.slice(5)}月</div>
                   </div>
                 );
               })}
             </div>
           )}
         </div>
-        <div style={{...cardStyle,marginBottom:0}}>
-          <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:12}}>コース別</div>
-          {menuEntries.length===0?<div style={{textAlign:"center",color:"#94a3b8",fontSize:12,padding:16}}>データなし</div>:
-            menuEntries.map(([menu,count])=>(
-              <div key={menu} style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-                <div style={{width:8,height:8,borderRadius:"50%",background:"#059669",flexShrink:0}}/>
-                <div style={{flex:1,fontSize:12,color:"#374151",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{menu}</div>
-                <div style={{width:120,height:8,background:"#f1f5f9",borderRadius:4,overflow:"hidden"}}>
-                  <div style={{height:"100%",width:`${Math.round(count/maxMenu*100)}%`,background:"#059669",borderRadius:4}}/>
+        <div style={{...cardStyle,marginBottom:0,padding:"12px 14px"}}>
+          <div style={{fontWeight:800,fontSize:12,color:"#1e3a5f",marginBottom:8}}>コース別</div>
+          {menuEntries.length===0?<div style={{textAlign:"center",color:"#94a3b8",fontSize:11,padding:12}}>データなし</div>:
+            menuEntries.slice(0,6).map(([menu,count])=>(
+              <div key={menu} style={{display:"flex",alignItems:"center",gap:5,marginBottom:7}}>
+                <div style={{width:6,height:6,borderRadius:"50%",background:"#059669",flexShrink:0}}/>
+                <div style={{flex:1,fontSize:11,color:"#374151",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{menu}</div>
+                <div style={{width:44,height:6,background:"#f1f5f9",borderRadius:3,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${Math.round(count/maxMenu*100)}%`,background:"#059669",borderRadius:3}}/>
                 </div>
-                <div style={{fontSize:12,fontWeight:700,color:"#374151",minWidth:28,textAlign:"right"}}>{count}</div>
+                <div style={{fontSize:11,fontWeight:700,color:"#374151",minWidth:18,textAlign:"right"}}>{count}</div>
               </div>
             ))
           }
