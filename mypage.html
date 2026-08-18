@@ -727,7 +727,7 @@ function renderUpcomingBookings(){
             </div>
             <div class="booking-info">
               🩺 ${b.menu||"メニュー未設定"}<br>
-              👨‍⚕️ 担当：${b.staff_id?['','奥田','山﨑','細永','田中','岩永'][b.staff_id]||'未定':'未定'}先生
+              👨‍⚕️ 担当：${b.staff_id?['','奥田','佐藤','細永','田中','岩永'][b.staff_id]||'未定':'未定'}先生
             </div>
             ${isFuture(b.date)&&!isToday(b.date)?`
               <div class="booking-actions">
