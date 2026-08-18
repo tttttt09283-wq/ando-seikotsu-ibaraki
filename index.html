@@ -1749,6 +1749,11 @@ function SettingsPanel(){
     header_text:"#ffffff",
     main_color:"#1e3a5f",
     logo_text:"",
+    booking_min_date:"",
+    event_start_date:"",
+    event_end_date:"",
+    event_menu_name:"",
+    event_menu_price:"",
   });
 
   function showToast(msg){setToast(msg);setTimeout(()=>setToast(""),2500);}
@@ -1782,6 +1787,11 @@ function SettingsPanel(){
           header_text:s.header_text||"#ffffff",
           main_color:s.main_color||"#1e3a5f",
           logo_text:s.logo_text||"",
+          booking_min_date:s.booking_min_date||"",
+          event_start_date:s.event_start_date||"",
+          event_end_date:s.event_end_date||"",
+          event_menu_name:s.event_menu_name||"",
+          event_menu_price:s.event_menu_price||"",
         });
       }
     }catch(e){console.error(e);}
@@ -1871,6 +1881,38 @@ function SettingsPanel(){
               </div>
               <Toggle val={settings.allow_same_day} onChange={()=>setF("allow_same_day",!settings.allow_same_day)} label="当日予約を許可する"/>
               <Toggle val={settings.allow_staff_select} onChange={()=>setF("allow_staff_select",!settings.allow_staff_select)} label="スタッフ指名を許可する" sub="OFFにするとスタッフ選択画面を表示しない"/>
+            </div>
+          </div>
+
+          {/* 受付開始日・イベント設定 */}
+          <div style={cardStyle}>
+            <div style={cardHeader}>受付開始日・オープンイベント設定</div>
+            <div style={cardBody}>
+              <div style={{marginBottom:14}}>
+                <label style={labelStyle}>予約受付を開始する日（空欄＝制限なし・今日から受付）</label>
+                <input type="date" value={settings.booking_min_date} onChange={e=>setF("booking_min_date",e.target.value)} style={inputStyle}/>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+                <div>
+                  <label style={labelStyle}>イベント開催期間（開始）</label>
+                  <input type="date" value={settings.event_start_date} onChange={e=>setF("event_start_date",e.target.value)} style={inputStyle}/>
+                </div>
+                <div>
+                  <label style={labelStyle}>イベント開催期間（終了）</label>
+                  <input type="date" value={settings.event_end_date} onChange={e=>setF("event_end_date",e.target.value)} style={inputStyle}/>
+                </div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:14}}>
+                <div>
+                  <label style={labelStyle}>イベント用メニュー名</label>
+                  <input value={settings.event_menu_name} onChange={e=>setF("event_menu_name",e.target.value)} placeholder="ワンコイン施術体験会（60分）" style={inputStyle}/>
+                </div>
+                <div>
+                  <label style={labelStyle}>価格（円）</label>
+                  <input type="number" value={settings.event_menu_price} onChange={e=>setF("event_menu_price",e.target.value)} placeholder="500" style={inputStyle}/>
+                </div>
+              </div>
+              <div style={{fontSize:11,color:"#94a3b8",marginTop:8}}>ここで設定した内容は、患者様向け予約ページにそのまま反映されます。</div>
             </div>
           </div>
 
