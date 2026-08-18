@@ -26,12 +26,16 @@ const LIFF_ID = "2010529910-NlBCzfsM";
 const LINE_OFFICIAL_URL = "https://lin.ee/UmNuuyy";
 const STORE_ID = 1;
 
-// ===== 予約受付開始日・イベント期間 =====
-const BOOKING_MIN_DATE = "2026-08-11"; // ⚠一時的に今日から予約可能にしています（リマインド動作確認用）。確認が終わったら"2026-10-01"に戻してください。
-const EVENT_START_DATE = "2026-10-01"; // イベント開催期間（開始）
-const EVENT_END_DATE = "2026-10-04";   // イベント開催期間（終了）
-const EVENT_MENU_NAME = "ワンコイン施術体験会（60分）"; // イベント用メニュー名（変更時はここだけ書き換えればOK）
-const EVENT_MENU_PRICE = 500; // イベント価格（円）
+// ===== 予約受付開始日・イベント期間（デフォルト値。管理画面の「各種設定」で上書きされます） =====
+const DEFAULT_BOOKING_MIN_DATE = ""; // 空文字＝制限なし（今日から受付）
+const DEFAULT_EVENT_START_DATE = "2026-10-01"; // イベント開催期間（開始）
+const DEFAULT_EVENT_END_DATE = "2026-10-04";   // イベント開催期間（終了）
+const DEFAULT_EVENT_MENU_NAME = "ワンコイン施術体験会（60分）"; // イベント用メニュー名
+const DEFAULT_EVENT_MENU_PRICE = 500; // イベント価格（円）
+const DEFAULT_SLOT_UNIT = 20; // 予約枠の単位（分）
+const DEFAULT_HOURS_BEFORE = 0; // 何時間前まで予約可能か（0＝制限なし）
+const DEFAULT_DAYS_AHEAD = 60; // 何日先まで予約可能か
+const DEFAULT_ALLOW_SAME_DAY = true; // 当日予約を許可するか
 
 
 const STAFF = [
@@ -39,28 +43,27 @@ const STAFF = [
   {id:3,name:"細永"},{id:4,name:"田中"},{id:5,name:"岩永"}
 ];
 
-const SLOTS = (()=>{
+// 予約枠の時間単位（分）を指定して時間の選択肢を生成する
+function buildSlots(unit){
+  unit = unit || DEFAULT_SLOT_UNIT;
   const slots=[];
   for(let h=9;h<=19;h++){
-    for(let m=0;m<60;m+=20){
+    for(let m=0;m<60;m+=unit){
       if(h===19&&m>0) break;
       slots.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
     }
   }
   return slots;
-})();
+}
 
-// ===== 1枠あたりの同時受付可能数 =====
-// 通常は「対応できるスタッフの人数」までは同時受付可能。特定の日だけあえて絞りたい場合は
-// DATE_CAPACITY_OVERRIDES に "YYYY-MM-DD": 件数 を追記してください（人数より少ない数字を入れると、その日は意図的に枠を絞れます）。
-const SLOT_CAPACITY = STAFF.length;
+// ===== 1枠あたりの同時受付可能数のデフォルト =====
+// 通常は「対応できるスタッフの人数」までは同時受付可能（管理画面の「同一時間帯の最大予約数」で上書き可能）。
+// 特定の日だけあえて絞りたい場合は DATE_CAPACITY_OVERRIDES に "YYYY-MM-DD": 件数 を追記してください。
+const DEFAULT_SLOT_CAPACITY = STAFF.length;
 const DATE_CAPACITY_OVERRIDES = {
   // 例：この日だけ1枠1件に絞りたい場合
   // "2026-10-01": 1,
 };
-function getSlotCapacity(dateStr){
-  return DATE_CAPACITY_OVERRIDES[dateStr] || SLOT_CAPACITY;
-}
 
 const DAYS_JP = ["日","月","火","水","木","金","土"];
 const STEPS = ["日時","お客様情報","症状・問診","確認"];
@@ -93,10 +96,6 @@ function fmtDate(d){
 }
 function fmtDateJP(d){
   return (d.getMonth()+1)+"月"+d.getDate()+"日（"+DAYS_JP[d.getDay()]+"）";
-}
-function isEventDate(d){
-  var ds = fmtDate(d);
-  return ds>=EVENT_START_DATE && ds<=EVENT_END_DATE;
 }
 function getDays(n){
   var arr=[];
@@ -147,7 +146,8 @@ function App(){
 
   var weekStartState = useState(function(){
     var today0=new Date();today0.setHours(0,0,0,0);
-    var minD=new Date(BOOKING_MIN_DATE+"T00:00:00");
+    if(!DEFAULT_BOOKING_MIN_DATE) return today0;
+    var minD=new Date(DEFAULT_BOOKING_MIN_DATE+"T00:00:00");
     return today0>minD?today0:minD;
   });
   var weekStart = weekStartState[0]; var setWeekStart = weekStartState[1];
@@ -202,6 +202,31 @@ function App(){
   var hoursLoaded = hoursLoadedState[0]; var setHoursLoaded = hoursLoadedState[1];
   var resolvedStoreIdState = useState(STORE_ID);
   var resolvedStoreId = resolvedStoreIdState[0]; var setResolvedStoreId = resolvedStoreIdState[1];
+
+  // 管理画面の「各種設定」から読み込む、患者様向け予約ページの動的設定
+  // （Supabaseから取得できるまでは、デフォルト値で動作します）
+  var pageSettingsState = useState({
+    bookingMinDate: DEFAULT_BOOKING_MIN_DATE,
+    eventStartDate: DEFAULT_EVENT_START_DATE,
+    eventEndDate: DEFAULT_EVENT_END_DATE,
+    eventMenuName: DEFAULT_EVENT_MENU_NAME,
+    eventMenuPrice: DEFAULT_EVENT_MENU_PRICE,
+    slotUnit: DEFAULT_SLOT_UNIT,
+    hoursBefore: DEFAULT_HOURS_BEFORE,
+    daysAhead: DEFAULT_DAYS_AHEAD,
+    slotCapacity: DEFAULT_SLOT_CAPACITY,
+    allowSameDay: DEFAULT_ALLOW_SAME_DAY,
+  });
+  var pageSettings = pageSettingsState[0]; var setPageSettings = pageSettingsState[1];
+
+  function getSlotCapacity(dateStr){
+    return DATE_CAPACITY_OVERRIDES[dateStr] || pageSettings.slotCapacity || DEFAULT_SLOT_CAPACITY;
+  }
+  function isEventDate(d){
+    var ds = fmtDate(d);
+    if(!pageSettings.eventStartDate || !pageSettings.eventEndDate) return false;
+    return ds>=pageSettings.eventStartDate && ds<=pageSettings.eventEndDate;
+  }
 
   var formState = useState({
     name:"",nameKana:"",phone:"",gender:"",age:"",referrerName:"",
@@ -272,21 +297,48 @@ function App(){
       setResolvedStoreId(usedStoreId);
       return Promise.all([
         sb.select("business_hours","?store_id=eq."+usedStoreId+"&order=day_of_week.asc"),
-        sb.select("temp_closures","?store_id=eq."+usedStoreId)
+        sb.select("temp_closures","?store_id=eq."+usedStoreId),
+        sb.select("store_settings","?store_id=eq."+usedStoreId+"&order=updated_at.desc.nullslast,id.desc&limit=1")
       ]);
     }).then(function(results){
       setBusinessHours(Array.isArray(results[0])?results[0]:[]);
       setClosures(Array.isArray(results[1])?results[1]:[]);
+      var settingsRows=results[2];
+      if(Array.isArray(settingsRows)&&settingsRows.length>0){
+        var s=settingsRows[0];
+        setPageSettings({
+          bookingMinDate: s.booking_min_date || DEFAULT_BOOKING_MIN_DATE,
+          eventStartDate: s.event_start_date || DEFAULT_EVENT_START_DATE,
+          eventEndDate: s.event_end_date || DEFAULT_EVENT_END_DATE,
+          eventMenuName: s.event_menu_name || DEFAULT_EVENT_MENU_NAME,
+          eventMenuPrice: (s.event_menu_price!=null&&s.event_menu_price!=="") ? s.event_menu_price : DEFAULT_EVENT_MENU_PRICE,
+          slotUnit: s.slot_unit || DEFAULT_SLOT_UNIT,
+          hoursBefore: (s.hours_before!=null) ? s.hours_before : DEFAULT_HOURS_BEFORE,
+          daysAhead: s.days_ahead || DEFAULT_DAYS_AHEAD,
+          slotCapacity: s.max_per_slot || DEFAULT_SLOT_CAPACITY,
+          allowSameDay: s.allow_same_day!==false,
+        });
+      }
       setHoursLoaded(true);
     }).catch(function(){
       setHoursLoaded(true);
     });
   }, []);
 
+  // 受付開始日の設定が読み込まれた後、今表示している週がそれより前なら開始日の週まで進める
+  useEffect(function(){
+    if(!pageSettings.bookingMinDate) return;
+    var minD=new Date(pageSettings.bookingMinDate+"T00:00:00");
+    var today0=new Date();today0.setHours(0,0,0,0);
+    var base=today0>minD?today0:minD;
+    if(weekStart<base) setWeekStart(base);
+  },[pageSettings.bookingMinDate]);
+
   function getWeekDays(start){
     return Array.from({length:7},function(_,i){var d=new Date(start);d.setDate(start.getDate()+i);return d;});
   }
   var weekDays = getWeekDays(weekStart);
+  var SLOTS = buildSlots(pageSettings.slotUnit); // 予約枠の時間単位（分）は管理画面の設定に従う
 
   function refreshWeekData(){
     var wd = getWeekDays(weekStart);
@@ -319,7 +371,13 @@ function App(){
   }
   function isClosedDate(d){
     var ds = fmtDate(d);
-    if(ds < BOOKING_MIN_DATE) return true; // 受付開始日より前は常にクローズ扱い
+    if(pageSettings.bookingMinDate && ds < pageSettings.bookingMinDate) return true; // 受付開始日より前は常にクローズ扱い
+    var today0=new Date();today0.setHours(0,0,0,0);
+    if(pageSettings.allowSameDay===false && ds===fmtDate(today0)) return true; // 当日予約を許可しない設定
+    if(pageSettings.daysAhead){
+      var maxD=new Date(today0);maxD.setDate(maxD.getDate()+pageSettings.daysAhead);
+      if(ds > fmtDate(maxD)) return true; // 「何日先まで予約可能か」を超えている
+    }
     for(var i=0;i<closures.length;i++){
       if(closures[i].date===ds) return true;
     }
@@ -346,10 +404,10 @@ function App(){
   }
   function isPastSlotForDate(d,t){
     var now = new Date();
-    if(fmtDate(d) > fmtDate(now)) return false;
-    if(fmtDate(d) < fmtDate(now)) return true;
-    var nowMin = now.getHours()*60 + now.getMinutes();
-    return toMin(t) <= nowMin;
+    var slotDateTime = new Date(fmtDate(d)+"T"+t+":00");
+    // 「何時間前まで予約可能か」の設定を考慮（0＝制限なし＝今の瞬間までOK）
+    var cutoff = new Date(now.getTime() + (pageSettings.hoursBefore||0)*60*60*1000);
+    return slotDateTime <= cutoff;
   }
   // メニューごとの施術時間（分）。管理画面側のメニューマスタと同じ内容。
   // bookingsテーブルに duration が保存されている場合はそちらを優先する。
@@ -364,7 +422,7 @@ function App(){
     "無料カウンセリング":60,"体験施術":60,"初回特典":60,"肩こり":30,"片腕":30,"不定愁訴":30,"不定愁訴2":30,"半身":30,"全身":30,
     "鍼 両足":30,"鍼 肩":30,"鍼 肩こり":30,"顎":30,"増量 忠告なし":10,
   };
-  DURATION_MAP[EVENT_MENU_NAME]=60;
+  DURATION_MAP[pageSettings.eventMenuName]=60;
   DURATION_MAP["再診（30分）"]=30;
   function getBookingDuration(b){
     return b.duration || DURATION_MAP[b.menu] || 30;
@@ -445,8 +503,8 @@ function App(){
   }
   function formatMenuPrice(){
     return isReferred()
-      ? "🎁 "+EVENT_MENU_NAME+"　紹介特典で無料！"
-      : "🪙 "+EVENT_MENU_NAME+"　¥"+EVENT_MENU_PRICE;
+      ? "🎁 "+pageSettings.eventMenuName+"　紹介特典で無料！"
+      : "🪙 "+pageSettings.eventMenuName+"　¥"+pageSettings.eventMenuPrice;
   }
 
   function toggleArr(key, val){
@@ -556,7 +614,7 @@ function App(){
       staff_id:staffId,
       date:dateStr,
       time:selTime,
-      menu:EVENT_MENU_NAME,
+      menu:pageSettings.eventMenuName,
       store_id:resolvedStoreId,
       referrer_name:form.referrerName.trim()||null,
       line_notify: !!lineUserId, // LINE連携済みなら自動でリマインド
@@ -879,7 +937,7 @@ function App(){
         // ===== 週間ナビゲーション =====
         React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}},
           React.createElement("button",{
-            onClick:function(){var d=new Date(weekStart);d.setDate(d.getDate()-7);var today0=new Date();today0.setHours(0,0,0,0);var minD=new Date(BOOKING_MIN_DATE+"T00:00:00");if(today0>minD)minD=today0;if(d<minD)d=minD;setWeekStart(d);},
+            onClick:function(){var d=new Date(weekStart);d.setDate(d.getDate()-7);var today0=new Date();today0.setHours(0,0,0,0);var minD=pageSettings.bookingMinDate?new Date(pageSettings.bookingMinDate+"T00:00:00"):today0;if(today0>minD)minD=today0;if(d<minD)d=minD;setWeekStart(d);},
             style:{background:"none",border:"none",color:"#64748b",fontSize:13,fontWeight:700,cursor:"pointer",padding:"6px 4px"}
           },"‹ 前の週へ"),
           React.createElement("div",{style:{fontSize:13,fontWeight:800,color:"#1e3a5f"}},weekDays[0].getFullYear()+"年"+(weekDays[0].getMonth()+1)+"月"),
@@ -1056,7 +1114,7 @@ function App(){
         // ===== 紹介者のお名前（任意） =====
         React.createElement("div",{style:H.sec},
           React.createElement("div",{style:H.secT},"🎁 紹介者のお名前（任意）"),
-          React.createElement("div",{style:{fontSize:12,color:"#9ca3af",marginBottom:10,lineHeight:1.7}},"あんど整骨院にすでに通われている方からのご紹介の場合、そのお名前をご記入ください。"+EVENT_MENU_NAME+"が無料になります🎉"),
+          React.createElement("div",{style:{fontSize:12,color:"#9ca3af",marginBottom:10,lineHeight:1.7}},"あんど整骨院にすでに通われている方からのご紹介の場合、そのお名前をご記入ください。"+pageSettings.eventMenuName+"が無料になります🎉"),
           React.createElement("input",{type:"text",value:form.referrerName,placeholder:"例：山本 花子",
             onChange:function(e){setF("referrerName",e.target.value);},
             style:H.input
