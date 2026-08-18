@@ -51,7 +51,7 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
   auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
 });
 
-const STAFF = {1:"岩永",2:"大皿",3:"定井",4:"細永",5:"広川"};
+const STAFF = {1:"奥田",2:"佐藤",3:"細永",4:"田中",5:"岩永"};
 
 // 問診票として表示する項目（bookingsテーブルの列に対応）
 const QA_FIELDS = [
