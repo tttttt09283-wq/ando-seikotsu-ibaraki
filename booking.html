@@ -149,7 +149,11 @@ function App(){
   var timeState = useState(null);
   var selTime = timeState[0]; var setSelTime = timeState[1];
 
-  var weekStartState = useState(function(){return new Date(BOOKING_MIN_DATE+"T00:00:00");});
+  var weekStartState = useState(function(){
+    var today0=new Date();today0.setHours(0,0,0,0);
+    var minD=new Date(BOOKING_MIN_DATE+"T00:00:00");
+    return today0>minD?today0:minD;
+  });
   var weekStart = weekStartState[0]; var setWeekStart = weekStartState[1];
 
   var weekDataState = useState({booked:[],breaks:[]});
@@ -855,7 +859,7 @@ function App(){
         // ===== 週間ナビゲーション =====
         React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}},
           React.createElement("button",{
-            onClick:function(){var d=new Date(weekStart);d.setDate(d.getDate()-7);var minD=new Date(BOOKING_MIN_DATE+"T00:00:00");if(d<minD)d=minD;setWeekStart(d);},
+            onClick:function(){var d=new Date(weekStart);d.setDate(d.getDate()-7);var today0=new Date();today0.setHours(0,0,0,0);var minD=new Date(BOOKING_MIN_DATE+"T00:00:00");if(today0>minD)minD=today0;if(d<minD)d=minD;setWeekStart(d);},
             style:{background:"none",border:"none",color:"#64748b",fontSize:13,fontWeight:700,cursor:"pointer",padding:"6px 4px"}
           },"‹ 前の週へ"),
           React.createElement("div",{style:{fontSize:13,fontWeight:800,color:"#1e3a5f"}},weekDays[0].getFullYear()+"年"+(weekDays[0].getMonth()+1)+"月"),
@@ -907,7 +911,11 @@ function App(){
                     if(remaining<=0){
                       return React.createElement("td",{key:di,style:Object.assign({},cellStyle,{color:"#f59e0b",fontSize:10,cursor:"default"})},"TEL");
                     }
-                    var symbol=remaining>=3?"◎":remaining===2?"○":"△";
+                    // 1枠あたりの上限（getSlotCapacity）に対する残り割合で◎○△を判定する
+                    // （上限が1件の日は、空いていれば常に◎になる）
+                    var slotCap=getSlotCapacity(fmtDate(d));
+                    var ratio=slotCap>0?remaining/slotCap:0;
+                    var symbol=ratio>=0.66?"◎":ratio>0.33?"○":"△";
                     var symColor=remaining>=3?"#7c3aed":remaining===2?"#7c3aed":"#d97706";
                     return React.createElement("td",{key:di,onClick:function(){setSelDate(d);setSelTime(t);},
                       style:Object.assign({},cellStyle,{cursor:"pointer",color:isSel?"white":symColor,background:isSel?"#1e3a5f":"transparent"})},
