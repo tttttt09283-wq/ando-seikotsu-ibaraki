@@ -351,16 +351,40 @@ function App(){
     var nowMin = now.getHours()*60 + now.getMinutes();
     return toMin(t) <= nowMin;
   }
-  // 指定した日時に既に入っている予約数（キャンセル除く）
+  // メニューごとの施術時間（分）。管理画面側のメニューマスタと同じ内容。
+  // bookingsテーブルに duration が保存されている場合はそちらを優先する。
+  var DURATION_MAP = {
+    "初診":60,"2回目":30,"3回目以降":30,"3回目以降追加":10,"カルテ管理料":10,"新患包帯":10,
+    "保険交通 初診":60,"保険交通 2回目以降":30,"保険交通 窓口払い":10,
+    "保険金3割 初診":60,"保険金3割 2回目以降":30,"保険金のみ 2回目以降":30,"保険金のみ400 2回目以降":30,
+    "2割 初診":60,"2割 2回目":30,"2割 3回目以降":30,"保険金2割 初診":60,"保険金2割 2回目以降":30,
+    "1割 初診":60,"1割 2回目":30,"1割 3回目以降":30,"1割 3回目追加":10,"保険金1割 初診":60,"保険金1割 2回目以降":30,
+    "整体":30,"ハイボルテージ":30,"スキャン":30,"EMS":30,"手技療法 1回":30,"美容鍼 小顔矯正":60,"鍼灸":60,"推拿":30,"深層":30,"筋膜":30,
+    "手技療法 1ヶ月":30,"フリーパス 1ヶ月":30,"フリーパス 3ヶ月":30,"フリーパス 3ヶ月（特別）":30,"回数券 10回":30,"回数券 24回":30,
+    "無料カウンセリング":60,"体験施術":60,"初回特典":60,"肩こり":30,"片腕":30,"不定愁訴":30,"不定愁訴2":30,"半身":30,"全身":30,
+    "鍼 両足":30,"鍼 肩":30,"鍼 肩こり":30,"顎":30,"増量 忠告なし":10,
+  };
+  DURATION_MAP[EVENT_MENU_NAME]=60;
+  DURATION_MAP["再診（30分）"]=30;
+  function getBookingDuration(b){
+    return b.duration || DURATION_MAP[b.menu] || 30;
+  }
+  // 予約の施術時間が、患者ページの1枠（20分）と時間的に重なっているかどうか
+  function overlapsSlot(b,t){
+    var bs=toMin(b.time), be=bs+getBookingDuration(b);
+    var ss=toMin(t), se=ss+20;
+    return bs<se && ss<be;
+  }
+  // 指定した日時に既に入っている予約数（キャンセル除く・施術時間の重なりも考慮）
   function getBookedCountAt(d,t){
     var ds = fmtDate(d);
-    return weekData.booked.filter(function(b){return b.date===ds && b.time===t;}).length;
+    return weekData.booked.filter(function(b){return b.date===ds && overlapsSlot(b,t);}).length;
   }
-  // 指定した日時に対応可能なスタッフ一覧（休憩・既存予約が入っている人を除く）
+  // 指定した日時に対応可能なスタッフ一覧（休憩・既存予約が入っている人を除く。施術時間の重なりも考慮）
   function getFreeStaffListFor(d,t){
     var ds = fmtDate(d);
     var unavail = {};
-    weekData.booked.forEach(function(b){if(b.date===ds&&b.time===t) unavail[b.staff_id]=true;});
+    weekData.booked.forEach(function(b){if(b.date===ds&&overlapsSlot(b,t)) unavail[b.staff_id]=true;});
     weekData.breaks.forEach(function(b){if(b.date===ds&&b.time===t) unavail[b.staff_id]=true;});
     return STAFF.filter(function(s){return !unavail[s.id];});
   }
@@ -388,19 +412,19 @@ function App(){
   // 空いていれば staff_id を、埋まっていれば null を返す。
   function checkStaffAvailabilityNow(dateStr,time){
     return Promise.all([
-      sb.select("bookings","?date=eq."+dateStr+"&time=eq."+time),
+      sb.select("bookings","?date=eq."+dateStr),
       sb.select("staff_breaks","?date=eq."+dateStr+"&time=eq."+time)
     ]).then(function(results){
       var dayBookings = Array.isArray(results[0]) ? results[0] : [];
       var dayBreaks = Array.isArray(results[1]) ? results[1] : [];
-      var activeBookings = dayBookings.filter(function(b){return !b.cancelled;});
+      var activeOverlapping = dayBookings.filter(function(b){return !b.cancelled && overlapsSlot(b,time);});
 
-      // 1枠あたりの上限に達していないか確認
+      // 1枠あたりの上限に達していないか確認（施術時間の重なりも考慮）
       var capacity = getSlotCapacity(dateStr);
-      if(activeBookings.length >= capacity) return null;
+      if(activeOverlapping.length >= capacity) return null;
 
       var unavail = {};
-      activeBookings.forEach(function(b){ unavail[b.staff_id]=true; });
+      activeOverlapping.forEach(function(b){ unavail[b.staff_id]=true; });
       dayBreaks.forEach(function(b){ unavail[b.staff_id]=true; });
       var found = STAFF.find(function(s){return !unavail[s.id];});
       return found ? found.id : null;
