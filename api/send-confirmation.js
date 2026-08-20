@@ -1,79 +1,55 @@
-// api/send-confirmation.js
-// 予約完了直後にLINEでQRコードを送信するAPI
+// Vercel Serverless Function: /api/send-confirmation
+// 患者様が予約フォームで予約を確定した直後に呼び出され、LINEへ予約確認メッセージを送る。
+//
+// 事前準備: Vercelの環境変数に LINE_CHANNEL_ACCESS_TOKEN が必要（離反防止アラート等と共通）
 
-const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN;
-const BASE_URL = "https://ando-seikotsu-ibaraki.vercel.app";
-
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
+    res.status(405).json({ error: "POSTのみ対応しています" });
+    return;
   }
 
-  const { userId, bookingId, patientName, date, time } = req.body;
-
-  if (!userId || !bookingId) {
-    return res.status(400).json({ error: "userId and bookingId are required" });
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  if (!token) {
+    res.status(500).json({ error: "サーバー側にLINE_CHANNEL_ACCESS_TOKENが設定されていません" });
+    return;
   }
+
+  const { userId, patientName, date, time } = req.body || {};
+  if (!userId) {
+    res.status(400).json({ error: "userIdが空です" });
+    return;
+  }
+
+  const message =
+    `🏥 ${patientName || "お客"}様\n\n` +
+    `ご予約ありがとうございます！以下の内容で承りました。\n\n` +
+    `📅 ${date || ""} ${time || ""}\n\n` +
+    `ご来院を心よりお待ちしております😊\n` +
+    `※前日にもリマインドをお送りします。\n` +
+    `キャンセル・変更は当院までご連絡ください。`;
 
   try {
-    // intake.htmlへのURL（スタッフが読み取る問診票）
-    const intakeUrl = `${BASE_URL}/intake.html?id=${bookingId}`;
-    // QRコード画像URL（自前API）
-    const qrImageUrl = `${BASE_URL}/api/qr?url=${encodeURIComponent(intakeUrl)}`;
-    // マイページURL
-    const mypageUrl = `${BASE_URL}/mypage.html`;
-
-    const messages = [
-      // テキストメッセージ
-      {
-        type: "text",
-        text: `✅ ご予約ありがとうございます！\n\nあんど整骨院 香里園駅前院\n\n📅 ${date} ${time}\n👤 ${patientName} 様\n\n来院時に下のQRコードをスタッフにご提示ください。`,
-      },
-      // QRコード画像
-      {
-        type: "image",
-        originalContentUrl: qrImageUrl,
-        previewImageUrl: qrImageUrl,
-      },
-      // マイページへのボタン
-      {
-        type: "template",
-        altText: "マイページで予約確認・変更ができます",
-        template: {
-          type: "buttons",
-          text: "マイページで予約確認・変更・回数券残高をご確認いただけます",
-          actions: [
-            {
-              type: "uri",
-              label: "📋 マイページを開く",
-              uri: mypageUrl,
-            },
-          ],
-        },
-      },
-    ];
-
-    const lineRes = await fetch("https://api.line.me/v2/bot/message/push", {
+    const response = await fetch("https://api.line.me/v2/bot/message/push", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${LINE_CHANNEL_ACCESS_TOKEN}`,
+        Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ to: userId, messages }),
+      body: JSON.stringify({
+        to: userId,
+        messages: [{ type: "text", text: message }],
+      }),
     });
 
-    const lineData = await lineRes.json();
-
-    if (!lineRes.ok) {
-      console.error("LINE API error:", JSON.stringify(lineData));
-      return res.status(500).json({ error: "LINE送信失敗", detail: lineData });
+    if (!response.ok) {
+      const errText = await response.text().catch(() => "");
+      res.status(500).json({ error: `LINE送信に失敗しました（HTTP ${response.status}）: ${errText}` });
+      return;
     }
 
-    console.log("LINE送信成功:", userId, bookingId);
-    return res.status(200).json({ success: true });
-
+    res.status(200).json({ success: true });
   } catch (e) {
-    console.error("send-confirmation error:", e.message);
-    return res.status(500).json({ error: e.message });
+    res.status(500).json({ error: e.message || String(e) });
   }
-}
+};
