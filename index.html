@@ -1720,6 +1720,12 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
         <input type="checkbox" id="ln" checked={!!form.line_notify} onChange={e=>setForm(f=>({...f,line_notify:e.target.checked}))} style={{width:16,height:16,accentColor:"#059669"}}/>
         <label htmlFor="ln" style={{fontSize:13,color:"#059669",fontWeight:700,cursor:"pointer"}}>LINEリマインドを前日に送る</label>
       </div>
+      {editId!==null&&form.booked_via_line&&(
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:20,padding:"10px 12px",background:"#f0fdf4",borderRadius:8,border:"1px solid #86efac"}}>
+          <input type="checkbox" id="lineMark" checked={!form.booked_via_line} onChange={e=>setForm(f=>({...f,booked_via_line:!e.target.checked}))} style={{width:16,height:16,accentColor:"#06C755"}}/>
+          <label htmlFor="lineMark" style={{fontSize:13,color:"#065f46",fontWeight:700,cursor:"pointer"}}>この予約は「LINE予約」の目印がついています。チェックすると通常予約に戻ります</label>
+        </div>
+      )}
       <div style={{display:"flex",gap:10}}>
         {editId!==null&&<button onClick={onDelete} className="btn btn-danger" style={{flex:1,justifyContent:"center",padding:11,fontSize:14}}>削除</button>}
         {editId!==null&&onCancel&&<button onClick={onCancel} className="btn" style={{flex:1,justifyContent:"center",padding:11,fontSize:14,background:"white",color:"#dc2626",border:"1.5px solid #fecaca"}}>キャンセルにする</button>}
@@ -5618,6 +5624,7 @@ function Dashboard({user,onLogout}){
                                         {isNewPatient&&<div style={{position:"absolute",top:-1,right:-1,background:"#fff",color:"#ea580c",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"0 6px 0 4px",lineHeight:1,letterSpacing:0}}>NEW</div>}
                                         {sameDay&&<div style={{position:"absolute",top:-1,left:-1,background:"#fff",color:"#a16207",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"6px 0 4px 0",lineHeight:1,letterSpacing:0}}>⚡当日</div>}
                                         {b.memo&&<div style={{position:"absolute",bottom:-1,left:-1,background:"#fff",color:"#1e3a5f",fontSize:8,fontWeight:900,padding:"0 3px",borderRadius:"6px 4px 0 0",lineHeight:1.4}}>📝</div>}
+                                        {b.booked_via_line&&<div style={{position:"absolute",bottom:-1,right:-1,background:"#06C755",color:"white",fontSize:7,fontWeight:900,padding:"1px 3px",borderRadius:"4px 0 4px 0",lineHeight:1}}>LINE</div>}
                                         <div style={{fontWeight:800,fontSize:10,color:"white",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isCheckedIn?"📷":""}{isPaid?"✓ ":""}{b.patient_name}</div>
                                         <div style={{fontSize:9,color:"rgba(255,255,255,.85)"}}>{b.time}{cnt>1&&<span style={{marginLeft:2,background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}{isBeingResized&&<span style={{marginLeft:2,fontWeight:800}}>{Math.max(10,(b.duration||DURATION[b.menu]||30)+Math.round(resizeDeltaPx/CELL_W)*10)}分</span>}</div>
                                         {/* 右端のリサイズハンドル：ここをドラッグすると対応時間を伸縮できる */}
@@ -5777,6 +5784,7 @@ function Dashboard({user,onLogout}){
                 {cnt===1&&<div style={{fontSize:10,fontWeight:800,color:"#7c2d12",background:"#fed7aa",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4}}>🆕 初診</div>}
                 {b.checked_in_at&&<div style={{fontSize:10,fontWeight:800,color:"#111",background:"#facc15",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4}}>📷 来院済み</div>}
                 {isSameDayBooking(b)&&<div style={{fontSize:10,fontWeight:800,color:"#a16207",background:"#fef9c3",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>⚡ 当日予約</div>}
+                {b.booked_via_line&&<div style={{fontSize:10,fontWeight:800,color:"white",background:"#06C755",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>LINE予約</div>}
                 {b.referrer_name&&<div style={{fontSize:10,fontWeight:800,color:"#6d28d9",background:"#ede9fe",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>🎁 紹介：{b.referrer_name}</div>}
                 {b.memo&&<div style={{fontSize:11,color:"white",background:"rgba(255,255,255,.18)",borderRadius:6,padding:"5px 8px",marginTop:6,lineHeight:1.5}}>📝 {b.memo}</div>}
               </div>
