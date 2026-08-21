@@ -137,44 +137,16 @@ const LINE_OFFICIAL_URL="https://lin.ee/UmNuuyy";
 const BOOKING_URL="/booking.html";
 const DAYS_JP=["日","月","火","水","木","金","土"];
 
-// ===== 栄養管理関連の定数 =====
-// 一般成人向けの目安摂取量（日本人の食事摂取基準を参考にした簡易値。個人差があるための目安）
-const RDA={
-  protein_g:60, iron_mg:10, calcium_mg:650, magnesium_mg:340,
-  vitamin_d_ug:8.5, vitamin_b_mg:1.4, zinc_mg:10, omega3_g:2, fiber_g:20,
-};
-const NUTRIENT_LABELS={
-  protein_g:"たんぱく質", iron_mg:"鉄", calcium_mg:"カルシウム", magnesium_mg:"マグネシウム",
-  vitamin_d_ug:"ビタミンD", vitamin_b_mg:"ビタミンB群", zinc_mg:"亜鉛", omega3_g:"オメガ3脂肪酸", fiber_g:"食物繊維",
-};
-const NUTRIENT_UNITS={
-  protein_g:"g", iron_mg:"mg", calcium_mg:"mg", magnesium_mg:"mg",
-  vitamin_d_ug:"μg", vitamin_b_mg:"mg", zinc_mg:"mg", omega3_g:"g", fiber_g:"g",
-};
-// 不足しがちな栄養素と、関連することがある症状キーワード（あくまで参考情報。診断ではありません）
-const NUTRIENT_SYMPTOM_MAP={
-  magnesium_mg:{label:"マグネシウム",keywords:["こむら返り","つり","痙攣","こり","張り"]},
-  iron_mg:{label:"鉄",keywords:["だるさ","疲れ","冷え","めまい"]},
-  vitamin_d_ug:{label:"ビタミンD",keywords:["関節","骨","痛み"]},
-  calcium_mg:{label:"カルシウム",keywords:["肩こり","筋肉","こわばり"]},
-  vitamin_b_mg:{label:"ビタミンB群",keywords:["しびれ","神経","だるさ"]},
-  omega3_g:{label:"オメガ3脂肪酸",keywords:["炎症","関節","痛み"]},
-  zinc_mg:{label:"亜鉛",keywords:["回復","治りにくい","免疫"]},
-};
-
 let lineUserId=null;
 let lineProfile=null;
 let state={
   bookings:[],
   passes:[],
-  meals:[], // 直近の食事記録（meal_logs）
   loading:true,
-  modal:null, // null | "change" | "cancel" | "contact" | "mealConfirm"
+  modal:null, // null | "change" | "cancel" | "contact"
   selBooking:null,
   changeForm:{date:"",time:""},
   toast:null,
-  mealAnalyzing:false,
-  mealPendingResult:null, // AI解析結果（保存前の確認待ち）
   cancelReason:"",
   cancelReasonOther:"",
 };
@@ -240,190 +212,9 @@ async function loadData(){
     }else{
       state.passes=[];
     }
-
-    // 直近8日分の食事記録を取得（週平均の計算用）
-    const since=new Date();since.setDate(since.getDate()-7);
-    const sinceStr=since.toISOString().split("T")[0];
-    const meals=await sbGet("meal_logs",`?line_user_id=eq.${encodeURIComponent(lineUserId)}&meal_date=gte.${sinceStr}&order=meal_date.desc`);
-    state.meals=Array.isArray(meals)?meals:[];
   }catch(e){console.error(e);}
   state.loading=false;
   render();
-}
-
-// ===== 食事・栄養管理 =====
-
-// 写真をリサイズ・圧縮してbase64にする（通信量を抑えるため最大1024pxに縮小）
-function compressImage(file,callback){
-  const reader=new FileReader();
-  reader.onload=function(ev){
-    const img=new Image();
-    img.onload=function(){
-      const maxDim=1024;
-      let w=img.width,h=img.height;
-      if(w>h&&w>maxDim){h=Math.round(h*maxDim/w);w=maxDim;}
-      else if(h>=w&&h>maxDim){w=Math.round(w*maxDim/h);h=maxDim;}
-      const canvas=document.createElement("canvas");
-      canvas.width=w;canvas.height=h;
-      canvas.getContext("2d").drawImage(img,0,0,w,h);
-      const dataUrl=canvas.toDataURL("image/jpeg",0.7);
-      callback(dataUrl.split(",")[1],"image/jpeg");
-    };
-    img.onerror=function(){showToast("画像の読み込みに失敗しました");};
-    img.src=ev.target.result;
-  };
-  reader.readAsDataURL(file);
-}
-
-function onMealFileSelected(e){
-  const file=e.target.files&&e.target.files[0];
-  if(!file) return;
-  compressImage(file,function(base64,mediaType){
-    analyzeMeal(base64,mediaType);
-  });
-  e.target.value=""; // 同じファイルを連続で選べるようにリセット
-}
-
-async function analyzeMeal(base64,mediaType){
-  state.mealAnalyzing=true;render();
-  try{
-    const res=await fetch("/api/analyze-meal",{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({imageBase64:base64,mediaType:mediaType}),
-    });
-    const data=await res.json().catch(()=>null);
-    if(!res.ok||!data||!data.result) throw new Error((data&&data.error)||"解析に失敗しました");
-    state.mealPendingResult=data.result;
-    state.modal="mealConfirm";
-  }catch(e){
-    showToast("❌ 解析エラー："+e.message);
-  }
-  state.mealAnalyzing=false;
-  render();
-}
-
-async function saveMealLog(mealType){
-  const r=state.mealPendingResult;
-  if(!r) return;
-  try{
-    const phone=state.bookings.length>0?state.bookings[0].phone:null;
-    await sbPost("meal_logs",{
-      line_user_id:lineUserId,
-      phone:phone||null,
-      patient_name:(lineProfile&&lineProfile.displayName)||null,
-      meal_date:new Date().toISOString().split("T")[0],
-      meal_type:mealType,
-      photo_summary:r.foods||null,
-      calories:r.calories||0,
-      protein_g:r.protein_g||0,
-      fat_g:r.fat_g||0,
-      carbs_g:r.carbs_g||0,
-      iron_mg:r.iron_mg||0,
-      calcium_mg:r.calcium_mg||0,
-      magnesium_mg:r.magnesium_mg||0,
-      vitamin_d_ug:r.vitamin_d_ug||0,
-      vitamin_b_mg:r.vitamin_b_mg||0,
-      zinc_mg:r.zinc_mg||0,
-      omega3_g:r.omega3_g||0,
-      fiber_g:r.fiber_g||0,
-      raw_analysis:r,
-    });
-    state.modal=null;
-    state.mealPendingResult=null;
-    showToast("✅ 食事を記録しました");
-    await loadData();
-  }catch(e){
-    showToast("❌ 保存に失敗しました");
-  }
-}
-
-function cancelMealConfirm(){
-  state.modal=null;state.mealPendingResult=null;render();
-}
-
-// 直近7日間の1日あたり平均摂取量を計算し、推奨量との割合を返す
-function computeNutrientSummary(){
-  const keys=Object.keys(RDA);
-  const totals={};
-  keys.forEach(k=>totals[k]=0);
-  state.meals.forEach(m=>{keys.forEach(k=>{totals[k]+=Number(m[k])||0;});});
-  const days=7;
-  const summary=keys.map(k=>{
-    const avg=totals[k]/days;
-    const pct=RDA[k]>0?Math.round(avg/RDA[k]*100):0;
-    return{key:k,label:NUTRIENT_LABELS[k],unit:NUTRIENT_UNITS[k],avg,pct,deficient:pct<70};
-  });
-  return summary;
-}
-
-// 不足栄養素と、直近の予約時症状との関連候補を探す（あくまで参考情報）
-function computeSymptomCorrelations(summary){
-  const deficient=summary.filter(s=>s.deficient);
-  if(deficient.length===0) return[];
-  const recentBookings=[...state.bookings].sort((a,b)=>b.date.localeCompare(a.date));
-  const symptomText=recentBookings.map(b=>(b.symptoms||"")+" "+(b.body_parts||"")).join(" ");
-  if(!symptomText.trim()) return[];
-  const matches=[];
-  deficient.forEach(d=>{
-    const map=NUTRIENT_SYMPTOM_MAP[d.key];
-    if(!map) return;
-    const hit=map.keywords.some(kw=>symptomText.indexOf(kw)>-1);
-    if(hit) matches.push({label:d.label,pct:d.pct});
-  });
-  return matches;
-}
-
-function renderMealSection(){
-  const summary=computeNutrientSummary();
-  const correlations=computeSymptomCorrelations(summary);
-  const hasMeals=state.meals.length>0;
-
-  return`
-    <div class="section-title">食事・栄養管理</div>
-    <div class="card">
-      <div class="card-header">
-        <div class="card-header-icon" style="background:#f0fdf4;">🍽️</div>
-        <div>
-          <div class="card-header-title">今週の栄養バランス</div>
-          <div class="card-header-sub">直近7日間の1日あたり平均（写真から推定）</div>
-        </div>
-      </div>
-      <div class="card-body">
-        <input type="file" id="meal-file-input" accept="image/*" capture="environment" style="display:none;"/>
-        <button class="btn btn-green" id="meal-photo-btn" ${state.mealAnalyzing?"disabled":""} style="margin-bottom:14px;opacity:${state.mealAnalyzing?0.7:1};">
-          <span class="btn-icon">📷</span>
-          <span class="btn-label">${state.mealAnalyzing?"解析中...":"食事を記録する"}</span>
-        </button>
-
-        ${!hasMeals?`
-          <div class="empty">
-            <div class="empty-icon">🍚</div>
-            <div class="empty-title">まだ記録がありません</div>
-            <div class="empty-desc">食事の写真を撮って記録してみましょう</div>
-          </div>
-        `:summary.map(s=>`
-          <div style="margin-bottom:12px;">
-            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">
-              <span style="font-weight:700;color:${s.deficient?'#ef4444':'#374151'};">${s.label}${s.deficient?'（不足気味）':''}</span>
-              <span style="color:#94a3b8;">${s.avg.toFixed(1)}${s.unit} / 目安${RDA[s.key]}${s.unit}</span>
-            </div>
-            <div class="progress-bar">
-              <div class="progress-fill" style="width:${Math.min(s.pct,100)}%;background:${s.deficient?'linear-gradient(90deg,#ef4444,#f87171)':'linear-gradient(90deg,#059669,#34d399)'};"></div>
-            </div>
-          </div>
-        `).join("")}
-
-        ${correlations.length>0?`
-          <div style="margin-top:14px;background:#fef9ec;border:1px solid #fde68a;border-radius:10px;padding:12px 14px;">
-            <div style="font-size:12px;font-weight:800;color:#92400e;margin-bottom:6px;">💡 気になる症状との関連（参考情報）</div>
-            ${correlations.map(c=>`<div style="font-size:12px;color:#a16207;margin-bottom:2px;">${c.label}が不足気味です。ご相談中の症状と関連がある可能性があります。</div>`).join("")}
-            <div style="font-size:10px;color:#a16207;margin-top:6px;">※ これは写真解析による目安であり、診断ではありません。詳しくは施術担当スタッフにご相談ください。</div>
-          </div>
-        `:""}
-      </div>
-    </div>
-  `;
 }
 
 // ===== 電話番号での連携（初めてLINEでログインした既存患者様向け） =====
@@ -643,7 +434,6 @@ function render(){
       ${renderPatientQR()}
       ${state.bookings.length===0?renderLinkAccount():""}
       ${renderUpcomingBookings()}
-      ${renderMealSection()}
       ${renderPasses()}
       ${renderActions()}
       ${renderReferral()}
@@ -953,37 +743,6 @@ function renderModal(){
       </div>
     `;
   }
-  if(state.modal==="mealConfirm"){
-    const r=state.mealPendingResult||{};
-    const nutrientRows=Object.keys(NUTRIENT_LABELS).map(k=>`
-      <div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:12px;">
-        <span style="color:#64748b;">${NUTRIENT_LABELS[k]}</span>
-        <span style="color:#1e293b;font-weight:700;">${(r[k]||0)}${NUTRIENT_UNITS[k]}</span>
-      </div>
-    `).join("");
-    return`
-      <div class="modal-overlay" onclick="closeModal(event)">
-        <div class="modal-sheet" onclick="event.stopPropagation()">
-          <div class="modal-handle"></div>
-          <div class="modal-title">解析結果を確認</div>
-          <div style="background:#f8fafc;border-radius:10px;padding:12px 14px;margin-bottom:14px;">
-            <div style="font-size:12px;color:#94a3b8;font-weight:700;margin-bottom:4px;">認識した内容</div>
-            <div style="font-size:14px;color:#1e293b;font-weight:600;">${r.foods||"—"}</div>
-            <div style="font-size:12px;color:#64748b;margin-top:6px;">推定カロリー：${r.calories||0}kcal　たんぱく質：${r.protein_g||0}g　脂質：${r.fat_g||0}g　炭水化物：${r.carbs_g||0}g</div>
-          </div>
-          <div style="margin-bottom:14px;">${nutrientRows}</div>
-          <div style="font-size:11px;color:#94a3b8;margin-bottom:14px;">※ AIによる推定のため、実際の栄養価と異なる場合があります</div>
-          <div class="form-group" style="margin-bottom:10px;">
-            <label class="form-label">この食事の種類</label>
-            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
-              ${["朝食","昼食","夕食","間食"].map(t=>`<button class="btn btn-outline" style="padding:10px 4px;font-size:12px;" onclick="saveMealLog('${t}')">${t}</button>`).join("")}
-            </div>
-          </div>
-          <button class="btn btn-outline" onclick="cancelMealConfirm()">キャンセル</button>
-        </div>
-      </div>
-    `;
-  }
   return"";
 }
 
@@ -998,12 +757,6 @@ function bindEvents(){
   if(lp) lp.oninput=e=>{state.linkPhone=e.target.value;};
   const ln=document.getElementById("link-name");
   if(ln) ln.oninput=e=>{state.linkName=e.target.value;};
-  const mealBtn=document.getElementById("meal-photo-btn");
-  const mealInput=document.getElementById("meal-file-input");
-  if(mealBtn&&mealInput){
-    mealBtn.onclick=()=>mealInput.click();
-    mealInput.onchange=onMealFileSelected;
-  }
 }
 
 function openChangeModal(id){
