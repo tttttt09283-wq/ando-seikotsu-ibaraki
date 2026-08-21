@@ -4481,12 +4481,16 @@ function CancelledListPanel({bookings,todayStr,onRestore}){
     return cancelledList.filter(b=>b.cancelled_at&&fmtDate(new Date(b.cancelled_at))===b.date).length;
   },[cancelledList]);
 
+  const viaLineCount=React.useMemo(()=>{
+    return cancelledList.filter(b=>b.cancelled_via_line).length;
+  },[cancelledList]);
+
   return(
     <div style={{maxWidth:800,margin:"0 auto"}}>
       <div className="card" style={{marginBottom:14}}>
         <div style={{padding:"14px 16px",borderBottom:"1px solid #f1f5f9",background:"linear-gradient(135deg,#dc2626,#991b1b)"}}>
           <div style={{color:"white",fontWeight:800,fontSize:15}}>🚫 キャンセル一覧</div>
-          <div style={{color:"rgba(255,255,255,.75)",fontSize:12,marginTop:2}}>全{cancelledList.length}件　（うち当日キャンセル：{sameDayCount}件）</div>
+          <div style={{color:"rgba(255,255,255,.75)",fontSize:12,marginTop:2}}>全{cancelledList.length}件　（うち当日キャンセル：{sameDayCount}件／マイページ経由：{viaLineCount}件）</div>
         </div>
         {reasonCounts.length>0&&(
           <div style={{padding:"14px 16px",display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -4509,7 +4513,7 @@ function CancelledListPanel({bookings,todayStr,onRestore}){
             return(
               <div key={b.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid #f1f5f9",gap:10}}>
                 <div>
-                  <div style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{b.patient_name}{isSameDay&&<span className="badge badge-red" style={{marginLeft:6,fontSize:9}}>⚡当日キャンセル</span>}</div>
+                  <div style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{b.patient_name}{isSameDay&&<span className="badge badge-red" style={{marginLeft:6,fontSize:9}}>⚡当日キャンセル</span>}{b.cancelled_via_line&&<span style={{marginLeft:6,fontSize:9,fontWeight:800,color:"white",background:"#06C755",borderRadius:4,padding:"1px 6px"}}>マイページ経由</span>}</div>
                   <div style={{fontSize:11,color:"#94a3b8"}}>{b.date} {b.time}　{staff.name}　{b.menu}</div>
                   <div style={{fontSize:11,color:"#dc2626",fontWeight:700,marginTop:2}}>理由：{b.cancel_reason||"未記録"}</div>
                   <div style={{fontSize:11,fontWeight:700,marginTop:2,color:nextBooking?"#059669":"#d97706"}}>
