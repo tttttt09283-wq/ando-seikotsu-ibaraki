@@ -175,6 +175,8 @@ let state={
   toast:null,
   mealAnalyzing:false,
   mealPendingResult:null, // AI解析結果（保存前の確認待ち）
+  cancelReason:"",
+  cancelReasonOther:"",
 };
 
 // ===== Supabase =====
@@ -578,12 +580,30 @@ async function changeBooking(){
 }
 
 // ===== 予約キャンセル =====
+function setCancelReason(r){
+  state.cancelReason=r;
+  if(r!=="その他") state.cancelReasonOther="";
+  render();
+}
 async function cancelBooking(){
   if(!state.selBooking) return;
+  if(!state.cancelReason){
+    showToast("キャンセルの理由をお選びください");
+    return;
+  }
+  const finalReason = state.cancelReason==="その他"
+    ? ("その他："+(state.cancelReasonOther.trim()||"未記入"))
+    : state.cancelReason;
   try{
-    await sbPatch("bookings",state.selBooking.id,{cancelled:true});
+    await sbPatch("bookings",state.selBooking.id,{
+      cancelled:true,
+      cancel_reason:finalReason,
+      cancelled_at:new Date().toISOString(),
+      cancelled_via_line:true, // マイページ（LINE）からのキャンセルであることの目印
+    });
     state.bookings=state.bookings.filter(b=>b.id!==state.selBooking.id);
     state.modal=null;state.selBooking=null;
+    state.cancelReason="";state.cancelReasonOther="";
     showToast("予約をキャンセルしました");
   }catch(e){showToast("❌ キャンセルに失敗しました");}
 }
@@ -875,6 +895,7 @@ function renderModal(){
   }
   if(state.modal==="cancel"){
     const b=state.selBooking;
+    const CANCEL_REASONS=["体調不良","仕事都合","急用","天候不良","予定が変わった","その他"];
     return`
       <div class="modal-overlay" onclick="closeModal(event)">
         <div class="modal-sheet" onclick="event.stopPropagation()">
@@ -886,6 +907,18 @@ function renderModal(){
           </div>
           <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:12px;margin-bottom:16px;font-size:12px;color:#991b1b;">
             ⚠️ キャンセルは前日18時まで。<br>当日キャンセルはお電話にてご連絡ください。
+          </div>
+          <div style="margin-bottom:16px;">
+            <div style="font-size:13px;font-weight:700;color:#374151;margin-bottom:8px;">キャンセルの理由をお選びください</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">
+              ${CANCEL_REASONS.map(r=>`
+                <button onclick="setCancelReason('${r}')" style="padding:7px 12px;border-radius:16px;border:1.5px solid ${state.cancelReason===r?'#dc2626':'#e5e7eb'};background:${state.cancelReason===r?'#dc2626':'white'};color:${state.cancelReason===r?'white':'#374151'};font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">${r}</button>
+              `).join("")}
+            </div>
+            ${state.cancelReason==="その他"?`
+              <input type="text" value="${state.cancelReasonOther}" placeholder="理由をご記入ください" oninput="state.cancelReasonOther=this.value;"
+                style="width:100%;margin-top:8px;padding:9px 12px;border:1.5px solid #e5e7eb;border-radius:8px;font-size:13px;box-sizing:border-box;"/>
+            `:""}
           </div>
           <button class="btn" style="background:linear-gradient(180deg,#ef4444,#dc2626);color:white;box-shadow:0 4px 0 #991b1b;margin-bottom:10px;" onclick="submitCancel()">
             <span class="btn-icon">🗑</span>
@@ -980,6 +1013,7 @@ function openChangeModal(id){
 }
 function openCancelModal(id){
   state.selBooking=state.bookings.find(b=>b.id===id)||null;
+  state.cancelReason="";state.cancelReasonOther="";
   state.modal="cancel";render();
 }
 function openContactModal(){state.modal="contact";render();}
