@@ -4466,6 +4466,245 @@ function PersonalWeekView({staff,filtered,payments,visitCounts,setBookingPopup,s
 // 最終来院から指定日数以上経過し、LINE連携済みで、かつ次回予約が入っていない患者を検出し、
 // 除外（送信不要）した人を除いて一斉LINE送信できるパネル。
 // ===== キャンセル一覧パネル =====
+// ===== 姿勢の経過記録 =====
+function PostureRecordsPanel({bookings}){
+  const [query,setQuery]=React.useState("");
+  const [selPatient,setSelPatient]=React.useState(null); // {name, phone}
+  const [records,setRecords]=React.useState([]);
+  const [loading,setLoading]=React.useState(false);
+  const [showAdd,setShowAdd]=React.useState(false);
+  const [toast,setToast]=React.useState("");
+
+  // 予約データからユニークな患者一覧を作る（名前＋電話番号）
+  const patientList=React.useMemo(()=>{
+    const map={};
+    bookings.forEach(b=>{
+      if(!b.patient_name) return;
+      if(!map[b.patient_name]) map[b.patient_name]={name:b.patient_name,phone:b.phone||""};
+    });
+    return Object.values(map).sort((a,b)=>a.name.localeCompare(b.name,"ja"));
+  },[bookings]);
+
+  const filteredPatients=query.trim()
+    ? patientList.filter(p=>p.name.includes(query.trim()))
+    : [];
+
+  function showToast(msg){setToast(msg);setTimeout(()=>setToast(""),2500);}
+
+  function loadRecords(patientName){
+    setLoading(true);
+    sb.select("posture_records",`?patient_name=eq.${encodeURIComponent(patientName)}&order=recorded_date.desc`)
+      .then(data=>setRecords(Array.isArray(data)?data:[]))
+      .catch(()=>setRecords([]))
+      .finally(()=>setLoading(false));
+  }
+
+  function selectPatient(p){
+    setSelPatient(p);
+    setQuery("");
+    setShowAdd(false);
+    loadRecords(p.name);
+  }
+
+  return(
+    <div style={{maxWidth:760,margin:"0 auto"}}>
+      {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#15803d",fontWeight:700,fontSize:13}}>{toast}</div>}
+
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{padding:"14px 16px",borderBottom:"1px solid #f1f5f9",background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)"}}>
+          <div style={{color:"white",fontWeight:800,fontSize:15}}>🧍 姿勢の経過記録</div>
+          <div style={{color:"rgba(255,255,255,.75)",fontSize:12,marginTop:2}}>患者様ごとに、来院時の姿勢写真とスコアの推移を記録できます</div>
+        </div>
+        <div style={{padding:16}}>
+          <label className="form-label">患者様を検索</label>
+          <input className="form-input" value={selPatient?selPatient.name:query}
+            placeholder="お名前を入力してください"
+            onChange={e=>{setQuery(e.target.value);setSelPatient(null);}}/>
+          {filteredPatients.length>0&&!selPatient&&(
+            <div style={{border:"1px solid #e2e8f0",borderRadius:8,marginTop:6,maxHeight:220,overflowY:"auto"}}>
+              {filteredPatients.slice(0,20).map(p=>(
+                <div key={p.name+p.phone} onClick={()=>selectPatient(p)}
+                  style={{padding:"9px 12px",cursor:"pointer",borderBottom:"1px solid #f1f5f9",fontSize:13}}>
+                  <span style={{fontWeight:700,color:"#1e293b"}}>{p.name}</span>
+                  {p.phone&&<span style={{color:"#94a3b8",marginLeft:8,fontSize:12}}>{p.phone}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {selPatient&&(
+        <>
+          <div className="card" style={{marginBottom:14}}>
+            <div style={{padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f"}}>{selPatient.name} 様</div>
+                <div style={{fontSize:12,color:"#94a3b8"}}>{records.length}件の記録</div>
+              </div>
+              <button onClick={()=>setShowAdd(v=>!v)} className="btn"
+                style={{padding:"8px 16px",background:showAdd?"#f1f5f9":"#1e3a5f",color:showAdd?"#374151":"white",fontWeight:700,fontSize:13,borderRadius:8}}>
+                {showAdd?"閉じる":"＋ 新規記録を追加"}
+              </button>
+            </div>
+            {showAdd&&(
+              <PostureRecordAddForm
+                patient={selPatient}
+                onSaved={()=>{setShowAdd(false);loadRecords(selPatient.name);showToast("記録を保存しました");}}
+              />
+            )}
+          </div>
+
+          {/* スコア推移（2件以上あれば表示） */}
+          {records.filter(r=>r.posture_score!=null).length>=2&&(
+            <div className="card" style={{marginBottom:14,padding:16}}>
+              <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:12}}>スコアの推移</div>
+              {(()=>{
+                const scored=[...records].filter(r=>r.posture_score!=null).sort((a,b)=>a.recorded_date.localeCompare(b.recorded_date));
+                const max=Math.max(...scored.map(r=>Number(r.posture_score)),1);
+                return(
+                  <div style={{display:"flex",alignItems:"flex-end",gap:6,height:100,padding:"0 2px"}}>
+                    {scored.map(r=>{
+                      const pct=Math.round(Number(r.posture_score)/max*100);
+                      return(
+                        <div key={r.id} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+                          <div style={{fontSize:11,fontWeight:800,color:"#374151"}}>{r.posture_score}</div>
+                          <div style={{width:"100%",height:`${Math.max(pct,4)}%`,background:"#1e3a5f",borderRadius:"4px 4px 0 0",minHeight:4}}/>
+                          <div style={{fontSize:9,color:"#94a3b8",whiteSpace:"nowrap"}}>{r.recorded_date.slice(5)}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
+          <div className="card">
+            <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>記録の一覧</div>
+            <div style={{padding:16}}>
+              {loading?(
+                <div style={{textAlign:"center",padding:20,color:"#94a3b8"}}>読み込み中...</div>
+              ):records.length===0?(
+                <div style={{textAlign:"center",padding:24,color:"#94a3b8",fontSize:13}}>まだ記録がありません</div>
+              ):records.map(r=>(
+                <div key={r.id} style={{display:"flex",gap:14,padding:"14px 0",borderBottom:"1px solid #f1f5f9"}}>
+                  {r.photo_url?(
+                    <img src={r.photo_url} alt="姿勢写真" style={{width:80,height:80,objectFit:"cover",borderRadius:8,flexShrink:0,border:"1px solid #e2e8f0"}}/>
+                  ):(
+                    <div style={{width:80,height:80,borderRadius:8,background:"#f1f5f9",display:"flex",alignItems:"center",justifyContent:"center",color:"#cbd5e1",fontSize:24,flexShrink:0}}>📷</div>
+                  )}
+                  <div style={{flex:1}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                      <span style={{fontWeight:800,fontSize:13,color:"#1e293b"}}>{r.recorded_date}</span>
+                      {r.posture_score!=null&&<span style={{fontSize:11,fontWeight:800,color:"white",background:"#1e3a5f",borderRadius:4,padding:"1px 8px"}}>スコア {r.posture_score}</span>}
+                      {r.posture_type&&<span style={{fontSize:11,fontWeight:700,color:"#7c3aed",background:"#ede9fe",borderRadius:4,padding:"1px 8px"}}>{r.posture_type}</span>}
+                    </div>
+                    {r.notes&&<div style={{fontSize:12,color:"#64748b",lineHeight:1.6}}>{r.notes}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function PostureRecordAddForm({patient,onSaved}){
+  const [date,setDate]=React.useState(new Date().toISOString().split("T")[0]);
+  const [staffId,setStaffId]=React.useState(STAFF_ACCOUNTS[0]?.id||1);
+  const [score,setScore]=React.useState("");
+  const [type,setType]=React.useState("");
+  const [notes,setNotes]=React.useState("");
+  const [file,setFile]=React.useState(null);
+  const [preview,setPreview]=React.useState(null);
+  const [saving,setSaving]=React.useState(false);
+  const [err,setErr]=React.useState("");
+
+  function onFileChange(e){
+    const f=e.target.files&&e.target.files[0];
+    if(!f) return;
+    setFile(f);
+    setPreview(URL.createObjectURL(f));
+  }
+
+  async function save(){
+    setErr("");
+    setSaving(true);
+    try{
+      let photoUrl=null;
+      if(file){
+        const ext=(file.name.split(".").pop()||"jpg").toLowerCase();
+        const path=`${patient.name}_${Date.now()}.${ext}`;
+        const{error:uploadError}=await supabaseClient.storage.from("posture-photos").upload(path,file,{upsert:false});
+        if(uploadError) throw new Error("写真のアップロードに失敗しました："+uploadError.message);
+        const{data:pub}=supabaseClient.storage.from("posture-photos").getPublicUrl(path);
+        photoUrl=pub&&pub.publicUrl?pub.publicUrl:null;
+      }
+      const result=await sb.insert("posture_records",{
+        patient_name:patient.name,
+        phone:patient.phone||null,
+        staff_id:staffId,
+        recorded_date:date,
+        photo_url:photoUrl,
+        posture_score:score!==""?Number(score):null,
+        posture_type:type||null,
+        notes:notes||null,
+      });
+      if(!Array.isArray(result)||result.length===0){
+        throw new Error((result&&result.message)||"保存に失敗しました");
+      }
+      onSaved();
+    }catch(e){
+      setErr(e.message||"不明なエラー");
+    }
+    setSaving(false);
+  }
+
+  return(
+    <div style={{padding:16,borderTop:"1px solid #f1f5f9"}}>
+      {err&&<div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#dc2626",fontSize:12,fontWeight:700}}>{err}</div>}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+        <div>
+          <label className="form-label">記録日</label>
+          <input type="date" className="form-input" value={date} onChange={e=>setDate(e.target.value)}/>
+        </div>
+        <div>
+          <label className="form-label">担当スタッフ</label>
+          <select className="form-input" value={staffId} onChange={e=>setStaffId(Number(e.target.value))}>
+            {STAFF_ACCOUNTS.map(s=>(<option key={s.id} value={s.id}>{s.name}</option>))}
+          </select>
+        </div>
+      </div>
+      <div style={{marginBottom:14}}>
+        <label className="form-label">姿勢写真</label>
+        <input type="file" accept="image/*" onChange={onFileChange} style={{fontSize:13}}/>
+        {preview&&<img src={preview} alt="プレビュー" style={{marginTop:8,width:120,height:120,objectFit:"cover",borderRadius:8,border:"1px solid #e2e8f0"}}/>}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:14,marginBottom:14}}>
+        <div>
+          <label className="form-label">姿勢スコア</label>
+          <input type="number" className="form-input" value={score} onChange={e=>setScore(e.target.value)} placeholder="例：72"/>
+        </div>
+        <div>
+          <label className="form-label">分類（姿勢分析システムの結果）</label>
+          <input className="form-input" value={type} onChange={e=>setType(e.target.value)} placeholder="例：猫背傾向、反り腰傾向 など"/>
+        </div>
+      </div>
+      <div style={{marginBottom:16}}>
+        <label className="form-label">スタッフのコメント・所見</label>
+        <textarea className="form-input" rows={3} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="改善点・気になる点など"/>
+      </div>
+      <button onClick={save} disabled={saving} className="btn"
+        style={{width:"100%",justifyContent:"center",padding:11,fontSize:14,borderRadius:9,background:"#1e3a5f",color:"white",fontWeight:800,opacity:saving?0.6:1}}>
+        {saving?"保存中...":"この記録を保存する"}
+      </button>
+    </div>
+  );
+}
+
 function CancelledListPanel({bookings,todayStr,onRestore}){
   const cancelledList=React.useMemo(()=>{
     return bookings.filter(b=>b.cancelled).sort((a,b)=>(b.cancelled_at||b.date).localeCompare(a.cancelled_at||a.date));
@@ -5266,6 +5505,7 @@ function Dashboard({user,onLogout}){
     // 臨床サポート
     {section:"臨床サポート"},
     {id:"symptom_checker",label:"🔍 症状チェッカー（試験運用）",special:"",action:()=>window.open("/symptom-checker.html","_blank")},
+    {id:"posture_records",label:"🧍 姿勢の経過記録",special:""},
     // スタッフ・シフト
     {section:"スタッフ"},
     {id:"staff_mgmt",label:"スタッフ・シフト管理",special:""},
@@ -5676,6 +5916,7 @@ function Dashboard({user,onLogout}){
 
           {/* キャンセル一覧 */}
           {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} todayStr={todayStr} onRestore={restoreBooking}/>}
+          {view==="posture_records"&&<PostureRecordsPanel bookings={bookings}/>}
 
           {/* 店舗管理 */}
           {view==="store_mgmt"&&<StoreMgmtPanel/>}
