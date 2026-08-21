@@ -138,6 +138,11 @@ function App(){
   var stepState = useState(0);
   var step = stepState[0]; var setStep = stepState[1];
 
+  // ステップが切り替わるたびに、画面を一番上までスクロールする
+  useEffect(function(){
+    window.scrollTo({top:0,left:0,behavior:"instant"});
+  },[step]);
+
   var dateState = useState(null);
   var selDate = dateState[0]; var setSelDate = dateState[1];
 
@@ -157,6 +162,10 @@ function App(){
 
   var doneState = useState(false);
   var done = doneState[0]; var setDone = doneState[1];
+
+  useEffect(function(){
+    if(done) window.scrollTo({top:0,left:0,behavior:"instant"});
+  },[done]);
 
   var submittingState = useState(false);
   var submitting = submittingState[0]; var setSubmitting = submittingState[1];
@@ -188,6 +197,38 @@ function App(){
   var isRepeat = isRepeatState[0]; var setIsRepeat = isRepeatState[1];
   var pastBookingState = useState(null);
   var pastBooking = pastBookingState[0]; var setPastBooking = pastBookingState[1];
+
+  // 電話番号による手動リピーター確認（LINE外からのアクセスや、初回にLINE連携していなかった方向け）
+  var phoneLookupOpenState = useState(false);
+  var phoneLookupOpen = phoneLookupOpenState[0]; var setPhoneLookupOpen = phoneLookupOpenState[1];
+  var phoneLookupValueState = useState("");
+  var phoneLookupValue = phoneLookupValueState[0]; var setPhoneLookupValue = phoneLookupValueState[1];
+  var phoneLookupStatusState = useState(""); // "" | "searching" | "notfound"
+  var phoneLookupStatus = phoneLookupStatusState[0]; var setPhoneLookupStatus = phoneLookupStatusState[1];
+
+  function lookupByPhone(){
+    var phone = phoneLookupValue.trim();
+    if(!phone) return;
+    setPhoneLookupStatus("searching");
+    sb.select("bookings","?phone=eq."+encodeURIComponent(phone)+"&order=date.desc&limit=1")
+      .then(function(past){
+        if(Array.isArray(past)&&past.length>0){
+          setIsRepeat(true);
+          setPastBooking(past[0]);
+          setForm(function(f){return Object.assign({},f,{
+            name:past[0].patient_name||"",
+            phone:past[0].phone||"",
+            lineNotify:!!lineUserId,
+          });});
+          setPhoneLookupOpen(false);
+          setPhoneLookupStatus("");
+        }else{
+          setPhoneLookupStatus("notfound");
+        }
+      }).catch(function(){
+        setPhoneLookupStatus("notfound");
+      });
+  }
 
   // リピーター用メモ（任意）
   var memoState = useState("");
@@ -619,6 +660,7 @@ function App(){
       referrer_name:form.referrerName.trim()||null,
       line_notify: !!lineUserId, // LINE連携済みなら自動でリマインド
       line_user_id: lineUserId || null,
+      booked_via_line: !!lineUserId, // LINE経由での予約かどうか（管理画面での目印用）
       reminded:false,
       body_parts:formatBodyParts(form.bodyParts,form.bodyPartsOther),
       injury_cause:form.injuryCause,
@@ -735,6 +777,7 @@ function App(){
       store_id:resolvedStoreId,
       line_notify:true,
       line_user_id:lineUserId||null,
+      booked_via_line: !!lineUserId,
       reminded:false,
       // 伝えたいことがあれば症状欄に入れる
       symptoms:memo||null,
@@ -916,7 +959,28 @@ function App(){
           React.createElement("div",null,
             React.createElement("div",{style:{fontWeight:800,fontSize:14,color:"#065f46"}}),"おかえりなさい！ "+pastBooking.patient_name+" 様"),
             React.createElement("div",{style:{fontSize:12,color:"#059669",marginTop:2}}),"日時だけ選べばすぐ予約できます"
-        ):null,
+        ):React.createElement("div",{style:{marginBottom:16}},
+          !phoneLookupOpen?React.createElement("button",{
+            onClick:function(){setPhoneLookupOpen(true);setPhoneLookupStatus("");},
+            style:{background:"none",border:"none",color:"#0891b2",fontSize:12,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline"}
+          },"以前にご予約されたことがある方はこちら（電話番号で確認）"):
+          React.createElement("div",{style:{background:"#f0f9ff",border:"1.5px solid #bae6fd",borderRadius:10,padding:"12px 14px"}},
+            React.createElement("div",{style:{fontSize:12,color:"#0369a1",fontWeight:700,marginBottom:8}},"ご登録の電話番号を入力してください"),
+            React.createElement("div",{style:{display:"flex",gap:8}},
+              React.createElement("input",{type:"tel",value:phoneLookupValue,placeholder:"090-0000-0000",
+                onChange:function(e){setPhoneLookupValue(e.target.value);setPhoneLookupStatus("");},
+                style:{flex:1,padding:"9px 12px",border:"1.5px solid #bae6fd",borderRadius:8,fontSize:14}
+              }),
+              React.createElement("button",{onClick:lookupByPhone,disabled:phoneLookupStatus==="searching",
+                style:{padding:"9px 16px",background:"#0891b2",color:"white",border:"none",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",opacity:phoneLookupStatus==="searching"?0.6:1}
+              },phoneLookupStatus==="searching"?"確認中...":"確認する")
+            ),
+            phoneLookupStatus==="notfound"?React.createElement("div",{style:{fontSize:12,color:"#dc2626",marginTop:8,fontWeight:700}},"見つかりませんでした。恐れ入りますが、通常の予約からお進みください。"):null,
+            React.createElement("button",{onClick:function(){setPhoneLookupOpen(false);setPhoneLookupStatus("");},
+              style:{background:"none",border:"none",color:"#94a3b8",fontSize:11,cursor:"pointer",marginTop:8,padding:0}
+            },"閉じる")
+          )
+        ),
 
         React.createElement("div",{style:{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:16}},"日時を選んでください"),
 
