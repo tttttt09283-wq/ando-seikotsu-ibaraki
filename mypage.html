@@ -183,8 +183,17 @@ async function sbGet(t,f){
   return res.json();
 }
 async function sbPatch(t,id,d){
-  const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}?id=eq.${id}`,{method:"PATCH",headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`,"Content-Type":"application/json"},body:JSON.stringify(d)});
-  return res.json();
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}?id=eq.${id}`,{method:"PATCH",headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`,"Content-Type":"application/json",Prefer:"return=representation"},body:JSON.stringify(d)});
+  const data=await res.json().catch(()=>null);
+  if(!res.ok){
+    const msg=(data&&(data.message||data.hint||data.error))||`更新に失敗しました（HTTP ${res.status}）`;
+    throw new Error(msg);
+  }
+  if(!Array.isArray(data)||data.length===0){
+    // 200番台でも、対象行が実際には更新されていない（該当行が見つからない・権限で弾かれた等）場合はここに来る
+    throw new Error("更新対象のデータが見つかりませんでした（権限設定をご確認ください）");
+  }
+  return data;
 }
 async function sbRpc(fn,args){
   const res=await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`,{method:"POST",headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`,"Content-Type":"application/json"},body:JSON.stringify(args)});
