@@ -834,6 +834,215 @@ function CancelModal({booking,bookings,todayStr,storeStaffList,isAdmin,onClose,o
 }
 
 // ===== 分析ダッシュボード =====
+// ===== プレオープン期間の日別集計 =====
+function PreOpenStatsPanel({bookings,payments,stores}){
+  const [selStoreId,setSelStoreId]=React.useState(null); // null=全店舗
+  const [rangeStart,setRangeStart]=React.useState("2026-10-01");
+  const [rangeEnd,setRangeEnd]=React.useState("2026-10-04");
+  const [passes,setPasses]=React.useState([]);
+
+  const firstStoreId=(stores&&stores.length>0)?stores[0].id:1;
+
+  // 店舗の「各種設定」に保存されたイベント期間があれば、それを初期値として反映する
+  React.useEffect(()=>{
+    const targetStoreId=stores&&stores.length>0?stores[0].id:null;
+    if(!targetStoreId) return;
+    sb.select("store_settings",`?store_id=eq.${targetStoreId}&order=updated_at.desc.nullslast,id.desc&limit=1`)
+      .then(rows=>{
+        if(Array.isArray(rows)&&rows.length>0){
+          const s=rows[0];
+          if(s.event_start_date) setRangeStart(s.event_start_date);
+          if(s.event_end_date) setRangeEnd(s.event_end_date);
+        }
+      }).catch(()=>{});
+  },[]);
+
+  React.useEffect(()=>{
+    sb.select("passes","?order=purchased_date.asc")
+      .then(rows=>setPasses(Array.isArray(rows)?rows:[]))
+      .catch(()=>setPasses([]));
+  },[]);
+
+  const scopedBookings=React.useMemo(()=>{
+    if(selStoreId===null) return bookings;
+    return bookings.filter(b=>(b.store_id||firstStoreId)===selStoreId);
+  },[bookings,selStoreId,firstStoreId]);
+
+  const scopedBookingIds=React.useMemo(()=>new Set(scopedBookings.map(b=>b.id)),[scopedBookings]);
+  const scopedPayments=React.useMemo(()=>{
+    if(selStoreId===null) return payments;
+    return payments.filter(p=>scopedBookingIds.has(p.booking_id));
+  },[payments,selStoreId,scopedBookingIds]);
+
+  const dateList=React.useMemo(()=>{
+    const list=[];
+    if(!rangeStart||!rangeEnd) return list;
+    let d=new Date(rangeStart+"T00:00:00");
+    const end=new Date(rangeEnd+"T00:00:00");
+    let guard=0;
+    while(d<=end&&guard<60){
+      list.push(fmtDate(d));
+      d.setDate(d.getDate()+1);
+      guard++;
+    }
+    return list;
+  },[rangeStart,rangeEnd]);
+
+  // 患者ごとの初回来院日（新患判定用。店舗内の全期間データから算出）
+  const firstVisitByPatient=React.useMemo(()=>{
+    const map={};
+    [...scopedBookings].filter(b=>!b.cancelled).sort((a,b)=>a.date.localeCompare(b.date)).forEach(b=>{
+      if(!map[b.patient_name]) map[b.patient_name]=b.date;
+    });
+    return map;
+  },[scopedBookings]);
+
+  // 患者ごとの来院日一覧（次回予約有無の判定用）
+  const datesByPatient=React.useMemo(()=>{
+    const map={};
+    scopedBookings.filter(b=>!b.cancelled).forEach(b=>{
+      if(!map[b.patient_name]) map[b.patient_name]=[];
+      map[b.patient_name].push(b.date);
+    });
+    return map;
+  },[scopedBookings]);
+
+  function isTrialMenu(menu){
+    return !!menu&&(menu.includes("体験")||menu.includes("500"));
+  }
+
+  const dayStats=dateList.map(dateStr=>{
+    const dayBookings=scopedBookings.filter(b=>b.date===dateStr);
+    const totalBookings=dayBookings.length;
+    const cancelledCount=dayBookings.filter(b=>b.cancelled).length;
+    const attended=dayBookings.filter(b=>!b.cancelled&&b.checked_in_at);
+    const actualVisits=attended.length;
+    const newPatients=attended.filter(b=>firstVisitByPatient[b.patient_name]===dateStr).length;
+    const trialCount=attended.filter(b=>isTrialMenu(b.menu)).length;
+    const lineCount=dayBookings.filter(b=>b.line_user_id).length;
+
+    let nextBookingCount=0;
+    attended.forEach(b=>{
+      const dates=datesByPatient[b.patient_name]||[];
+      if(dates.some(dd=>dd>dateStr)) nextBookingCount++;
+    });
+    const nextBookingRate=actualVisits>0?Math.round(nextBookingCount/actualVisits*100):0;
+
+    const dayPasses=passes.filter(p=>p.purchased_date===dateStr);
+    const contractCount=new Set(dayPasses.map(p=>p.patient_name)).size;
+    const contractRate=actualVisits>0?Math.round(contractCount/actualVisits*100):0;
+
+    const dayPayments=scopedPayments.filter(p=>p.payment_date===dateStr);
+    const sales=dayPayments.reduce((s,p)=>s+(p.total_amount||0),0);
+    const salesPerVisit=actualVisits>0?Math.round(sales/actualVisits):0;
+
+    const staffCount=new Set(dayBookings.filter(b=>!b.cancelled).map(b=>b.staff_id)).size;
+
+    return{dateStr,totalBookings,actualVisits,newPatients,cancelledCount,trialCount,lineCount,
+      nextBookingCount,nextBookingRate,contractCount,contractRate,sales,salesPerVisit,staffCount};
+  });
+
+  const totals=dayStats.reduce((acc,d)=>{
+    acc.totalBookings+=d.totalBookings;acc.actualVisits+=d.actualVisits;acc.newPatients+=d.newPatients;
+    acc.cancelledCount+=d.cancelledCount;acc.trialCount+=d.trialCount;acc.lineCount+=d.lineCount;
+    acc.nextBookingCount+=d.nextBookingCount;acc.contractCount+=d.contractCount;acc.sales+=d.sales;
+    return acc;
+  },{totalBookings:0,actualVisits:0,newPatients:0,cancelledCount:0,trialCount:0,lineCount:0,nextBookingCount:0,contractCount:0,sales:0});
+  totals.nextBookingRate=totals.actualVisits>0?Math.round(totals.nextBookingCount/totals.actualVisits*100):0;
+  totals.contractRate=totals.actualVisits>0?Math.round(totals.contractCount/totals.actualVisits*100):0;
+  totals.salesPerVisit=totals.actualVisits>0?Math.round(totals.sales/totals.actualVisits):0;
+
+  const DAYS_JP2=["日","月","火","水","木","金","土"];
+  const fmtYen=n=>"¥"+Number(n||0).toLocaleString();
+
+  return(
+    <div style={{maxWidth:1300,margin:"0 auto"}}>
+      <div className="card" style={{marginBottom:16,padding:"16px 18px"}}>
+        <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:12}}>📊 プレオープン集計</div>
+        <div style={{display:"flex",gap:14,flexWrap:"wrap",alignItems:"flex-end"}}>
+          <div>
+            <label style={{fontSize:11,color:"#94a3b8",fontWeight:700,display:"block",marginBottom:4}}>集計期間（開始）</label>
+            <input type="date" value={rangeStart} onChange={e=>setRangeStart(e.target.value)} style={{padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13}}/>
+          </div>
+          <div>
+            <label style={{fontSize:11,color:"#94a3b8",fontWeight:700,display:"block",marginBottom:4}}>集計期間（終了）</label>
+            <input type="date" value={rangeEnd} onChange={e=>setRangeEnd(e.target.value)} style={{padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13}}/>
+          </div>
+          <div>
+            <label style={{fontSize:11,color:"#94a3b8",fontWeight:700,display:"block",marginBottom:4}}>店舗</label>
+            <select value={selStoreId===null?"":selStoreId} onChange={e=>setSelStoreId(e.target.value===""?null:Number(e.target.value))} style={{padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13}}>
+              <option value="">全店舗合算</option>
+              {(stores||[]).map(s=>(<option key={s.id} value={s.id}>{s.name}</option>))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="card" style={{overflowX:"auto"}}>
+        <table style={{borderCollapse:"collapse",width:"100%",fontSize:13,minWidth:1180}}>
+          <thead>
+            <tr style={{background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}>
+              {["日付","予約数","実来院数","新患数","キャンセル数","500円体験","LINE登録","次回予約","次回予約率","成約人数","成約率","売上","1人あたり","稼働スタッフ"].map(h=>(
+                <th key={h} style={{padding:"10px 12px",textAlign:"left",fontWeight:800,color:"#64748b",whiteSpace:"nowrap"}}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {dayStats.length===0?(
+              <tr><td colSpan={14} style={{padding:24,textAlign:"center",color:"#94a3b8"}}>期間を選択してください</td></tr>
+            ):dayStats.map(d=>{
+              const dt=new Date(d.dateStr+"T00:00:00");
+              return(
+                <tr key={d.dateStr} style={{borderBottom:"1px solid #f1f5f9"}}>
+                  <td style={{padding:"10px 12px",fontWeight:700,color:"#1e293b",whiteSpace:"nowrap"}}>{d.dateStr.slice(5)}（{DAYS_JP2[dt.getDay()]}）</td>
+                  <td style={{padding:"10px 12px"}}>{d.totalBookings}</td>
+                  <td style={{padding:"10px 12px",fontWeight:700,color:"#059669"}}>{d.actualVisits}</td>
+                  <td style={{padding:"10px 12px"}}>{d.newPatients}</td>
+                  <td style={{padding:"10px 12px",color:"#dc2626"}}>{d.cancelledCount}</td>
+                  <td style={{padding:"10px 12px"}}>{d.trialCount}</td>
+                  <td style={{padding:"10px 12px"}}>{d.lineCount}</td>
+                  <td style={{padding:"10px 12px"}}>{d.nextBookingCount}</td>
+                  <td style={{padding:"10px 12px"}}>{d.nextBookingRate}%</td>
+                  <td style={{padding:"10px 12px"}}>{d.contractCount}</td>
+                  <td style={{padding:"10px 12px"}}>{d.contractRate}%</td>
+                  <td style={{padding:"10px 12px",fontWeight:700,color:"#d97706"}}>{fmtYen(d.sales)}</td>
+                  <td style={{padding:"10px 12px"}}>{fmtYen(d.salesPerVisit)}</td>
+                  <td style={{padding:"10px 12px",whiteSpace:"nowrap"}}>{d.staffCount}名　<span style={{fontSize:11,color:"#94a3b8"}}>（{d.staffCount>0?(d.actualVisits/d.staffCount).toFixed(1):"—"}件/人）</span></td>
+                </tr>
+              );
+            })}
+            {dayStats.length>0&&(
+              <tr style={{background:"#f0fdf4",borderTop:"2px solid #86efac"}}>
+                <td style={{padding:"12px",fontWeight:800,color:"#065f46",whiteSpace:"nowrap"}}>{dateList.length}日間合計</td>
+                <td style={{padding:"12px",fontWeight:800}}>{totals.totalBookings}</td>
+                <td style={{padding:"12px",fontWeight:800,color:"#059669"}}>{totals.actualVisits}</td>
+                <td style={{padding:"12px",fontWeight:800}}>{totals.newPatients}</td>
+                <td style={{padding:"12px",fontWeight:800,color:"#dc2626"}}>{totals.cancelledCount}</td>
+                <td style={{padding:"12px",fontWeight:800}}>{totals.trialCount}</td>
+                <td style={{padding:"12px",fontWeight:800}}>{totals.lineCount}</td>
+                <td style={{padding:"12px",fontWeight:800}}>{totals.nextBookingCount}</td>
+                <td style={{padding:"12px",fontWeight:800}}>{totals.nextBookingRate}%</td>
+                <td style={{padding:"12px",fontWeight:800}}>{totals.contractCount}</td>
+                <td style={{padding:"12px",fontWeight:800}}>{totals.contractRate}%</td>
+                <td style={{padding:"12px",fontWeight:800,color:"#d97706"}}>{fmtYen(totals.sales)}</td>
+                <td style={{padding:"12px",fontWeight:800}}>{fmtYen(totals.salesPerVisit)}</td>
+                <td style={{padding:"12px"}}>—</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div style={{fontSize:11,color:"#94a3b8",marginTop:10,lineHeight:1.8}}>
+        ・実来院数：予約のうち「来院受付（QRチェックイン）」が完了したものを集計しています<br/>
+        ・500円体験：実来院者のうち、メニュー名に「体験」または「500」を含む予約の人数です<br/>
+        ・成約人数：その日に回数券・フリーパスの購入があった患者数です（passesテーブル。店舗の絞り込みは反映されません）<br/>
+        ・次回予約：来院した患者のうち、その日より後の日付で予約（キャンセル除く）を持っている人数です<br/>
+        ・稼働スタッフ：その日に予約対応があったスタッフの人数（ユニーク人数）と、実来院数を割った「1人あたり対応件数」です
+      </div>
+    </div>
+  );
+}
+
 function StatsPanel({bookings,payments,todayStr,stores}){
   const today=new Date(todayStr+"T00:00:00");
   const fmt=n=>"¥"+Number(n||0).toLocaleString();
@@ -5501,6 +5710,7 @@ function Dashboard({user,onLogout}){
     // 分析
     {section:"分析"},
     {id:"stats",label:"予約分析・サマリー",special:""},
+    {id:"preopen_stats",label:"📊 プレオープン集計",special:""},
     {id:"churn_alert",label:"🔔 離反防止アラート",special:""},
     // 臨床サポート
     {section:"臨床サポート"},
@@ -5910,6 +6120,7 @@ function Dashboard({user,onLogout}){
 
           {/* サマリー */}
           {view==="stats"&&<StatsPanel bookings={bookings} payments={payments} todayStr={todayStr} stores={stores}/>}
+          {view==="preopen_stats"&&<PreOpenStatsPanel bookings={bookings} payments={payments} stores={stores}/>}
 
           {/* 離反防止アラート */}
           {view==="churn_alert"&&<ChurnAlertPanel bookings={bookings} todayStr={todayStr}/>}
