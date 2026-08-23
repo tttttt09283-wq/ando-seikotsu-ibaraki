@@ -101,45 +101,54 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 
 const STAFF_LIST=[{id:1,name:"奥田",color:"#2563eb"},{id:2,name:"佐藤",color:"#059669"},{id:3,name:"細永",color:"#d97706"},{id:4,name:"田中",color:"#7c3aed"},{id:5,name:"岩永",color:"#dc2626"}];
 const STAFF={1:"奥田",2:"佐藤",3:"細永",4:"田中",5:"岩永"};
-const INSURANCE_PRICES={"無料施術体験会（60分）":0,"初診（60分）":0,"再診（30分）":0,"鍼灸（45分）":580,"骨盤矯正（40分）":580,"マッサージ（30分）":380};
-const JIFEE_PRICES={"矯正NE":3300,"矯正KO":2200,"ST":1650,"Hi":5500,"鍼":3300,"他":0};
+const INSURANCE_PRICES={"無料施術体験会（60分）":0,"初診（60分）":0,"再診（30分）":0};
+// 保険（鍼灸・手技療法）：負担割合×回数ごとの金額（直接引き当て）
+const INSURANCE_AMOUNT_TABLE={
+  "鍼灸併用":{"3割":{"初診":1100,"2回目以降":550},"2割":{"初診":750,"2回目以降":550},"1割":{"初診":400,"2回目以降":200}},
+  "鍼灸のみ":{"3割":{"初診":1650,"2回目以降":650},"2割":{"初診":1300,"2回目以降":500},"1割":{"初診":950,"2回目以降":400}},
+  "手技療法":{
+    "3割":{"初診":1650,"2回目":1100,"3回目":1100,"4回目以降":800},
+    "2割":{"初診":1300,"2回目":950,"3回目":950,"4回目以降":600},
+    "1割":{"初診":950,"2回目":600,"3回目":600,"4回目以降":400},
+  },
+};
+const JIFEE_PRICES={"姿勢矯正":3600,"骨盤矯正":3600,"ストレッチ":3600,"手技療法（マッサージ）":3600,"鍼":3600,"アジャスト・超音波":1100,"鍼治療・ハイボルテージ":1650};
 
 // カテゴリ別自費メニュー
 const JIFEE_CATEGORIES=[
   {
-    id:"spot",label:"スポット施術",color:"#059669",
+    id:"spot",label:"単発メニュー",color:"#059669",
     items:[
-      {label:"矯正NE",amount:3300},
-      {label:"矯正KO",amount:2200},
-      {label:"ST",amount:1650},
-      {label:"Hi（ハイボルテージ）",amount:5500},
-      {label:"鍼",amount:3300},
-      {label:"EMS体験",amount:1100},
-      {label:"EMS単発",amount:3300},
-      {label:"その他",amount:0},
+      {label:"姿勢矯正",amount:3600},
+      {label:"骨盤矯正",amount:3600},
+      {label:"ストレッチ",amount:3600},
+      {label:"手技療法（マッサージ）",amount:3600},
+      {label:"鍼",amount:3600},
+      {label:"アジャスト・超音波",amount:1100},
+      {label:"鍼治療・ハイボルテージ",amount:1650},
     ]
   },
   {
     id:"kaisu",label:"回数券",color:"#2563eb",
     items:[
-      {label:"アジャスト5回券",amount:4400},
-      {label:"アジャスト11回券",amount:8800},
-      {label:"アジャスト23回券",amount:17600},
-      {label:"鍼・Hi 5回券",amount:6000},
-      {label:"鍼・Hi 11回券",amount:12000},
-      {label:"鍼・Hi 23回券",amount:24000},
-      {label:"EMS 8回券",amount:24000},
-      {label:"EMS 16回券",amount:45600},
-      {label:"EMS 24回券",amount:66000},
-      {label:"EMS 32回券",amount:84800},
+      {label:"アジャスト・超音波 5回券",amount:4400},
+      {label:"アジャスト・超音波 11回券",amount:8800},
+      {label:"アジャスト・超音波 23回券",amount:17600},
+      {label:"鍼治療・ハイボルテージ 5回券",amount:6000},
+      {label:"鍼治療・ハイボルテージ 11回券",amount:12000},
+      {label:"鍼治療・ハイボルテージ 23回券",amount:24000},
+      {label:"姿勢矯正等 8回券",amount:28200},
+      {label:"姿勢矯正等 16回券",amount:54600},
+      {label:"姿勢矯正等 24回券",amount:79200},
     ]
   },
   {
     id:"fp",label:"フリーパス",color:"#7c3aed",
     items:[
-      {label:"FP 1ヶ月",amount:12000},
-      {label:"FP 3ヶ月",amount:34500},
-      {label:"FP 6ヶ月",amount:66000},
+      {label:"フリーパス 1ヶ月",amount:13200},
+      {label:"フリーパス 3ヶ月",amount:38000},
+      {label:"フリーパス 6ヶ月",amount:72600},
+      {label:"フリーパス 12ヶ月",amount:132000},
     ]
   },
 ];
@@ -183,8 +192,11 @@ let state={insuranceAmount:0,jifeeItems:[],payments:[],done:false,saving:false,n
 const CLINIC_NAME_FALLBACK="あんど整骨院";
 
 function getMenuByVisit(visit){if(visit===1) return "初診（60分）";if(visit===2) return "初診（60分）";return "再診（30分）";}
-function getInsMenuByVisit(visit){if(visit===1) return "初診（60分）";if(visit===2) return "初診（60分）";if(visit===3) return "再診（30分）";return "3回目以降";}
-function calcInsuranceAmount(menuName, rate){const base = BASE_PRICES[menuName]||0;return Math.ceil(base * INSURANCE_RATES[rate]);}
+function getInsMenuByVisit(visit){if(visit===1) return "初診";if(visit===2) return "2回目";if(visit===3) return "3回目";return "4回目以降";}
+function calcInsuranceAmount(menuName, rate){
+  const table=INSURANCE_AMOUNT_TABLE["手技療法"];
+  return (table&&table[rate]&&table[rate][menuName])||0;
+}
 
 function addNextBooking(){
   const nextVisit = visitCount + state.nextBookings.length + 1;
@@ -525,7 +537,7 @@ function render(){
               <span style="font-size:12px;color:#666;">円</span>
             </div>
             <div class="quick-btns">
-              ${[0,380,580,880,1100].map(v=>`<button class="quick-btn" onclick="state.insuranceAmount=${v};document.getElementById('insuranceAmount').value=${v};renderSummary();">${v===0?"¥0":"¥"+v}</button>`).join("")}
+              ${[0,200,400,500,550,650,750,950,1100,1650].map(v=>`<button class="quick-btn" onclick="state.insuranceAmount=${v};document.getElementById('insuranceAmount').value=${v};renderSummary();">${v===0?"¥0":"¥"+v}</button>`).join("")}
             </div>
           </div>
         </div>
