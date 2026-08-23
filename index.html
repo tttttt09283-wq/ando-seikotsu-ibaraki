@@ -119,65 +119,74 @@ const MENU_CATEGORIES = [
   {
     id:"insurance", label:"保険", color:"#2563eb",
     subs:[
-      {id:"ins_3", label:"3割",
+      {id:"ins_hari", label:"鍼灸（3割/2割/1割）",
         items:[
-          {name:"初診",            duration:60, price:1200},
-          {name:"2回目",           duration:30, price:1200},
-          {name:"3回目以降",       duration:30, price:1200},
-          {name:"3回目以降追加",   duration:10, price:150},
-          {name:"カルテ管理料",    duration:10, price:150},
-          {name:"新患包帯",        duration:10, price:1500},
-          {name:"保険交通 初診",          duration:60, price:1100},
-          {name:"保険交通 2回目以降",     duration:30, price:1100},
-          {name:"保険交通 窓口払い",      duration:10, price:200},
-          {name:"保険金3割 初診",         duration:60, price:1750},
-          {name:"保険金3割 2回目以降",    duration:30, price:1650},
-          {name:"保険金のみ 2回目以降",   duration:30, price:1050},
-          {name:"保険金のみ400 2回目以降",duration:30, price:250},
+          {name:"鍼灸併用 3割 初診",        duration:20, price:1100},
+          {name:"鍼灸併用 3割 2回目以降",   duration:20, price:550},
+          {name:"鍼灸のみ 3割 初診",        duration:20, price:1650},
+          {name:"鍼灸のみ 3割 2回目以降",   duration:20, price:650},
+          {name:"鍼灸併用 2割 初診",        duration:20, price:750},
+          {name:"鍼灸併用 2割 2回目以降",   duration:20, price:550},
+          {name:"鍼灸のみ 2割 初診",        duration:20, price:1300},
+          {name:"鍼灸のみ 2割 2回目以降",   duration:20, price:500},
+          {name:"鍼灸併用 1割 初診",        duration:20, price:400},
+          {name:"鍼灸併用 1割 2回目以降",   duration:20, price:200},
+          {name:"鍼灸のみ 1割 初診",        duration:20, price:950},
+          {name:"鍼灸のみ 1割 2回目以降",   duration:20, price:400},
+          {name:"保険請求代行料（来院1日につき）", duration:0, price:300},
         ]},
-      {id:"ins_2", label:"2割",
+      {id:"ins_teshiki", label:"手技療法（3割/2割/1割）",
         items:[
-          {name:"2割 初診",        duration:60, price:1200},
-          {name:"2割 2回目",       duration:30, price:1200},
-          {name:"2割 3回目以降",   duration:30, price:700},
-          {name:"保険金2割 初診",       duration:60, price:1750},
-          {name:"保険金2割 2回目以降",  duration:30, price:1650},
-        ]},
-      {id:"ins_1", label:"1割",
-        items:[
-          {name:"1割 初診",        duration:60, price:250},
-          {name:"1割 2回目",       duration:30, price:400},
-          {name:"1割 3回目以降",   duration:30, price:1400},
-          {name:"1割 3回目追加",   duration:10, price:50},
-          {name:"保険金1割 初診",       duration:60, price:1300},
-          {name:"保険金1割 2回目以降",  duration:30, price:1200},
+          {name:"手技療法 3割 初診",        duration:20, price:1650},
+          {name:"手技療法 3割 2回目",       duration:20, price:1100},
+          {name:"手技療法 3割 3回目",       duration:20, price:1100},
+          {name:"手技療法 3割 4回目以降",   duration:20, price:800},
+          {name:"手技療法 2割 初診",        duration:20, price:1300},
+          {name:"手技療法 2割 2回目",       duration:20, price:950},
+          {name:"手技療法 2割 3回目",       duration:20, price:950},
+          {name:"手技療法 2割 4回目以降",   duration:20, price:600},
+          {name:"手技療法 1割 初診",        duration:20, price:950},
+          {name:"手技療法 1割 2回目",       duration:20, price:600},
+          {name:"手技療法 1割 3回目",       duration:20, price:600},
+          {name:"手技療法 1割 4回目以降",   duration:20, price:400},
+          {name:"医療助成（初診）",         duration:0,  price:500},
+          {name:"医療助成（2回目）",        duration:0,  price:500},
+          {name:"自賠責",                   duration:0,  price:0},
+          {name:"手技療法（施術料）",       duration:20, price:3600},
         ]},
     ],
   },
   {
     id:"jifee", label:"自費", color:"#059669",
     subs:[
-      {id:"jifee_single", label:"1回メニュー",
+      {id:"jifee_single", label:"単発メニュー",
         items:[
-          {name:"整体",            duration:30, price:3830},
-          {name:"ハイボルテージ",  duration:30, price:3830},
-          {name:"スキャン",        duration:30, price:3830},
-          {name:"EMS",             duration:30, price:3830},
-          {name:"手技療法 1回",    duration:30, price:3830},
-          {name:"美容鍼 小顔矯正", duration:60, price:7230},
-          {name:"鍼灸",            duration:60, price:1110},
-          {name:"推拿",            duration:30, price:1110},
-          {name:"深層",            duration:30, price:5000},
-          {name:"筋膜",            duration:30, price:1100},
+          {name:"姿勢矯正",                 duration:30, price:3600},
+          {name:"骨盤矯正",                 duration:30, price:3600},
+          {name:"ストレッチ",               duration:30, price:3600},
+          {name:"手技療法（マッサージ）",   duration:30, price:3600},
+          {name:"鍼",                       duration:30, price:3600},
+          {name:"アジャスト・超音波",       duration:20, price:1100},
+          {name:"鍼治療・ハイボルテージ",   duration:20, price:1650},
         ]},
-      {id:"jifee_pass", label:"回数券・FP",
+      {id:"jifee_ticket", label:"回数券",
         items:[
-          {name:"手技療法 1ヶ月",  duration:30, price:3830},
-          {name:"フリーパス 1ヶ月",duration:30, price:12200},
-          {name:"フリーパス 3ヶ月",duration:30, price:27800},
-          {name:"フリーパス 3ヶ月（特別）",duration:30, price:132000},
-          {name:"回数券 10回",     duration:30, price:28150},
-          {name:"回数券 24回",     duration:30, price:54350},
+          {name:"アジャスト・超音波 5回券",         duration:20, price:4400},
+          {name:"アジャスト・超音波 11回券",        duration:20, price:8800},
+          {name:"アジャスト・超音波 23回券",        duration:20, price:17600},
+          {name:"鍼治療・ハイボルテージ 5回券",     duration:20, price:6000},
+          {name:"鍼治療・ハイボルテージ 11回券",    duration:20, price:12000},
+          {name:"鍼治療・ハイボルテージ 23回券",    duration:20, price:24000},
+          {name:"姿勢矯正・骨盤矯正・ストレッチ・鍼治療 8回券",  duration:30, price:28200},
+          {name:"姿勢矯正・骨盤矯正・ストレッチ・鍼治療 16回券", duration:30, price:54600},
+          {name:"姿勢矯正・骨盤矯正・ストレッチ・鍼治療 24回券", duration:30, price:79200},
+        ]},
+      {id:"jifee_pass", label:"フリーパス",
+        items:[
+          {name:"フリーパス 1ヶ月",   duration:30, price:13200},
+          {name:"フリーパス 3ヶ月",   duration:30, price:38000},
+          {name:"フリーパス 6ヶ月",   duration:30, price:72600},
+          {name:"フリーパス 12ヶ月",  duration:30, price:132000},
         ]},
     ],
   },
@@ -186,20 +195,9 @@ const MENU_CATEGORIES = [
     subs:[
       {id:"other_all", label:"すべて",
         items:[
-          {name:"無料カウンセリング", duration:60, price:0},
-          {name:"体験施術",           duration:60, price:0},
-          {name:"初回特典",           duration:60, price:10800},
-          {name:"肩こり",             duration:30, price:8800},
-          {name:"片腕",               duration:30, price:6800},
-          {name:"不定愁訴",           duration:30, price:1100},
-          {name:"不定愁訴2",          duration:30, price:1850},
-          {name:"半身",               duration:30, price:7200},
-          {name:"全身",               duration:30, price:14400},
-          {name:"鍼 両足",            duration:30, price:14400},
-          {name:"鍼 肩",              duration:30, price:2200},
-          {name:"鍼 肩こり",          duration:30, price:7200},
-          {name:"顎",                 duration:30, price:7200},
-          {name:"増量 忠告なし",      duration:10, price:0},
+          {name:"無料カウンセリング",             duration:60, price:0},
+          {name:"体験施術",                       duration:60, price:0},
+          {name:"ワンコイン施術体験会（60分）",   duration:60, price:500},
         ]},
     ],
   },
@@ -207,10 +205,15 @@ const MENU_CATEGORIES = [
 // 全itemsをフラット化するヘルパー
 function allCatItems(cat){ return cat.subs.flatMap(s=>s.items); }
 
-// 後方互換：全メニュー名一覧・時間マップ
-const MENUS = MENU_CATEGORIES.flatMap(c=>allCatItems(c).map(i=>i.name));
-const DURATION = Object.fromEntries(MENU_CATEGORIES.flatMap(c=>allCatItems(c).map(i=>[i.name,i.duration])));
-const MENU_PRICE = Object.fromEntries(MENU_CATEGORIES.flatMap(c=>allCatItems(c).map(i=>[i.name,i.price])));
+// 後方互換：全メニュー名一覧・時間マップ（下でカスタムメニューとマージされる）
+const BASE_MENUS = MENU_CATEGORIES.flatMap(c=>allCatItems(c).map(i=>i.name));
+const BASE_DURATION = Object.fromEntries(MENU_CATEGORIES.flatMap(c=>allCatItems(c).map(i=>[i.name,i.duration])));
+const BASE_MENU_PRICE = Object.fromEntries(MENU_CATEGORIES.flatMap(c=>allCatItems(c).map(i=>[i.name,i.price])));
+// これらはDashboardが「menus」テーブル（メニュー・コース管理で追加されたもの）を
+// 読み込み次第、実際の値に上書きされる（下のuseEffectを参照）
+let MENUS=BASE_MENUS;
+let DURATION=BASE_DURATION;
+let MENU_PRICE=BASE_MENU_PRICE;
 const DURATION_OPTIONS = Array.from({length:12},(_,i)=>(i+1)*10); // 10〜120分
 
 // ===== 回数券・フリーパス設定（メニュー名 → 券種の内容） =====
@@ -1692,11 +1695,28 @@ function StatsPanel({bookings,payments,todayStr,stores}){
 }
 
 
-function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,save,onClose,onDelete,onCancel,businessHours,closures,storeStaffList,isStaffWorkingOnDate,staffCanDoMenus,getLaneCount}){
+function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,save,onClose,onDelete,onCancel,businessHours,closures,storeStaffList,isStaffWorkingOnDate,staffCanDoMenus,getLaneCount,customMenus}){
   const [searchQ,setSearchQ]=React.useState("");
   const [searchResults,setSearchResults]=React.useState([]);
   const [searching,setSearching]=React.useState(false);
   const [showSearch,setShowSearch]=React.useState(editId===null&&!form.patient_name);
+
+  // 「メニュー・コース管理」で追加されたメニューを、カテゴリごとにまとめて1つの追加タブとして表示する
+  const DISPLAY_CATEGORIES=React.useMemo(()=>{
+    if(!customMenus||customMenus.length===0) return MENU_CATEGORIES;
+    const byCat={};
+    customMenus.forEach(m=>{
+      const cat=m.category||"自費治療";
+      if(!byCat[cat]) byCat[cat]=[];
+      byCat[cat].push({name:m.name,duration:m.duration||30,price:m.price||0});
+    });
+    const customCat={
+      id:"custom", label:"追加メニュー", color:"#7c3aed",
+      subs:Object.entries(byCat).map(([label,items])=>({id:"custom_"+label,label,items})),
+    };
+    return [...MENU_CATEGORIES,customCat];
+  },[customMenus]);
+
   const [selCategory,setSelCategory]=React.useState(MENU_CATEGORIES[0].id);
   const [selSub,setSelSub]=React.useState(MENU_CATEGORIES[0].subs[0].id);
 
@@ -1871,14 +1891,14 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
       <div className="form-group">
         <label className="form-label">メニュー（複数選択可）</label>
         <div style={{display:"flex",gap:4,marginBottom:8,flexWrap:"wrap"}}>
-          {MENU_CATEGORIES.map(cat=>(
+          {DISPLAY_CATEGORIES.map(cat=>(
             <button key={cat.id} onClick={()=>{setSelCategory(cat.id);setSelSub(cat.subs[0].id);}} style={{padding:"5px 12px",borderRadius:8,border:"1.5px solid",borderColor:selCategory===cat.id?cat.color:"#e2e8f0",background:selCategory===cat.id?cat.color:"white",color:selCategory===cat.id?"white":cat.color,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
               {cat.label}
             </button>
           ))}
         </div>
         {(()=>{
-          const cat=MENU_CATEGORIES.find(c=>c.id===selCategory)||MENU_CATEGORIES[0];
+          const cat=DISPLAY_CATEGORIES.find(c=>c.id===selCategory)||DISPLAY_CATEGORIES[0];
           const sub=cat.subs.find(s=>s.id===selSub)||cat.subs[0];
           return(
             <div>
@@ -5219,6 +5239,7 @@ function Dashboard({user,onLogout}){
   const [staffStoreMap,setStaffStoreMap]=React.useState({}); // {staffId: [storeIds]}
   const [staffMenuMap,setStaffMenuMap]=React.useState({}); // {staffId: [対応可能メニュー名] | undefined(=全メニュー対応)}
   const [staffLaneMap,setStaffLaneMap]=React.useState({}); // {staffId: 同時受付レーン数（未設定は1）}
+  const [customMenus,setCustomMenus]=React.useState([]); // 「メニュー・コース管理」で追加された有効なメニュー一覧
 
   const isAdmin=user.role==="admin";
   const todayStr=fmtDate(today);
@@ -5244,7 +5265,7 @@ function Dashboard({user,onLogout}){
 
   async function fetchAll(){
     try{
-      const [b,br,py,st,ws,cs]=await Promise.all([sb.select("bookings","?order=date.asc,time.asc"),sb.select("staff_breaks","?order=date.asc,time.asc"),sb.select("payments","?order=payment_date.desc"),sb.select("stores","?order=id.asc"),sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc"),sb.select("clinic_staff","?select=id,store_ids,allowed_menus,lane_count")]);
+      const [b,br,py,st,ws,cs,mn]=await Promise.all([sb.select("bookings","?order=date.asc,time.asc"),sb.select("staff_breaks","?order=date.asc,time.asc"),sb.select("payments","?order=payment_date.desc"),sb.select("stores","?order=id.asc"),sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc"),sb.select("clinic_staff","?select=id,store_ids,allowed_menus,lane_count"),sb.select("menus","?active=eq.true&order=display_order.asc,id.asc")]);
       setBookings(Array.isArray(b)?b:[]);setBreaks(Array.isArray(br)?br:[]);setPayments(Array.isArray(py)?py:[]);
       const storeList=Array.isArray(st)?st:[];
       setStores(storeList);
@@ -5261,6 +5282,14 @@ function Dashboard({user,onLogout}){
       setStaffStoreMap(map);
       setStaffMenuMap(menuMap);
       setStaffLaneMap(laneMap);
+      // 「メニュー・コース管理」で追加されたメニューを、既存のハードコードされたメニュー一覧にマージする。
+      // これにより、新しく登録したメニューも予約時間の計算（DURATION）や金額表示（MENU_PRICE）で
+      // すぐに使えるようになる。
+      const custom=Array.isArray(mn)?mn:[];
+      setCustomMenus(custom);
+      MENUS=[...BASE_MENUS,...custom.map(m=>m.name)];
+      DURATION={...BASE_DURATION,...Object.fromEntries(custom.map(m=>[m.name,m.duration||30]))};
+      MENU_PRICE={...BASE_MENU_PRICE,...Object.fromEntries(custom.map(m=>[m.name,m.price||0]))};
     }catch(e){console.error(e);}
     setLoading(false);
   }
@@ -6165,7 +6194,7 @@ function Dashboard({user,onLogout}){
 
           {/* 予約フォーム */}
           {view==="form"&&form&&(
-            <FormPanel form={form} setForm={setForm} editId={editId} conflict={conflict} setConflict={setConflict} isAdmin={isAdmin} bookings={bookings} save={save} onClose={()=>setView("calendar")} onDelete={()=>setDelConfirm(bookings.find(b=>b.id===editId))} onCancel={()=>setCancelModalBooking(bookings.find(b=>b.id===editId))} businessHours={businessHours} closures={closures} storeStaffList={storeStaff} isStaffWorkingOnDate={isStaffWorkingOnDate} staffCanDoMenus={staffCanDoMenus} getLaneCount={getLaneCount}/>
+            <FormPanel form={form} setForm={setForm} editId={editId} conflict={conflict} setConflict={setConflict} isAdmin={isAdmin} bookings={bookings} save={save} onClose={()=>setView("calendar")} onDelete={()=>setDelConfirm(bookings.find(b=>b.id===editId))} onCancel={()=>setCancelModalBooking(bookings.find(b=>b.id===editId))} businessHours={businessHours} closures={closures} storeStaffList={storeStaff} isStaffWorkingOnDate={isStaffWorkingOnDate} staffCanDoMenus={staffCanDoMenus} getLaneCount={getLaneCount} customMenus={customMenus}/>
           )}
         </div>
       </div>
