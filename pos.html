@@ -23,6 +23,12 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
 .ins-input{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
 .ins-input input{flex:1;padding:8px 10px;border:1.5px solid #ddd;border-radius:8px;font-size:16px;font-weight:700;text-align:right;}
+.ins-tab-row{display:flex;gap:5px;margin-bottom:10px;}
+.ins-tab-btn{flex:1;padding:7px 4px;border-radius:8px;border:2px solid #e2e8f0;background:white;color:#374151;font-size:11px;font-weight:700;cursor:pointer;text-align:center;}
+.ins-tab-btn.sel{border-color:#1e3a5f;background:#1e3a5f;color:white;}
+.ins-rate-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;}
+.ins-rate-btn{padding:8px 10px;border-radius:8px;border:1.5px solid #1e3a5f;background:white;color:#1e3a5f;cursor:pointer;font-size:12px;font-weight:700;text-align:left;line-height:1.4;}
+.ins-rate-btn.sel{background:#1e3a5f;color:white;}
 .quick-btns{display:flex;gap:5px;flex-wrap:wrap;}
 .quick-btn{padding:5px 8px;border-radius:6px;border:1.5px solid #ddd;background:white;cursor:pointer;font-size:11px;font-weight:600;color:#444;}
 .jifee-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px;}
@@ -188,7 +194,7 @@ function todayStr(){
 }
 
 let booking=null,treatment=null,visitCount=1,storeInfo=null;
-let state={insuranceAmount:0,jifeeItems:[],payments:[],done:false,saving:false,nextBookings:[],savingBookings:false,bookingsSaved:false,jifeeTab:"spot"};
+let state={insuranceAmount:0,insuranceType:null,insuranceRate:null,jifeeItems:[],payments:[],done:false,saving:false,nextBookings:[],savingBookings:false,bookingsSaved:false,jifeeTab:"spot"};
 const CLINIC_NAME_FALLBACK="あんど整骨院";
 
 function getMenuByVisit(visit){if(visit===1) return "初診（60分）";if(visit===2) return "初診（60分）";return "再診（30分）";}
@@ -196,6 +202,29 @@ function getInsMenuByVisit(visit){if(visit===1) return "初診";if(visit===2) re
 function calcInsuranceAmount(menuName, rate){
   const table=INSURANCE_AMOUNT_TABLE["手技療法"];
   return (table&&table[rate]&&table[rate][menuName])||0;
+}
+
+// ===== 会計画面：施術区分・負担割合ボタンからの自動金額計算 =====
+// 鍼灸系（鍼灸併用・鍼灸のみ）は「初診／2回目以降」の2段階、手技療法は「初診／2回目／3回目／4回目以降」の4段階
+function getVisitTierForType(type,visit){
+  if(type==="手技療法") return getInsMenuByVisit(visit);
+  return visit===1?"初診":"2回目以降";
+}
+function selectInsuranceType(type){
+  state.insuranceType=(state.insuranceType===type)?null:type;
+  state.insuranceRate=null;
+  render();
+}
+function selectInsuranceRateAmount(rate,amount){
+  if(state.insuranceRate===rate){
+    // もう一度押すと選択解除
+    state.insuranceRate=null;
+    render();
+    return;
+  }
+  state.insuranceRate=rate;
+  state.insuranceAmount=amount;
+  render();
 }
 
 function addNextBooking(){
@@ -532,6 +561,27 @@ function render(){
         <div class="card" style="margin-bottom:0;">
           <div class="card-header blue">🏥 保険窓口負担</div>
           <div class="card-body">
+            <div class="ins-tab-row">
+              ${["鍼灸併用","鍼灸のみ","手技療法"].map(t=>`<button class="ins-tab-btn${state.insuranceType===t?" sel":""}" onclick="selectInsuranceType('${t}')">${t}</button>`).join("")}
+            </div>
+            ${state.insuranceType?(()=>{
+              const table=INSURANCE_AMOUNT_TABLE[state.insuranceType];
+              const tier=getVisitTierForType(state.insuranceType,visitCount);
+              return`
+                <div class="ins-rate-grid">
+                  ${["3割","2割","1割"].map(r=>{
+                    const amount=(table&&table[r]&&table[r][tier])||0;
+                    const isSel=state.insuranceRate===r;
+                    return`
+                      <button class="ins-rate-btn${isSel?" sel":""}" onclick="selectInsuranceRateAmount('${r}',${amount})">
+                        <div style="font-size:12px;font-weight:700;">${r}</div>
+                        <div style="font-size:10px;opacity:.85;margin-top:2px;">${fmt(amount)}</div>
+                      </button>`;
+                  }).join("")}
+                </div>
+                <div style="font-size:11px;color:#0891b2;font-weight:700;margin-bottom:10px;">${visitCount}回目来院（${tier}）の金額です</div>
+              `;
+            })():`<div style="font-size:11px;color:#9ca3af;margin-bottom:10px;">↑施術区分を選ぶと負担割合ごとの金額が表示されます</div>`}
             <div class="ins-input">
               <input type="number" id="insuranceAmount" value="${state.insuranceAmount}" placeholder="0" oninput="state.insuranceAmount=this.value;renderSummary()"/>
               <span style="font-size:12px;color:#666;">円</span>
