@@ -26,9 +26,21 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 .ins-tab-row{display:flex;gap:5px;margin-bottom:10px;}
 .ins-tab-btn{flex:1;padding:7px 4px;border-radius:8px;border:2px solid #e2e8f0;background:white;color:#374151;font-size:11px;font-weight:700;cursor:pointer;text-align:center;}
 .ins-tab-btn.sel{border-color:#1e3a5f;background:#1e3a5f;color:white;}
-.ins-rate-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;}
-.ins-rate-btn{padding:8px 10px;border-radius:8px;border:1.5px solid #1e3a5f;background:white;color:#1e3a5f;cursor:pointer;font-size:12px;font-weight:700;text-align:left;line-height:1.4;}
-.ins-rate-btn.sel{background:#1e3a5f;color:white;}
+.ins-rate-row{display:flex;gap:5px;margin-bottom:10px;flex-wrap:wrap;}
+.ins-rate-pill{flex:1;min-width:56px;padding:8px 4px;border-radius:20px;border:2px solid #1e3a5f;background:white;color:#1e3a5f;font-size:12px;font-weight:800;cursor:pointer;text-align:center;}
+.ins-rate-pill.sel{background:#1e3a5f;color:white;}
+.ins-history-box{background:#fdf6ec;border:1.5px solid #e8c88a;border-radius:12px;padding:12px;margin-bottom:10px;}
+.ins-history-title{font-size:11px;font-weight:800;color:#92722a;margin-bottom:8px;text-align:center;}
+.ins-stepper{display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:10px;}
+.ins-stepper-arrow{width:38px;height:38px;border-radius:8px;border:none;background:#c9954a;color:white;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.ins-stepper-arrow:disabled{background:#e5d3b3;cursor:default;}
+.ins-stepper-center{text-align:center;min-width:110px;}
+.ins-stepper-tier{font-size:13px;font-weight:800;color:#1e3a5f;}
+.ins-stepper-amount{font-size:22px;font-weight:800;color:#c9954a;}
+.ins-history-list{display:flex;flex-direction:column;gap:4px;}
+.ins-history-item{display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-radius:8px;border:1px solid #e8c88a;background:white;cursor:pointer;font-size:12px;}
+.ins-history-item.sel{background:#c9954a;color:white;border-color:#c9954a;}
+.ins-history-item span:last-child{font-weight:800;}
 .quick-btns{display:flex;gap:5px;flex-wrap:wrap;}
 .quick-btn{padding:5px 8px;border-radius:6px;border:1.5px solid #ddd;background:white;cursor:pointer;font-size:11px;font-weight:600;color:#444;}
 .jifee-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px;}
@@ -194,7 +206,7 @@ function todayStr(){
 }
 
 let booking=null,treatment=null,visitCount=1,storeInfo=null;
-let state={insuranceAmount:0,insuranceType:null,insuranceRate:null,jifeeItems:[],payments:[],done:false,saving:false,nextBookings:[],savingBookings:false,bookingsSaved:false,jifeeTab:"spot"};
+let state={insuranceAmount:0,insuranceType:null,insuranceRate:null,insuranceTier:null,jifeeItems:[],payments:[],done:false,saving:false,nextBookings:[],savingBookings:false,bookingsSaved:false,jifeeTab:"spot"};
 const CLINIC_NAME_FALLBACK="あんど整骨院";
 
 function getMenuByVisit(visit){if(visit===1) return "初診（60分）";if(visit===2) return "初診（60分）";return "再診（30分）";}
@@ -210,19 +222,35 @@ function getVisitTierForType(type,visit){
   if(type==="手技療法") return getInsMenuByVisit(visit);
   return visit===1?"初診":"2回目以降";
 }
+function getInsuranceAmountFor(type,rate,tier){
+  const table=INSURANCE_AMOUNT_TABLE[type];
+  return (table&&table[rate]&&table[rate][tier])||0;
+}
 function selectInsuranceType(type){
   state.insuranceType=(state.insuranceType===type)?null:type;
   state.insuranceRate=null;
+  state.insuranceTier=null;
   render();
 }
-function selectInsuranceRateAmount(rate,amount){
-  if(state.insuranceRate===rate){
-    // もう一度押すと選択解除
-    state.insuranceRate=null;
-    render();
-    return;
+function selectInsuranceRate(rate){
+  state.insuranceRate=(state.insuranceRate===rate)?null:rate;
+  // 負担割合を選んだ時点で、この患者様の実際の来院回数に合う欄をデフォルト表示しておく
+  if(state.insuranceRate){
+    state.insuranceTier=getVisitTierForType(state.insuranceType,visitCount);
+  }else{
+    state.insuranceTier=null;
   }
-  state.insuranceRate=rate;
+  render();
+}
+function stepInsuranceTier(dir){
+  const tiers=state.insuranceType==="手技療法"?["初診","2回目","3回目","4回目以降"]:["初診","2回目以降"];
+  const curIdx=Math.max(0,tiers.indexOf(state.insuranceTier||tiers[0]));
+  const nextIdx=Math.min(tiers.length-1,Math.max(0,curIdx+dir));
+  state.insuranceTier=tiers[nextIdx];
+  render();
+}
+function confirmInsuranceTier(tier,amount){
+  state.insuranceTier=tier;
   state.insuranceAmount=amount;
   render();
 }
@@ -564,24 +592,39 @@ function render(){
             <div class="ins-tab-row">
               ${["鍼灸併用","鍼灸のみ","手技療法"].map(t=>`<button class="ins-tab-btn${state.insuranceType===t?" sel":""}" onclick="selectInsuranceType('${t}')">${t}</button>`).join("")}
             </div>
-            ${state.insuranceType?(()=>{
-              const table=INSURANCE_AMOUNT_TABLE[state.insuranceType];
-              const tier=getVisitTierForType(state.insuranceType,visitCount);
+            ${state.insuranceType?`
+              <div class="ins-rate-row">
+                ${["3割","2割","1割"].map(r=>`<button class="ins-rate-pill${state.insuranceRate===r?" sel":""}" onclick="selectInsuranceRate('${r}')">${r}</button>`).join("")}
+              </div>
+            `:`<div style="font-size:11px;color:#9ca3af;margin-bottom:10px;">↑施術区分を選ぶと、負担割合を選べます</div>`}
+            ${(state.insuranceType&&state.insuranceRate)?(()=>{
+              const tiers=state.insuranceType==="手技療法"?["初診","2回目","3回目","4回目以降"]:["初診","2回目以降"];
+              const curIdx=Math.max(0,tiers.indexOf(state.insuranceTier||tiers[0]));
+              const curTier=tiers[curIdx];
+              const curAmount=getInsuranceAmountFor(state.insuranceType,state.insuranceRate,curTier);
+              const suggestTier=getVisitTierForType(state.insuranceType,visitCount);
               return`
-                <div class="ins-rate-grid">
-                  ${["3割","2割","1割"].map(r=>{
-                    const amount=(table&&table[r]&&table[r][tier])||0;
-                    const isSel=state.insuranceRate===r;
-                    return`
-                      <button class="ins-rate-btn${isSel?" sel":""}" onclick="selectInsuranceRateAmount('${r}',${amount})">
-                        <div style="font-size:12px;font-weight:700;">${r}</div>
-                        <div style="font-size:10px;opacity:.85;margin-top:2px;">${fmt(amount)}</div>
-                      </button>`;
-                  }).join("")}
+                <div class="ins-history-box">
+                  <div class="ins-history-title">📋 履歴（${state.insuranceType}・${state.insuranceRate}）</div>
+                  <div class="ins-stepper">
+                    <button class="ins-stepper-arrow" onclick="stepInsuranceTier(-1)" ${curIdx<=0?"disabled":""}>▲</button>
+                    <div class="ins-stepper-center">
+                      <div class="ins-stepper-tier">${curTier}</div>
+                      <div class="ins-stepper-amount">${fmt(curAmount)}</div>
+                    </div>
+                    <button class="ins-stepper-arrow" onclick="stepInsuranceTier(1)" ${curIdx>=tiers.length-1?"disabled":""}>▼</button>
+                  </div>
+                  <button class="btn btn-outline" style="margin-bottom:8px;padding:9px;font-size:12px;" onclick="confirmInsuranceTier('${curTier}',${curAmount})">この金額で選択する</button>
+                  <div class="ins-history-list">
+                    ${tiers.map(t=>{
+                      const amt=getInsuranceAmountFor(state.insuranceType,state.insuranceRate,t);
+                      const isSel=state.insuranceTier===t;
+                      return`<div class="ins-history-item${isSel?" sel":""}" onclick="confirmInsuranceTier('${t}',${amt})"><span>${t}${t===suggestTier?"（この患者様の回数）":""}</span><span>${fmt(amt)}</span></div>`;
+                    }).join("")}
+                  </div>
                 </div>
-                <div style="font-size:11px;color:#0891b2;font-weight:700;margin-bottom:10px;">${visitCount}回目来院（${tier}）の金額です</div>
               `;
-            })():`<div style="font-size:11px;color:#9ca3af;margin-bottom:10px;">↑施術区分を選ぶと負担割合ごとの金額が表示されます</div>`}
+            })():""}
             <div class="ins-input">
               <input type="number" id="insuranceAmount" value="${state.insuranceAmount}" placeholder="0" oninput="state.insuranceAmount=this.value;renderSummary()"/>
               <span style="font-size:12px;color:#666;">円</span>
