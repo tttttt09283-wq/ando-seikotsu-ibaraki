@@ -11,7 +11,13 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 .header{background:linear-gradient(135deg,#1e3a5f,#2d6a9f);color:white;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;}
 .header h1{font-size:16px;font-weight:800;}
 .header p{font-size:11px;opacity:0.75;}
-.container{max-width:520px;margin:0 auto;padding:12px 16px;}
+.container{max-width:1400px;margin:0 auto;padding:12px 16px;}
+.main-grid{display:grid;grid-template-columns:1.3fr 1fr;gap:16px;align-items:start;}
+.main-grid .right-col{position:sticky;top:12px;}
+@media (max-width:900px){
+  .main-grid{display:block;}
+  .main-grid .right-col{position:static;}
+}
 .card{background:white;border-radius:10px;margin-bottom:10px;box-shadow:0 1px 6px rgba(0,0,0,0.07);overflow:hidden;}
 .card-header{padding:9px 14px;font-size:12px;font-weight:800;color:white;display:flex;align-items:center;gap:6px;}
 .card-header.blue{background:#1e3a5f;}
@@ -585,112 +591,115 @@ function render(){
       <div class="card">
         <div class="card-header blue">👤 ${booking.patient_name} 様　${booking.date} ${booking.time}　${STAFF[booking.staff_id]||""}先生　${visitCount}回目来院</div>
       </div>
-      <div class="two-col">
-        <div class="card" style="margin-bottom:0;">
-          <div class="card-header blue">🏥 保険窓口負担</div>
-          <div class="card-body">
-            <div class="ins-tab-row">
-              ${["鍼灸併用","鍼灸のみ","手技療法"].map(t=>`<button class="ins-tab-btn${state.insuranceType===t?" sel":""}" onclick="selectInsuranceType('${t}')">${t}</button>`).join("")}
-            </div>
-            ${state.insuranceType?`
-              <div class="ins-rate-row">
-                ${["3割","2割","1割"].map(r=>`<button class="ins-rate-pill${state.insuranceRate===r?" sel":""}" onclick="selectInsuranceRate('${r}')">${r}</button>`).join("")}
+      <div class="main-grid">
+        <div class="left-col">
+          <div class="card">
+            <div class="card-header blue">🏥 保険窓口負担</div>
+            <div class="card-body">
+              <div class="ins-tab-row">
+                ${["鍼灸併用","鍼灸のみ","手技療法"].map(t=>`<button class="ins-tab-btn${state.insuranceType===t?" sel":""}" onclick="selectInsuranceType('${t}')">${t}</button>`).join("")}
               </div>
-            `:`<div style="font-size:11px;color:#9ca3af;margin-bottom:10px;">↑施術区分を選ぶと、負担割合を選べます</div>`}
-            ${(state.insuranceType&&state.insuranceRate)?(()=>{
-              const tiers=state.insuranceType==="手技療法"?["初診","2回目","3回目","4回目以降"]:["初診","2回目以降"];
-              const curIdx=Math.max(0,tiers.indexOf(state.insuranceTier||tiers[0]));
-              const curTier=tiers[curIdx];
-              const curAmount=getInsuranceAmountFor(state.insuranceType,state.insuranceRate,curTier);
-              const suggestTier=getVisitTierForType(state.insuranceType,visitCount);
-              return`
-                <div class="ins-history-box">
-                  <div class="ins-history-title">📋 履歴（${state.insuranceType}・${state.insuranceRate}）</div>
-                  <div class="ins-stepper">
-                    <button class="ins-stepper-arrow" onclick="stepInsuranceTier(-1)" ${curIdx<=0?"disabled":""}>▲</button>
-                    <div class="ins-stepper-center">
-                      <div class="ins-stepper-tier">${curTier}</div>
-                      <div class="ins-stepper-amount">${fmt(curAmount)}</div>
-                    </div>
-                    <button class="ins-stepper-arrow" onclick="stepInsuranceTier(1)" ${curIdx>=tiers.length-1?"disabled":""}>▼</button>
-                  </div>
-                  <button class="btn btn-outline" style="margin-bottom:8px;padding:9px;font-size:12px;" onclick="confirmInsuranceTier('${curTier}',${curAmount})">この金額で選択する</button>
-                  <div class="ins-history-list">
-                    ${tiers.map(t=>{
-                      const amt=getInsuranceAmountFor(state.insuranceType,state.insuranceRate,t);
-                      const isSel=state.insuranceTier===t;
-                      return`<div class="ins-history-item${isSel?" sel":""}" onclick="confirmInsuranceTier('${t}',${amt})"><span>${t}${t===suggestTier?"（この患者様の回数）":""}</span><span>${fmt(amt)}</span></div>`;
-                    }).join("")}
-                  </div>
+              ${state.insuranceType?`
+                <div class="ins-rate-row">
+                  ${["3割","2割","1割"].map(r=>`<button class="ins-rate-pill${state.insuranceRate===r?" sel":""}" onclick="selectInsuranceRate('${r}')">${r}</button>`).join("")}
                 </div>
-              `;
-            })():""}
-            <div class="ins-input">
-              <input type="number" id="insuranceAmount" value="${state.insuranceAmount}" placeholder="0" oninput="state.insuranceAmount=this.value;renderSummary()"/>
-              <span style="font-size:12px;color:#666;">円</span>
-            </div>
-            <div class="quick-btns">
-              ${[0,400,500,600,780,800,950,1100,1150,1300,1650].map(v=>`<button class="quick-btn" onclick="state.insuranceAmount=${v};document.getElementById('insuranceAmount').value=${v};renderSummary();">${v===0?"¥0":"¥"+v}</button>`).join("")}
-            </div>
-            <div style="border-top:1px dashed #e5e7eb;margin-top:10px;padding-top:10px;">
-              <div style="font-size:11px;color:#94a3b8;font-weight:700;margin-bottom:6px;">諸費用（別途加算）</div>
-              <div style="display:flex;gap:6px;">
-                <button class="quick-btn" style="flex:1;border-color:#d97706;color:#d97706;" onclick="addJifee('カルテ管理料',500)">＋カルテ管理料 ¥500</button>
-                <button class="quick-btn" style="flex:1;border-color:#d97706;color:#d97706;" onclick="addJifee('検査料',1500)">＋検査料 ¥1,500</button>
+              `:`<div style="font-size:11px;color:#9ca3af;margin-bottom:10px;">↑施術区分を選ぶと、負担割合を選べます</div>`}
+              ${(state.insuranceType&&state.insuranceRate)?(()=>{
+                const tiers=state.insuranceType==="手技療法"?["初診","2回目","3回目","4回目以降"]:["初診","2回目以降"];
+                const curIdx=Math.max(0,tiers.indexOf(state.insuranceTier||tiers[0]));
+                const curTier=tiers[curIdx];
+                const curAmount=getInsuranceAmountFor(state.insuranceType,state.insuranceRate,curTier);
+                const suggestTier=getVisitTierForType(state.insuranceType,visitCount);
+                return`
+                  <div class="ins-history-box">
+                    <div class="ins-history-title">📋 履歴（${state.insuranceType}・${state.insuranceRate}）</div>
+                    <div class="ins-stepper">
+                      <button class="ins-stepper-arrow" onclick="stepInsuranceTier(-1)" ${curIdx<=0?"disabled":""}>▲</button>
+                      <div class="ins-stepper-center">
+                        <div class="ins-stepper-tier">${curTier}</div>
+                        <div class="ins-stepper-amount">${fmt(curAmount)}</div>
+                      </div>
+                      <button class="ins-stepper-arrow" onclick="stepInsuranceTier(1)" ${curIdx>=tiers.length-1?"disabled":""}>▼</button>
+                    </div>
+                    <button class="btn btn-outline" style="margin-bottom:8px;padding:9px;font-size:12px;" onclick="confirmInsuranceTier('${curTier}',${curAmount})">この金額で選択する</button>
+                    <div class="ins-history-list">
+                      ${tiers.map(t=>{
+                        const amt=getInsuranceAmountFor(state.insuranceType,state.insuranceRate,t);
+                        const isSel=state.insuranceTier===t;
+                        return`<div class="ins-history-item${isSel?" sel":""}" onclick="confirmInsuranceTier('${t}',${amt})"><span>${t}${t===suggestTier?"（この患者様の回数）":""}</span><span>${fmt(amt)}</span></div>`;
+                      }).join("")}
+                    </div>
+                  </div>
+                `;
+              })():""}
+              <div class="ins-input">
+                <input type="number" id="insuranceAmount" value="${state.insuranceAmount}" placeholder="0" oninput="state.insuranceAmount=this.value;renderSummary()"/>
+                <span style="font-size:12px;color:#666;">円</span>
+              </div>
+              <div class="quick-btns">
+                ${[0,400,500,600,780,800,950,1100,1150,1300,1650].map(v=>`<button class="quick-btn" onclick="state.insuranceAmount=${v};document.getElementById('insuranceAmount').value=${v};renderSummary();">${v===0?"¥0":"¥"+v}</button>`).join("")}
+              </div>
+              <div style="border-top:1px dashed #e5e7eb;margin-top:10px;padding-top:10px;">
+                <div style="font-size:11px;color:#94a3b8;font-weight:700;margin-bottom:6px;">諸費用（別途加算）</div>
+                <div style="display:flex;gap:6px;">
+                  <button class="quick-btn" style="flex:1;border-color:#d97706;color:#d97706;" onclick="addJifee('カルテ管理料',500)">＋カルテ管理料 ¥500</button>
+                  <button class="quick-btn" style="flex:1;border-color:#d97706;color:#d97706;" onclick="addJifee('検査料',1500)">＋検査料 ¥1,500</button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-        <div class="card" style="margin-bottom:0;">
-          <div class="card-header orange">💰 お会計</div>
-          <div class="card-body" id="summaryArea">${renderSummaryHtml()}</div>
-        </div>
-      </div>
-      <div style="height:10px;"></div>
-      <div class="card">
-        <div class="card-header green">💴 自費項目</div>
-        <div class="card-body">
-          <!-- カテゴリタブ -->
-          <div style="display:flex;gap:5px;margin-bottom:10px;">
-            ${JIFEE_CATEGORIES.map(cat=>`
-              <button data-cat="${cat.id}" onclick="setJifeeTab(this.dataset.cat)" style="flex:1;padding:7px 4px;border-radius:8px;border:2px solid ${state.jifeeTab===cat.id?cat.color:'#e2e8f0'};background:${state.jifeeTab===cat.id?cat.color:'white'};color:${state.jifeeTab===cat.id?'white':'#374151'};font-size:11px;font-weight:700;cursor:pointer;">${cat.label}</button>
-            `).join("")}
-          </div>
-          <!-- 選択中カテゴリのメニュー -->
-          ${(()=>{
-            const cat=JIFEE_CATEGORIES.find(c=>c.id===state.jifeeTab)||JIFEE_CATEGORIES[0];
-            return`<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">
-              ${cat.items.map((item,idx)=>`
-                <button class="jifee-btn" data-label="${item.label.replace(/"/g,'&quot;')}" data-amount="${item.amount}" onclick="addJifee(this.dataset.label,Number(this.dataset.amount))" style="border-color:${cat.color};color:${cat.color};text-align:left;padding:8px 10px;">
-                  <div style="font-size:12px;font-weight:700;">${item.label}</div>
-                  <div style="font-size:10px;color:#9ca3af;margin-top:2px;">${item.amount>0?fmt(item.amount):'金額入力'}</div>
-                </button>
+          <div class="card">
+            <div class="card-header green">💴 自費項目</div>
+            <div class="card-body">
+              <!-- カテゴリタブ -->
+              <div style="display:flex;gap:5px;margin-bottom:10px;">
+                ${JIFEE_CATEGORIES.map(cat=>`
+                  <button data-cat="${cat.id}" onclick="setJifeeTab(this.dataset.cat)" style="flex:1;padding:7px 4px;border-radius:8px;border:2px solid ${state.jifeeTab===cat.id?cat.color:'#e2e8f0'};background:${state.jifeeTab===cat.id?cat.color:'white'};color:${state.jifeeTab===cat.id?'white':'#374151'};font-size:11px;font-weight:700;cursor:pointer;">${cat.label}</button>
+                `).join("")}
+              </div>
+              <!-- 選択中カテゴリのメニュー -->
+              ${(()=>{
+                const cat=JIFEE_CATEGORIES.find(c=>c.id===state.jifeeTab)||JIFEE_CATEGORIES[0];
+                return`<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px;">
+                  ${cat.items.map((item,idx)=>`
+                    <button class="jifee-btn" data-label="${item.label.replace(/"/g,'&quot;')}" data-amount="${item.amount}" onclick="addJifee(this.dataset.label,Number(this.dataset.amount))" style="border-color:${cat.color};color:${cat.color};text-align:left;padding:8px 10px;">
+                      <div style="font-size:12px;font-weight:700;">${item.label}</div>
+                      <div style="font-size:10px;color:#9ca3af;margin-top:2px;">${item.amount>0?fmt(item.amount):'金額入力'}</div>
+                    </button>
+                  `).join("")}
+                </div>`;
+              })()}
+              <!-- 追加済み自費項目 -->
+              ${state.jifeeItems.map((item,i)=>`
+                <div class="jifee-item">
+                  <span>${item.label}</span>
+                  <input type="number" value="${item.amount}" onchange="updateJifee(${i},this.value)"/>
+                  <button onclick="removeJifee(${i})">✕</button>
+                </div>
               `).join("")}
-            </div>`;
-          })()}
-          <!-- 追加済み自費項目 -->
-          ${state.jifeeItems.map((item,i)=>`
-            <div class="jifee-item">
-              <span>${item.label}</span>
-              <input type="number" value="${item.amount}" onchange="updateJifee(${i},this.value)"/>
-              <button onclick="removeJifee(${i})">✕</button>
+              ${state.jifeeItems.length===0?`<div style="text-align:center;color:#d1d5db;font-size:12px;padding:4px 0;">上のボタンから追加</div>`:""}
             </div>
-          `).join("")}
-          ${state.jifeeItems.length===0?`<div style="text-align:center;color:#d1d5db;font-size:12px;padding:4px 0;">上のボタンから追加</div>`:""}
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-header purple">💳 支払方法（複数可）</div>
-        <div class="card-body">
-          <div class="pay-methods">
-            ${PAY_METHODS.map(m=>`<button class="pay-method-btn${state.payments.find(p=>p.method===m.id)?" active":""}" onclick="addPayment('${m.id}')">${m.icon} ${m.id}</button>`).join("")}
           </div>
-          ${state.payments.map((p,i)=>`<div class="pay-row"><span>${p.method==="現金"?"💴":p.method==="カード"?"💳":"📱"} ${p.method}</span><input type="number" value="${p.amount}" onchange="updatePaymentAmount(${i},this.value)" placeholder="金額"/><button onclick="removePayment(${i})">✕</button></div>`).join("")}
-          ${state.payments.length===0?`<div style="text-align:center;color:#d1d5db;font-size:12px;padding:6px;">上のボタンから追加</div>`:""}
+        </div>
+        <div class="right-col">
+          <div class="card">
+            <div class="card-header orange">💰 お会計</div>
+            <div class="card-body" id="summaryArea">${renderSummaryHtml()}</div>
+          </div>
+          <div class="card">
+            <div class="card-header purple">💳 支払方法（複数可）</div>
+            <div class="card-body">
+              <div class="pay-methods">
+                ${PAY_METHODS.map(m=>`<button class="pay-method-btn${state.payments.find(p=>p.method===m.id)?" active":""}" onclick="addPayment('${m.id}')">${m.icon} ${m.id}</button>`).join("")}
+              </div>
+              ${state.payments.map((p,i)=>`<div class="pay-row"><span>${p.method==="現金"?"💴":p.method==="カード"?"💳":"📱"} ${p.method}</span><input type="number" value="${p.amount}" onchange="updatePaymentAmount(${i},this.value)" placeholder="金額"/><button onclick="removePayment(${i})">✕</button></div>`).join("")}
+              ${state.payments.length===0?`<div style="text-align:center;color:#d1d5db;font-size:12px;padding:6px;">上のボタンから追加</div>`:""}
+            </div>
+          </div>
+          <button class="btn-confirm" onclick="save()" ${state.saving?"disabled":""} style="opacity:${state.saving?0.7:1};">${state.saving?"処理中...":"✅ 会計を確定する"}</button>
+          <button class="btn-back" onclick="location.href='/index.html'">← カレンダーへ戻る</button>
         </div>
       </div>
-      <button class="btn-confirm" onclick="save()" ${state.saving?"disabled":""} style="opacity:${state.saving?0.7:1};">${state.saving?"処理中...":"✅ 会計を確定する"}</button>
-      <button class="btn-back" onclick="location.href='/index.html'">← カレンダーへ戻る</button>
       <div style="height:40px;"></div>
     </div>`;
 }
