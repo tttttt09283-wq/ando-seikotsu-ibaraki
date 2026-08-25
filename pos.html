@@ -169,13 +169,6 @@ const JIFEE_CATEGORIES=[
       {label:"フリーパス 12ヶ月",amount:132000},
     ]
   },
-  {
-    id:"other",label:"その他",color:"#d97706",
-    items:[
-      {label:"カルテ管理料",amount:500},
-      {label:"検査料",amount:1500},
-    ]
-  },
 ];
 
 const TIME_OPTS = (()=>{
@@ -638,6 +631,13 @@ function render(){
             </div>
             <div class="quick-btns">
               ${[0,400,500,600,780,800,950,1100,1150,1300,1650].map(v=>`<button class="quick-btn" onclick="state.insuranceAmount=${v};document.getElementById('insuranceAmount').value=${v};renderSummary();">${v===0?"¥0":"¥"+v}</button>`).join("")}
+            </div>
+            <div style="border-top:1px dashed #e5e7eb;margin-top:10px;padding-top:10px;">
+              <div style="font-size:11px;color:#94a3b8;font-weight:700;margin-bottom:6px;">諸費用（別途加算）</div>
+              <div style="display:flex;gap:6px;">
+                <button class="quick-btn" style="flex:1;border-color:#d97706;color:#d97706;" onclick="addJifee('カルテ管理料',500)">＋カルテ管理料 ¥500</button>
+                <button class="quick-btn" style="flex:1;border-color:#d97706;color:#d97706;" onclick="addJifee('検査料',1500)">＋検査料 ¥1,500</button>
+              </div>
             </div>
           </div>
         </div>
