@@ -2089,7 +2089,7 @@ function SettingsPanel(){
   }
 
   return(
-    <div style={{maxWidth:800,margin:"0 auto"}}>
+    <div style={{maxWidth:1300,margin:"0 auto"}}>
       {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#15803d",fontWeight:700,fontSize:13}}>{toast}</div>}
 
       {/* 店舗選択 */}
@@ -2400,7 +2400,7 @@ function BusinessHoursPanel(){
   const selStore=stores.find(s=>s.id===selStoreId);
 
   return(
-    <div style={{maxWidth:800,margin:"0 auto"}}>
+    <div style={{maxWidth:1300,margin:"0 auto"}}>
       {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#15803d",fontWeight:700,fontSize:13}}>{toast}</div>}
 
       {/* 店舗選択 */}
@@ -2637,7 +2637,7 @@ function MenuMgmtPanel(){
   // ===== 編集フォーム =====
   if(editId!==null){
     return(
-      <div style={{maxWidth:600,margin:"0 auto"}}>
+      <div style={{maxWidth:800,margin:"0 auto"}}>
         {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#15803d",fontWeight:700,fontSize:13}}>{toast}</div>}
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
           <button onClick={()=>setEditId(null)} style={{background:"none",border:"none",cursor:"pointer",color:"#64748b",fontSize:13,fontFamily:"inherit"}}>← 一覧に戻る</button>
@@ -2711,7 +2711,7 @@ function MenuMgmtPanel(){
 
   // ===== 一覧画面 =====
   return(
-    <div style={{maxWidth:900,margin:"0 auto"}}>
+    <div style={{maxWidth:1300,margin:"0 auto"}}>
       {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#15803d",fontWeight:700,fontSize:13}}>{toast}</div>}
 
       {/* ヘッダー */}
@@ -3286,7 +3286,7 @@ function StaffMgmtPanel({currentUser}){
   // ===== シフト設定画面 =====
   if(mode==="shift"&&selStaff){
     return(
-      <div style={{maxWidth:900,margin:"0 auto"}}>
+      <div style={{maxWidth:1300,margin:"0 auto"}}>
         {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#15803d",fontWeight:700,fontSize:13}}>{toast}</div>}
 
         {/* 全スタッフ一括（折りたたみ） */}
@@ -3452,7 +3452,7 @@ function StaffMgmtPanel({currentUser}){
 
   // ===== スタッフ一覧画面 =====
   return(
-    <div style={{maxWidth:800,margin:"0 auto"}}>
+    <div style={{maxWidth:1300,margin:"0 auto"}}>
       {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#15803d",fontWeight:700,fontSize:13}}>{toast}</div>}
       <div style={{background:"white",borderRadius:12,boxShadow:"0 1px 4px rgba(0,0,0,.06)",border:"1px solid #f1f5f9",overflow:"hidden"}}>
         <div style={{padding:"16px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid #f1f5f9"}}>
@@ -3575,7 +3575,7 @@ function StoreMgmtPanel(){
 
   if(editId!==null){
     return(
-      <div style={{maxWidth:600,margin:"0 auto"}}>
+      <div style={{maxWidth:800,margin:"0 auto"}}>
         {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#15803d",fontWeight:700,fontSize:13}}>{toast}</div>}
         <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:20}}>
           <button onClick={()=>setEditId(null)} style={{background:"none",border:"none",cursor:"pointer",color:"#64748b",fontSize:13,display:"flex",alignItems:"center",gap:4,fontFamily:"inherit"}}>← 一覧に戻る</button>
@@ -3613,7 +3613,7 @@ function StoreMgmtPanel(){
   }
 
   return(
-    <div style={{maxWidth:800,margin:"0 auto"}}>
+    <div style={{maxWidth:1300,margin:"0 auto"}}>
       {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#15803d",fontWeight:700,fontSize:13}}>{toast}</div>}
 
       {/* ヘッダー */}
@@ -4535,7 +4535,7 @@ function CheckInPanel({bookings,onOpenPatient,onCheckedIn}){
   const staff=result?STAFF_ACCOUNTS.find(s=>s.id===result.booking.staff_id):null;
 
   return(
-    <div style={{maxWidth:520,margin:"0 auto"}}>
+    <div style={{maxWidth:700,margin:"0 auto"}}>
       <div className="card" style={{marginBottom:14}}>
         <div className="card-header blue">📷 来院受付（QRコード読み取り）</div>
         <div className="card-body">
@@ -4757,7 +4757,7 @@ function PostureRecordsPanel({bookings}){
   }
 
   return(
-    <div style={{maxWidth:760,margin:"0 auto"}}>
+    <div style={{maxWidth:1200,margin:"0 auto"}}>
       {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#15803d",fontWeight:700,fontSize:13}}>{toast}</div>}
 
       <div className="card" style={{marginBottom:14}}>
@@ -4975,7 +4975,7 @@ function CancelledListPanel({bookings,todayStr,onRestore}){
   },[cancelledList]);
 
   return(
-    <div style={{maxWidth:800,margin:"0 auto"}}>
+    <div style={{maxWidth:1300,margin:"0 auto"}}>
       <div className="card" style={{marginBottom:14}}>
         <div style={{padding:"14px 16px",borderBottom:"1px solid #f1f5f9",background:"linear-gradient(135deg,#dc2626,#991b1b)"}}>
           <div style={{color:"white",fontWeight:800,fontSize:15}}>🚫 キャンセル一覧</div>
@@ -5127,7 +5127,7 @@ function ChurnAlertPanel({bookings,todayStr}){
   }
 
   return(
-    <div style={{maxWidth:760,margin:"0 auto"}}>
+    <div style={{maxWidth:1200,margin:"0 auto"}}>
       {toast&&<div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#dc2626",fontWeight:700,fontSize:13}}>{toast}</div>}
 
       <div className="card" style={{marginBottom:14}}>
