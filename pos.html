@@ -43,10 +43,10 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 .ins-stepper-center{text-align:center;min-width:110px;}
 .ins-stepper-tier{font-size:13px;font-weight:800;color:#1e3a5f;}
 .ins-stepper-amount{font-size:22px;font-weight:800;color:#c9954a;}
-.ins-history-list{display:flex;flex-direction:column;gap:4px;}
-.ins-history-item{display:flex;justify-content:space-between;align-items:center;padding:7px 10px;border-radius:8px;border:1px solid #e8c88a;background:white;cursor:pointer;font-size:12px;}
+.ins-history-list{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;}
+.ins-history-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:10px 6px;border-radius:8px;border:1px solid #e8c88a;background:white;cursor:pointer;font-size:11px;text-align:center;}
 .ins-history-item.sel{background:#c9954a;color:white;border-color:#c9954a;}
-.ins-history-item span:last-child{font-weight:800;}
+.ins-history-item span:last-child{font-weight:800;font-size:13px;}
 .quick-btns{display:flex;gap:5px;flex-wrap:wrap;}
 .quick-btn{padding:5px 8px;border-radius:6px;border:1.5px solid #ddd;background:white;cursor:pointer;font-size:11px;font-weight:600;color:#444;}
 .jifee-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px;}
@@ -622,7 +622,7 @@ function render(){
                       <button class="ins-stepper-arrow" onclick="stepInsuranceTier(1)" ${curIdx>=tiers.length-1?"disabled":""}>▼</button>
                     </div>
                     <button class="btn btn-outline" style="margin-bottom:8px;padding:9px;font-size:12px;" onclick="confirmInsuranceTier('${curTier}',${curAmount})">この金額で選択する</button>
-                    <div class="ins-history-list">
+                    <div class="ins-history-list" style="grid-template-columns:repeat(${tiers.length},1fr);">
                       ${tiers.map(t=>{
                         const amt=getInsuranceAmountFor(state.insuranceType,state.insuranceRate,t);
                         const isSel=state.insuranceTier===t;
