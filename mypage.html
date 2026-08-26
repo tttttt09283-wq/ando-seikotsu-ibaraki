@@ -142,6 +142,7 @@ let lineProfile=null;
 let state={
   bookings:[],
   passes:[],
+  treatmentPlan:null,
   loading:true,
   modal:null, // null | "change" | "cancel" | "contact"
   selBooking:null,
@@ -211,6 +212,15 @@ async function loadData(){
       state.passes=all.filter(p=>{if(seen.has(p.id))return false;seen.add(p.id);return true;});
     }else{
       state.passes=[];
+    }
+
+    // 施術計画書（最新の1件）を、連携済み予約の患者名で取得
+    const patientName=state.bookings.length>0?state.bookings[0].patient_name:null;
+    if(patientName){
+      const plans=await sbGet("treatment_plans",`?patient_name=eq.${encodeURIComponent(patientName)}&order=created_at.desc&limit=1`);
+      state.treatmentPlan=Array.isArray(plans)&&plans.length>0?plans[0]:null;
+    }else{
+      state.treatmentPlan=null;
     }
   }catch(e){console.error(e);}
   state.loading=false;
@@ -434,6 +444,7 @@ function render(){
       ${renderPatientQR()}
       ${state.bookings.length===0?renderLinkAccount():""}
       ${renderUpcomingBookings()}
+      ${renderTreatmentPlan()}
       ${renderPasses()}
       ${renderActions()}
       ${renderReferral()}
@@ -561,6 +572,48 @@ function renderUpcomingBookings(){
           <span class="btn-label">新しく予約する</span>
           <span class="btn-arrow">›</span>
         </button>
+      </div>
+    </div>
+  `;
+}
+
+function renderTreatmentPlan(){
+  const p=state.treatmentPlan;
+  if(!p) return"";
+  const staffName=p.staff_id?['','奥田','佐藤','細永','田中','岩永'][p.staff_id]||'':'';
+  const dateStr=p.created_at?fmtDate(p.created_at.split("T")[0]):"";
+  const conditions=Array.isArray(p.condition_checks)?p.condition_checks:[];
+  const goals=Array.isArray(p.goal_checks)?p.goal_checks:[];
+  return`
+    <div class="section-title">施術計画書</div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-header-icon" style="background:#fff1e8;">📋</div>
+        <div>
+          <div class="card-header-title">あなたの施術プラン</div>
+          <div class="card-header-sub">${dateStr?`${dateStr}作成`:""}${staffName?`　担当：${staffName}先生`:""}</div>
+        </div>
+      </div>
+      <div class="card-body">
+        ${conditions.length>0?`
+          <div style="font-size:12px;font-weight:700;color:#94a3b8;margin-bottom:6px;">現在のお身体の状態</div>
+          <div style="margin-bottom:14px;">
+            ${conditions.map(c=>`<div style="display:flex;gap:6px;font-size:13px;color:#374151;line-height:1.8;"><span style="color:#ea580c;">✓</span><span>${c}</span></div>`).join("")}
+          </div>
+        `:""}
+        ${goals.length>0||p.goal_other?`
+          <div style="font-size:12px;font-weight:700;color:#94a3b8;margin-bottom:6px;">これから目指すゴール</div>
+          <div style="margin-bottom:14px;">
+            ${goals.map(c=>`<div style="display:flex;gap:6px;font-size:13px;color:#374151;line-height:1.8;"><span style="color:#ea580c;">✓</span><span>${c}</span></div>`).join("")}
+            ${p.goal_other?`<div style="display:flex;gap:6px;font-size:13px;color:#374151;line-height:1.8;"><span style="color:#ea580c;">✓</span><span>その他（${p.goal_other}）</span></div>`:""}
+          </div>
+        `:""}
+        ${(p.visit_pace||p.target_period)?`
+          <div style="display:flex;gap:20px;flex-wrap:wrap;padding-top:10px;border-top:1px solid #f1f5f9;">
+            ${p.visit_pace?`<div><div style="font-size:11px;color:#94a3b8;">理想の通院ペース</div><div style="font-size:13px;font-weight:700;color:#1e293b;">${p.visit_pace}</div></div>`:""}
+            ${p.target_period?`<div><div style="font-size:11px;color:#94a3b8;">目安期間</div><div style="font-size:13px;font-weight:700;color:#1e293b;">${p.target_period}</div></div>`:""}
+          </div>
+        `:""}
       </div>
     </div>
   `;
