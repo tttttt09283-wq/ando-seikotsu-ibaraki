@@ -4955,6 +4955,247 @@ function PostureRecordAddForm({patient,onSaved}){
   );
 }
 
+// ===== 施術計画書 =====
+const TREATMENT_CONDITION_OPTIONS=[
+  "強い症状や痛みが出ているので早期に緩和が必要",
+  "日常生活の使い方による負担に対して回復が追いついていない",
+  "筋力や安定性が低下し仕事や家事・運動の負荷に耐えられない",
+  "症状がクセ化してしまっている",
+];
+const TREATMENT_GOAL_OPTIONS=[
+  "症状が出ている原因から根本的に良くしていきたい",
+  "同じ症状を繰り返さない身体にしたい",
+  "仕事や家事、運動の負担に対してケアをしていきたい",
+  "原因となっている筋力を鍛えていきたい",
+];
+
+function TreatmentPlanPanel({bookings}){
+  const [query,setQuery]=React.useState("");
+  const [selPatient,setSelPatient]=React.useState(null); // {name, phone}
+  const [plans,setPlans]=React.useState([]);
+  const [loading,setLoading]=React.useState(false);
+  const [showAdd,setShowAdd]=React.useState(false);
+  const [toast,setToast]=React.useState("");
+
+  const patientList=React.useMemo(()=>{
+    const map={};
+    bookings.forEach(b=>{
+      if(!b.patient_name) return;
+      if(!map[b.patient_name]) map[b.patient_name]={name:b.patient_name,phone:b.phone||""};
+    });
+    return Object.values(map).sort((a,b)=>a.name.localeCompare(b.name,"ja"));
+  },[bookings]);
+
+  const filteredPatients=query.trim()
+    ? patientList.filter(p=>p.name.includes(query.trim()))
+    : [];
+
+  function showToast(msg){setToast(msg);setTimeout(()=>setToast(""),2500);}
+
+  function loadPlans(patientName){
+    setLoading(true);
+    sb.select("treatment_plans",`?patient_name=eq.${encodeURIComponent(patientName)}&order=created_at.desc`)
+      .then(data=>setPlans(Array.isArray(data)?data:[]))
+      .catch(()=>setPlans([]))
+      .finally(()=>setLoading(false));
+  }
+
+  function selectPatient(p){
+    setSelPatient(p);
+    setQuery("");
+    setShowAdd(false);
+    loadPlans(p.name);
+  }
+
+  return(
+    <div style={{maxWidth:1200,margin:"0 auto"}}>
+      {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#15803d",fontWeight:700,fontSize:13}}>{toast}</div>}
+
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{padding:"14px 16px",borderBottom:"1px solid #f1f5f9",background:"linear-gradient(135deg,#ea580c,#c2410c)"}}>
+          <div style={{color:"white",fontWeight:800,fontSize:15}}>📋 施術計画書</div>
+          <div style={{color:"rgba(255,255,255,.75)",fontSize:12,marginTop:2}}>患者様ごとに、お身体の状態・目指すゴール・通院ペースを記録します（患者様のマイページにも表示されます）</div>
+        </div>
+        <div style={{padding:16}}>
+          <label className="form-label">患者様を検索</label>
+          <input className="form-input" value={selPatient?selPatient.name:query}
+            placeholder="お名前を入力してください"
+            onChange={e=>{setQuery(e.target.value);setSelPatient(null);}}/>
+          {filteredPatients.length>0&&!selPatient&&(
+            <div style={{border:"1px solid #e2e8f0",borderRadius:8,marginTop:6,maxHeight:220,overflowY:"auto"}}>
+              {filteredPatients.slice(0,20).map(p=>(
+                <div key={p.name+p.phone} onClick={()=>selectPatient(p)}
+                  style={{padding:"9px 12px",cursor:"pointer",borderBottom:"1px solid #f1f5f9",fontSize:13}}>
+                  <span style={{fontWeight:700,color:"#1e293b"}}>{p.name}</span>
+                  {p.phone&&<span style={{color:"#94a3b8",marginLeft:8,fontSize:12}}>{p.phone}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {selPatient&&(
+        <>
+          <div className="card" style={{marginBottom:14}}>
+            <div style={{padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f"}}>{selPatient.name} 様</div>
+                <div style={{fontSize:12,color:"#94a3b8"}}>{plans.length}件の計画書</div>
+              </div>
+              <button onClick={()=>setShowAdd(v=>!v)} className="btn"
+                style={{padding:"8px 16px",background:showAdd?"#f1f5f9":"#ea580c",color:showAdd?"#374151":"white",fontWeight:700,fontSize:13,borderRadius:8}}>
+                {showAdd?"閉じる":"＋ 新規計画書を作成"}
+              </button>
+            </div>
+            {showAdd&&(
+              <TreatmentPlanAddForm
+                patient={selPatient}
+                onSaved={()=>{setShowAdd(false);loadPlans(selPatient.name);showToast("施術計画書を保存しました");}}
+              />
+            )}
+          </div>
+
+          <div className="card">
+            <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>計画書の履歴</div>
+            <div style={{padding:16}}>
+              {loading?(
+                <div style={{textAlign:"center",padding:20,color:"#94a3b8"}}>読み込み中...</div>
+              ):plans.length===0?(
+                <div style={{textAlign:"center",padding:24,color:"#94a3b8",fontSize:13}}>まだ計画書がありません</div>
+              ):plans.map(p=>{
+                const staff=STAFF_ACCOUNTS.find(s=>s.id===p.staff_id);
+                const dateStr=p.created_at?new Date(p.created_at).toLocaleDateString("ja-JP"):"";
+                return(
+                  <div key={p.id} style={{padding:"14px 0",borderBottom:"1px solid #f1f5f9"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                      <span style={{fontWeight:800,fontSize:13,color:"#1e293b"}}>{dateStr}</span>
+                      {staff&&<span style={{fontSize:11,fontWeight:700,color:"white",background:staff.color,borderRadius:4,padding:"1px 8px"}}>担当：{staff.name}</span>}
+                    </div>
+                    {p.condition_checks&&p.condition_checks.length>0&&(
+                      <div style={{marginBottom:8}}>
+                        <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",marginBottom:3}}>現在のお身体の状態</div>
+                        {p.condition_checks.map((c,i)=>(<div key={i} style={{fontSize:12,color:"#374151",lineHeight:1.7}}>✓ {c}</div>))}
+                      </div>
+                    )}
+                    {p.goal_checks&&p.goal_checks.length>0&&(
+                      <div style={{marginBottom:8}}>
+                        <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",marginBottom:3}}>これから目指すゴール</div>
+                        {p.goal_checks.map((c,i)=>(<div key={i} style={{fontSize:12,color:"#374151",lineHeight:1.7}}>✓ {c}</div>))}
+                        {p.goal_other&&<div style={{fontSize:12,color:"#374151",lineHeight:1.7}}>✓ その他（{p.goal_other}）</div>}
+                      </div>
+                    )}
+                    <div style={{display:"flex",gap:16,fontSize:12,color:"#64748b"}}>
+                      {p.visit_pace&&<div>理想の通院ペース：<b style={{color:"#1e293b"}}>{p.visit_pace}</b></div>}
+                      {p.target_period&&<div>目安期間：<b style={{color:"#1e293b"}}>{p.target_period}</b></div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function TreatmentPlanAddForm({patient,onSaved}){
+  const [staffId,setStaffId]=React.useState(STAFF_ACCOUNTS[0]?.id||1);
+  const [conditionChecks,setConditionChecks]=React.useState([]);
+  const [goalChecks,setGoalChecks]=React.useState([]);
+  const [goalOtherChecked,setGoalOtherChecked]=React.useState(false);
+  const [goalOther,setGoalOther]=React.useState("");
+  const [visitPace,setVisitPace]=React.useState("");
+  const [targetPeriod,setTargetPeriod]=React.useState("");
+  const [saving,setSaving]=React.useState(false);
+  const [err,setErr]=React.useState("");
+
+  function toggle(list,setList,value){
+    setList(list.includes(value)?list.filter(v=>v!==value):[...list,value]);
+  }
+
+  async function save(){
+    setErr("");
+    setSaving(true);
+    try{
+      const result=await sb.insert("treatment_plans",{
+        patient_name:patient.name,
+        phone:patient.phone||null,
+        staff_id:staffId,
+        condition_checks:conditionChecks,
+        goal_checks:goalChecks,
+        goal_other:goalOtherChecked?(goalOther||"未記入"):null,
+        visit_pace:visitPace||null,
+        target_period:targetPeriod||null,
+      });
+      if(!Array.isArray(result)||result.length===0){
+        throw new Error((result&&result.message)||"保存に失敗しました");
+      }
+      onSaved();
+    }catch(e){
+      setErr(e.message||"不明なエラー");
+    }
+    setSaving(false);
+  }
+
+  return(
+    <div style={{padding:16,borderTop:"1px solid #f1f5f9"}}>
+      {err&&<div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#dc2626",fontSize:12,fontWeight:700}}>{err}</div>}
+
+      <div style={{marginBottom:16}}>
+        <label className="form-label">担当スタッフ</label>
+        <select className="form-input" value={staffId} onChange={e=>setStaffId(Number(e.target.value))}>
+          {STAFF_ACCOUNTS.map(s=>(<option key={s.id} value={s.id}>{s.name}</option>))}
+        </select>
+      </div>
+
+      <div style={{marginBottom:16}}>
+        <div className="form-label">現在のお身体の状態（複数選択可）</div>
+        {TREATMENT_CONDITION_OPTIONS.map(opt=>(
+          <label key={opt} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"7px 0",fontSize:13,color:"#374151",cursor:"pointer"}}>
+            <input type="checkbox" checked={conditionChecks.includes(opt)} onChange={()=>toggle(conditionChecks,setConditionChecks,opt)} style={{marginTop:3,width:16,height:16,accentColor:"#ea580c",flexShrink:0}}/>
+            {opt}
+          </label>
+        ))}
+      </div>
+
+      <div style={{marginBottom:16}}>
+        <div className="form-label">これから目指すゴール（複数選択可）</div>
+        {TREATMENT_GOAL_OPTIONS.map(opt=>(
+          <label key={opt} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"7px 0",fontSize:13,color:"#374151",cursor:"pointer"}}>
+            <input type="checkbox" checked={goalChecks.includes(opt)} onChange={()=>toggle(goalChecks,setGoalChecks,opt)} style={{marginTop:3,width:16,height:16,accentColor:"#ea580c",flexShrink:0}}/>
+            {opt}
+          </label>
+        ))}
+        <label style={{display:"flex",alignItems:"flex-start",gap:8,padding:"7px 0",fontSize:13,color:"#374151",cursor:"pointer"}}>
+          <input type="checkbox" checked={goalOtherChecked} onChange={e=>setGoalOtherChecked(e.target.checked)} style={{marginTop:3,width:16,height:16,accentColor:"#ea580c",flexShrink:0}}/>
+          その他
+        </label>
+        {goalOtherChecked&&(
+          <input className="form-input" style={{marginTop:6}} value={goalOther} onChange={e=>setGoalOther(e.target.value)} placeholder="内容をご記入ください"/>
+        )}
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:16}}>
+        <div>
+          <label className="form-label">理想の通院ペース</label>
+          <input className="form-input" value={visitPace} onChange={e=>setVisitPace(e.target.value)} placeholder="例：週2回×1ヶ月、その後週1回"/>
+        </div>
+        <div>
+          <label className="form-label">目安期間</label>
+          <input className="form-input" value={targetPeriod} onChange={e=>setTargetPeriod(e.target.value)} placeholder="例：3ヶ月"/>
+        </div>
+      </div>
+
+      <button onClick={save} disabled={saving} className="btn"
+        style={{width:"100%",justifyContent:"center",padding:11,fontSize:14,borderRadius:9,background:"#ea580c",color:"white",fontWeight:800,opacity:saving?0.6:1}}>
+        {saving?"保存中...":"この施術計画書を保存する"}
+      </button>
+    </div>
+  );
+}
+
 function CancelledListPanel({bookings,todayStr,onRestore}){
   const cancelledList=React.useMemo(()=>{
     return bookings.filter(b=>b.cancelled).sort((a,b)=>(b.cancelled_at||b.date).localeCompare(a.cancelled_at||a.date));
@@ -5766,6 +6007,7 @@ function Dashboard({user,onLogout}){
     {section:"臨床サポート"},
     {id:"symptom_checker",label:"🔍 症状チェッカー（試験運用）",special:"",action:()=>window.open("/symptom-checker.html","_blank")},
     {id:"posture_records",label:"🧍 姿勢の経過記録",special:""},
+    {id:"treatment_plans",label:"📋 施術計画書",special:""},
     // スタッフ・シフト
     {section:"スタッフ"},
     {id:"staff_mgmt",label:"スタッフ・シフト管理",special:""},
@@ -6178,6 +6420,7 @@ function Dashboard({user,onLogout}){
           {/* キャンセル一覧 */}
           {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} todayStr={todayStr} onRestore={restoreBooking}/>}
           {view==="posture_records"&&<PostureRecordsPanel bookings={bookings}/>}
+          {view==="treatment_plans"&&<TreatmentPlanPanel bookings={bookings}/>}
 
           {/* 店舗管理 */}
           {view==="store_mgmt"&&<StoreMgmtPanel/>}
