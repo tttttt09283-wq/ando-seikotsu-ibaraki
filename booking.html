@@ -67,7 +67,17 @@ const DATE_CAPACITY_OVERRIDES = {
 
 const DAYS_JP = ["日","月","火","水","木","金","土"];
 const STEPS = ["日時","お客様情報","症状・問診","確認"];
-const HOW_KNOW = ["Instagram","Facebook","Twitter/X","Google検索","チラシ・ポスター","友人・知人の紹介","その他"];
+const HOW_KNOW_OPTIONS = [
+  {label:"チラシ①", icon:"📰", image:null},
+  {label:"チラシ②", icon:"📰", image:null},
+  {label:"看板", icon:"🪧", image:null},
+  {label:"Instagram", icon:"📷", image:null},
+  {label:"Google検索", icon:"🔍", image:null},
+  {label:"通りがかり", icon:"🚶", image:null},
+  {label:"紹介", icon:"👥", image:null},
+  {label:"その他", icon:"📋", image:null},
+];
+const HOW_KNOW = HOW_KNOW_OPTIONS.map(o=>o.label);
 const BODY_PARTS = [
   "頸部（首）","肩","上腕","肘","前腕","手首・手",
   "胸部","腰部","臀部","大腿（太もも）","膝",
@@ -1325,9 +1335,13 @@ function App(){
         React.createElement("div",{style:H.sec},
           React.createElement("div",{style:H.secT},"📣 当院を何でお知りになりましたか？ *"),
           React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8}},
-            HOW_KNOW.map(function(v){
-              return React.createElement("button",{key:v,onClick:function(){setF("howKnow",v);},
-                style:{padding:"10px 8px",borderRadius:8,border:"1.5px solid "+(form.howKnow===v?"#1e3a5f":"#ddd"),background:form.howKnow===v?"#1e3a5f":"white",color:form.howKnow===v?"white":"#444",cursor:"pointer",fontSize:13,fontWeight:form.howKnow===v?700:400}},v);
+            HOW_KNOW_OPTIONS.map(function(o){
+              var sel=form.howKnow===o.label;
+              return React.createElement("button",{key:o.label,onClick:function(){setF("howKnow",o.label);},
+                style:{padding:o.image?0:"14px 8px",borderRadius:10,border:"1.5px solid "+(sel?"#1e3a5f":"#ddd"),background:sel?"#1e3a5f":"white",color:sel?"white":"#444",cursor:"pointer",fontSize:13,fontWeight:sel?700:400,overflow:"hidden",display:"flex",flexDirection:"column",alignItems:"center",gap:6}},
+                o.image?React.createElement("img",{src:o.image,alt:o.label,style:{width:"100%",height:72,objectFit:"cover"}}):React.createElement("div",{style:{fontSize:22,marginTop:6}},o.icon),
+                React.createElement("div",{style:{paddingBottom:o.image?8:0}},o.label)
+              );
             })
           ),
           form.howKnow==="その他"?React.createElement("input",{type:"text",value:form.howKnowOther,placeholder:"具体的に教えてください",onChange:function(e){setF("howKnowOther",e.target.value);},style:Object.assign({},H.input,{marginTop:10})}):null,
