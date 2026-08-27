@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>姿勢分析 - あんど整骨院</title>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#f0f4f8;min-height:100vh;}
+.header{background:linear-gradient(135deg,#1e3a5f,#2d6a9f);color:white;padding:16px 18px;}
+.header h1{font-size:17px;font-weight:800;}
+.header p{font-size:11px;opacity:0.75;margin-top:2px;}
+.container{max-width:520px;margin:0 auto;padding:14px 16px 60px;}
+.card{background:white;border-radius:12px;margin-bottom:14px;box-shadow:0 1px 8px rgba(0,0,0,0.06);overflow:hidden;}
+.card-header{padding:12px 16px;font-size:13px;font-weight:800;color:#1e3a5f;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:6px;}
+.card-body{padding:16px;}
+.step-badge{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#1e3a5f;color:white;font-size:11px;font-weight:800;margin-right:8px;flex-shrink:0;}
+.cam-wrap{position:relative;width:100%;aspect-ratio:3/4;background:#111;border-radius:10px;overflow:hidden;margin-bottom:12px;}
+.cam-wrap video, .cam-wrap canvas{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;}
+.cam-guide{position:absolute;top:0;left:0;right:0;bottom:0;pointer-events:none;display:flex;align-items:center;justify-content:center;}
+.cam-guide-line{width:2px;height:80%;background:rgba(255,255,255,0.35);border-left:2px dashed rgba(255,255,255,0.5);}
+.cam-hint{position:absolute;bottom:10px;left:0;right:0;text-align:center;color:white;font-size:11px;background:rgba(0,0,0,0.45);padding:6px 10px;border-radius:20px;width:fit-content;margin:0 auto;}
+.btn{width:100%;padding:13px;border:none;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;font-family:inherit;}
+.btn-primary{background:linear-gradient(135deg,#1e3a5f,#2d6a9f);color:white;}
+.btn-green{background:linear-gradient(135deg,#059669,#047857);color:white;}
+.btn-outline{background:white;color:#374151;border:1.5px solid #e2e8f0;}
+.btn-row{display:flex;gap:8px;}
+.btn-row .btn{flex:1;}
+.hidden{display:none !important;}
+.score-hero{text-align:center;padding:20px 0 10px;}
+.score-num{font-size:52px;font-weight:800;line-height:1;}
+.score-label{font-size:12px;color:#94a3b8;font-weight:700;margin-top:4px;}
+.type-badge{display:inline-block;margin-top:12px;padding:6px 16px;border-radius:20px;background:#eef2ff;color:#4338ca;font-size:13px;font-weight:800;}
+.detail-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #f1f5f9;font-size:13px;}
+.detail-row:last-child{border-bottom:none;}
+.detail-label{color:#64748b;}
+.detail-bar-wrap{flex:1;margin:0 10px;height:6px;background:#f1f5f9;border-radius:3px;overflow:hidden;}
+.detail-bar{height:100%;border-radius:3px;}
+.form-label{display:block;font-size:12px;font-weight:700;color:#374151;margin-bottom:6px;}
+.form-input{width:100%;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:14px;font-family:inherit;background:white;}
+.form-group{margin-bottom:14px;}
+.search-results{border:1px solid #e2e8f0;border-radius:8px;margin-top:6px;max-height:200px;overflow-y:auto;}
+.search-item{padding:10px 12px;cursor:pointer;border-bottom:1px solid #f1f5f9;font-size:13px;}
+.search-item:last-child{border-bottom:none;}
+.search-item:hover{background:#f8fafc;}
+.search-item b{color:#1e293b;}
+.search-item span{color:#94a3b8;font-size:11px;margin-left:6px;}
+.selected-patient{background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;margin-top:6px;}
+.staff-btns{display:flex;flex-wrap:wrap;gap:6px;}
+.staff-btn{padding:8px 14px;border-radius:8px;border:1.5px solid #e2e8f0;background:white;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:#374151;}
+.staff-btn.sel{border-color:#1e3a5f;background:#1e3a5f;color:white;}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1e293b;color:white;padding:11px 20px;border-radius:20px;font-size:13px;font-weight:700;z-index:200;box-shadow:0 6px 20px rgba(0,0,0,0.2);}
+.spinner{width:34px;height:34px;border:3px solid #e2e8f0;border-top-color:#1e3a5f;border-radius:50%;animation:spin 0.8s linear infinite;margin:20px auto;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.disclaimer{font-size:10.5px;color:#94a3b8;line-height:1.6;margin-top:10px;}
+.captured-wrap{position:relative;width:100%;border-radius:10px;overflow:hidden;margin-bottom:12px;background:#111;}
+.captured-wrap canvas{width:100%;display:block;}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🧍 姿勢分析</h1>
+  <p>あんど整骨院　スタッフ用ツール</p>
+</div>
+<div class="container" id="root">
+  <div style="text-align:center;padding:60px;color:#9ca3af;">読み込み中...</div>
+</div>
+<div id="toastContainer"></div>
+<script>
+const SUPABASE_URL="https://dctlirxcwitcupaewiyt.supabase.co";
+const SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
+const supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+
+const STAFF_LIST=[{id:1,name:"奥田"},{id:2,name:"佐藤"},{id:3,name:"細永"},{id:4,name:"田中"},{id:5,name:"岩永"}];
+
+async function sbGet(t,f){
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}${f||""}`,{headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`}});
+  return res.json();
+}
+async function sbPost(t,d){
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}`,{method:"POST",headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`,"Content-Type":"application/json",Prefer:"return=representation"},body:JSON.stringify(d)});
+  const data=await res.json().catch(()=>null);
+  if(!res.ok) throw new Error((data&&(data.message||data.hint))||`保存に失敗しました（HTTP ${res.status}）`);
+  return data;
+}
+
+// ===== アプリの状態 =====
+let state={
+  screen:"camera_side", // camera_side | analyzing_side | camera_front | analyzing_front | result
+  stream:null,
+  capturedCanvasTemp:null, // 撮影直後・解析処理中の一時データ
+  side:null,  // {capturedCanvas, resultCanvas, analysis}
+  front:null, // {capturedCanvas, resultCanvas, analysis}
+  staffId:STAFF_LIST[0].id,
+  patientQuery:"",
+  patientResults:[],
+  selectedPatient:null,  // {name, phone}
+  notes:"",
+  saving:false,
+  toast:"",
+};
+
+function showToast(msg){
+  state.toast=msg;render();
+  setTimeout(()=>{state.toast="";render();},2600);
+}
+
+// ===== MediaPipe Pose 初期化 =====
+let poseModel=null;
+let poseResolve=null;
+function getPoseModel(){
+  if(poseModel) return poseModel;
+  poseModel=new Pose({locateFile:(file)=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`});
+  poseModel.setOptions({
+    modelComplexity:1,
+    smoothLandmarks:false,
+    enableSegmentation:false,
+    minDetectionConfidence:0.5,
+    minTrackingConfidence:0.5,
+  });
+  poseModel.onResults((results)=>{
+    if(poseResolve){poseResolve(results);poseResolve=null;}
+  });
+  return poseModel;
+}
+function runPoseOnCanvas(canvas){
+  return new Promise((resolve,reject)=>{
+    const model=getPoseModel();
+    poseResolve=resolve;
+    model.send({image:canvas}).catch(reject);
+  });
+}
+
+// ===== カメラ =====
+async function startCamera(){
+  try{
+    const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:960},height:{ideal:1280}},audio:false});
+    state.stream=stream;
+    render();
+    const video=document.getElementById("camVideo");
+    if(video){video.srcObject=stream;await video.play();}
+  }catch(e){
+    showToast("カメラを起動できませんでした。写真を選択してください。");
+  }
+}
+function stopCamera(){
+  if(state.stream){state.stream.getTracks().forEach(t=>t.stop());state.stream=null;}
+}
+
+function captureFromVideo(){
+  const video=document.getElementById("camVideo");
+  if(!video||!video.videoWidth) return;
+  const canvas=document.createElement("canvas");
+  canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+  canvas.getContext("2d").drawImage(video,0,0);
+  state.capturedCanvasTemp=canvas;
+  stopCamera();
+  analyzeCurrentCapture();
+}
+
+function onFileSelected(e){
+  const file=e.target.files&&e.target.files[0];
+  if(!file) return;
+  const img=new Image();
+  img.onload=function(){
+    const maxDim=1280;
+    let w=img.width,h=img.height;
+    if(w>maxDim||h>maxDim){
+      const ratio=Math.min(maxDim/w,maxDim/h);
+      w=Math.round(w*ratio);h=Math.round(h*ratio);
+    }
+    const canvas=document.createElement("canvas");
+    canvas.width=w;canvas.height=h;
+    canvas.getContext("2d").drawImage(img,0,0,w,h);
+    state.capturedCanvasTemp=canvas;
+    analyzeCurrentCapture();
+  };
+  img.src=URL.createObjectURL(file);
+  e.target.value="";
+}
+
+// ===== 解析処理 =====
+async function analyzeCurrentCapture(){
+  const view=state.screen==="camera_side"?"side":"front";
+  state.screen=view==="side"?"analyzing_side":"analyzing_front";
+  render();
+  try{
+    const results=await runPoseOnCanvas(state.capturedCanvasTemp);
+    if(!results.poseLandmarks){
+      showToast("身体を検出できませんでした。全身が映るように撮り直してください。");
+      state.screen=view==="side"?"camera_side":"camera_front";
+      render();
+      return;
+    }
+    const analysis=view==="side"?computeSideAnalysis(results.poseLandmarks):computeFrontAnalysis(results.poseLandmarks);
+    const resultCanvas=drawResultCanvas(state.capturedCanvasTemp,results.poseLandmarks,view);
+    const record={capturedCanvas:state.capturedCanvasTemp,resultCanvas,analysis};
+    if(view==="side"){
+      state.side=record;
+      // 正面がまだ無ければ続けて撮影へ、既にある場合（撮り直し）は結果画面へ戻る
+      if(state.front){state.screen="result";}
+      else{state.screen="camera_front";}
+    }else{
+      state.front=record;
+      state.screen="result";
+    }
+    state.capturedCanvasTemp=null;
+    if(state.screen==="camera_front") startCamera();
+  }catch(e){
+    showToast("解析中にエラーが発生しました："+e.message);
+    state.screen=view==="side"?"camera_side":"camera_front";
+  }
+  render();
+}
+
+// 骨格と基準線を撮影画像の上に重ねて描画する
+function drawResultCanvas(srcCanvas,landmarks,view){
+  const canvas=document.createElement("canvas");
+  canvas.width=srcCanvas.width;canvas.height=srcCanvas.height;
+  const ctx=canvas.getContext("2d");
+  ctx.drawImage(srcCanvas,0,0);
+  // 基準線（正しい姿勢の目安）を先に描き、その上に検出した骨格を重ねる
+  if(view==="side"){
+    const leftVis=(landmarks[7].visibility+landmarks[11].visibility+landmarks[23].visibility+landmarks[25].visibility+landmarks[27].visibility)/5;
+    const rightVis=(landmarks[8].visibility+landmarks[12].visibility+landmarks[24].visibility+landmarks[26].visibility+landmarks[28].visibility)/5;
+    const ankle=leftVis>=rightVis?landmarks[27]:landmarks[28];
+    drawSideReferenceLine(ctx,canvas,ankle.x);
+  }else if(view==="front"){
+    drawFrontReferenceLines(ctx,canvas,landmarks);
+  }
+  if(window.drawConnectors&&window.POSE_CONNECTIONS){
+    window.drawConnectors(ctx,landmarks,window.POSE_CONNECTIONS,{color:"#22d3ee",lineWidth:3});
+  }
+  if(window.drawLandmarks){
+    window.drawLandmarks(ctx,landmarks,{color:"#f97316",lineWidth:1,radius:3});
+  }
+  return canvas;
+}
+
+// 横向き用：正しい姿勢の目安となる垂直の基準線（くるぶしを通る鉛直線）
+function drawSideReferenceLine(ctx,canvas,ankleXNorm){
+  const x=ankleXNorm*canvas.width;
+  ctx.save();
+  ctx.strokeStyle="rgba(250,204,21,0.95)";
+  ctx.lineWidth=Math.max(2,canvas.width*0.003);
+  ctx.setLineDash([canvas.width*0.015,canvas.width*0.01]);
+  ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke();
+  ctx.restore();
+}
+
+// 正面用：身体中心の垂直基準線＋肩・骨盤の水平ライン（左右差が一目でわかるように）
+function drawFrontReferenceLines(ctx,canvas,lm){
+  const ls=lm[11],rs=lm[12],lh=lm[23],rh=lm[24];
+  const hipMidX=((lh.x+rh.x)/2)*canvas.width;
+  ctx.save();
+  ctx.strokeStyle="rgba(250,204,21,0.95)";
+  ctx.lineWidth=Math.max(2,canvas.width*0.003);
+  ctx.setLineDash([canvas.width*0.015,canvas.width*0.01]);
+  ctx.beginPath();ctx.moveTo(hipMidX,0);ctx.lineTo(hipMidX,canvas.height);ctx.stroke();
+
+  ctx.setLineDash([]);
+  ctx.strokeStyle="rgba(56,189,248,0.95)";
+  ctx.beginPath();ctx.moveTo(ls.x*canvas.width,ls.y*canvas.height);ctx.lineTo(rs.x*canvas.width,rs.y*canvas.height);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(lh.x*canvas.width,lh.y*canvas.height);ctx.lineTo(rh.x*canvas.width,rh.y*canvas.height);ctx.stroke();
+  ctx.restore();
+}
+
+// ===== 姿勢の判定ロジック（横向き） =====
+// MediaPipe Poseのランドマーク番号：耳7/8　肩11/12　股関節23/24　膝25/26　足首27/28　鼻0
+function computeSideAnalysis(lm){
+  const leftVis=(lm[7].visibility+lm[11].visibility+lm[23].visibility+lm[25].visibility+lm[27].visibility)/5;
+  const rightVis=(lm[8].visibility+lm[12].visibility+lm[24].visibility+lm[26].visibility+lm[28].visibility)/5;
+  const useLeft=leftVis>=rightVis;
+  const ear=useLeft?lm[7]:lm[8];
+  const shoulder=useLeft?lm[11]:lm[12];
+  const hip=useLeft?lm[23]:lm[24];
+  const knee=useLeft?lm[25]:lm[26];
+  const ankle=useLeft?lm[27]:lm[28];
+  const nose=lm[0];
+
+  const torsoLen=Math.max(Math.abs(hip.y-shoulder.y),0.05); // 正規化の基準（肩〜股関節の縦の長さ）
+  // 身体が向いている方向（鼻が耳よりどちら側にあるか）を基準に、前方向をプラスに揃える
+  const facingSign=(nose.x-ear.x)>=0?1:-1;
+
+  function offsetFromAnkle(pt){
+    return((pt.x-ankle.x)/torsoLen)*facingSign;
+  }
+  const headOffset=offsetFromAnkle(ear);
+  const shoulderOffset=offsetFromAnkle(shoulder);
+  const hipOffset=offsetFromAnkle(hip);
+  const kneeOffset=offsetFromAnkle(knee);
+
+  // ===== スコア計算（100点満点。理想的な直立に近いほど高得点） =====
+  function deduction(value,tolerance,weight,cap){
+    const over=Math.max(0,Math.abs(value)-tolerance);
+    return Math.min(cap,over*weight);
+  }
+  let score=100;
+  score-=deduction(headOffset,0.10,140,30);
+  score-=deduction(shoulderOffset,0.07,140,25);
+  score-=deduction(hipOffset,0.06,150,20);
+  score-=deduction(kneeOffset,0.06,120,15);
+  score=Math.max(0,Math.round(score));
+
+  const headForward=headOffset>0.12;
+  const shoulderForward=shoulderOffset>0.08;
+  const hipForward=hipOffset>0.07;
+  const hipBackward=hipOffset<-0.07;
+  const kneeHyperextended=kneeOffset>0.08;
+
+  let type="良好姿勢（バランス良好）";
+  if(headForward&&shoulderForward&&hipForward){
+    type="スウェイバック姿勢の傾向";
+  }else if(headForward&&shoulderForward&&hipBackward){
+    type="猫背傾向（円背）";
+  }else if(headForward&&shoulderForward){
+    type="猫背傾向";
+  }else if(headForward&&!shoulderForward){
+    type="ストレートネック傾向";
+  }else if(!headForward&&hipForward){
+    type="反り腰傾向（骨盤前傾）";
+  }else if(shoulderForward&&hipBackward){
+    type="平背傾向";
+  }else if(shoulderForward){
+    type="巻き肩傾向";
+  }else if(hipForward){
+    type="骨盤前傾傾向";
+  }else if(hipBackward){
+    type="骨盤後傾傾向";
+  }else if(score<80){
+    type="軽度の姿勢の乱れ";
+  }
+  if(kneeHyperextended){
+    type+="／膝の過伸展あり";
+  }
+
+  return{
+    score,type,
+    side:useLeft?"左側面":"右側面",
+    details:[
+      {label:"頭部の前方位",value:headOffset,color:headForward?"#ef4444":"#059669"},
+      {label:"肩の前方位（巻き肩）",value:shoulderOffset,color:shoulderForward?"#ef4444":"#059669"},
+      {label:"骨盤の前後位置",value:hipOffset,color:(hipForward||hipBackward)?"#ef4444":"#059669"},
+      {label:"膝の位置",value:kneeOffset,color:kneeHyperextended?"#ef4444":"#059669"},
+    ],
+  };
+}
+
+// ===== 姿勢の判定ロジック（正面：左右のバランス） =====
+function computeFrontAnalysis(lm){
+  const ls=lm[11],rs=lm[12]; // 肩（左右）
+  const lh=lm[23],rh=lm[24]; // 股関節（左右）
+  const leftEye=lm[2],rightEye=lm[5];
+  const nose=lm[0];
+
+  const shoulderWidth=Math.max(Math.abs(rs.x-ls.x),0.05); // 正規化の基準
+
+  const shoulderTilt=(rs.y-ls.y)/shoulderWidth; // 正の値＝右肩が下がっている
+  const hipTilt=(rh.y-lh.y)/shoulderWidth;      // 正の値＝骨盤が右下がり
+  const headTilt=(rightEye.y-leftEye.y)/shoulderWidth; // 正の値＝頭部が右に傾いている
+  const hipMidX=(lh.x+rh.x)/2;
+  const bodyShift=(nose.x-hipMidX)/shoulderWidth; // 正の値＝体幹が右寄り
+
+  function deduction(value,tolerance,weight,cap){
+    const over=Math.max(0,Math.abs(value)-tolerance);
+    return Math.min(cap,over*weight);
+  }
+  let score=100;
+  score-=deduction(shoulderTilt,0.05,200,30);
+  score-=deduction(hipTilt,0.05,200,25);
+  score-=deduction(headTilt,0.06,180,20);
+  score-=deduction(bodyShift,0.08,150,20);
+  score=Math.max(0,Math.round(score));
+
+  const shoulderAsym=Math.abs(shoulderTilt)>0.06;
+  const hipAsym=Math.abs(hipTilt)>0.06;
+  const headAsym=Math.abs(headTilt)>0.07;
+  const bodyAsym=Math.abs(bodyShift)>0.10;
+
+  const parts=[];
+  if(shoulderAsym) parts.push(shoulderTilt>0?"右肩下がり":"左肩下がり");
+  if(hipAsym) parts.push(hipTilt>0?"骨盤右下がり":"骨盤左下がり");
+  if(headAsym) parts.push(headTilt>0?"頭部が右に傾き":"頭部が左に傾き");
+  if(bodyAsym) parts.push(bodyShift>0?"体幹が右寄り":"体幹が左寄り");
+
+  const type=parts.length>0?parts.join("／"):"良好（左右バランス良好）";
+
+  return{
+    score,type,
+    details:[
+      {label:"肩の高さの左右差",value:shoulderTilt,color:shoulderAsym?"#ef4444":"#059669"},
+      {label:"骨盤の高さの左右差",value:hipTilt,color:hipAsym?"#ef4444":"#059669"},
+      {label:"頭部の傾き",value:headTilt,color:headAsym?"#ef4444":"#059669"},
+      {label:"体幹の左右バランス",value:bodyShift,color:bodyAsym?"#ef4444":"#059669"},
+    ],
+  };
+}
+
+// ===== 患者検索 =====
+let searchTimer=null;
+function onPatientQueryInput(v){
+  state.patientQuery=v;
+  state.selectedPatient=null;
+  clearTimeout(searchTimer);
+  if(!v.trim()){
+    state.patientResults=[];
+    renderSearchResultsOnly();
+    return;
+  }
+  searchTimer=setTimeout(async()=>{
+    try{
+      const rows=await sbGet("bookings",`?patient_name=ilike.*${encodeURIComponent(v.trim())}*&select=patient_name,phone&order=date.desc&limit=50`);
+      const map={};
+      (Array.isArray(rows)?rows:[]).forEach(r=>{if(!map[r.patient_name])map[r.patient_name]={name:r.patient_name,phone:r.phone||""};});
+      state.patientResults=Object.values(map).slice(0,10);
+    }catch(e){state.patientResults=[];}
+    renderSearchResultsOnly();
+  },300);
+}
+// 検索結果の一覧だけをその場で更新する（入力欄ごと画面全体を再描画すると
+// フォーカスが外れて1文字ずつしか入力できなくなるため、部分更新にしている）
+function renderSearchResultsOnly(){
+  const container=document.getElementById("patientSearchResults");
+  if(!container) return;
+  container.innerHTML = state.patientResults.length>0 ? `
+    <div class="search-results">
+      ${state.patientResults.map(p=>`
+        <div class="search-item" onclick="selectPatient(${JSON.stringify(p).replace(/"/g,'&quot;')})"><b>${p.name}</b>${p.phone?`<span>${p.phone}</span>`:""}</div>
+      `).join("")}
+    </div>
+  `:"";
+}
+function selectPatient(p){
+  state.selectedPatient=p;
+  state.patientQuery="";
+  state.patientResults=[];
+  render();
+}
+
+// ===== 保存 =====
+async function uploadCanvasPhoto(canvas,label){
+  const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/jpeg",0.85));
+  if(!blob) return null;
+  const path=`${state.selectedPatient.name}_${label}_${Date.now()}.jpg`;
+  const{error:upErr}=await supabaseClient.storage.from("posture-photos").upload(path,blob,{contentType:"image/jpeg",upsert:false});
+  if(upErr) throw new Error("写真のアップロードに失敗しました："+upErr.message);
+  const{data:pub}=supabaseClient.storage.from("posture-photos").getPublicUrl(path);
+  return pub&&pub.publicUrl?pub.publicUrl:null;
+}
+
+async function saveRecord(){
+  if(!state.selectedPatient){showToast("患者様を選択してください");return;}
+  if(!state.side){showToast("横向きの撮影が完了していません");return;}
+  if(state.saving) return;
+  state.saving=true;render();
+  try{
+    const photoUrlSide=state.side?await uploadCanvasPhoto(state.side.resultCanvas,"side"):null;
+    const photoUrlFront=state.front?await uploadCanvasPhoto(state.front.resultCanvas,"front"):null;
+    await sbPost("posture_records",{
+      patient_name:state.selectedPatient.name,
+      phone:state.selectedPatient.phone||null,
+      staff_id:state.staffId,
+      recorded_date:new Date().toISOString().split("T")[0],
+      photo_url:photoUrlSide,
+      posture_score:state.side.analysis.score,
+      posture_type:state.side.analysis.type,
+      photo_url_front:photoUrlFront,
+      front_score:state.front?state.front.analysis.score:null,
+      front_type:state.front?state.front.analysis.type:null,
+      notes:state.notes||null,
+    });
+    showToast("✅ 記録を保存しました");
+    resetApp();
+  }catch(e){
+    showToast("❌ "+e.message);
+  }
+  state.saving=false;render();
+}
+
+function resetApp(){
+  state={...state,screen:"camera_side",capturedCanvasTemp:null,side:null,front:null,
+    patientQuery:"",patientResults:[],selectedPatient:null,notes:"",saving:false};
+  render();
+  startCamera();
+}
+
+// 結果画面から、横向き・正面いずれかだけを撮り直す
+function retakeView(view){
+  state[view]=null;
+  state.screen=view==="side"?"camera_side":"camera_front";
+  render();
+  startCamera();
+}
+
+// ===== 描画 =====
+function scoreColor(s){
+  if(s>=80) return"#059669";
+  if(s>=60) return"#d97706";
+  return"#dc2626";
+}
+
+function render(){
+  const root=document.getElementById("root");
+
+  if(state.screen==="camera_side"||state.screen==="camera_front"){
+    const isFront=state.screen==="camera_front";
+    root.innerHTML=`
+      <div class="card">
+        <div class="card-header"><span class="step-badge">${isFront?"2":"1"}</span>${isFront?"次に正面を撮影してください":"まず横向きを撮影してください"}</div>
+        <div class="card-body">
+          <div class="cam-wrap">
+            <video id="camVideo" autoplay playsinline muted></video>
+            <div class="cam-guide"><div class="cam-guide-line"></div></div>
+            <div class="cam-hint">${isFront?"正面を向いて、肩の高さが均等に映るように":"横向きに立ち、頭〜足先まで入るように"}</div>
+          </div>
+          <div class="btn-row" style="margin-bottom:8px;">
+            <button class="btn btn-primary" onclick="captureFromVideo()">📷 撮影する</button>
+          </div>
+          <input type="file" id="fileInput" accept="image/*" capture="environment" style="display:none;"/>
+          <button class="btn btn-outline" onclick="document.getElementById('fileInput').click()">🖼️ 写真を選択する</button>
+          ${isFront?`<div style="margin-top:8px;"><button class="btn btn-outline" style="border:none;color:#94a3b8;" onclick="state.screen='result';render();">正面はスキップする</button></div>`:""}
+          <div class="disclaimer">※ この解析はカメラ画像から姿勢の傾向を推定する参考ツールです。医学的な診断ではありません。</div>
+        </div>
+      </div>
+    `;
+    const fi=document.getElementById("fileInput");
+    if(fi) fi.onchange=onFileSelected;
+    if(!state.stream) startCamera();
+    return;
+  }
+
+  if(state.screen==="analyzing_side"||state.screen==="analyzing_front"){
+    root.innerHTML=`
+      <div class="card">
+        <div class="card-body" style="text-align:center;padding:50px 20px;">
+          <div class="spinner"></div>
+          <div style="font-weight:700;color:#374151;">解析中です...</div>
+          <div style="font-size:12px;color:#94a3b8;margin-top:6px;">骨格を検出しています</div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  if(state.screen==="result"){
+    const maxDetailAbs=0.3;
+    function renderAnalysisCard(view,label,stepNum){
+      const rec=state[view];
+      if(!rec) return`
+        <div class="card">
+          <div class="card-header"><span class="step-badge">${stepNum}</span>${label}</div>
+          <div class="card-body">
+            <div style="text-align:center;color:#94a3b8;font-size:13px;padding:16px 0;">未撮影です</div>
+            <button class="btn btn-outline" onclick="retakeView('${view}')">📷 ${label}を撮影する</button>
+          </div>
+        </div>
+      `;
+      const a=rec.analysis;
+      return`
+        <div class="card">
+          <div class="card-header"><span class="step-badge">${stepNum}</span>${label}の解析結果</div>
+          <div class="card-body">
+            <div class="captured-wrap" id="resultCanvasWrap_${view}"></div>
+            <div class="score-hero">
+              <div class="score-num" style="color:${scoreColor(a.score)};">${a.score}</div>
+              <div class="score-label">姿勢スコア（100点満点）</div>
+            </div>
+            <div style="margin-top:14px;">
+              ${a.details.map(d=>{
+                const pct=Math.min(100,Math.round((Math.abs(d.value)/maxDetailAbs)*100));
+                return`
+                  <div class="detail-row">
+                    <span class="detail-label" style="min-width:130px;">${d.label}</span>
+                    <div class="detail-bar-wrap"><div class="detail-bar" style="width:${pct}%;background:${d.color};"></div></div>
+                  </div>
+                `;
+              }).join("")}
+            </div>
+            <div class="disclaimer">${a.side?`判定基準：${a.side}から検出　`:""}黄色い点線＝基準となる位置。あくまで傾向の目安であり、診断ではありません。</div>
+            <button class="btn btn-outline" style="margin-top:12px;" onclick="retakeView('${view}')">撮り直す</button>
+          </div>
+        </div>
+      `;
+    }
+
+    root.innerHTML=`
+      ${renderAnalysisCard("side","横向き","1")}
+      ${renderAnalysisCard("front","正面","2")}
+
+      <div class="card">
+        <div class="card-header"><span class="step-badge">3</span>患者様を選択</div>
+        <div class="card-body">
+          <div class="form-group">
+            <label class="form-label">お名前で検索</label>
+            <input class="form-input" id="patientSearchInput" placeholder="患者様のお名前を入力"/>
+            <div id="patientSearchResults"></div>
+            ${state.selectedPatient?`
+              <div class="selected-patient">
+                <span style="font-weight:700;color:#065f46;">${state.selectedPatient.name} 様</span>
+                <button onclick="state.selectedPatient=null;render();" style="background:none;border:none;color:#059669;font-size:12px;cursor:pointer;">変更</button>
+              </div>
+            `:""}
+          </div>
+          <div class="form-group">
+            <label class="form-label">担当スタッフ</label>
+            <div class="staff-btns">
+              ${STAFF_LIST.map(s=>`<button class="staff-btn ${state.staffId===s.id?'sel':''}" onclick="state.staffId=${s.id};render();">${s.name}</button>`).join("")}
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">コメント・所見（任意）</label>
+            <textarea class="form-input" id="notesInput" rows="3" placeholder="気になる点・改善点など">${state.notes}</textarea>
+          </div>
+        </div>
+      </div>
+
+      <button class="btn btn-green" onclick="saveRecord()" ${state.saving?"disabled":""} style="opacity:${state.saving?0.7:1};margin-bottom:8px;">
+        ${state.saving?"保存中...":"✅ 記録を保存する"}
+      </button>
+    `;
+    ["side","front"].forEach(view=>{
+      const wrap=document.getElementById("resultCanvasWrap_"+view);
+      if(wrap&&state[view]){wrap.innerHTML="";wrap.appendChild(state[view].resultCanvas);}
+    });
+    const psi=document.getElementById("patientSearchInput");
+    if(psi){psi.oninput=(e)=>onPatientQueryInput(e.target.value);}
+    const ni=document.getElementById("notesInput");
+    if(ni){ni.oninput=(e)=>{state.notes=e.target.value;};}
+  }
+
+  const toastEl=document.getElementById("toastContainer");
+  if(toastEl){
+    toastEl.innerHTML=state.toast?`<div class="toast">${state.toast}</div>`:"";
+  }
+}
+
+render();
+startCamera();
+
+// URLに ?id=予約ID が付いている場合、その予約の患者様・担当スタッフを自動的に選択しておく
+// （カレンダーの予約詳細ポップアップ「姿勢評価」ボタンから開いた時に使われる）
+(async function loadFromBookingId(){
+  const params=new URLSearchParams(window.location.search);
+  const bookingId=params.get("id");
+  if(!bookingId) return;
+  try{
+    const rows=await sbGet("bookings",`?id=eq.${bookingId}&select=patient_name,phone,staff_id&limit=1`);
+    if(Array.isArray(rows)&&rows.length>0){
+      const b=rows[0];
+      state.selectedPatient={name:b.patient_name,phone:b.phone||""};
+      if(b.staff_id) state.staffId=b.staff_id;
+      if(state.screen==="result") render();
+    }
+  }catch(e){console.error(e);}
+})();
+</script>
+</body>
+</html>
