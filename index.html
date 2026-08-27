@@ -6014,6 +6014,7 @@ function Dashboard({user,onLogout}){
     // 臨床サポート
     {section:"臨床サポート"},
     {id:"symptom_checker",label:"🔍 症状チェッカー（試験運用）",special:"",action:()=>window.open("/symptom-checker.html","_blank")},
+    {id:"posture_analysis",label:"🧍 姿勢評価",special:"",action:()=>window.open("/posture-analysis.html","_blank")},
     {id:"posture_records",label:"🧍 姿勢の経過記録",special:""},
     {id:"treatment_plans",label:"📋 施術計画書",special:""},
     // スタッフ・シフト
@@ -6571,11 +6572,11 @@ function Dashboard({user,onLogout}){
                   施術記録
                 </button>
                 <button onClick={()=>{
-                  window.open(`symptom-checker.html?id=${b.id}`,"_blank");
+                  window.open(`posture-analysis.html?id=${b.id}`,"_blank");
                   setBookingPopup(null);
                 }} style={{width:"100%",padding:"9px 12px",background:"linear-gradient(135deg,#0f766e,#0d9488)",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:800,fontSize:13,textAlign:"left",display:"flex",alignItems:"center",gap:8}}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                  症状チェッカー（試験運用）
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="5" r="2"/><path d="M12 7v5l-3 8M12 12l3 8M8 10l4-2 4 2"/></svg>
+                  姿勢評価
                 </button>
                 <button onClick={()=>{setHistoryPatient(b.patient_name);setBookingPopup(null);}} style={{width:"100%",padding:"9px 12px",background:"#f8fafc",color:"#374151",border:"1px solid #e2e8f0",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,textAlign:"left",display:"flex",alignItems:"center",gap:8}}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
