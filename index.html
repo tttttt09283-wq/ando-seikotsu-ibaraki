@@ -2111,7 +2111,7 @@ function SettingsPanel(){
 
       {loading?<div style={{textAlign:"center",padding:40,color:"#94a3b8"}}>読み込み中...</div>:(
         <>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,alignItems:"start"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:16,alignItems:"start"}}>
             <div>
               {/* 予約制限設定 */}
               <div style={cardStyle}>
@@ -4791,7 +4791,7 @@ function PostureRecordsPanel({bookings}){
       </div>
 
       {selPatient&&(
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,alignItems:"start"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr",gap:16,alignItems:"start"}}>
           <div>
             <div className="card" style={{marginBottom:14}}>
               <div style={{padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -4838,8 +4838,8 @@ function PostureRecordsPanel({bookings}){
             )}
           </div>
 
-          <div className="card" style={{maxHeight:"80vh",overflowY:"auto"}}>
-            <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f",position:"sticky",top:0,background:"white"}}>記録の一覧</div>
+          <div className="card">
+            <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>記録の一覧</div>
             <div style={{padding:16}}>
               {loading?(
                 <div style={{textAlign:"center",padding:20,color:"#94a3b8"}}>読み込み中...</div>
@@ -5044,7 +5044,7 @@ function TreatmentPlanPanel({bookings}){
       </div>
 
       {selPatient&&(
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,alignItems:"start"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr",gap:16,alignItems:"start"}}>
           <div className="card">
             <div style={{padding:"14px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div>
@@ -5064,8 +5064,8 @@ function TreatmentPlanPanel({bookings}){
             )}
           </div>
 
-          <div className="card" style={{maxHeight:"80vh",overflowY:"auto"}}>
-            <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f",position:"sticky",top:0,background:"white"}}>計画書の履歴</div>
+          <div className="card">
+            <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>計画書の履歴</div>
             <div style={{padding:16}}>
               {loading?(
                 <div style={{textAlign:"center",padding:20,color:"#94a3b8"}}>読み込み中...</div>
