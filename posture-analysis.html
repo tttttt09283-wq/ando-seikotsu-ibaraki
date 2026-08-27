@@ -140,10 +140,9 @@ async function startCamera(){
     const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:960},height:{ideal:1280}},audio:false});
     state.stream=stream;
     render();
-    const video=document.getElementById("camVideo");
-    if(video){video.srcObject=stream;await video.play();}
   }catch(e){
-    showToast("カメラを起動できませんでした。写真を選択してください。");
+    console.error(e);
+    showToast("カメラを起動できませんでした（"+(e.name||"エラー")+"）。写真を選択してください。");
   }
 }
 function stopCamera(){
@@ -512,12 +511,18 @@ function render(){
         <div class="card-header"><span class="step-badge">${isFront?"2":"1"}</span>${isFront?"次に正面を撮影してください":"まず横向きを撮影してください"}</div>
         <div class="card-body">
           <div class="cam-wrap">
-            <video id="camVideo" autoplay playsinline muted></video>
-            <div class="cam-guide"><div class="cam-guide-line"></div></div>
-            <div class="cam-hint">${isFront?"正面を向いて、肩の高さが均等に映るように":"横向きに立ち、頭〜足先まで入るように"}</div>
+            <video id="camVideo" autoplay playsinline muted style="${state.stream?"":"display:none;"}"></video>
+            ${state.stream?`
+              <div class="cam-guide"><div class="cam-guide-line"></div></div>
+              <div class="cam-hint">${isFront?"正面を向いて、肩の高さが均等に映るように":"横向きに立ち、頭〜足先まで入るように"}</div>
+            `:`
+              <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
+                <button class="btn btn-primary" style="width:auto;padding:14px 24px;" onclick="startCamera()">📷 カメラを起動</button>
+              </div>
+            `}
           </div>
           <div class="btn-row" style="margin-bottom:8px;">
-            <button class="btn btn-primary" onclick="captureFromVideo()">📷 撮影する</button>
+            <button class="btn btn-primary" onclick="captureFromVideo()" ${state.stream?"":"disabled"} style="${state.stream?"":"opacity:0.5;"}">📷 撮影する</button>
           </div>
           <input type="file" id="fileInput" accept="image/*" capture="environment" style="display:none;"/>
           <button class="btn btn-outline" onclick="document.getElementById('fileInput').click()">🖼️ 写真を選択する</button>
@@ -528,7 +533,10 @@ function render(){
     `;
     const fi=document.getElementById("fileInput");
     if(fi) fi.onchange=onFileSelected;
-    if(!state.stream) startCamera();
+    if(state.stream){
+      const video=document.getElementById("camVideo");
+      if(video&&!video.srcObject){video.srcObject=state.stream;video.play().catch(()=>{});}
+    }
     return;
   }
 
@@ -638,7 +646,6 @@ function render(){
 }
 
 render();
-startCamera();
 
 // URLに ?id=予約ID が付いている場合、その予約の患者様・担当スタッフを自動的に選択しておく
 // （カレンダーの予約詳細ポップアップ「姿勢評価」ボタンから開いた時に使われる）
