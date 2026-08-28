@@ -284,7 +284,8 @@ function App(){
     bodyParts:[],bodyPartsOther:"",injuryCause:"",injuryCauseDetail:"",
     painWhen:"",painLevel:"",symptoms:[],
     otherClinic:"",otherClinicName:"",medicalHistory:"",
-    wantContinue:"",wantContinueOther:"",howKnow:"",howKnowOther:"",lineNotify:false
+    wantContinue:"",wantContinueOther:"",howKnow:"",howKnowOther:"",lineNotify:false,
+    patientType:"" // イベント期間終了後（10/5以降）のみ使用："初めての方"|"久しぶりの方"|"2回目以降の方"
   });
   var form = formState[0]; var setForm = formState[1];
 
@@ -481,6 +482,7 @@ function App(){
     "姿勢矯正・骨盤矯正・ストレッチ・鍼治療 8回券":30,"姿勢矯正・骨盤矯正・ストレッチ・鍼治療 16回券":30,"姿勢矯正・骨盤矯正・ストレッチ・鍼治療 24回券":30,
     "フリーパス 1ヶ月":30,"フリーパス 3ヶ月":30,"フリーパス 6ヶ月":30,"フリーパス 12ヶ月":30,
     "無料カウンセリング":60,"体験施術":60,
+    "初めての方（初診）":60,"久しぶりの方（要確認）":40,"2回目以降の方":30,
   };
   // 表記上は「60分（カウンセリング込み）」だが、実際に予約枠として確保する時間は40分
   DURATION_MAP[pageSettings.eventMenuName]=40;
@@ -488,6 +490,12 @@ function App(){
   function getBookingDuration(b){
     return b.duration || DURATION_MAP[b.menu] || 30;
   }
+  // イベント期間終了後（10/5以降）に選んでいただく3パターン
+  var PATIENT_TYPE_OPTIONS = [
+    {label:"初めての方",menu:"初めての方（初診）",desc:"当院へのご来院が初めての方"},
+    {label:"久しぶりの方",menu:"久しぶりの方（要確認）",desc:"しばらく期間が空いている方（最終来院から30日以上など）"},
+    {label:"2回目以降の方",menu:"2回目以降の方",desc:"継続して通院されている方"},
+  ];
   // 予約の施術時間が、患者ページの1枠（20分）と時間的に重なっているかどうか
   function overlapsSlot(b,t){
     var bs=toMin(b.time), be=bs+getBookingDuration(b);
@@ -563,6 +571,11 @@ function App(){
     return !!(form.referrerName&&form.referrerName.trim());
   }
   function formatMenuPrice(){
+    if(selDate&&!isEventDate(selDate)){
+      var opt=PATIENT_TYPE_OPTIONS.find(function(o){return o.label===form.patientType;});
+      var label=opt?opt.menu:"ご予約";
+      return "🩺 "+label+"　※料金は保険証をご提示のうえ受付にてご案内します";
+    }
     if(pageSettings.eventMenuPrice<=0){
       return "🎁 "+pageSettings.eventMenuName+"　無料";
     }
@@ -669,6 +682,8 @@ function App(){
   function doSubmitBooking(staffId, dateStr){
     var howKnowText = form.howKnow==="その他" ? "その他："+form.howKnowOther : form.howKnow;
     var newBookingId = null;
+    var patientTypeOpt=PATIENT_TYPE_OPTIONS.find(function(o){return o.label===form.patientType;});
+    var finalMenu=isEventDate(selDate)?pageSettings.eventMenuName:(patientTypeOpt?patientTypeOpt.menu:pageSettings.eventMenuName);
 
     sb.insert("bookings",{
       patient_name:form.name,
@@ -678,7 +693,7 @@ function App(){
       staff_id:staffId,
       date:dateStr,
       time:selTime,
-      menu:pageSettings.eventMenuName,
+      menu:finalMenu,
       store_id:resolvedStoreId,
       referrer_name:form.referrerName.trim()||null,
       line_notify: !!lineUserId, // LINE連携済みなら自動でリマインド
@@ -877,7 +892,7 @@ function App(){
         React.createElement("div",{style:{fontSize:64,marginBottom:12}},"🎉"),
         React.createElement("div",{style:{fontSize:22,fontWeight:800,color:"#1e3a5f",marginBottom:6}},"予約が完了しました！"),
         React.createElement("div",{style:{color:"#666",fontSize:14,lineHeight:1.8}},
-          pageSettings.eventMenuName+"のご予約ありがとうございます。",React.createElement("br"),
+          (selDate&&!isEventDate(selDate)?"ご予約ありがとうございます。":pageSettings.eventMenuName+"のご予約ありがとうございます。"),React.createElement("br"),
           "ご来院をお待ちしております🌸"
         )
       ),
@@ -1154,6 +1169,21 @@ function App(){
           ):null
         ),
 
+        // ===== イベント期間外（10/5以降）：ご来院状況を3パターンから選択 =====
+        selDate&&selTime&&!isRepeat&&!isEventDate(selDate)?React.createElement("div",{style:{marginBottom:14}},
+          React.createElement("div",{style:{fontSize:13,fontWeight:700,color:"#374151",marginBottom:8}},"👋 ご来院状況を教えてください *"),
+          React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:8}},
+            PATIENT_TYPE_OPTIONS.map(function(opt){
+              var sel=form.patientType===opt.label;
+              return React.createElement("button",{key:opt.label,onClick:function(){setF("patientType",opt.label);},
+                style:{textAlign:"left",padding:"12px 14px",borderRadius:10,border:"1.5px solid "+(sel?"#1e3a5f":"#e5e7eb"),background:sel?"#1e3a5f":"white",cursor:"pointer",fontFamily:"inherit"}},
+                React.createElement("div",{style:{fontSize:14,fontWeight:800,color:sel?"white":"#1e293b"}},opt.label),
+                React.createElement("div",{style:{fontSize:11,color:sel?"rgba(255,255,255,.8)":"#94a3b8",marginTop:2}},opt.desc)
+              );
+            })
+          )
+        ):null,
+
         // テスト用ワンタップボタン
         React.createElement("button",{
           onClick:quickTest,
@@ -1172,11 +1202,15 @@ function App(){
             onClick:submitRepeat,
             disabled:submitting,
             style:Object.assign({},H.btn,{fontSize:16,padding:"16px",opacity:submitting?0.7:1,background:"linear-gradient(180deg,#059669,#047857)",boxShadow:"0 4px 0 #065f46,0 6px 16px rgba(5,150,105,.35)"})
-          },submitting?"送信中...":"⚡ かんたん予約する"):React.createElement("button",{
-            onClick:function(){setStep(isRepeat?0:1);if(!isRepeat)setStep(1);},
-            disabled:!selDate||!selTime,
-            style:Object.assign({},H.btn,{opacity:(!selDate||!selTime)?0.4:1})
-          },selDate&&selTime?"次へ →":"日時を選択してください")
+          },submitting?"送信中...":"⚡ かんたん予約する"):(()=>{
+            var needsPatientType=selDate&&!isEventDate(selDate);
+            var canProceed=selDate&&selTime&&(!needsPatientType||form.patientType);
+            return React.createElement("button",{
+              onClick:function(){setStep(1);},
+              disabled:!canProceed,
+              style:Object.assign({},H.btn,{opacity:canProceed?1:0.4})
+            },!selDate||!selTime?"日時を選択してください":(needsPatientType&&!form.patientType)?"ご来院状況を選択してください":"次へ →");
+          })()
         )
       ):null,
 
