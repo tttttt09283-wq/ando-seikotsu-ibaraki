@@ -218,7 +218,7 @@ const MENU_CATEGORIES = [
         items:[
           {name:"無料カウンセリング",             duration:60, price:0},
           {name:"体験施術",                       duration:60, price:0},
-          {name:"ワンコイン施術体験会（約60分・カウンセリング込み）",   duration:40, price:500},
+          {name:"無料施術体験会（約60分・カウンセリング込み）",   duration:40, price:0},
         ]},
     ],
   },
@@ -2163,11 +2163,11 @@ function SettingsPanel(){
                   <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:14}}>
                     <div>
                       <label style={labelStyle}>イベント用メニュー名</label>
-                      <input value={settings.event_menu_name} onChange={e=>setF("event_menu_name",e.target.value)} placeholder="ワンコイン施術体験会（約60分・カウンセリング込み）" style={inputStyle}/>
+                      <input value={settings.event_menu_name} onChange={e=>setF("event_menu_name",e.target.value)} placeholder="無料施術体験会（約60分・カウンセリング込み）" style={inputStyle}/>
                     </div>
                     <div>
                       <label style={labelStyle}>価格（円）</label>
-                      <input type="number" value={settings.event_menu_price} onChange={e=>setF("event_menu_price",e.target.value)} placeholder="500" style={inputStyle}/>
+                      <input type="number" value={settings.event_menu_price} onChange={e=>setF("event_menu_price",e.target.value)} placeholder="0" style={inputStyle}/>
                     </div>
                   </div>
                   <div style={{fontSize:11,color:"#94a3b8",marginTop:8}}>ここで設定した内容は、患者様向け予約ページにそのまま反映されます。</div>
@@ -4680,7 +4680,7 @@ function PersonalWeekView({staff,filtered,payments,visitCounts,setBookingPopup,s
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
                   <span style={{fontSize:12,fontWeight:700,color:isToday?"rgba(255,255,255,.8)":dayBookings.length>0?"#059669":"#94a3b8"}}>{dayBookings.length}件</span>
                   <button onClick={()=>{
-                    setForm({date:dStr,time:"",staff_id:staff.id,patient_name:"",phone:"",menu:"ワンコイン施術体験会（約60分・カウンセリング込み）",insurance_rate:"3割",memo:"",line_notify:false,store_id:selStoreId});
+                    setForm({date:dStr,time:"",staff_id:staff.id,patient_name:"",phone:"",menu:"無料施術体験会（約60分・カウンセリング込み）",insurance_rate:"3割",memo:"",line_notify:false,store_id:selStoreId});
                     setEditId(null);setView("form");
                   }} style={{background:isToday?"rgba(255,255,255,.25)":"#eff6ff",border:"none",borderRadius:6,padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer",color:isToday?"white":"#2563eb",fontFamily:"inherit"}}>
                     + 予約追加
@@ -5629,7 +5629,7 @@ function Dashboard({user,onLogout}){
       staff_id:user.id||1,
       date:dateStr,
       time:timeStr,
-      menu:"ワンコイン施術体験会（約60分・カウンセリング込み）",
+      menu:"無料施術体験会（約60分・カウンセリング込み）",
       store_id:selStoreId,
       line_notify:!!lineId,
       line_user_id:lineId||null,
