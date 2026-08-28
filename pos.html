@@ -123,6 +123,16 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
   auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
 });
 
+// 管理画面からiframe埋め込みで開かれている場合は、親画面にモーダルを閉じるよう伝える。
+// 単独タブで開かれている場合は、これまで通り管理画面へ遷移する。
+function goBackToCalendar(){
+  if(window.self!==window.top){
+    window.parent.postMessage({type:"closeIframeModal"},"*");
+  }else{
+    location.href="/index.html";
+  }
+}
+
 const STAFF_LIST=[{id:1,name:"奥田",color:"#2563eb"},{id:2,name:"佐藤",color:"#059669"},{id:3,name:"細永",color:"#d97706"},{id:4,name:"田中",color:"#7c3aed"},{id:5,name:"岩永",color:"#dc2626"}];
 const STAFF={1:"奥田",2:"佐藤",3:"細永",4:"田中",5:"岩永"};
 const INSURANCE_PRICES={"無料施術体験会（60分）":0,"初診（60分）":0,"再診（30分）":0};
@@ -582,7 +592,7 @@ function render(){
         ${renderReceipt()}
         <button class="btn-back" onclick="window.print()" style="border-color:#d97706;color:#d97706;">🖨️ 領収書を印刷</button>
         ${renderNextBookings()}
-        <button class="btn-back" onclick="location.href='/index.html'" style="margin-top:8px;">← カレンダーへ戻る</button>
+        <button class="btn-back" onclick="goBackToCalendar()" style="margin-top:8px;">← カレンダーへ戻る</button>
       </div>`;
     return;
   }
@@ -697,7 +707,7 @@ function render(){
             </div>
           </div>
           <button class="btn-confirm" onclick="save()" ${state.saving?"disabled":""} style="opacity:${state.saving?0.7:1};">${state.saving?"処理中...":"✅ 会計を確定する"}</button>
-          <button class="btn-back" onclick="location.href='/index.html'">← カレンダーへ戻る</button>
+          <button class="btn-back" onclick="goBackToCalendar()">← カレンダーへ戻る</button>
         </div>
       </div>
       <div style="height:40px;"></div>
@@ -712,7 +722,7 @@ async function init(){
         <div style="font-size:40px;margin-bottom:12px;">🔒</div>
         <div style="font-weight:700;color:#374151;margin-bottom:10px;">ログインが必要です</div>
         <div style="font-size:13px;color:#9ca3af;margin-bottom:20px;">管理画面からログインした状態でこのページを開いてください。</div>
-        <button class="btn-back" onclick="location.href='/index.html'">管理画面へ</button>
+        <button class="btn-back" onclick="goBackToCalendar()">管理画面へ</button>
       </div>`;
     return;
   }
