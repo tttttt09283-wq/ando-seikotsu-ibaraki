@@ -53,6 +53,16 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 
 const STAFF = {1:"奥田",2:"佐藤",3:"細永",4:"田中",5:"岩永"};
 
+// 管理画面からiframe埋め込みで開かれている場合は、親画面にモーダルを閉じるよう伝える。
+// 単独タブで開かれている場合は、これまで通り管理画面へ遷移する。
+function goBackToCalendar(){
+  if(window.self!==window.top){
+    window.parent.postMessage({type:"closeIframeModal"},"*");
+  }else{
+    location.href="/index.html";
+  }
+}
+
 // 問診票として表示する項目（bookingsテーブルの列に対応）
 const QA_FIELDS = [
   {key:"body_parts",     label:"負傷部位"},
@@ -159,7 +169,7 @@ async function init() {
         <div style="font-size:40px;margin-bottom:12px;">🔒</div>
         <div style="font-weight:700;color:#374151;margin-bottom:10px;">ログインが必要です</div>
         <div style="font-size:13px;color:#9ca3af;margin-bottom:20px;">管理画面からログインした状態でこのページを開いてください。</div>
-        <button class="btn-secondary" onclick="location.href='/index.html'">管理画面へ</button>
+        <button class="btn-secondary" onclick="goBackToCalendar()">管理画面へ</button>
       </div>`;
     return;
   }
