@@ -30,8 +30,8 @@ const STORE_ID = 1;
 const DEFAULT_BOOKING_MIN_DATE = ""; // 空文字＝制限なし（今日から受付）
 const DEFAULT_EVENT_START_DATE = "2026-10-01"; // イベント開催期間（開始）
 const DEFAULT_EVENT_END_DATE = "2026-10-04";   // イベント開催期間（終了）
-const DEFAULT_EVENT_MENU_NAME = "ワンコイン施術体験会（約60分・カウンセリング込み）"; // イベント用メニュー名
-const DEFAULT_EVENT_MENU_PRICE = 500; // イベント価格（円）
+const DEFAULT_EVENT_MENU_NAME = "無料施術体験会（約60分・カウンセリング込み）"; // イベント用メニュー名
+const DEFAULT_EVENT_MENU_PRICE = 0; // イベント価格（円）
 const DEFAULT_SLOT_UNIT = 20; // 予約枠の単位（分）
 const DEFAULT_HOURS_BEFORE = 0; // 何時間前まで予約可能か（0＝制限なし）
 const DEFAULT_DAYS_AHEAD = 60; // 何日先まで予約可能か
@@ -563,6 +563,9 @@ function App(){
     return !!(form.referrerName&&form.referrerName.trim());
   }
   function formatMenuPrice(){
+    if(pageSettings.eventMenuPrice<=0){
+      return "🎁 "+pageSettings.eventMenuName+"　無料";
+    }
     return isReferred()
       ? "🎁 "+pageSettings.eventMenuName+"　紹介特典で無料！"
       : "🪙 "+pageSettings.eventMenuName+"　¥"+pageSettings.eventMenuPrice;
@@ -1198,12 +1201,16 @@ function App(){
         // ===== 紹介者のお名前（任意） =====
         React.createElement("div",{style:H.sec},
           React.createElement("div",{style:H.secT},"🎁 紹介者のお名前（任意）"),
-          React.createElement("div",{style:{fontSize:12,color:"#9ca3af",marginBottom:10,lineHeight:1.7}},"あんど整骨院にすでに通われている方からのご紹介の場合、そのお名前をご記入ください。"+pageSettings.eventMenuName+"が無料になります🎉"),
+          React.createElement("div",{style:{fontSize:12,color:"#9ca3af",marginBottom:10,lineHeight:1.7}},
+            pageSettings.eventMenuPrice<=0
+              ? "あんど整骨院にすでに通われている方からのご紹介の場合、そのお名前をご記入ください。"
+              : "あんど整骨院にすでに通われている方からのご紹介の場合、そのお名前をご記入ください。"+pageSettings.eventMenuName+"が無料になります🎉"
+          ),
           React.createElement("input",{type:"text",value:form.referrerName,placeholder:"例：山本 花子",
             onChange:function(e){setF("referrerName",e.target.value);},
             style:H.input
           }),
-          form.referrerName.trim()?React.createElement("div",{style:{marginTop:10,background:"#f5f3ff",border:"1px solid #ddd6fe",borderRadius:8,padding:"10px 12px",fontSize:13,color:"#6d28d9",fontWeight:700}},
+          (form.referrerName.trim()&&pageSettings.eventMenuPrice>0)?React.createElement("div",{style:{marginTop:10,background:"#f5f3ff",border:"1px solid #ddd6fe",borderRadius:8,padding:"10px 12px",fontSize:13,color:"#6d28d9",fontWeight:700}},
             "🎉 "+form.referrerName+"様のご紹介で、今回の体験会が無料になります！"
           ):null
         ),
