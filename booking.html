@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>あんど整骨院 ワンコイン施術体験会 ご予約</title>
+<title>あんど整骨院 無料施術体験会 ご予約</title>
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -877,7 +877,7 @@ function App(){
         React.createElement("div",{style:{fontSize:64,marginBottom:12}},"🎉"),
         React.createElement("div",{style:{fontSize:22,fontWeight:800,color:"#1e3a5f",marginBottom:6}},"予約が完了しました！"),
         React.createElement("div",{style:{color:"#666",fontSize:14,lineHeight:1.8}},
-          "ワンコイン施術体験会のご予約ありがとうございます。",React.createElement("br"),
+          pageSettings.eventMenuName+"のご予約ありがとうございます。",React.createElement("br"),
           "ご来院をお待ちしております🌸"
         )
       ),
@@ -951,7 +951,7 @@ function App(){
   return React.createElement("div",{style:{minHeight:"100vh",background:"#f0f4f8"}},
     React.createElement("div",{style:{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",color:"white",padding:"18px 16px",textAlign:"center"}},
       React.createElement("div",{style:{fontSize:20,fontWeight:800,letterSpacing:2}},CLINIC_NAME),
-      React.createElement("div",{style:{fontSize:12,opacity:0.75,marginTop:2}},"ワンコイン施術体験会 オンライン予約")
+      React.createElement("div",{style:{fontSize:12,opacity:0.75,marginTop:2}},pageSettings.eventMenuName+" オンライン予約")
     ),
     React.createElement("div",{style:{background:"#fef9ec",borderBottom:"2px solid #fde68a",padding:"10px 16px",textAlign:"center"}},
       React.createElement("span",{style:{fontWeight:800,color:"#92400e",fontSize:14}},formatMenuPrice()),
