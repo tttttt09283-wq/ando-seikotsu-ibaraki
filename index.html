@@ -1092,6 +1092,17 @@ function StatsPanel({bookings,payments,todayStr,stores}){
     return payments.filter(p=>scopedBookingIds.has(p.booking_id));
   },[payments,selStatsStoreId,selStatsStaffId,scopedBookingIds]);
 
+  // 院（店舗全体）の売上・予約 ＝ スタッフ絞り込みを一切含めない集計（個人目標との比較用に別立てで用意）
+  const storeOnlyBookings=React.useMemo(()=>{
+    if(selStatsStoreId===null) return bookings;
+    return bookings.filter(b=>(b.store_id||firstStoreId)===selStatsStoreId);
+  },[bookings,selStatsStoreId,firstStoreId]);
+  const storeOnlyBookingIds=React.useMemo(()=>new Set(storeOnlyBookings.map(b=>b.id)),[storeOnlyBookings]);
+  const storeOnlyPayments=React.useMemo(()=>{
+    if(selStatsStoreId===null) return payments;
+    return payments.filter(p=>storeOnlyBookingIds.has(p.booking_id));
+  },[payments,selStatsStoreId,storeOnlyBookingIds]);
+
   // 期間設定
   function getRange(type){
     const now=new Date(todayStr+"T00:00:00");
@@ -1124,20 +1135,34 @@ function StatsPanel({bookings,payments,todayStr,stores}){
   else elapsedRangeDays=Math.round((todayForRange-rangeStartDate)/86400000)+1;
   const rangeProgressPct=Math.round(elapsedRangeDays/totalRangeDays*100);
 
-  // ===== 月間売上目標（店舗・期間ごとにブラウザへ保存） =====
-  const targetKey=`ando_sales_target_${selStatsStoreId||"all"}_${range.start.slice(0,7)}`;
-  const [salesTarget,setSalesTarget]=React.useState("");
+  // ===== 月間売上目標（院＝店舗全体、個人＝選択中スタッフ、それぞれ別々にブラウザへ保存） =====
+  const storeTargetKey=`ando_sales_target_store_${selStatsStoreId||"all"}_${range.start.slice(0,7)}`;
+  const [storeSalesTarget,setStoreSalesTarget]=React.useState("");
   React.useEffect(()=>{
-    try{ setSalesTarget(localStorage.getItem(targetKey)||""); }catch(e){ setSalesTarget(""); }
-  },[targetKey]);
-  function updateSalesTarget(val){
-    setSalesTarget(val);
-    try{ localStorage.setItem(targetKey,val); }catch(e){}
+    try{ setStoreSalesTarget(localStorage.getItem(storeTargetKey)||""); }catch(e){ setStoreSalesTarget(""); }
+  },[storeTargetKey]);
+  function updateStoreSalesTarget(val){
+    setStoreSalesTarget(val);
+    try{ localStorage.setItem(storeTargetKey,val); }catch(e){}
+  }
+
+  const staffTargetKey=selStatsStaffId!=null?`ando_sales_target_staff_${selStatsStoreId||"all"}_${selStatsStaffId}_${range.start.slice(0,7)}`:null;
+  const [staffSalesTarget,setStaffSalesTarget]=React.useState("");
+  React.useEffect(()=>{
+    if(!staffTargetKey){ setStaffSalesTarget(""); return; }
+    try{ setStaffSalesTarget(localStorage.getItem(staffTargetKey)||""); }catch(e){ setStaffSalesTarget(""); }
+  },[staffTargetKey]);
+  function updateStaffSalesTarget(val){
+    setStaffSalesTarget(val);
+    if(!staffTargetKey) return;
+    try{ localStorage.setItem(staffTargetKey,val); }catch(e){}
   }
 
   // 期間内の予約・会計
   const bks=scopedBookings.filter(b=>b.date&&inRange(b.date));
   const pays=scopedPayments.filter(p=>p.payment_date&&inRange(p.payment_date));
+  const storeOnlyPays=storeOnlyPayments.filter(p=>p.payment_date&&inRange(p.payment_date));
+  const storeTotalSales=storeOnlyPays.reduce((s,p)=>s+(p.total_amount||0),0);
 
   // === 指標計算 ===
   const totalBk=bks.length;
@@ -1460,9 +1485,9 @@ function StatsPanel({bookings,payments,todayStr,stores}){
 
       {/* ===== 月間レポート風サマリー ===== */}
       {(()=>{
-        // 日別売上の集計（選択期間内）
+        // 日別売上の集計（選択期間内・院全体＝スタッフ絞り込みなし。グラフは常に院の実績を表示）
         const dailySalesMap={};
-        pays.forEach(p=>{if(p.payment_date) dailySalesMap[p.payment_date]=(dailySalesMap[p.payment_date]||0)+(p.total_amount||0);});
+        storeOnlyPays.forEach(p=>{if(p.payment_date) dailySalesMap[p.payment_date]=(dailySalesMap[p.payment_date]||0)+(p.total_amount||0);});
         const rangeDayList=[];
         {
           let d=new Date(range.start+"T00:00:00");
@@ -1475,10 +1500,10 @@ function StatsPanel({bookings,payments,todayStr,stores}){
           if(ds<=todayStr) cum+=(dailySalesMap[ds]||0);
           return{date:ds,cumulative:ds<=todayStr?cum:null};
         });
-        const targetNum=Number(salesTarget)||0;
-        const dailyAvg=elapsedRangeDays>0?Math.round(totalSales/elapsedRangeDays):0;
+        const targetNum=Number(storeSalesTarget)||0;
+        const dailyAvg=elapsedRangeDays>0?Math.round(storeTotalSales/elapsedRangeDays):0;
         const remainingDays=Math.max(0,totalRangeDays-elapsedRangeDays);
-        const projectedTotal=elapsedRangeDays>0?Math.round(totalSales/elapsedRangeDays*totalRangeDays):0;
+        const projectedTotal=elapsedRangeDays>0?Math.round(storeTotalSales/elapsedRangeDays*totalRangeDays):0;
         const dailyBudget=totalRangeDays>0?Math.round(targetNum/totalRangeDays):0;
         const jifeePct=totalSales>0?Math.round(jifeeSales/totalSales*100):0;
         const insPct=totalSales>0?Math.round(insSales/totalSales*100):0;
@@ -1513,8 +1538,9 @@ function StatsPanel({bookings,payments,todayStr,stores}){
 
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:16}}>
               <div>
-                <div style={{fontSize:12,color:"#64748b",fontWeight:700}}>当期売上</div>
-                <div style={{fontSize:32,fontWeight:800,color:"#d97706"}}>{fmt(totalSales)}</div>
+                <div style={{fontSize:12,color:"#64748b",fontWeight:700}}>当期売上（院全体）</div>
+                <div style={{fontSize:32,fontWeight:800,color:"#d97706"}}>{fmt(storeTotalSales)}</div>
+                {selStatsStaffId!=null&&<div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>うち個人実績：{fmt(totalSales)}</div>}
               </div>
               <div>
                 <div style={{fontSize:12,color:"#64748b",fontWeight:700}}>着地予想</div>
@@ -1549,14 +1575,16 @@ function StatsPanel({bookings,payments,todayStr,stores}){
             </div>
 
             <div style={{marginBottom:16}}>
+              <div style={{fontSize:12,fontWeight:800,color:"#374151",marginBottom:8}}>🏥 院の目標（店舗全体）</div>
               <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
                 <span style={{fontSize:12,color:"#64748b",fontWeight:700,whiteSpace:"nowrap"}}>今期の目標売上</span>
-                <input type="number" value={salesTarget} onChange={e=>updateSalesTarget(e.target.value)} placeholder="未設定"
+                <input type="number" value={storeSalesTarget} onChange={e=>updateStoreSalesTarget(e.target.value)} placeholder="未設定"
                   style={{flex:1,padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700,textAlign:"right"}}/>
                 <span style={{fontSize:12,color:"#94a3b8"}}>円</span>
               </div>
-              {salesTarget&&Number(salesTarget)>0&&(()=>{
-                const achievePct=Math.round(totalSales/Number(salesTarget)*100);
+              <div style={{fontSize:11,color:"#94a3b8",marginBottom:8}}>院の実績：{fmt(storeTotalSales)}</div>
+              {storeSalesTarget&&Number(storeSalesTarget)>0&&(()=>{
+                const achievePct=Math.round(storeTotalSales/Number(storeSalesTarget)*100);
                 return(
                   <div>
                     <div style={{height:10,background:"#f1f5f9",borderRadius:5,overflow:"hidden",marginBottom:4}}>
@@ -1570,6 +1598,36 @@ function StatsPanel({bookings,payments,todayStr,stores}){
                 );
               })()}
             </div>
+
+            {selStatsStaffId!=null&&(()=>{
+              const staffInfo=STAFF_ACCOUNTS.find(s=>s.id===selStatsStaffId);
+              return(
+                <div style={{marginBottom:16,paddingTop:14,borderTop:"1px dashed #e2e8f0"}}>
+                  <div style={{fontSize:12,fontWeight:800,color:"#374151",marginBottom:8}}>👤 個人目標（{staffInfo?staffInfo.name:"担当"}）</div>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                    <span style={{fontSize:12,color:"#64748b",fontWeight:700,whiteSpace:"nowrap"}}>今期の目標売上</span>
+                    <input type="number" value={staffSalesTarget} onChange={e=>updateStaffSalesTarget(e.target.value)} placeholder="未設定"
+                      style={{flex:1,padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700,textAlign:"right"}}/>
+                    <span style={{fontSize:12,color:"#94a3b8"}}>円</span>
+                  </div>
+                  <div style={{fontSize:11,color:"#94a3b8",marginBottom:8}}>個人の実績：{fmt(totalSales)}</div>
+                  {staffSalesTarget&&Number(staffSalesTarget)>0&&(()=>{
+                    const achievePct=Math.round(totalSales/Number(staffSalesTarget)*100);
+                    return(
+                      <div>
+                        <div style={{height:10,background:"#f1f5f9",borderRadius:5,overflow:"hidden",marginBottom:4}}>
+                          <div style={{height:"100%",width:`${Math.min(achievePct,100)}%`,background:achievePct>=100?"#059669":achievePct>=rangeProgressPct?"#7c3aed":"#ef4444",borderRadius:5}}/>
+                        </div>
+                        <div style={{fontSize:11,color:"#64748b",display:"flex",justifyContent:"space-between"}}>
+                          <span>達成率 {achievePct}%</span>
+                          <span>期間進捗 {rangeProgressPct}%（{achievePct>=rangeProgressPct?"順調":"やや遅れ気味"}）</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              );
+            })()}
 
             <div style={{display:"flex",gap:20,paddingTop:14,borderTop:"1px dashed #e2e8f0",flexWrap:"wrap"}}>
               <div>
