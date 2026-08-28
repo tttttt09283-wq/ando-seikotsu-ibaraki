@@ -1449,61 +1449,276 @@ function StatsPanel({bookings,payments,todayStr,stores}){
         ))}
       </div>
 
-      {/* 売上サマリー・単価LTV（大きく強調表示） */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
-        <div style={{background:"white",borderRadius:14,padding:"20px 22px",boxShadow:"0 4px 16px rgba(217,119,6,.12)",border:"1.5px solid #fde68a"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-            <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f"}}>💰 売上サマリー</div>
-            <div style={{fontSize:11,color:"#94a3b8"}}>期間の進捗　{elapsedRangeDays}/{totalRangeDays}日（{rangeProgressPct}%）</div>
-          </div>
-          <div style={{height:8,background:"#f1f5f9",borderRadius:4,overflow:"hidden",marginBottom:16}}>
-            <div style={{height:"100%",width:`${Math.min(rangeProgressPct,100)}%`,background:"linear-gradient(90deg,#fbbf24,#d97706)",borderRadius:4}}/>
-          </div>
-          {[{label:"月計売上",val:totalSales,color:"#d97706",big:true},{label:"保険窓口計",val:insSales,color:"#2563eb"},{label:"自費売上計",val:jifeeSales,color:"#059669"}].map(item=>(
-            <div key={item.label} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:item.big?"8px 0":"7px 0",borderBottom:"1px solid #f1f5f9"}}>
-              <span style={{fontSize:item.big?14:13,color:"#64748b",fontWeight:item.big?700:400}}>{item.label}</span>
-              <span style={{fontSize:item.big?30:16,fontWeight:800,color:item.color}}>{fmt(item.val)}</span>
-            </div>
-          ))}
-          <div style={{marginTop:14,paddingTop:14,borderTop:"1px dashed #e2e8f0"}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-              <span style={{fontSize:12,color:"#64748b",fontWeight:700,whiteSpace:"nowrap"}}>今期の目標売上</span>
-              <input type="number" value={salesTarget} onChange={e=>updateSalesTarget(e.target.value)} placeholder="未設定"
-                style={{flex:1,padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700,textAlign:"right"}}/>
-              <span style={{fontSize:12,color:"#94a3b8"}}>円</span>
-            </div>
-            {salesTarget&&Number(salesTarget)>0&&(()=>{
-              const achievePct=Math.round(totalSales/Number(salesTarget)*100);
-              return(
-                <div>
-                  <div style={{height:10,background:"#f1f5f9",borderRadius:5,overflow:"hidden",marginBottom:4}}>
-                    <div style={{height:"100%",width:`${Math.min(achievePct,100)}%`,background:achievePct>=100?"#059669":achievePct>=rangeProgressPct?"#2563eb":"#ef4444",borderRadius:5}}/>
-                  </div>
-                  <div style={{fontSize:11,color:"#64748b",display:"flex",justifyContent:"space-between"}}>
-                    <span>達成率 {achievePct}%</span>
-                    <span>期間進捗 {rangeProgressPct}%（{achievePct>=rangeProgressPct?"順調":"やや遅れ気味"}）</span>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-        </div>
+      {/* ===== 月間レポート風サマリー ===== */}
+      {(()=>{
+        // 日別売上の集計（選択期間内）
+        const dailySalesMap={};
+        pays.forEach(p=>{if(p.payment_date) dailySalesMap[p.payment_date]=(dailySalesMap[p.payment_date]||0)+(p.total_amount||0);});
+        const rangeDayList=[];
+        {
+          let d=new Date(range.start+"T00:00:00");
+          const endD=new Date(range.end+"T00:00:00");
+          let guard=0;
+          while(d<=endD&&guard<400){rangeDayList.push(fmtDate(d));d.setDate(d.getDate()+1);guard++;}
+        }
+        let cum=0;
+        const cumulativeSeries=rangeDayList.map(ds=>{
+          if(ds<=todayStr) cum+=(dailySalesMap[ds]||0);
+          return{date:ds,cumulative:ds<=todayStr?cum:null};
+        });
+        const targetNum=Number(salesTarget)||0;
+        const dailyAvg=elapsedRangeDays>0?Math.round(totalSales/elapsedRangeDays):0;
+        const remainingDays=Math.max(0,totalRangeDays-elapsedRangeDays);
+        const projectedTotal=elapsedRangeDays>0?Math.round(totalSales/elapsedRangeDays*totalRangeDays):0;
+        const dailyBudget=totalRangeDays>0?Math.round(targetNum/totalRangeDays):0;
+        const jifeePct=totalSales>0?Math.round(jifeeSales/totalSales*100):0;
+        const insPct=totalSales>0?Math.round(insSales/totalSales*100):0;
 
+        // 追加の単価指標
+        const madoguchiUnit=paidBk>0?Math.round(insSales/paidBk):0;
+        const newPatientNames=new Set(newPatientsList.map(p=>p.name));
+        const newPatientSales=pays.reduce((s,p)=>{
+          const booking=bookingByIdForStats[p.booking_id];
+          if(booking&&newPatientNames.has(booking.patient_name)) return s+(p.total_amount||0);
+          return s;
+        },0);
+        const newUnitPrice=newCount>0?Math.round(newPatientSales/newCount):0;
+        const continuedVisits=Math.max(0,confirmedBk-newCount);
+        const avgVisitCount=totalUnique>0?(confirmedBk/totalUnique).toFixed(1):"0.0";
+
+        // グラフ用スケール
+        const maxScale=Math.max(targetNum,cum,1);
+        const chartW=600,chartH=160,padL=4,padR=4,padT=10,padB=4;
+        const plotW=chartW-padL-padR,plotH=chartH-padT-padB;
+        const n=rangeDayList.length||1;
+        const barW=Math.max(2,plotW/n-2);
+        const xFor=i=>padL+(plotW/n)*i+(plotW/n-barW)/2;
+        const yFor=v=>padT+plotH-(v/maxScale*plotH);
+
+        return(
+          <div style={{background:"white",borderRadius:14,padding:"20px 22px",boxShadow:"0 4px 16px rgba(217,119,6,.12)",border:"1.5px solid #fde68a",marginBottom:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:8}}>
+              <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f"}}>💰 月間レポート</div>
+              <div style={{fontSize:11,color:"#94a3b8"}}>期間の進捗　{elapsedRangeDays}/{totalRangeDays}日（{rangeProgressPct}%）</div>
+            </div>
+
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:16}}>
+              <div>
+                <div style={{fontSize:12,color:"#64748b",fontWeight:700}}>当期売上</div>
+                <div style={{fontSize:32,fontWeight:800,color:"#d97706"}}>{fmt(totalSales)}</div>
+              </div>
+              <div>
+                <div style={{fontSize:12,color:"#64748b",fontWeight:700}}>着地予想</div>
+                <div style={{fontSize:22,fontWeight:800,color:"#374151"}}>{fmt(projectedTotal)}</div>
+                <div style={{fontSize:10,color:"#94a3b8"}}>※前日までの実績で算出</div>
+              </div>
+              <div>
+                <div style={{fontSize:12,color:"#64748b",fontWeight:700}}>1日あたり売上</div>
+                <div style={{fontSize:22,fontWeight:800,color:"#374151"}}>{fmt(dailyAvg)}</div>
+                <div style={{fontSize:10,color:"#94a3b8"}}>経過{elapsedRangeDays}日／残り{remainingDays}日</div>
+              </div>
+            </div>
+
+            {/* 累計売上×目標ペースのグラフ */}
+            <div style={{marginBottom:16}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <div style={{fontSize:12,fontWeight:700,color:"#374151"}}>累計売上と目標ペース</div>
+                {targetNum>0&&<div style={{fontSize:11,color:"#94a3b8"}}>日割り予算 {fmt(dailyBudget)}/日</div>}
+              </div>
+              <svg viewBox={`0 0 ${chartW} ${chartH}`} style={{width:"100%",height:140,display:"block"}}>
+                {cumulativeSeries.map((d,i)=>d.cumulative==null?null:(
+                  <rect key={d.date} x={xFor(i)} y={yFor(d.cumulative)} width={barW} height={Math.max(1,plotH-(yFor(d.cumulative)-padT))} fill="#1e3a5f" rx="1"/>
+                ))}
+                {targetNum>0&&(
+                  <line x1={padL} y1={yFor(0)} x2={padL+plotW} y2={yFor(targetNum)} stroke="#ef4444" strokeWidth="2" strokeDasharray="5,4"/>
+                )}
+              </svg>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#94a3b8",marginTop:2}}>
+                <span>{range.start.slice(5)}</span>
+                <span>{range.end.slice(5)}</span>
+              </div>
+            </div>
+
+            <div style={{marginBottom:16}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                <span style={{fontSize:12,color:"#64748b",fontWeight:700,whiteSpace:"nowrap"}}>今期の目標売上</span>
+                <input type="number" value={salesTarget} onChange={e=>updateSalesTarget(e.target.value)} placeholder="未設定"
+                  style={{flex:1,padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700,textAlign:"right"}}/>
+                <span style={{fontSize:12,color:"#94a3b8"}}>円</span>
+              </div>
+              {salesTarget&&Number(salesTarget)>0&&(()=>{
+                const achievePct=Math.round(totalSales/Number(salesTarget)*100);
+                return(
+                  <div>
+                    <div style={{height:10,background:"#f1f5f9",borderRadius:5,overflow:"hidden",marginBottom:4}}>
+                      <div style={{height:"100%",width:`${Math.min(achievePct,100)}%`,background:achievePct>=100?"#059669":achievePct>=rangeProgressPct?"#2563eb":"#ef4444",borderRadius:5}}/>
+                    </div>
+                    <div style={{fontSize:11,color:"#64748b",display:"flex",justifyContent:"space-between"}}>
+                      <span>達成率 {achievePct}%</span>
+                      <span>期間進捗 {rangeProgressPct}%（{achievePct>=rangeProgressPct?"順調":"やや遅れ気味"}）</span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div style={{display:"flex",gap:20,paddingTop:14,borderTop:"1px dashed #e2e8f0",flexWrap:"wrap"}}>
+              <div>
+                <div style={{fontSize:11,color:"#94a3b8"}}>自費売上　{jifeePct}%</div>
+                <div style={{fontSize:16,fontWeight:800,color:"#059669"}}>{fmt(jifeeSales)}</div>
+              </div>
+              <div>
+                <div style={{fontSize:11,color:"#94a3b8"}}>保険売上（患者負担分）　{insPct}%</div>
+                <div style={{fontSize:16,fontWeight:800,color:"#2563eb"}}>{fmt(insSales)}</div>
+              </div>
+            </div>
+
+            {/* 単価カード */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginTop:16}}>
+              {[
+                {label:"全体単価",val:fmt(allUnitPrice)},
+                {label:"窓口単価",val:fmt(madoguchiUnit)},
+                {label:"新規単価",val:fmt(newUnitPrice)},
+                {label:"LTV",val:fmt(ltv)},
+              ].map(c=>(
+                <div key={c.label} style={{background:"#f8fafc",borderRadius:10,padding:"10px 12px",textAlign:"center"}}>
+                  <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>{c.label}</div>
+                  <div style={{fontSize:16,fontWeight:800,color:"#1e3a5f"}}>{c.val}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* 来院数カード */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginTop:10}}>
+              {[
+                {label:"総人数",val:totalUnique+"人"},
+                {label:"新規来院",val:newCount+"人",onClick:newPatientsList.length>0?()=>setListModal({title:`新規患者（${newPatientsList.length}名）`,items:newPatientsList}):null},
+                {label:"再訪来院",val:revisitCount+"人"},
+                {label:"継続来院（延べ）",val:continuedVisits+"回"},
+                {label:"平均通院回数",val:avgVisitCount+"回"},
+                {label:"総来院数",val:confirmedBk+"回"},
+              ].map(c=>(
+                <div key={c.label} onClick={c.onClick||undefined} style={{background:"#f8fafc",borderRadius:10,padding:"10px 12px",textAlign:"center",cursor:c.onClick?"pointer":"default"}}>
+                  <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>{c.label}{c.onClick&&<span style={{color:"#94a3b8",marginLeft:2}}>›</span>}</div>
+                  <div style={{fontSize:16,fontWeight:800,color:"#1e3a5f"}}>{c.val}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* 単価・LTV（離反率・詳細） */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr",gap:14,marginBottom:14}}>
         <div style={{background:"white",borderRadius:14,padding:"20px 22px",boxShadow:"0 4px 16px rgba(30,58,95,.1)",border:"1.5px solid #dbeafe"}}>
-          <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f",marginBottom:16}}>📊 単価・LTV</div>
+          <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f",marginBottom:16}}>📊 継続・離反</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
           {[
-            {label:"全体単価",val:fmt(allUnitPrice),sub:"会計1件あたり",color:"#1e3a5f",big:true},
-            {label:"LTV（月間）",val:fmt(ltv),sub:"売上÷患者数",color:"#d97706"},
             {label:"新規来院率",val:newRate+"%",sub:`新規${newCount}名 / 全${totalUnique}名`,color:"#059669",onClick:newPatientsList.length>0?()=>setListModal({title:`新規患者（${newPatientsList.length}名）`,items:newPatientsList}):null},
             {label:"離反率",val:churnRate+"%",sub:`${churnCount}名が30日以上未来院`,color:"#ef4444",onClick:churnedPatientsList.length>0?()=>setListModal({title:`離反患者（${churnedPatientsList.length}名）`,items:churnedPatientsList}):null},
           ].map(item=>(
-            <div key={item.label} onClick={item.onClick||undefined} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:item.big?"9px 0":"7px 0",borderBottom:"1px solid #f1f5f9",cursor:item.onClick?"pointer":"default"}}>
-              <div><div style={{fontSize:item.big?14:13,color:"#64748b",fontWeight:item.big?700:400}}>{item.label}{item.onClick&&<span style={{color:"#94a3b8",marginLeft:4}}>›</span>}</div><div style={{fontSize:11,color:"#94a3b8"}}>{item.sub}</div></div>
-              <span style={{fontSize:item.big?30:18,fontWeight:800,color:item.color}}>{item.val}</span>
+            <div key={item.label} onClick={item.onClick||undefined} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:"1px solid #f1f5f9",cursor:item.onClick?"pointer":"default"}}>
+              <div><div style={{fontSize:13,color:"#64748b",fontWeight:700}}>{item.label}{item.onClick&&<span style={{color:"#94a3b8",marginLeft:4}}>›</span>}</div><div style={{fontSize:11,color:"#94a3b8"}}>{item.sub}</div></div>
+              <span style={{fontSize:24,fontWeight:800,color:item.color}}>{item.val}</span>
             </div>
           ))}
+          </div>
         </div>
       </div>
+
+      {/* ===== 年間推移 ===== */}
+      {(()=>{
+        // 過去12ヶ月分の「YYYY-MM」リスト（当月まで）
+        const monthList=[];
+        {
+          const base=new Date(todayStr+"T00:00:00");
+          for(let i=11;i>=0;i--){
+            const d=new Date(base.getFullYear(),base.getMonth()-i,1);
+            monthList.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
+          }
+        }
+        // 月別売上
+        const monthlyRevenue={};
+        scopedPayments.forEach(p=>{if(p.payment_date){const m=p.payment_date.slice(0,7);monthlyRevenue[m]=(monthlyRevenue[m]||0)+(p.total_amount||0);}});
+        const monthlyPaidCount={};
+        scopedPayments.forEach(p=>{if(p.payment_date){const m=p.payment_date.slice(0,7);monthlyPaidCount[m]=(monthlyPaidCount[m]||0)+1;}});
+        // 月別新患（初回来院月）
+        const firstVisitMonthByPatient={};
+        [...scopedBookings].filter(b=>!b.cancelled).sort((a,b)=>a.date.localeCompare(b.date)).forEach(b=>{
+          if(!firstVisitMonthByPatient[b.patient_name]) firstVisitMonthByPatient[b.patient_name]=b.date.slice(0,7);
+        });
+        const monthlyNewPatients={};
+        Object.values(firstVisitMonthByPatient).forEach(m=>{monthlyNewPatients[m]=(monthlyNewPatients[m]||0)+1;});
+        // 月別の来院患者セット（簡易離反率の算出用）
+        const monthlyActivePatients={};
+        scopedBookings.filter(b=>!b.cancelled&&b.date).forEach(b=>{
+          const m=b.date.slice(0,7);
+          if(!monthlyActivePatients[m]) monthlyActivePatients[m]=new Set();
+          monthlyActivePatients[m].add(b.patient_name);
+        });
+
+        const monthlyData=monthList.map((m,idx)=>{
+          const revenue=monthlyRevenue[m]||0;
+          const paidCount=monthlyPaidCount[m]||0;
+          const unit=paidCount>0?Math.round(revenue/paidCount):0;
+          const newP=monthlyNewPatients[m]||0;
+          const prevM=idx>0?monthList[idx-1]:null;
+          const prevSet=prevM?(monthlyActivePatients[prevM]||new Set()):new Set();
+          const curSet=monthlyActivePatients[m]||new Set();
+          let churnedThisMonth=0;
+          prevSet.forEach(name=>{if(!curSet.has(name)) churnedThisMonth++;});
+          const monthChurnRate=prevSet.size>0?Math.round(churnedThisMonth/prevSet.size*100):null;
+          return{month:m,revenue,newP,unit,churnRate:monthChurnRate};
+        });
+        const maxRevenue=Math.max(...monthlyData.map(d=>d.revenue),1);
+        const chartW2=700,chartH2=140,padL2=10,padR2=10,padT2=10,padB2=10;
+        const plotW2=chartW2-padL2-padR2,plotH2=chartH2-padT2-padB2;
+        const n2=monthlyData.length;
+        const xFor2=i=>padL2+(n2<=1?0:(plotW2/(n2-1))*i);
+        const yFor2=v=>padT2+plotH2-(v/maxRevenue*plotH2);
+        const linePoints=monthlyData.map((d,i)=>`${xFor2(i)},${yFor2(d.revenue)}`).join(" ");
+
+        return(
+          <div style={{background:"white",borderRadius:14,padding:"20px 22px",boxShadow:"0 1px 8px rgba(0,0,0,.06)",border:"1px solid #f1f5f9",marginBottom:14}}>
+            <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f",marginBottom:16}}>📈 年間推移（直近12ヶ月）</div>
+            <svg viewBox={`0 0 ${chartW2} ${chartH2}`} style={{width:"100%",height:150,display:"block",marginBottom:10}}>
+              <polyline points={linePoints} fill="none" stroke="#2563eb" strokeWidth="2.5"/>
+              {monthlyData.map((d,i)=>(
+                <circle key={d.month} cx={xFor2(i)} cy={yFor2(d.revenue)} r="3" fill="#2563eb"/>
+              ))}
+            </svg>
+            <div style={{overflowX:"auto"}}>
+              <table style={{borderCollapse:"collapse",width:"100%",fontSize:12,minWidth:760}}>
+                <thead>
+                  <tr style={{borderBottom:"2px solid #e2e8f0"}}>
+                    <th style={{textAlign:"left",padding:"6px 8px",color:"#64748b",fontWeight:800}}>指標</th>
+                    {monthlyData.map(d=>(<th key={d.month} style={{padding:"6px 8px",color:"#64748b",fontWeight:800,whiteSpace:"nowrap"}}>{d.month.slice(2).replace("-","/")}</th>))}
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr style={{borderBottom:"1px solid #f1f5f9"}}>
+                    <td style={{padding:"6px 8px",fontWeight:700,color:"#1e293b"}}>売上</td>
+                    {monthlyData.map(d=>(<td key={d.month} style={{padding:"6px 8px",textAlign:"right",color:"#d97706",fontWeight:700}}>{fmt(d.revenue)}</td>))}
+                  </tr>
+                  <tr style={{borderBottom:"1px solid #f1f5f9"}}>
+                    <td style={{padding:"6px 8px",fontWeight:700,color:"#1e293b"}}>新患</td>
+                    {monthlyData.map(d=>(<td key={d.month} style={{padding:"6px 8px",textAlign:"right"}}>{d.newP}人</td>))}
+                  </tr>
+                  <tr style={{borderBottom:"1px solid #f1f5f9"}}>
+                    <td style={{padding:"6px 8px",fontWeight:700,color:"#1e293b"}}>離反率</td>
+                    {monthlyData.map(d=>(<td key={d.month} style={{padding:"6px 8px",textAlign:"right"}}>{d.churnRate==null?"—":d.churnRate+"%"}</td>))}
+                  </tr>
+                  <tr>
+                    <td style={{padding:"6px 8px",fontWeight:700,color:"#1e293b"}}>単価</td>
+                    {monthlyData.map(d=>(<td key={d.month} style={{padding:"6px 8px",textAlign:"right"}}>{d.unit>0?fmt(d.unit):"—"}</td>))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div style={{fontSize:10,color:"#94a3b8",marginTop:8}}>※離反率は「前月に来院した患者のうち、当月に来院しなかった割合」の簡易計算です</div>
+          </div>
+        );
+      })()}
 
       {/* 曜日別・時間帯別・月別推移・コース別（コンパクトに4列表示） */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:12}}>
