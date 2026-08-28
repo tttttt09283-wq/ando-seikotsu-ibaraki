@@ -1076,6 +1076,7 @@ function StatsPanel({bookings,payments,todayStr,stores}){
   const [selStatsStoreId,setSelStatsStoreId]=React.useState(null); // null = 全店舗
   const [selStatsStaffId,setSelStatsStaffId]=React.useState(null); // null = 全スタッフ
   const [filterTab,setFilterTab]=React.useState("store"); // "store" | "staff"
+  const [reportTab,setReportTab]=React.useState("monthly"); // "monthly" | "annual"
   const [listModal,setListModal]=React.useState(null); // {title, items:[{name,sub}]} | null
   const [funnelModal,setFunnelModal]=React.useState(null); // {title, funnel, color} | null
   const firstStoreId=(stores&&stores.length>0)?stores[0].id:1;
@@ -1411,6 +1412,14 @@ function StatsPanel({bookings,payments,todayStr,stores}){
         </div>
       </div>
 
+      {/* 月間レポート／年間推移 タブ切り替え */}
+      <div style={{display:"flex",gap:6,marginBottom:16}}>
+        {[{id:"monthly",label:"📅 月間レポート"},{id:"annual",label:"📈 年間推移"}].map(t=>(
+          <button key={t.id} onClick={()=>setReportTab(t.id)} style={{padding:"9px 20px",borderRadius:10,fontSize:13,fontWeight:800,border:"1.5px solid",borderColor:reportTab===t.id?"#1e3a5f":"#e2e8f0",background:reportTab===t.id?"#1e3a5f":"white",color:reportTab===t.id?"white":"#374151",cursor:"pointer",fontFamily:"inherit"}}>{t.label}</button>
+        ))}
+      </div>
+
+      {reportTab==="monthly"&&(<>
       {/* スタッフ別売上（全スタッフ表示中のみ・個別選択時は下の各カードがそのスタッフの数値になるので非表示） */}
       {selStatsStaffId===null&&(
       <div style={{...cardStyle,marginBottom:16}}>
@@ -1625,7 +1634,10 @@ function StatsPanel({bookings,payments,todayStr,stores}){
           </div>
         </div>
       </div>
+      </>)}
 
+      {reportTab==="annual"&&(
+      <>
       {/* ===== 年間推移 ===== */}
       {(()=>{
         // 過去12ヶ月分の「YYYY-MM」リスト（当月まで）
@@ -1719,7 +1731,10 @@ function StatsPanel({bookings,payments,todayStr,stores}){
           </div>
         );
       })()}
+      </>
+      )}
 
+      {reportTab==="monthly"&&(<>
       {/* 曜日別・時間帯別・月別推移・コース別（コンパクトに4列表示） */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:12}}>
         <div style={{...cardStyle,marginBottom:0,padding:"12px 14px"}}>
@@ -1889,6 +1904,7 @@ function StatsPanel({bookings,payments,todayStr,stores}){
           ))}
         </div>
       </div>
+      </>)}
 
       {/* スタッフ別 継続ファネル モーダル */}
       {funnelModal&&(
