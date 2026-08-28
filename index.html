@@ -5493,6 +5493,58 @@ function TreatmentPlanAddForm({patient,onSaved}){
   );
 }
 
+// ===== LINE連携チェック（友だち登録はしていても、予約システムと未連携の患者様を洗い出す） =====
+function LineLinkCheckPanel({bookings}){
+  const list=React.useMemo(()=>{
+    const byPatient={};
+    bookings.filter(b=>!b.cancelled&&b.patient_name).forEach(b=>{
+      const key=b.patient_name;
+      if(!byPatient[key]) byPatient[key]={name:b.patient_name,phone:b.phone||"",visits:[],linked:false};
+      byPatient[key].visits.push(b.date);
+      if(b.line_user_id) byPatient[key].linked=true;
+    });
+    return Object.values(byPatient)
+      .filter(p=>!p.linked)
+      .map(p=>({...p,visitCount:p.visits.length,lastVisit:p.visits.sort().slice(-1)[0]}))
+      .sort((a,b)=>(b.lastVisit||"").localeCompare(a.lastVisit||""));
+  },[bookings]);
+
+  return(
+    <div style={{maxWidth:1300,margin:"0 auto"}}>
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{padding:"14px 16px",borderBottom:"1px solid #f1f5f9",background:"linear-gradient(135deg,#06C755,#059669)"}}>
+          <div style={{color:"white",fontWeight:800,fontSize:15}}>🔗 LINE連携チェック</div>
+          <div style={{color:"rgba(255,255,255,.85)",fontSize:12,marginTop:2}}>予約はあるものの、一度もLINE経由で予約ページ・マイページを開いたことがない（＝リマインド等が届かない）患者様の一覧です</div>
+        </div>
+        <div style={{padding:"14px 16px",background:"#fef9ec",fontSize:12,color:"#92400e",lineHeight:1.8}}>
+          ⚠️ LINEの「友だち登録」だけでは、この一覧から外れません。予約システムがLINEアカウントを認識するのは、患者様が実際にLINE経由で予約ページ・マイページを一度でも開いた時だけです。<br/>
+          お電話やSMSなどで、LINEから予約・マイページを開いていただくようご案内ください。
+        </div>
+      </div>
+
+      <div className="card">
+        <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>未連携の患者様（{list.length}名）</div>
+        <div style={{padding:16}}>
+          {list.length===0?(
+            <div style={{textAlign:"center",padding:30,color:"#94a3b8",fontSize:13}}>未連携の患者様はいません🎉</div>
+          ):list.map(p=>(
+            <div key={p.name+p.phone} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #f1f5f9",gap:10}}>
+              <div>
+                <div style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{p.name}</div>
+                <div style={{fontSize:11,color:"#94a3b8"}}>{p.phone||"電話番号未登録"}</div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:12,color:"#374151"}}>最終来院：{p.lastVisit||"—"}</div>
+                <div style={{fontSize:11,color:"#94a3b8"}}>累計{p.visitCount}件の予約</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function CancelledListPanel({bookings,todayStr,onRestore}){
   const cancelledList=React.useMemo(()=>{
     return bookings.filter(b=>b.cancelled).sort((a,b)=>(b.cancelled_at||b.date).localeCompare(a.cancelled_at||a.date));
@@ -6312,6 +6364,7 @@ function Dashboard({user,onLogout}){
     {id:"stats",label:"予約分析・サマリー",special:""},
     {id:"preopen_stats",label:"📊 プレオープン集計",special:""},
     {id:"churn_alert",label:"🔔 離反防止アラート",special:""},
+    {id:"line_link_check",label:"🔗 LINE連携チェック",special:""},
     // 臨床サポート
     {section:"臨床サポート"},
     {id:"symptom_checker",label:"🔍 症状チェッカー（試験運用）",special:"",action:()=>window.open("/symptom-checker.html","_blank")},
@@ -6726,6 +6779,7 @@ function Dashboard({user,onLogout}){
 
           {/* 離反防止アラート */}
           {view==="churn_alert"&&<ChurnAlertPanel bookings={bookings} todayStr={todayStr}/>}
+          {view==="line_link_check"&&<LineLinkCheckPanel bookings={bookings}/>}
 
           {/* キャンセル一覧 */}
           {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} todayStr={todayStr} onRestore={restoreBooking}/>}
