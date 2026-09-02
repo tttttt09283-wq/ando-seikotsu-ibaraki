@@ -120,7 +120,7 @@ const BASE_STAFF_ACCOUNTS = [
 let STAFF_ACCOUNTS = [...BASE_STAFF_ACCOUNTS];
 function updateStaffAccounts(dynamicStaffRows){
   const extra=(dynamicStaffRows||[])
-    .filter(r=>r.name&&!BASE_STAFF_ACCOUNTS.some(s=>s.id===r.id))
+    .filter(r=>r.name&&!BASE_STAFF_ACCOUNTS.some(s=>s.id===r.id||s.name===r.name))
     .map(r=>({
       id:r.id,name:r.name,email:r.email||"",password:r.password||"",
       role:r.role||"staff",color:r.color||"#64748b",initial:r.initial||(r.name?r.name.charAt(0):"?"),
