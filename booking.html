@@ -47,7 +47,9 @@ const STAFF = [
 function buildSlots(unit){
   unit = unit || DEFAULT_SLOT_UNIT;
   const slots=[];
-  for(let h=10;h<20;h++){
+  // 平日10:00〜20:00・土日祝9:00〜18:00の両方をカバーできるよう、9:00〜20:00の最大範囲で生成する。
+  // 実際にその曜日で予約可能かどうかは isTimeAllowedForDate が営業時間データを見て判定する。
+  for(let h=9;h<20;h++){
     for(let m=0;m<60;m+=unit){
       slots.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
     }
