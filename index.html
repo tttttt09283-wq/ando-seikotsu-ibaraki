@@ -2584,7 +2584,11 @@ function SettingsPanel(){
 function BusinessHoursPanel(){
   const DAYS_JP=["日","月","火","水","木","金","土"];
   const DAY_COLORS=["#ef4444","#374151","#374151","#374151","#374151","#374151","#7c3aed"];
-  const DEFAULT_HOURS=DAYS_JP.map((_,i)=>({day:i,is_open:i!==0,open_time:"10:00",close_time:"20:00",break_times:[]}));
+  const DEFAULT_HOURS=DAYS_JP.map((_,i)=>{
+    if(i===4) return{day:i,is_open:false,open_time:"10:00",close_time:"20:00",break_times:[]}; // 木曜定休
+    if(i===0||i===6) return{day:i,is_open:true,open_time:"09:00",close_time:"18:00",break_times:[]}; // 土日
+    return{day:i,is_open:true,open_time:"10:00",close_time:"20:00",break_times:[]}; // 平日
+  });
 
   const [stores,setStores]=React.useState([]);
   const [selStoreId,setSelStoreId]=React.useState(1);
@@ -3470,7 +3474,11 @@ function StaffMenuPermissionsModal({staff,onClose}){
 function StaffMgmtPanel({currentUser}){
   const DAYS_JP=["日","月","火","水","木","金","土"];
   const DAY_COLORS=["#ef4444","#374151","#374151","#374151","#374151","#374151","#7c3aed"];
-  const DEFAULT_SHIFTS=DAYS_JP.map((_,i)=>({day:i,is_working:i!==0,start_time:"10:00",end_time:"20:00"}));
+  const DEFAULT_SHIFTS=DAYS_JP.map((_,i)=>{
+    if(i===4) return{day:i,is_working:false,start_time:"10:00",end_time:"20:00"}; // 木曜定休
+    if(i===0||i===6) return{day:i,is_working:true,start_time:"09:00",end_time:"18:00"}; // 土日
+    return{day:i,is_working:true,start_time:"10:00",end_time:"20:00"}; // 平日
+  });
 
   const [mode,setMode]=React.useState("list"); // "list" | "shift"
   const [selStaffId,setSelStaffId]=React.useState(null);
@@ -3480,8 +3488,8 @@ function StaffMgmtPanel({currentUser}){
   const [saving,setSaving]=React.useState(false);
   const [toast,setToast]=React.useState("");
   const [bulkOpen,setBulkOpen]=React.useState(false);
-  const [bulkStart,setBulkStart]=React.useState("09:00");
-  const [bulkEnd,setBulkEnd]=React.useState("19:00");
+  const [bulkStart,setBulkStart]=React.useState("10:00");
+  const [bulkEnd,setBulkEnd]=React.useState("20:00");
   const [showAddStaff,setShowAddStaff]=React.useState(false);
   const [menuEditStaff,setMenuEditStaff]=React.useState(null);
 
