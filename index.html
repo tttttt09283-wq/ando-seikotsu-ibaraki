@@ -104,7 +104,7 @@ const CLINIC_NAME = "あんど整骨院";
 const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
 
-const STAFF_ACCOUNTS = [
+const BASE_STAFF_ACCOUNTS = [
   // storeIds: このスタッフが勤務する店舗のID（stores.id）を配列で指定。
   // 未指定（storeIdsを書かない）の場合は「全店舗で勤務」として扱われます。
   // 実際の勤務地は、管理画面の「スタッフ・シフト管理」→勤務地の設定で店舗ごとに割り当ててください（そちらが優先されます）。
@@ -113,17 +113,21 @@ const STAFF_ACCOUNTS = [
   {id:3,name:"細永 育代",email:"hosonaga@ando.jp",password:"hosonaga123",role:"staff",color:"#d97706",initial:"細"},
   {id:4,name:"田中 夕賀",email:"tanaka@ando.jp",password:"tanaka123",role:"staff",color:"#7c3aed",initial:"田"},
   {id:5,name:"岩永 拓己",email:"iwanaga@ando.jp",password:"iwanaga123",role:"admin",color:"#dc2626",initial:"岩"},
-  // ===== オープニングイベント当日（10/1〜10/4）用の応援枠（7本） =====
-  // イベント期間中の予約受付を7列に増やすための仮スタッフです。実際の担当者は当日決まった人をここに割り当ててください。
-  // イベント終了後、不要であれば削除を依頼してください。
-  {id:101,name:"応援①",email:"ouen1@ando.jp",password:"ouen1pass",role:"staff",color:"#f59e0b",initial:"援"},
-  {id:102,name:"応援②",email:"ouen2@ando.jp",password:"ouen2pass",role:"staff",color:"#fb923c",initial:"援"},
-  {id:103,name:"応援③",email:"ouen3@ando.jp",password:"ouen3pass",role:"staff",color:"#f97316",initial:"援"},
-  {id:104,name:"応援④",email:"ouen4@ando.jp",password:"ouen4pass",role:"staff",color:"#ea580c",initial:"援"},
-  {id:105,name:"応援⑤",email:"ouen5@ando.jp",password:"ouen5pass",role:"staff",color:"#fbbf24",initial:"援"},
-  {id:106,name:"応援⑥",email:"ouen6@ando.jp",password:"ouen6pass",role:"staff",color:"#d97706",initial:"援"},
-  {id:107,name:"応援⑦",email:"ouen7@ando.jp",password:"ouen7pass",role:"staff",color:"#fdba74",initial:"援"},
 ];
+// 「スタッフ管理」画面から追加されたスタッフ（clinic_staffテーブルにname等が登録されたもの）を
+// ここにマージすることで、コードを書き換えなくてもカレンダー等に自動で反映されるようにする。
+// Dashboardの読み込み時に updateStaffAccounts() で更新される。
+let STAFF_ACCOUNTS = [...BASE_STAFF_ACCOUNTS];
+function updateStaffAccounts(dynamicStaffRows){
+  const extra=(dynamicStaffRows||[])
+    .filter(r=>r.name&&!BASE_STAFF_ACCOUNTS.some(s=>s.id===r.id))
+    .map(r=>({
+      id:r.id,name:r.name,email:r.email||"",password:r.password||"",
+      role:r.role||"staff",color:r.color||"#64748b",initial:r.initial||(r.name?r.name.charAt(0):"?"),
+      eventOnly:!!r.event_only,
+    }));
+  STAFF_ACCOUNTS=[...BASE_STAFF_ACCOUNTS,...extra];
+}
 // ===== メニューマスタ（改定後料金） =====
 const MENU_CATEGORIES = [
   {
@@ -598,8 +602,8 @@ function LoginScreen({onLogin}){
       const users=await sb.select("clinic_staff",`?email=eq.${encodeURIComponent(email.trim())}`);
       if(users&&users.length>0){
         const u=users[0];
-        const acc=STAFF_ACCOUNTS.find(s=>s.id===u.id)||STAFF_ACCOUNTS.find(s=>s.email===u.email)||STAFF_ACCOUNTS[0];
-        onLogin({...u,color:acc.color,initial:acc.initial});
+        const acc=STAFF_ACCOUNTS.find(s=>s.id===u.id)||STAFF_ACCOUNTS.find(s=>s.email===u.email);
+        onLogin({...u,color:(acc&&acc.color)||u.color||"#64748b",initial:(acc&&acc.initial)||u.initial||(u.name?u.name.charAt(0):"?")});
       }else{
         setErr("スタッフ情報が見つかりませんでした");
       }
@@ -3166,6 +3170,7 @@ function AddStaffModal({onClose,onCreated,existingIds}){
   const [role,setRole]=React.useState("staff");
   const [color,setColor]=React.useState(PALETTE[(nextId-1)%PALETTE.length]);
   const [initial,setInitial]=React.useState("");
+  const [eventOnly,setEventOnly]=React.useState(false);
   const [saving,setSaving]=React.useState(false);
   const [err,setErr]=React.useState("");
   const [doneInfo,setDoneInfo]=React.useState(null);
@@ -3195,7 +3200,7 @@ function AddStaffModal({onClose,onCreated,existingIds}){
       const insertRes=await fetch(`${SUPABASE_URL}/rest/v1/clinic_staff`,{
         method:"POST",
         headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
-        body:JSON.stringify({id:idNum,auth_uid:data.authUid,email:email.trim(),password,name:name.trim(),role,store_ids:[]}),
+        body:JSON.stringify({id:idNum,auth_uid:data.authUid,email:email.trim(),password,name:name.trim(),role,store_ids:[],color,initial:initial||name.charAt(0),event_only:eventOnly}),
       });
       const insertBody=await insertRes.text();
       if(!insertRes.ok){
@@ -3222,12 +3227,8 @@ function AddStaffModal({onClose,onCreated,existingIds}){
               <div style={{fontWeight:800,fontSize:15,color:"#065f46"}}>{doneInfo.name} 様のアカウントを作成しました</div>
               <div style={{fontSize:12,color:"#059669",marginTop:4}}>メール：{doneInfo.email}　/　ID：{doneInfo.id}</div>
             </div>
-            <div style={{background:"#fef9ec",border:"1px solid #fde68a",borderRadius:10,padding:"14px 16px",marginBottom:16,fontSize:12,color:"#92400e",lineHeight:1.8}}>
-              ⚠ ログイン自体はこれでできるようになりましたが、カレンダーへの表示・色分けを完全に有効にするには、開発担当（Claude）にもう一段階コード側の登録をしてもらう必要があります。<br/>
-              以下の内容をそのままコピーして伝えてください：<br/>
-              <div style={{marginTop:8,padding:"8px 10px",background:"white",borderRadius:6,fontFamily:"monospace",fontSize:11,color:"#374151"}}>
-                ID:{doneInfo.id} 名前:{doneInfo.name} メール:{doneInfo.email} 色:{doneInfo.color} イニシャル:{doneInfo.initial} 役職:{doneInfo.role}
-              </div>
+            <div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10,padding:"14px 16px",marginBottom:16,fontSize:12,color:"#1e40af",lineHeight:1.8}}>
+              ✅ カレンダーへの表示・色分けも自動で反映されます。画面を再読み込みすると一覧に表示されます。
             </div>
             <button onClick={onClose} className="btn btn-primary" style={{width:"100%",justifyContent:"center",padding:11}}>閉じる</button>
           </div>
@@ -3288,6 +3289,10 @@ function AddStaffModal({onClose,onCreated,existingIds}){
                 <button key={c} onClick={()=>setColor(c)} style={{width:32,height:32,borderRadius:"50%",background:c,border:color===c?"3px solid #1e293b":"3px solid white",boxShadow:"0 0 0 1px #e2e8f0",cursor:"pointer"}}/>
               ))}
             </div>
+          </div>
+          <div className="form-group" style={{display:"flex",alignItems:"center",gap:8}}>
+            <input type="checkbox" id="eventOnlyChk" checked={eventOnly} onChange={e=>setEventOnly(e.target.checked)} style={{width:16,height:16}}/>
+            <label htmlFor="eventOnlyChk" style={{fontSize:13,color:"#374151",cursor:"pointer"}}>イベント開催期間のみカレンダーに表示する（応援スタッフ・臨時枠向け）</label>
           </div>
           <div style={{display:"flex",gap:10,marginTop:20}}>
             <button onClick={onClose} className="btn btn-outline" style={{flex:1,justifyContent:"center",padding:11}}>キャンセル</button>
@@ -5911,6 +5916,8 @@ function Dashboard({user,onLogout}){
   const [staffMenuMap,setStaffMenuMap]=React.useState({}); // {staffId: [対応可能メニュー名] | undefined(=全メニュー対応)}
   const [staffLaneMap,setStaffLaneMap]=React.useState({}); // {staffId: 同時受付レーン数（未設定は1）}
   const [customMenus,setCustomMenus]=React.useState([]); // 「メニュー・コース管理」で追加された有効なメニュー一覧
+  const [staffVersion,setStaffVersion]=React.useState(0); // STAFF_ACCOUNTS（動的マージ）が更新されたら再描画するためのトリガー
+  const [eventDateRange,setEventDateRange]=React.useState({start:"",end:""}); // イベント開催期間（応援スタッフの表示判定に使用）
 
   const isAdmin=user.role==="admin";
   const todayStr=fmtDate(today);
@@ -5936,12 +5943,21 @@ function Dashboard({user,onLogout}){
 
   async function fetchAll(){
     try{
-      const [b,br,py,st,ws,cs,mn]=await Promise.all([sb.select("bookings","?order=date.asc,time.asc"),sb.select("staff_breaks","?order=date.asc,time.asc"),sb.select("payments","?order=payment_date.desc"),sb.select("stores","?order=id.asc"),sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc"),sb.select("clinic_staff","?select=id,store_ids,allowed_menus,lane_count"),sb.select("menus","?active=eq.true&order=display_order.asc,id.asc")]);
+      const [b,br,py,st,ws,cs,mn]=await Promise.all([sb.select("bookings","?order=date.asc,time.asc"),sb.select("staff_breaks","?order=date.asc,time.asc"),sb.select("payments","?order=payment_date.desc"),sb.select("stores","?order=id.asc"),sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc"),sb.select("clinic_staff","?select=id,store_ids,allowed_menus,lane_count,name,email,password,role,color,initial,event_only"),sb.select("menus","?active=eq.true&order=display_order.asc,id.asc")]);
       setBookings(Array.isArray(b)?b:[]);setBreaks(Array.isArray(br)?br:[]);setPayments(Array.isArray(py)?py:[]);
       const storeList=Array.isArray(st)?st:[];
       setStores(storeList);
       setSelStoreId(prev=>prev!==null?prev:(storeList.length>0?storeList[0].id:1));
       setWeeklyShifts(Array.isArray(ws)?ws:[]);
+      // イベント開催期間を取得（応援スタッフの表示判定用。店舗が複数ある場合は先頭店舗の設定を使う）
+      if(storeList.length>0){
+        sb.select("store_settings",`?store_id=eq.${storeList[0].id}&order=updated_at.desc.nullslast,id.desc&limit=1`)
+          .then(rows=>{
+            if(Array.isArray(rows)&&rows.length>0){
+              setEventDateRange({start:rows[0].event_start_date||"",end:rows[0].event_end_date||""});
+            }
+          }).catch(()=>{});
+      }
       const map={};
       const menuMap={};
       const laneMap={};
@@ -5953,6 +5969,10 @@ function Dashboard({user,onLogout}){
       setStaffStoreMap(map);
       setStaffMenuMap(menuMap);
       setStaffLaneMap(laneMap);
+      // 「スタッフ・シフト管理」→「スタッフを追加」で登録されたスタッフを、
+      // ハードコードされた基本スタッフ一覧に自動でマージする（コード修正なしでカレンダー等に反映される）
+      updateStaffAccounts(Array.isArray(cs)?cs:[]);
+      setStaffVersion(v=>v+1);
       // 「メニュー・コース管理」で追加されたメニューを、既存のハードコードされたメニュー一覧にマージする。
       // これにより、新しく登録したメニューも予約時間の計算（DURATION）や金額表示（MENU_PRICE）で
       // すぐに使えるようになる。
@@ -5972,6 +5992,12 @@ function Dashboard({user,onLogout}){
     if(!allowed||allowed.length===0) return true; // 未設定＝全メニュー対応
     if(!menuNames||menuNames.length===0) return true;
     return menuNames.every(m=>allowed.includes(m));
+  }
+
+  // イベント開催期間内の日付かどうか（応援スタッフ・臨時枠の表示判定に使用）
+  function isEventDateAdmin(dateStr){
+    if(!eventDateRange.start||!eventDateRange.end) return false;
+    return dateStr>=eventDateRange.start && dateStr<=eventDateRange.end;
   }
 
   // 指定スタッフが指定日に出勤しているか（月次シフトの個別調整＞週固定シフトの順で判定）
@@ -6055,7 +6081,7 @@ function Dashboard({user,onLogout}){
     if(dbIds) return dbIds.indexOf(selStoreId)>-1;
     if(s.storeIds) return s.storeIds.indexOf(selStoreId)>-1;
     return true;
-  }),[selStoreId,staffStoreMap]);
+  }),[selStoreId,staffStoreMap,staffVersion]);
 
   const filtered=React.useMemo(()=>selStaff?storeBookings.filter(b=>b.staff_id===selStaff):storeBookings,[storeBookings,selStaff]);
 
@@ -6668,7 +6694,7 @@ function Dashboard({user,onLogout}){
                       const dayBookings=storeBookings.filter(b=>b.date===wdStr&&!b.cancelled);
                       const dayColor=isSun?"#ef4444":isSat?"#7c3aed":"#1e293b";
                       // その日実際に出勤しているスタッフのみ表示（誤予約防止）
-                      const dayStaffList=filteredStaff.filter(s=>isStaffWorkingOnDate(s.id,wd));
+                      const dayStaffList=filteredStaff.filter(s=>isStaffWorkingOnDate(s.id,wd)&&(!s.eventOnly||isEventDateAdmin(wdStr)));
 
                       // 対応可能・予約数（その日の）
                       const daySlots30=[];
