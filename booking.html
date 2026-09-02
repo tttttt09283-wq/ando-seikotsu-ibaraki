@@ -436,6 +436,8 @@ function App(){
     for(var i=0;i<closures.length;i++){
       if(closures[i].date===ds) return true;
     }
+    // イベント期間中（10/1〜10/4）は曜日にかかわらず必ず営業（定休日等の通常設定より優先）
+    if(isEventDate(d)) return false;
     // 営業時間データが未設定の場合は制限しない（フェイルセーフ）
     if(businessHours.length===0) return false;
     var dh = getDayHours(d.getDay());
@@ -443,6 +445,11 @@ function App(){
     return dh.is_open===false;
   }
   function isTimeAllowedForDate(d,t){
+    // イベント期間中（10/1〜10/4）は曜日にかかわらず10:00〜20:00で固定
+    if(isEventDate(d)){
+      var tmE = toMin(t);
+      return tmE>=toMin("10:00") && tmE<toMin("20:00");
+    }
     if(businessHours.length===0) return true;
     var dh = getDayHours(d.getDay());
     if(!dh || dh.is_open===false) return false;
