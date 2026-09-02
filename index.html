@@ -310,7 +310,7 @@ async function processReferralBonus(booking,allBookings){
 // ===== キャンセル理由の選択肢 =====
 const CANCEL_REASONS=["体調不良","仕事都合","急用","天候不良","無断キャンセル","予約間違い","他院・他予約と重複","スタッフ都合","その他"];
 
-const SLOTS = (()=>{const s=[];for(let h=9;h<=19;h++){for(let m=0;m<60;m+=10){if(h===19&&m>0) break;s.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);}}return s;})();
+const SLOTS = (()=>{const s=[];for(let h=10;h<20;h++){for(let m=0;m<60;m+=10){s.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);}}return s;})();
 
 // Supabase公式クライアント（Authセッション管理付き）
 // storage を sessionStorage にすることで「タブを閉じるまでログイン維持」を実現
@@ -2569,7 +2569,7 @@ function SettingsPanel(){
 function BusinessHoursPanel(){
   const DAYS_JP=["日","月","火","水","木","金","土"];
   const DAY_COLORS=["#ef4444","#374151","#374151","#374151","#374151","#374151","#7c3aed"];
-  const DEFAULT_HOURS=DAYS_JP.map((_,i)=>({day:i,is_open:i!==0,open_time:"09:00",close_time:"19:00",break_times:[]}));
+  const DEFAULT_HOURS=DAYS_JP.map((_,i)=>({day:i,is_open:i!==0,open_time:"10:00",close_time:"20:00",break_times:[]}));
 
   const [stores,setStores]=React.useState([]);
   const [selStoreId,setSelStoreId]=React.useState(1);
@@ -3454,7 +3454,7 @@ function StaffMenuPermissionsModal({staff,onClose}){
 function StaffMgmtPanel({currentUser}){
   const DAYS_JP=["日","月","火","水","木","金","土"];
   const DAY_COLORS=["#ef4444","#374151","#374151","#374151","#374151","#374151","#7c3aed"];
-  const DEFAULT_SHIFTS=DAYS_JP.map((_,i)=>({day:i,is_working:i!==0,start_time:"09:00",end_time:"19:00"}));
+  const DEFAULT_SHIFTS=DAYS_JP.map((_,i)=>({day:i,is_working:i!==0,start_time:"10:00",end_time:"20:00"}));
 
   const [mode,setMode]=React.useState("list"); // "list" | "shift"
   const [selStaffId,setSelStaffId]=React.useState(null);
@@ -6218,7 +6218,7 @@ function Dashboard({user,onLogout}){
 
 
   // ===== カレンダー上でのドラッグ移動 =====
-  const DRAG_TOTAL_SLOTS=54; // 09:00〜18:00を10分刻みにした数（カレンダー表示の時間軸と一致）
+  const DRAG_TOTAL_SLOTS=60; // 10:00〜20:00を10分刻みにした数（カレンダー表示の時間軸と一致）
   function computeTimeFromRowX(relX,rowWidth){
     const cellW=rowWidth/DRAG_TOTAL_SLOTS;
     const totalMin=Math.max(0,Math.round(relX/cellW))*10;
@@ -6550,7 +6550,7 @@ function Dashboard({user,onLogout}){
             function prevWeek(){const d=new Date(baseDate);d.setDate(d.getDate()-7);setBaseDate(d);}
             function nextWeek(){const d=new Date(baseDate);d.setDate(d.getDate()+7);setBaseDate(d);}
 
-            const MINS=Array.from({length:54},(_,i)=>{const totalMin=i*10,h=9+Math.floor(totalMin/60),m=totalMin%60;if(h>18||(h===18&&m>0))return null;return{h,m,label:`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`};}).filter(Boolean);
+            const MINS=Array.from({length:60},(_,i)=>{const totalMin=i*10,h=10+Math.floor(totalMin/60),m=totalMin%60;if(h>=20)return null;return{h,m,label:`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`};}).filter(Boolean);
             const TOTAL_MINS=MINS.length;
             const HEADER_W=100;
             const screenW=Math.max(window.innerWidth-130-48,600);
@@ -6559,17 +6559,18 @@ function Dashboard({user,onLogout}){
             const staffList=storeStaff;
             const filteredStaff=selStaff?staffList.filter(s=>s.id===selStaff):staffList;
 
-            function timeToX(timeStr){const[h,m]=timeStr.split(":").map(Number);return((h-9)*60+m)/10*CELL_W;}
+            function timeToX(timeStr){const[h,m]=timeStr.split(":").map(Number);return((h-10)*60+m)/10*CELL_W;}
             function durationToW(b){return(b.duration||DURATION[b.menu]||30)/10*CELL_W;}
 
             // 30分スロット集計
             const timeSlots30=[];
-            for(let h=9;h<18;h++){for(let m=0;m<60;m+=30){
+            for(let h=10;h<=20;h++){for(let m=0;m<60;m+=30){
+              if(h===20&&m>0) break;
               const label=`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
               const booked=bookings.filter(b=>{if(b.date!==ds)return false;const bs=toMin(b.time),be=bs+(b.duration||DURATION[b.menu]||30),ss=toMin(label),se=ss+30;return bs<se&&ss<be;}).length;
               const resting=breaks.filter(b=>b.date===ds&&b.time===label).length;
               const available=Math.max(0,filteredStaff.length-resting);
-              timeSlots30.push({label,booked,available,x:(h-9)*60/10*CELL_W+m/10*CELL_W,w:30/10*CELL_W});
+              timeSlots30.push({label,booked,available,x:(h-10)*60/10*CELL_W+m/10*CELL_W,w:30/10*CELL_W});
             }}
 
             return(
@@ -6641,7 +6642,7 @@ function Dashboard({user,onLogout}){
                       <div style={{width:HEADER_W,flexShrink:0,padding:"5px 8px",fontWeight:700,fontSize:11,color:"#64748b",borderRight:"1px solid #e2e8f0"}}>スタッフ</div>
                       <div style={{position:"relative",height:24,flex:1}}>
                         {MINS.filter((_,i)=>i%3===0).map(({h,m,label})=>(
-                          <div key={label} style={{position:"absolute",left:(h-9)*60/10*CELL_W+m/10*CELL_W,top:0,height:"100%",borderLeft:"1px solid #e2e8f0",paddingLeft:2,display:"flex",alignItems:"center"}}>
+                          <div key={label} style={{position:"absolute",left:(h-10)*60/10*CELL_W+m/10*CELL_W,top:0,height:"100%",borderLeft:"1px solid #e2e8f0",paddingLeft:2,display:"flex",alignItems:"center"}}>
                             <span style={{fontSize:9,fontWeight:600,color:"#94a3b8",whiteSpace:"nowrap"}}>{label}</span>
                           </div>
                         ))}
@@ -6660,14 +6661,14 @@ function Dashboard({user,onLogout}){
 
                       // 対応可能・予約数（その日の）
                       const daySlots30=[];
-                      for(let h=9;h<=18;h++){
+                      for(let h=10;h<=20;h++){
                         for(let m=0;m<60;m+=30){
-                          if(h===18&&m>0) break;
+                          if(h===20&&m>0) break;
                           const label=`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
                           const booked=dayBookings.filter(b=>b.time===label).length;
                           const resting=breaks.filter(b=>b.date===wdStr&&b.time===label).length;
                           const available=Math.max(0,dayStaffList.length-resting);
-                          daySlots30.push({label,booked,available,x:(h-9)*60/10*CELL_W+m/10*CELL_W,w:30/10*CELL_W});
+                          daySlots30.push({label,booked,available,x:(h-10)*60/10*CELL_W+m/10*CELL_W,w:30/10*CELL_W});
                         }
                       }
 
@@ -6726,16 +6727,16 @@ function Dashboard({user,onLogout}){
                                     const rect=e.currentTarget.getBoundingClientRect();
                                     const x=e.clientX-rect.left;
                                     const totalMinFromStart=Math.round(x/CELL_W)*10;
-                                    const h=9+Math.floor(totalMinFromStart/60);
+                                    const h=10+Math.floor(totalMinFromStart/60);
                                     const m=totalMinFromStart%60;
-                                    if(h>=9&&h<=17){
+                                    if(h>=10&&h<=19){
                                       const centerTime=`${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
                                       setBookingPopup(null);
                                       setTimePickerPopup({date:wdStr,staffId:staff.id,x:e.clientX,y:e.clientY,centerTime});
                                     }
                                   }}>
                                   {MINS.map(({h,m,label})=>(
-                                    <div key={label} style={{position:"absolute",left:(h-9)*60/10*CELL_W+m/10*CELL_W,top:0,bottom:0,borderLeft:`1px solid ${m%30===0?"#e2e8f0":"#f6f7f9"}`,pointerEvents:"none"}}/>
+                                    <div key={label} style={{position:"absolute",left:(h-10)*60/10*CELL_W+m/10*CELL_W,top:0,bottom:0,borderLeft:`1px solid ${m%30===0?"#e2e8f0":"#f6f7f9"}`,pointerEvents:"none"}}/>
                                   ))}
                                   {totalLanes>1&&Array.from({length:totalLanes-1}).map((_,i)=>(
                                     <div key={`lane-${i}`} style={{position:"absolute",left:0,right:0,top:(i+1)*laneH,height:1,background:"#f1f5f9",pointerEvents:"none"}}/>
@@ -6771,8 +6772,8 @@ function Dashboard({user,onLogout}){
                                         {sameDay&&<div style={{position:"absolute",top:-1,left:-1,background:"#fff",color:"#a16207",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"6px 0 4px 0",lineHeight:1,letterSpacing:0}}>⚡当日</div>}
                                         {b.memo&&<div style={{position:"absolute",bottom:-1,left:-1,background:"#fff",color:"#1e3a5f",fontSize:8,fontWeight:900,padding:"0 3px",borderRadius:"6px 4px 0 0",lineHeight:1.4}}>📝</div>}
                                         {b.booked_via_line&&<div style={{position:"absolute",bottom:-1,right:-1,background:"#06C755",color:"white",fontSize:7,fontWeight:900,padding:"1px 3px",borderRadius:"4px 0 4px 0",lineHeight:1}}>LINE</div>}
-                                        <div style={{fontWeight:800,fontSize:10,color:"white",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{isCheckedIn?"📷":""}{isPaid?"✓ ":""}{b.patient_name}</div>
-                                        <div style={{fontSize:9,color:"rgba(255,255,255,.85)"}}>{b.time}{cnt>1&&<span style={{marginLeft:2,background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}{isBeingResized&&<span style={{marginLeft:2,fontWeight:800}}>{Math.max(10,(b.duration||DURATION[b.menu]||30)+Math.round(resizeDeltaPx/CELL_W)*10)}分</span>}</div>
+                                        <div style={{fontWeight:800,fontSize:12,color:"white",textShadow:"0 1px 2px rgba(0,0,0,.55)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",letterSpacing:0.2}}>{isCheckedIn?"📷":""}{isPaid?"✓ ":""}{b.patient_name}</div>
+                                        <div style={{fontSize:10,color:"rgba(255,255,255,.95)",textShadow:"0 1px 2px rgba(0,0,0,.45)",fontWeight:700}}>{b.time}{cnt>1&&<span style={{marginLeft:2,background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}{isBeingResized&&<span style={{marginLeft:2,fontWeight:800}}>{Math.max(10,(b.duration||DURATION[b.menu]||30)+Math.round(resizeDeltaPx/CELL_W)*10)}分</span>}</div>
                                         {/* 右端のリサイズハンドル：ここをドラッグすると対応時間を伸縮できる */}
                                         <div
                                           onPointerDown={e=>{
@@ -6869,7 +6870,7 @@ function Dashboard({user,onLogout}){
         const centerMin=toMin(timePickerPopup.centerTime);
         const options=[-20,-10,0,10,20].map(off=>{
           const totalMin=centerMin+off;
-          if(totalMin<9*60||totalMin>=19*60) return null;
+          if(totalMin<10*60||totalMin>=20*60) return null;
           const h=Math.floor(totalMin/60),m=totalMin%60;
           return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
         }).filter(Boolean);
