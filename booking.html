@@ -424,6 +424,12 @@ function App(){
     }
     return null;
   }
+  function getClosureForDate(ds){
+    for(var i=0;i<closures.length;i++){
+      if(closures[i].date===ds) return closures[i];
+    }
+    return null;
+  }
   function isClosedDate(d){
     var ds = fmtDate(d);
     if(pageSettings.bookingMinDate && ds < pageSettings.bookingMinDate) return true; // 受付開始日より前は常にクローズ扱い
@@ -433,11 +439,11 @@ function App(){
       var maxD=new Date(today0);maxD.setDate(maxD.getDate()+pageSettings.daysAhead);
       if(ds > fmtDate(maxD)) return true; // 「何日先まで予約可能か」を超えている
     }
-    for(var i=0;i<closures.length;i++){
-      if(closures[i].date===ds) return true;
-    }
+    var closureEntry = getClosureForDate(ds);
+    if(closureEntry && closureEntry.is_closed!==false) return true; // 終日休業（is_closedがfalseの行＝営業時間変更は除く）
     // イベント期間中（10/1〜10/4）は曜日にかかわらず必ず営業（定休日等の通常設定より優先）
     if(isEventDate(d)) return false;
+    if(closureEntry && closureEntry.is_closed===false) return false; // 営業時間変更日は「開いている」扱い（時間はisTimeAllowedForDateで判定）
     // 営業時間データが未設定の場合は制限しない（フェイルセーフ）
     if(businessHours.length===0) return false;
     var dh = getDayHours(d.getDay());
@@ -445,6 +451,13 @@ function App(){
     return dh.is_open===false;
   }
   function isTimeAllowedForDate(d,t){
+    var ds = fmtDate(d);
+    var closureEntry = getClosureForDate(ds);
+    // 「営業時間だけ変更」の日は、通常の曜日設定ではなくこの時間帯を使う（イベント期間中でも優先）
+    if(closureEntry && closureEntry.is_closed===false && closureEntry.open_time && closureEntry.close_time){
+      var tmC = toMin(t);
+      return tmC>=toMin(closureEntry.open_time) && tmC<toMin(closureEntry.close_time);
+    }
     // イベント期間中（10/1〜10/4）は曜日にかかわらず10:00〜20:00で固定
     if(isEventDate(d)){
       var tmE = toMin(t);
