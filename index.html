@@ -3523,7 +3523,7 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
     try{
       const existing=weeklyDefaultFor(staffId,day);
       const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
-      await fetch(`${SUPABASE_URL}/rest/v1/staff_weekly_shifts`,{
+      await fetch(`${SUPABASE_URL}/rest/v1/staff_weekly_shifts?on_conflict=staff_id,day_of_week`,{
         method:"POST",
         headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates"},
         body:JSON.stringify({
@@ -3656,13 +3656,13 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
       if(Array.isArray(data)&&data.length>0){
         const merged=DEFAULT_SHIFTS.map(def=>{
           const found=data.find(d=>d.day_of_week===def.day);
-          return found?{day:def.day,is_working:found.is_working,start_time:found.start_time||"09:00",end_time:found.end_time||"19:00"}:def;
+          return found?{day:def.day,is_working:found.is_working,start_time:found.start_time||"09:00",end_time:found.end_time||"19:00",store_id:found.store_id||null}:def;
         });
         setWeeklyShifts(merged);
       }else{
-        setWeeklyShifts(DEFAULT_SHIFTS.map(d=>({...d})));
+        setWeeklyShifts(DEFAULT_SHIFTS.map(d=>({...d,store_id:null})));
       }
-    }catch(e){setWeeklyShifts(DEFAULT_SHIFTS.map(d=>({...d})));}
+    }catch(e){setWeeklyShifts(DEFAULT_SHIFTS.map(d=>({...d,store_id:null})));}
     setLoadingShift(false);
   }
 
@@ -3674,10 +3674,10 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
     try{
       const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
       for(const shift of weeklyShifts){
-        await fetch(`${SUPABASE_URL}/rest/v1/staff_weekly_shifts`,{
+        await fetch(`${SUPABASE_URL}/rest/v1/staff_weekly_shifts?on_conflict=staff_id,day_of_week`,{
           method:"POST",
           headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates"},
-          body:JSON.stringify({staff_id:selStaff.id,day_of_week:shift.day,is_working:shift.is_working,start_time:shift.start_time,end_time:shift.end_time})
+          body:JSON.stringify({staff_id:selStaff.id,day_of_week:shift.day,is_working:shift.is_working,start_time:shift.start_time,end_time:shift.end_time,store_id:shift.store_id||null})
         });
       }
       showToast(`${selStaff.name}のシフトを保存しました`);
