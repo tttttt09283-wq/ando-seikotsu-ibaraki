@@ -5998,7 +5998,19 @@ function Dashboard({user,onLogout}){
   const [bookings,setBookings]=React.useState([]);
   const [breaks,setBreaks]=React.useState([]);
   const [loading,setLoading]=React.useState(true);
-  const [view,setView]=React.useState("calendar");
+  const [view,setViewRaw]=React.useState(()=>{
+    try{
+      const saved=localStorage.getItem("ando_admin_last_view");
+      // 「新規予約フォーム」は編集中データが保存されていないため、そのまま復元すると壊れた画面になる。
+      // その場合はカレンダーへ戻す。
+      return (saved&&saved!=="form")?saved:"calendar";
+    }catch(e){ return "calendar"; }
+  });
+  // 画面を切り替えるたびに、ブラウザの更新（リロード）後も同じ画面に戻れるよう記憶しておく
+  function setView(v){
+    setViewRaw(v);
+    try{ localStorage.setItem("ando_admin_last_view",v); }catch(e){}
+  }
   const [selStaff,setSelStaff]=React.useState(null);
   const [weekViewMode,setWeekViewMode]=React.useState("calendar"); // "calendar" | "list"
   const [baseDate,setBaseDate]=React.useState(today);
