@@ -454,30 +454,36 @@ function App(){
     if(!dh) return false;
     return dh.is_open===false;
   }
+  // 現在選択されている（もしくは想定される）施術時間。閉店時刻をまたぐ枠を除外するために使う。
+  function getCurrentDuration(d){
+    if(isEventDate(d)) return 40;
+    var opt=PATIENT_TYPE_OPTIONS.find(function(o){return o.label===form.patientType;});
+    if(opt) return DURATION_MAP[opt.menu]||40;
+    return 40; // 未選択の時点では安全側（長め）に見積もっておく
+  }
   function isTimeAllowedForDate(d,t){
     var ds = fmtDate(d);
+    var duration = getCurrentDuration(d);
+    var tm = toMin(t);
     var closureEntry = getClosureForDate(ds);
     // 「営業時間だけ変更」の日は、通常の曜日設定ではなくこの時間帯を使う（イベント期間中でも優先）
     if(closureEntry && closureEntry.is_closed===false && closureEntry.open_time && closureEntry.close_time){
-      var tmC = toMin(t);
-      return tmC>=toMin(closureEntry.open_time) && tmC<toMin(closureEntry.close_time);
+      return tm>=toMin(closureEntry.open_time) && (tm+duration)<=toMin(closureEntry.close_time);
     }
     // イベント期間中（10/1〜10/4）は曜日にかかわらず10:00〜20:00で固定
     if(isEventDate(d)){
-      var tmE = toMin(t);
-      return tmE>=toMin("10:00") && tmE<toMin("20:00");
+      return tm>=toMin("10:00") && (tm+duration)<=toMin("20:00");
     }
     if(businessHours.length===0) return true;
     var dh = getDayHours(d.getDay());
     if(!dh || dh.is_open===false) return false;
-    var tm = toMin(t);
     var openM = toMin(dh.open_time||"09:00");
     var closeM = toMin(dh.close_time||"19:00");
-    if(tm<openM || tm>=closeM) return false;
+    if(tm<openM || (tm+duration)>closeM) return false;
     var brs = dh.break_times||[];
     for(var i=0;i<brs.length;i++){
       var bs=toMin(brs[i].start), be=toMin(brs[i].end);
-      if(tm>=bs && tm<be) return false;
+      if(tm<be && (tm+duration)>bs) return false; // 施術時間が休憩時間と重なる場合も除外
     }
     return true;
   }
@@ -509,7 +515,7 @@ function App(){
     "姿勢矯正・骨盤矯正・ストレッチ・鍼治療 8回券":30,"姿勢矯正・骨盤矯正・ストレッチ・鍼治療 16回券":30,"姿勢矯正・骨盤矯正・ストレッチ・鍼治療 24回券":30,
     "フリーパス 1ヶ月":30,"フリーパス 3ヶ月":30,"フリーパス 6ヶ月":30,"フリーパス 12ヶ月":30,
     "無料カウンセリング":60,"体験施術":60,
-    "初めての方（初診）":60,"久しぶりの方（要確認）":40,"2回目以降の方":30,
+    "初めての方（初診）":40,"久しぶりの方（要確認）":40,"2回目以降の方":30,
   };
   // 表記上は「60分（カウンセリング込み）」だが、実際に予約枠として確保する時間は40分
   DURATION_MAP[pageSettings.eventMenuName]=40;
