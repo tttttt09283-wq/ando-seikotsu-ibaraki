@@ -3471,7 +3471,7 @@ function StaffMenuPermissionsModal({staff,onClose}){
   );
 }
 
-function StaffMgmtPanel({currentUser}){
+function StaffMgmtPanel({currentUser,onShiftsSaved}){
   const DAYS_JP=["日","月","火","水","木","金","土"];
   const DAY_COLORS=["#ef4444","#374151","#374151","#374151","#374151","#374151","#7c3aed"];
   const DEFAULT_SHIFTS=DAYS_JP.map((_,i)=>{
@@ -3533,6 +3533,7 @@ function StaffMgmtPanel({currentUser}){
           store_id:storeId,
         })
       });
+      if(onShiftsSaved) onShiftsSaved(); // カレンダー画面が使っているシフトデータも更新する
     }catch(e){
       showToast("⚠ 保存に失敗しました。もう一度お試しください");
     }
@@ -3680,6 +3681,7 @@ function StaffMgmtPanel({currentUser}){
         });
       }
       showToast(`${selStaff.name}のシフトを保存しました`);
+      if(onShiftsSaved) onShiftsSaved(); // カレンダー画面が使っているシフトデータも更新する
     }catch(e){alert("保存に失敗しました："+e.message);}
     setSaving(false);
   }
@@ -7003,7 +7005,7 @@ function Dashboard({user,onLogout}){
           {view==="store_mgmt"&&<StoreMgmtPanel/>}
 
           {/* スタッフ・シフト管理（統合） */}
-          {view==="staff_mgmt"&&<StaffMgmtPanel currentUser={user}/>}
+          {view==="staff_mgmt"&&<StaffMgmtPanel currentUser={user} onShiftsSaved={fetchAll}/>}
 
           {/* メニュー・コース管理 */}
           {view==="menu_mgmt"&&<MenuMgmtPanel/>}
