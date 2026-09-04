@@ -5726,7 +5726,8 @@ function LineLinkCheckPanel({bookings}){
   );
 }
 
-function CancelledListPanel({bookings,todayStr,onRestore}){
+function CancelledListPanel({bookings,todayStr,onRestore,onDelete}){
+  const [confirmDeleteId,setConfirmDeleteId]=React.useState(null);
   const cancelledList=React.useMemo(()=>{
     return bookings.filter(b=>b.cancelled).sort((a,b)=>(b.cancelled_at||b.date).localeCompare(a.cancelled_at||a.date));
   },[bookings]);
@@ -5780,7 +5781,18 @@ function CancelledListPanel({bookings,todayStr,onRestore}){
                     {nextBooking?`次回予約あり：${nextBooking.date} ${nextBooking.time}`:"次回予約なし"}
                   </div>
                 </div>
-                <button onClick={()=>onRestore(b.id)} className="btn btn-outline btn-xs" style={{whiteSpace:"nowrap"}}>予約に戻す</button>
+                <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end"}}>
+                  <button onClick={()=>onRestore(b.id)} className="btn btn-outline btn-xs" style={{whiteSpace:"nowrap"}}>予約に戻す</button>
+                  {confirmDeleteId===b.id?(
+                    <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                      <span style={{fontSize:11,color:"#dc2626",fontWeight:700,whiteSpace:"nowrap"}}>本当に削除？</span>
+                      <button onClick={()=>{onDelete(b.id);setConfirmDeleteId(null);}} style={{padding:"4px 10px",background:"#dc2626",color:"white",border:"none",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>削除する</button>
+                      <button onClick={()=>setConfirmDeleteId(null)} style={{padding:"4px 10px",background:"#f1f5f9",border:"none",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",color:"#64748b"}}>戻る</button>
+                    </div>
+                  ):(
+                    <button onClick={()=>setConfirmDeleteId(b.id)} style={{padding:"3px 10px",background:"white",border:"1.5px solid #fecaca",color:"#dc2626",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>🗑 削除</button>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -6393,6 +6405,29 @@ function Dashboard({user,onLogout}){
     }
   }
 
+  async function deleteCancelledBooking(id){
+    try{
+      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      const res=await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${id}`,{
+        method:"DELETE",
+        headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,Prefer:"return=representation"},
+      });
+      const bodyText=await res.text();
+      if(!res.ok){
+        throw new Error(`削除に失敗しました（HTTP ${res.status}）\n${bodyText}`);
+      }
+      let deleted=null;
+      try{deleted=JSON.parse(bodyText);}catch(e){}
+      if(!Array.isArray(deleted)||deleted.length===0){
+        throw new Error("対象の予約が見つからず、削除できませんでした。");
+      }
+      setBookings(prev=>prev.filter(b=>b.id!==id));
+      showToast("キャンセル履歴から削除しました");
+    }catch(e){
+      alert("削除に失敗しました：\n"+(e.message||"不明なエラー"));
+    }
+  }
+
 
   // ===== カレンダー上でのドラッグ移動 =====
   const DRAG_TOTAL_SLOTS=66; // 09:00〜20:00を10分刻みにした数（土日祝9-18・平日10-20の両方をカバー。カレンダー表示の時間軸と一致）
@@ -6997,7 +7032,7 @@ function Dashboard({user,onLogout}){
           {view==="line_link_check"&&<LineLinkCheckPanel bookings={bookings}/>}
 
           {/* キャンセル一覧 */}
-          {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} todayStr={todayStr} onRestore={restoreBooking}/>}
+          {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} todayStr={todayStr} onRestore={restoreBooking} onDelete={deleteCancelledBooking}/>}
           {view==="posture_records"&&<PostureRecordsPanel bookings={bookings}/>}
           {view==="treatment_plans"&&<TreatmentPlanPanel bookings={bookings}/>}
 
