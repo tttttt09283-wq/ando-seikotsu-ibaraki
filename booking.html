@@ -148,6 +148,7 @@ var sb = {
 function App(){
   var useState = React.useState;
   var useEffect = React.useEffect;
+  var useRef = React.useRef;
 
   var stepState = useState(0);
   var step = stepState[0]; var setStep = stepState[1];
@@ -384,13 +385,16 @@ function App(){
     });
   }, []);
 
-  // 受付開始日の設定が読み込まれた後、今表示している週がそれより前なら開始日の週まで進める
+  // 受付開始日の設定が読み込まれた後、初期表示の週を正しい開始日に合わせる（前方向・後方向どちらの補正にも対応）
+  var appliedInitialCorrection = useRef(false);
   useEffect(function(){
     if(!pageSettings.bookingMinDate) return;
+    if(appliedInitialCorrection.current) return; // 初回読み込み時だけ補正する（以降はユーザーの週送り操作を優先）
+    appliedInitialCorrection.current = true;
     var minD=new Date(pageSettings.bookingMinDate+"T00:00:00");
     var today0=new Date();today0.setHours(0,0,0,0);
     var base=today0>minD?today0:minD;
-    if(weekStart<base) setWeekStart(base);
+    setWeekStart(base);
   },[pageSettings.bookingMinDate]);
 
   function getWeekDays(start){
