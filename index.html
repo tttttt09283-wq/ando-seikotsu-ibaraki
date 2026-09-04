@@ -3818,7 +3818,10 @@ function StaffMgmtPanel({currentUser}){
                           </td>
                           {dates.map(({date,day})=>{
                             const key=`${s.id}_${date}`;
-                            const val=monthShifts[key]||"出勤";
+                            // 個別に上書きされていなければ、週固定シフトの設定（出勤/休み）を初期値として使う
+                            const weeklyDefault=weeklyShifts.find(w=>w.day===day);
+                            const defaultVal=weeklyDefault&&!weeklyDefault.is_working?"休み":"出勤";
+                            const val=monthShifts[key]||defaultVal;
                             const color=SHIFT_COLORS[val];
                             const isEditing=editingCell===key;
                             return(
