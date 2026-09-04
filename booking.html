@@ -355,47 +355,60 @@ function App(){
     sb.select("stores","?name=ilike.*香里園*&limit=1").then(function(stores){
       var usedStoreId = (Array.isArray(stores)&&stores.length>0) ? stores[0].id : STORE_ID;
       setResolvedStoreId(usedStoreId);
-      return Promise.all([
+      return Promise.allSettled([
         sb.select("business_hours","?store_id=eq."+usedStoreId+"&order=day_of_week.asc"),
         sb.select("temp_closures","?store_id=eq."+usedStoreId),
         sb.select("store_settings","?store_id=eq."+usedStoreId+"&order=updated_at.desc.nullslast,id.desc&limit=1")
       ]);
     }).then(function(results){
-      setBusinessHours(Array.isArray(results[0])?results[0]:[]);
-      setClosures(Array.isArray(results[1])?results[1]:[]);
-      var settingsRows=results[2];
-      if(Array.isArray(settingsRows)&&settingsRows.length>0){
-        var s=settingsRows[0];
-        setPageSettings({
-          bookingMinDate: s.booking_min_date || DEFAULT_BOOKING_MIN_DATE,
-          eventStartDate: s.event_start_date || DEFAULT_EVENT_START_DATE,
-          eventEndDate: s.event_end_date || DEFAULT_EVENT_END_DATE,
-          eventMenuName: s.event_menu_name || DEFAULT_EVENT_MENU_NAME,
-          eventMenuPrice: (s.event_menu_price!=null&&s.event_menu_price!=="") ? s.event_menu_price : DEFAULT_EVENT_MENU_PRICE,
-          slotUnit: s.slot_unit || DEFAULT_SLOT_UNIT,
-          hoursBefore: (s.hours_before!=null) ? s.hours_before : DEFAULT_HOURS_BEFORE,
-          daysAhead: s.days_ahead || DEFAULT_DAYS_AHEAD,
-          slotCapacity: s.max_per_slot || DEFAULT_SLOT_CAPACITY,
-          allowSameDay: s.allow_same_day!==false,
-        });
+      // Promise.allSettledなので、3つのうちどれか1つが失敗しても、成功した分だけは反映する
+      var businessHoursResult=results[0];
+      var closuresResult=results[1];
+      var settingsResult=results[2];
+
+      setBusinessHours((businessHoursResult.status==="fulfilled"&&Array.isArray(businessHoursResult.value))?businessHoursResult.value:[]);
+      setClosures((closuresResult.status==="fulfilled"&&Array.isArray(closuresResult.value))?closuresResult.value:[]);
+
+      if(settingsResult.status==="fulfilled"){
+        var settingsRows=settingsResult.value;
+        if(Array.isArray(settingsRows)&&settingsRows.length>0){
+          var s=settingsRows[0];
+          setPageSettings({
+            bookingMinDate: s.booking_min_date || DEFAULT_BOOKING_MIN_DATE,
+            eventStartDate: s.event_start_date || DEFAULT_EVENT_START_DATE,
+            eventEndDate: s.event_end_date || DEFAULT_EVENT_END_DATE,
+            eventMenuName: s.event_menu_name || DEFAULT_EVENT_MENU_NAME,
+            eventMenuPrice: (s.event_menu_price!=null&&s.event_menu_price!=="") ? s.event_menu_price : DEFAULT_EVENT_MENU_PRICE,
+            slotUnit: s.slot_unit || DEFAULT_SLOT_UNIT,
+            hoursBefore: (s.hours_before!=null) ? s.hours_before : DEFAULT_HOURS_BEFORE,
+            daysAhead: s.days_ahead || DEFAULT_DAYS_AHEAD,
+            slotCapacity: s.max_per_slot || DEFAULT_SLOT_CAPACITY,
+            allowSameDay: s.allow_same_day!==false,
+          });
+        }
+      }else{
+        console.error("store_settingsの取得に失敗しました",settingsResult.reason);
       }
       setHoursLoaded(true);
-    }).catch(function(){
+    }).catch(function(e){
+      console.error("店舗情報の取得に失敗しました",e);
       setHoursLoaded(true);
     });
   }, []);
 
   // 受付開始日の設定が読み込まれた後、初期表示の週を正しい開始日に合わせる（前方向・後方向どちらの補正にも対応）
+  // ※ pageSettings.bookingMinDate はDB取得前からデフォルト値で埋まっているため、
+  //   「実際にDB取得が完了したか」を示す hoursLoaded を条件にする（そうしないとデフォルト値の時点で補正が消費されてしまう）
   var appliedInitialCorrection = useRef(false);
   useEffect(function(){
-    if(!pageSettings.bookingMinDate) return;
+    if(!hoursLoaded) return;
     if(appliedInitialCorrection.current) return; // 初回読み込み時だけ補正する（以降はユーザーの週送り操作を優先）
     appliedInitialCorrection.current = true;
     var minD=new Date(pageSettings.bookingMinDate+"T00:00:00");
     var today0=new Date();today0.setHours(0,0,0,0);
     var base=today0>minD?today0:minD;
     setWeekStart(base);
-  },[pageSettings.bookingMinDate]);
+  },[hoursLoaded]);
 
   function getWeekDays(start){
     return Array.from({length:7},function(_,i){var d=new Date(start);d.setDate(start.getDate()+i);return d;});
