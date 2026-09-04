@@ -1366,16 +1366,29 @@ function App(){
           errors.quickSymptom?React.createElement("div",{style:{color:"#ef4444",fontSize:12,marginTop:6}},"⚠ "+errors.quickSymptom):null
         ),
 
-        React.createElement("button",{
-          type:"button",
-          onClick:function(){setDetailFormOpen(!detailFormOpen);},
-          style:{width:"100%",padding:"13px 14px",borderRadius:12,border:"1.5px dashed #93c5fd",background:"#eff6ff",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:detailFormOpen?16:20,fontFamily:"inherit"}
-        },
-          React.createElement("div",{style:{textAlign:"left"}},
-            React.createElement("div",{style:{fontWeight:800,fontSize:14,color:"#1e40af"}},"📋 事前問診票にご記入いただけます（任意）"),
-            React.createElement("div",{style:{fontSize:11,color:"#3b82f6",marginTop:2}},"来院時の問診がスムーズになります。今回は入力しなくても予約できます")
+        !detailFormOpen?React.createElement("div",{style:{background:"linear-gradient(135deg,#eff6ff,#dbeafe)",border:"1.5px solid #93c5fd",borderRadius:14,padding:"18px 18px 16px",marginBottom:20,boxShadow:"0 2px 10px rgba(59,130,246,.12)"}},
+          React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:10}},
+            React.createElement("span",{style:{fontSize:24}},"📋"),
+            React.createElement("div",{style:{fontWeight:800,fontSize:15,color:"#1e40af"}},"事前問診票のご記入がおすすめです")
           ),
-          React.createElement("span",{style:{fontSize:20,color:"#3b82f6"}},detailFormOpen?"▲":"▼")
+          React.createElement("div",{style:{fontSize:13,color:"#1e40af",lineHeight:2,marginBottom:14}},
+            React.createElement("div",null,"✅ 来院時の待ち時間が短くなります"),
+            React.createElement("div",null,"✅ 初回カウンセリングがよりスムーズに進みます"),
+            React.createElement("div",null,"✅ 症状に合わせた施術のご提案に役立ちます")
+          ),
+          React.createElement("button",{
+            type:"button",
+            onClick:function(){setDetailFormOpen(true);},
+            style:{width:"100%",padding:"13px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#2563eb,#1e40af)",color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px rgba(37,99,235,.35)",marginBottom:8}
+          },"📝 事前問診票に記入する（3分程度）"),
+          React.createElement("div",{style:{fontSize:11,color:"#60a5fa",textAlign:"center"}},"※記入しなくてもご予約は可能です。来院時にお伺いすることもできます")
+        ):React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#eff6ff",border:"1.5px solid #93c5fd",borderRadius:12,padding:"12px 16px",marginBottom:16}},
+          React.createElement("div",{style:{fontWeight:800,fontSize:13,color:"#1e40af"}},"📋 事前問診票 ご記入中"),
+          React.createElement("button",{
+            type:"button",
+            onClick:function(){setDetailFormOpen(false);},
+            style:{background:"none",border:"none",color:"#3b82f6",fontSize:12,fontWeight:700,cursor:"pointer"}
+          },"閉じる ▲")
         ),
 
         detailFormOpen?React.createElement("div",null,
