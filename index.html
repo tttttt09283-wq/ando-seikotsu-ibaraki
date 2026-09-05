@@ -6702,15 +6702,17 @@ function Dashboard({user,onLogout}){
               const hasActive = group.items.some(it=>!it.action && view===it.id);
               return(
                 <div key={group.id} style={{marginBottom:2}}>
-                  <button
+                                    <button
                     onClick={()=>toggleGroup(group.id)}
-                    style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 8px",background:hasActive?group.color+"14":"none",border:"none",borderRadius:6,cursor:"pointer",fontFamily:"inherit",marginTop:4}}
+                    onMouseOver={e=>{e.currentTarget.style.borderColor="#cbd5e1";e.currentTarget.style.boxShadow="0 2px 6px rgba(0,0,0,.08)";}}
+                    onMouseOut={e=>{e.currentTarget.style.borderColor=hasActive?group.color+"55":"#e5e7eb";e.currentTarget.style.boxShadow="0 1px 2px rgba(0,0,0,.04)";}}
+                    style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 12px",background:hasActive?group.color+"12":"#f8fafc",border:"1.5px solid "+(hasActive?group.color+"55":"#e5e7eb"),borderRadius:10,cursor:"pointer",fontFamily:"inherit",marginTop:8,boxShadow:"0 1px 2px rgba(0,0,0,.04)",transition:"border-color .15s,box-shadow .15s"}}
                   >
-                    <div style={{display:"flex",alignItems:"center",gap:8}}>
-                      <div style={{width:4,height:14,borderRadius:2,background:group.color,flexShrink:0}}/>
-                      <span style={{fontSize:11,fontWeight:800,color:hasActive?group.color:"#94a3b8",letterSpacing:.5}}>{group.label}</span>
+                    <div style={{display:"flex",alignItems:"center",gap:9}}>
+                      <div style={{width:5,height:16,borderRadius:3,background:group.color,flexShrink:0}}/>
+                      <span style={{fontSize:12,fontWeight:800,color:hasActive?group.color:"#374151",letterSpacing:.3}}>{group.label}</span>
                     </div>
-                    <span style={{fontSize:9,color:"#cbd5e1",transform:isCollapsed?"rotate(-90deg)":"none",transition:"transform .15s",display:"inline-block"}}>▼</span>
+                    <span style={{fontSize:11,color:"#94a3b8",transform:isCollapsed?"rotate(-90deg)":"none",transition:"transform .15s",display:"inline-block",fontWeight:700}}>▼</span>
                   </button>
                   {!isCollapsed&&group.items.map(item=>{
                     const isActive = !item.action && view===item.id;
