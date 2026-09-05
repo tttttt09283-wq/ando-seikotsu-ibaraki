@@ -434,15 +434,20 @@ function renderNextBookings(){
               <span style="background:#dbeafe;color:#1e40af;border-radius:4px;padding:1px 6px;font-size:10px;margin-left:6px;">${nb.insMenu}</span>
             </div>
             <div class="nb-grid">
-              <div><span class="nb-label">📅 日付</span><input type="date" class="nb-input" value="${nb.date}" min="${todayStr()}" onchange="onNBDateChange(${i},this.value)"/></div>
+              <div><span class="nb-label">📅 日付</span><input type="date" class="nb-input" value="${nb.date}" min="${todayStr()}" onchange="onNBDateChange(${i},this.value)"/>
+                ${nb.date&&isClosedDatePos(nb.date)?`<div style="color:#dc2626;font-size:11px;font-weight:700;margin-top:4px;">⚠ この日は休診日です</div>`:""}
+              </div>
               <div><span class="nb-label">🕐 時間</span>
-                <select class="nb-input" onchange="updateNB(${i},'time',this.value)">
+                <select class="nb-input" onchange="updateNB(${i},'time',this.value)" ${(nb.date&&isClosedDatePos(nb.date))?'disabled':''}>
                   <option value="">選択</option>
                   ${TIME_OPTS.map(t=>{
                     const key=`${nb.date}_${nb.staffId}`;
                     const fullSlots=slotCache[key]||[];
                     const isFull=fullSlots.includes(t);
-                    return`<option value="${t}" ${nb.time===t?'selected':''} ${isFull?'disabled':''} style="color:${isFull?'#d1d5db':'inherit'}">${t}${isFull?' ×満員':''}</option>`;
+                    const hours=nb.date?getOpenCloseForDatePos(nb.date):null;
+                    const outOfHours=hours?(t<hours.open||t>=hours.close):false;
+                    const disabled=isFull||outOfHours;
+                    return`<option value="${t}" ${nb.time===t?'selected':''} ${disabled?'disabled':''} style="color:${disabled?'#d1d5db':'inherit'}">${t}${isFull?' ×満員':(outOfHours?' ×営業時間外':'')}</option>`;
                   }).join('')}
                 </select>
               </div>
@@ -495,10 +500,52 @@ async function getAvailableSlots(date, staffId){
   }catch{return [];}
 }
 
+// ===== 営業時間・臨時休業日（休診日）判定 =====
+// 管理画面（index.html）や患者様向け予約ページと同じ考え方で、
+// 「臨時休業日（temp_closures）」＞「曜日ごとの定休日（business_hours）」の優先順位で判定する。
+let businessHours=[],closures=[];
+function getDayHoursPos(dayOfWeek){
+  return businessHours.find(h=>h.day_of_week===dayOfWeek)||null;
+}
+function getClosureForDatePos(ds){
+  return closures.find(c=>c.date===ds)||null;
+}
+function isClosedDatePos(ds){
+  if(!ds) return false;
+  const closureEntry=getClosureForDatePos(ds);
+  if(closureEntry&&closureEntry.is_closed!==false) return true; // 臨時休業日として登録されている
+  if(closureEntry&&closureEntry.is_closed===false) return false; // 「営業時間だけ変更」の日は休診扱いにしない
+  if(businessHours.length===0) return false; // 営業時間データが未設定なら制限しない（フェイルセーフ）
+  const d=new Date(ds+"T00:00:00");
+  const dh=getDayHoursPos(d.getDay());
+  if(!dh) return false;
+  return dh.is_open===false;
+}
+// 選択した日の営業時間帯（開始・終了）を返す。「営業時間だけ変更」の日はその時間を優先する。
+function getOpenCloseForDatePos(ds){
+  if(!ds) return null;
+  const closureEntry=getClosureForDatePos(ds);
+  if(closureEntry&&closureEntry.is_closed===false&&closureEntry.open_time&&closureEntry.close_time){
+    return {open:closureEntry.open_time,close:closureEntry.close_time};
+  }
+  if(businessHours.length===0) return null;
+  const d=new Date(ds+"T00:00:00");
+  const dh=getDayHoursPos(d.getDay());
+  if(!dh||dh.is_open===false) return null;
+  return {open:dh.open_time||"09:00",close:dh.close_time||"19:00"};
+}
+
 async function onNBDateChange(i, date){
   if(date && date<todayStr()){
     alert("過去の日付は選択できません。今日以降の日付を選んでください。");
     render(); // 入力欄の表示を元の値に戻す
+    return;
+  }
+  if(date && isClosedDatePos(date)){
+    alert("この日は休診日のため選択できません。別の日付をお選びください。");
+    state.nextBookings[i].date="";
+    state.nextBookings[i].time="";
+    render();
     return;
   }
   state.nextBookings[i].date=date;
@@ -756,6 +803,17 @@ async function init(){
         storeInfo=Array.isArray(stores)&&stores.length>0?stores[0]:null;
       }
     }catch(e){storeInfo=null;}
+    // 営業時間・臨時休業日を取得（次回予約で休診日を選べないようにするため）
+    try{
+      if(booking.store_id){
+        const [bh,tc]=await Promise.all([
+          sbGet("business_hours",`?store_id=eq.${booking.store_id}&order=day_of_week.asc`),
+          sbGet("temp_closures",`?store_id=eq.${booking.store_id}`),
+        ]);
+        businessHours=Array.isArray(bh)?bh:[];
+        closures=Array.isArray(tc)?tc:[];
+      }
+    }catch(e){businessHours=[];closures=[];}
     render();
   }catch(e){document.getElementById("root").innerHTML=`<div style="text-align:center;padding:60px;color:#ef4444;">❌ エラー：${e.message}</div>`;}
 }
