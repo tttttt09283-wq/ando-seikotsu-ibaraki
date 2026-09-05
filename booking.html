@@ -1285,6 +1285,24 @@ function App(){
       // ===== STEP 1: 基本情報 =====
       step===1?React.createElement("div",null,
         React.createElement("div",{style:{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:16}},"基本情報を入力してください"),
+
+        // ===== LINE連携（前日リマインド） — 最優先で一番上に表示 =====
+        React.createElement("div",{style:{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12,padding:16,marginBottom:20}},
+          React.createElement("div",{style:{fontWeight:800,fontSize:14,color:"#065f46",marginBottom:6}},"🔔 前日リマインドについて"),
+          React.createElement("div",{style:{fontSize:13,color:"#059669",lineHeight:1.7}},"ご予約の前日に自動でLINEリマインドをお送りします。"),
+          lineUserId
+            ? React.createElement("div",{style:{marginTop:8,background:"#dcfce7",borderRadius:8,padding:"8px 12px",fontSize:13,color:"#065f46",fontWeight:700}},
+                "✅ LINE連携済み！予約確認とリマインドをお送りします。"
+              )
+            : React.createElement("button",{
+                onClick:handleLineLogin,
+                style:{marginTop:10,width:"100%",padding:"12px",borderRadius:10,border:"none",background:"#06C755",color:"white",fontWeight:800,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}
+              },
+                React.createElement("span",{style:{fontSize:18}},"💬"),
+                "LINEと連携してリマインドを受け取る"
+              )
+        ),
+
         React.createElement("div",{style:H.sec},
           React.createElement("div",{style:H.secT},"👤 お客様情報"),
           [
@@ -1336,21 +1354,6 @@ function App(){
           (form.referrerName.trim()&&pageSettings.eventMenuPrice>0)?React.createElement("div",{style:{marginTop:10,background:"#f5f3ff",border:"1px solid #ddd6fe",borderRadius:8,padding:"10px 12px",fontSize:13,color:"#6d28d9",fontWeight:700}},
             "🎉 "+form.referrerName+"様のご紹介で、今回の体験会が無料になります！"
           ):null
-        ),
-        React.createElement("div",{style:{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12,padding:16,marginBottom:20}},
-          React.createElement("div",{style:{fontWeight:800,fontSize:14,color:"#065f46",marginBottom:6}},"🔔 前日リマインドについて"),
-          React.createElement("div",{style:{fontSize:13,color:"#059669",lineHeight:1.7}},"ご予約の前日に自動でLINEリマインドをお送りします。"),
-          lineUserId
-            ? React.createElement("div",{style:{marginTop:8,background:"#dcfce7",borderRadius:8,padding:"8px 12px",fontSize:13,color:"#065f46",fontWeight:700}},
-                "✅ LINE連携済み！予約確認とリマインドをお送りします。"
-              )
-            : React.createElement("button",{
-                onClick:handleLineLogin,
-                style:{marginTop:10,width:"100%",padding:"12px",borderRadius:10,border:"none",background:"#06C755",color:"white",fontWeight:800,fontSize:14,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8}
-              },
-                React.createElement("span",{style:{fontSize:18}},"💬"),
-                "LINEと連携してリマインドを受け取る"
-              )
         ),
         React.createElement("div",{style:{display:"flex",gap:10}},
           React.createElement("button",{onClick:function(){setStep(0);},style:H.btnB},"← 戻る"),
