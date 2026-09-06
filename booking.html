@@ -1082,15 +1082,15 @@ function App(){
               )
             ),
             React.createElement("div",{style:{fontSize:13,fontWeight:700,color:"#374151",marginBottom:8}},"👋 ご来院状況を教えてください *"),
-            React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:8}},
+            React.createElement("div",{style:{display:"flex",flexDirection:"row",gap:8}},
               PATIENT_TYPE_OPTIONS.map(function(opt){
                 var sel=form.patientType===opt.label;
-                return React.createElement("button",{key:opt.label,onClick:function(){
+               return React.createElement("button",{key:opt.label,onClick:function(){
                   setF("patientType",opt.label);
                   var el=document.getElementById("calendarHeading");
                   if(el) el.scrollIntoView({behavior:"smooth",block:"start"});
                 },
-                  style:{textAlign:"left",padding:"14px 16px",borderRadius:10,border:"1.5px solid "+(sel?"#1e3a5f":"#e5e7eb"),background:sel?"#1e3a5f":"white",cursor:"pointer",fontFamily:"inherit"}},
+                  style:{flex:1,textAlign:"left",padding:"12px 10px",borderRadius:10,border:"1.5px solid "+(sel?"#1e3a5f":"#e5e7eb"),background:sel?"#1e3a5f":"white",cursor:"pointer",fontFamily:"inherit"}},
                   React.createElement("div",{style:{fontSize:14,fontWeight:800,color:sel?"white":"#1e293b"}},opt.label),
                   React.createElement("div",{style:{fontSize:11,color:sel?"rgba(255,255,255,.8)":"#94a3b8",marginTop:2}},opt.desc)
                 );
