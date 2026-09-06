@@ -6040,6 +6040,62 @@ function QuickMemoEditor({booking,onSave}){
     </div>
   );
 }
+function StaffOffConflictsPanel({bookings,weeklyShifts,storeStaff,onReassign,todayStr}){
+  const [savingId,setSavingId]=React.useState(null);
+  function isWorkingLocal(staffId,dateStr){
+    const dow=new Date(dateStr+"T00:00:00").getDay();
+    const ws=weeklyShifts.find(w=>w.staff_id===staffId&&w.day_of_week===dow);
+    if(ws) return ws.is_working!==false;
+    return true;
+  }
+  const conflicts=React.useMemo(()=>{
+    return bookings.filter(b=>!b.cancelled&&b.date>=todayStr&&!isWorkingLocal(b.staff_id,b.date))
+      .sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time));
+  },[bookings,weeklyShifts,todayStr]);
+  async function reassign(booking,newStaffId){
+    setSavingId(booking.id);
+    await onReassign(booking,Number(newStaffId));
+    setSavingId(null);
+  }
+  return(
+    <div style={{maxWidth:1000,margin:"0 auto"}}>
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{padding:"14px 16px",borderBottom:"1px solid #f1f5f9",background:"linear-gradient(135deg,#d97706,#b45309)"}}>
+          <div style={{color:"white",fontWeight:800,fontSize:15}}>⚠ 休みスタッフの予約（要対応）</div>
+          <div style={{color:"rgba(255,255,255,.85)",fontSize:12,marginTop:2}}>担当スタッフがその日休みに設定されているため、カレンダー上では表示されていない予約です。出勤しているスタッフへ振り替えてください。</div>
+        </div>
+      </div>
+      <div className="card">
+        <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>対象の予約（{conflicts.length}件）</div>
+        <div style={{padding:"8px 16px"}}>
+          {conflicts.length===0?(
+            <div style={{textAlign:"center",padding:30,color:"#94a3b8",fontSize:13}}>対象の予約はありません🎉</div>
+          ):conflicts.map(b=>{
+            const oldStaff=STAFF_ACCOUNTS.find(s=>s.id===b.staff_id)||{name:"不明",color:"#888"};
+            const workingStaff=(storeStaff||STAFF_ACCOUNTS).filter(s=>isWorkingLocal(s.id,b.date));
+            return(
+              <div key={b.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 0",borderBottom:"1px solid #f1f5f9",gap:10,flexWrap:"wrap"}}>
+                <div>
+                  <div style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{b.patient_name}</div>
+                  <div style={{fontSize:12,color:"#64748b"}}>{b.date} {b.time}　{b.menu}</div>
+                  <div style={{fontSize:11,color:"#d97706",fontWeight:700,marginTop:2}}>現在の担当：{oldStaff.name}（この日休み）</div>
+                </div>
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <select disabled={savingId===b.id} onChange={e=>{if(e.target.value)reassign(b,e.target.value);}} defaultValue=""
+                    style={{padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:12,fontFamily:"inherit"}}>
+                    <option value="" disabled>担当を選ぶ</option>
+                    {workingStaff.length===0?<option disabled>この日出勤スタッフなし</option>:workingStaff.map(s=>(<option key={s.id} value={s.id}>{s.name}</option>))}
+                  </select>
+                  {savingId===b.id&&<span style={{fontSize:11,color:"#94a3b8"}}>移動中...</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
 function Dashboard({user,onLogout}){
   const [bookings,setBookings]=React.useState([]);
   const [breaks,setBreaks]=React.useState([]);
@@ -6485,7 +6541,23 @@ function Dashboard({user,onLogout}){
     if(h<9||h>17) return null;
     return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
   }
-
+  async function reassignStaffForBooking(booking,newStaffId){
+    const laneCapacity=getLaneCount(newStaffId);
+    const overlapCount=bookings.filter(b=>b.id!==booking.id&&b.staff_id===newStaffId&&b.date===booking.date&&!b.cancelled&&overlaps(b,booking)).length;
+    if(overlapCount>=laneCapacity){
+      showToast("その時間は選択したスタッフの予約枠が埋まっています","delete");
+      return;
+    }
+    try{
+      const result=await sb.update("bookings",booking.id,{staff_id:newStaffId});
+      if(Array.isArray(result)&&result.length>0){
+        setBookings(prev=>prev.map(b=>b.id===booking.id?result[0]:b));
+        showToast("担当スタッフを変更しました");
+      }
+    }catch(e){
+      showToast("変更に失敗しました","delete");
+    }
+  }
   async function attemptMoveBooking(booking,newDate,newTime,newStaffId){
     const dateObj=new Date(newDate+"T00:00:00");
     if(!isStaffWorkingOnDate(newStaffId,dateObj)){
@@ -6653,7 +6725,8 @@ function Dashboard({user,onLogout}){
       {id:"checkin",label:"📷 来院受付",special:""},
       {id:"calendar",label:"カレンダー",special:""},
       {id:"patients",label:"患者管理",special:""},
-      {id:"cancelled_list",label:"🚫 キャンセル一覧",special:""},
+           {id:"cancelled_list",label:"🚫 キャンセル一覧",special:""},
+      {id:"staff_off_conflicts",label:"⚠ 休みスタッフの予約",special:""},
     ]},
     {id:"analysis",label:"分析",color:"#059669",items:[
       {id:"stats",label:"予約分析・サマリー",special:""},
@@ -7095,9 +7168,10 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
           {/* 離反防止アラート */}
           {view==="churn_alert"&&<ChurnAlertPanel bookings={bookings} todayStr={todayStr}/>}
           {view==="line_link_check"&&<LineLinkCheckPanel bookings={bookings}/>}
-
+                    {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} todayStr={todayStr} onRestore={restoreBooking} onDelete={deleteCancelledBooking}/>}
+          {view==="staff_off_conflicts"&&<StaffOffConflictsPanel bookings={bookings} weeklyShifts={weeklyShifts} storeStaff={storeStaff} onReassign={reassignStaffForBooking} todayStr={todayStr}/>}
           {/* キャンセル一覧 */}
-          {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} todayStr={todayStr} onRestore={restoreBooking} onDelete={deleteCancelledBooking}/>}
+
           {view==="posture_records"&&<PostureRecordsPanel bookings={bookings}/>}
           {view==="treatment_plans"&&<TreatmentPlanPanel bookings={bookings}/>}
 
