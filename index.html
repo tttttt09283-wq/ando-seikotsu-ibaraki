@@ -4367,7 +4367,7 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
                   </div>
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                  {[{label:"来院",val:selBks.length+"回",color:"#60a5fa"},{label:"施術録",val:treatments.length+"件",color:"#34d399"},{label:"成約",val:treatments.filter(t=>t.result==="成約").length+"件",color:"#fbbf24"}].map(item=>(
+                  {[{label:"来院",val:selBks.filter(b=>!b.cancelled).length+"回",color:"#60a5fa"},{label:"施術録",val:treatments.length+"件",color:"#34d399"},{label:"成約",val:treatments.filter(t=>t.result==="成約").length+"件",color:"#fbbf24"},{label:"キャンセル",val:selBks.filter(b=>b.cancelled).length+"回",color:"#f87171"}].map(item=>(
                     <div key={item.label} style={{textAlign:"center",background:"rgba(255,255,255,.15)",borderRadius:8,padding:"5px 10px"}}>
                       <div style={{fontSize:15,fontWeight:800,color:item.color}}>{item.val}</div>
                       <div style={{fontSize:9,color:"rgba(255,255,255,.6)"}}>{item.label}</div>
@@ -4520,24 +4520,31 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
                 ):(
                   selBks.length===0?(
                     <div style={{textAlign:"center",padding:30,color:"#9ca3af"}}>来院記録がありません</div>
-                  ):<div>{selBks.map((b,i)=>{
+                                    ):<div>{selBks.map((b,i)=>{
                     const staff=STAFF_ACCOUNTS.find(s=>s.id===b.staff_id)||{name:"不明",color:"#888",initial:"？"};
                     const treat=treatments.find(t=>t.booking_id===b.id);
                     const isFirst=i===selBks.length-1;
                     return(
-                      <div key={b.id} style={{display:"flex",gap:10,padding:"10px 0",borderBottom:"1px solid #f1f5f9"}}>
-                        <div style={{width:8,height:8,borderRadius:"50%",background:treat?"#059669":"#e2e8f0",flexShrink:0,marginTop:5}}/>
+                      <div key={b.id} style={{display:"flex",gap:10,padding:"10px 0",borderBottom:"1px solid #f1f5f9",opacity:b.cancelled?0.7:1}}>
+                        <div style={{width:8,height:8,borderRadius:"50%",background:b.cancelled?"#ef4444":(treat?"#059669":"#e2e8f0"),flexShrink:0,marginTop:5}}/>
                         <div style={{flex:1}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
-                            <span style={{fontWeight:700,fontSize:13,color:"#1e293b"}}>{b.date} {b.time}</span>
+                            <span style={{fontWeight:700,fontSize:13,color:"#1e293b",textDecoration:b.cancelled?"line-through":"none"}}>{b.date} {b.time}</span>
                             <div style={{display:"flex",alignItems:"center",gap:4}}>
+                              {b.cancelled&&<span className="badge badge-red" style={{fontSize:9}}>キャンセル</span>}
                               {isFirst&&<span className="badge badge-orange" style={{fontSize:9}}>初回</span>}
                               <span style={{fontSize:10,color:staff.color,fontWeight:700}}>{staff.name}</span>
                             </div>
                           </div>
                           <div style={{fontSize:11,color:"#64748b"}}>{b.menu}</div>
-                          {treat&&<div style={{display:"flex",gap:4,marginTop:3,flexWrap:"wrap"}}>{resultBadge(treat.result)}</div>}
-                          {!treat&&<div style={{fontSize:11,color:"#d1d5db",marginTop:2}}>施術記録なし</div>}
+                          {b.cancelled?(
+                            <div style={{fontSize:11,color:"#dc2626",fontWeight:600,marginTop:2}}>理由：{b.cancel_reason||"未記録"}{b.cancelled_via_line?"（マイページ経由）":""}</div>
+                          ):(
+                            <>
+                              {treat&&<div style={{display:"flex",gap:4,marginTop:3,flexWrap:"wrap"}}>{resultBadge(treat.result)}</div>}
+                              {!treat&&<div style={{fontSize:11,color:"#d1d5db",marginTop:2}}>施術記録なし</div>}
+                            </>
+                          )}
                         </div>
                       </div>
                     );
