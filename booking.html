@@ -17,8 +17,8 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 <div id="root"></div>
 <script type="text/babel">
 
-const CLINIC_NAME = "あんど整骨院　香里園院";
-const CLINIC_TEL = "072-813-1811";
+const CLINIC_NAME = "あんど整骨院";
+const CLINIC_TEL = "0000-00-0000";
 const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
 const LINE_GROUP_ID = "Cfd9d54fedc95bbe4ce1a7ac64ec97fa0";
@@ -258,6 +258,9 @@ function App(){
   var hoursLoaded = hoursLoadedState[0]; var setHoursLoaded = hoursLoadedState[1];
   var resolvedStoreIdState = useState(STORE_ID);
   var resolvedStoreId = resolvedStoreIdState[0]; var setResolvedStoreId = resolvedStoreIdState[1];
+  // スタッフの週固定シフト（曜日ごとの出勤・休みの設定。管理画面の「スタッフ・シフト管理」と同じデータ）
+  var weeklyShiftsState = useState([]);
+  var weeklyShifts = weeklyShiftsState[0]; var setWeeklyShifts = weeklyShiftsState[1];
 
   // 管理画面の「各種設定」から読み込む、患者様向け予約ページの動的設定
   // （Supabaseから取得できるまでは、デフォルト値で動作します）
@@ -358,16 +361,19 @@ function App(){
       return Promise.allSettled([
         sb.select("business_hours","?store_id=eq."+usedStoreId+"&order=day_of_week.asc"),
         sb.select("temp_closures","?store_id=eq."+usedStoreId),
-        sb.select("store_settings","?store_id=eq."+usedStoreId+"&order=updated_at.desc.nullslast,id.desc&limit=1")
+        sb.select("store_settings","?store_id=eq."+usedStoreId+"&order=updated_at.desc.nullslast,id.desc&limit=1"),
+        sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc")
       ]);
     }).then(function(results){
       // Promise.allSettledなので、3つのうちどれか1つが失敗しても、成功した分だけは反映する
       var businessHoursResult=results[0];
       var closuresResult=results[1];
       var settingsResult=results[2];
+      var weeklyShiftsResult=results[3];
 
       setBusinessHours((businessHoursResult.status==="fulfilled"&&Array.isArray(businessHoursResult.value))?businessHoursResult.value:[]);
       setClosures((closuresResult.status==="fulfilled"&&Array.isArray(closuresResult.value))?closuresResult.value:[]);
+      setWeeklyShifts((weeklyShiftsResult.status==="fulfilled"&&Array.isArray(weeklyShiftsResult.value))?weeklyShiftsResult.value:[]);
 
       if(settingsResult.status==="fulfilled"){
         var settingsRows=settingsResult.value;
@@ -552,18 +558,28 @@ function App(){
     var ss=toMin(t), se=ss+20;
     return bs<se && ss<be;
   }
-  // 指定した日時に既に入っている予約数（キャンセル除く・施術時間の重なりも考慮）
+  // 指定したスタッフが指定日に出勤しているか（staff_weekly_shiftsに設定が無いスタッフはフェイルセーフで出勤扱い）
+  function isStaffWorkingOnDate(staffId,d){
+    var dow = d.getDay();
+    var found = null;
+    for(var i=0;i<weeklyShifts.length;i++){
+      if(weeklyShifts[i].staff_id===staffId && weeklyShifts[i].day_of_week===dow){ found=weeklyShifts[i]; break; }
+    }
+    if(!found) return true;
+    return found.is_working!==false;
+  }
+  // 指定した日に既に入っている予約数（キャンセル除く・施術時間の重なりも考慮）
   function getBookedCountAt(d,t){
     var ds = fmtDate(d);
     return weekData.booked.filter(function(b){return b.date===ds && overlapsSlot(b,t);}).length;
   }
-  // 指定した日時に対応可能なスタッフ一覧（休憩・既存予約が入っている人を除く。施術時間の重なりも考慮）
+  // 指定した日時に対応可能なスタッフ一覧（その日休みのスタッフ・休憩中/既存予約が入っている人を除く。施術時間の重なりも考慮）
   function getFreeStaffListFor(d,t){
     var ds = fmtDate(d);
     var unavail = {};
     weekData.booked.forEach(function(b){if(b.date===ds&&overlapsSlot(b,t)) unavail[b.staff_id]=true;});
     weekData.breaks.forEach(function(b){if(b.date===ds&&b.time===t) unavail[b.staff_id]=true;});
-    return STAFF.filter(function(s){return !unavail[s.id];});
+    return STAFF.filter(function(s){return !unavail[s.id] && isStaffWorkingOnDate(s.id,d);});
   }
   // 指定した日時の残り受付可能数（「1枠あたりの上限」と「対応できるスタッフの人数」のうち小さい方）
   function getRemainingCount(d,t){
@@ -603,7 +619,8 @@ function App(){
       var unavail = {};
       activeOverlapping.forEach(function(b){ unavail[b.staff_id]=true; });
       dayBreaks.forEach(function(b){ unavail[b.staff_id]=true; });
-      var found = STAFF.find(function(s){return !unavail[s.id];});
+      var dateObj = new Date(dateStr+"T00:00:00");
+      var found = STAFF.find(function(s){return !unavail[s.id] && isStaffWorkingOnDate(s.id,dateObj);});
       return found ? found.id : null;
     }).catch(function(){
       return undefined; // 通信エラー時は判定不能。呼び出し側でフォールバックする
