@@ -4856,7 +4856,7 @@ function ShiftPanel({currentUser}){
 }
 
 // ===== 来院受付パネル（QRコード読み取り） =====
-function CheckInPanel({bookings,onOpenPatient,onCheckedIn}){
+function CheckInPanel({bookings,onOpenPatient,onCheckedIn,onGoToCalendar}){
   const videoRef=React.useRef(null);
   const canvasRef=React.useRef(null);
   const streamRef=React.useRef(null);
@@ -4912,16 +4912,47 @@ function CheckInPanel({bookings,onOpenPatient,onCheckedIn}){
     try{
       let booking=null;
       let visitCount=1;
+      let isWalkIn=false;
       if(payload.uid){
         // 患者固定QR：本日の予約を検索
         const todayStr=fmtDate(new Date());
         const todays=await sb.select("bookings",`?line_user_id=eq.${encodeURIComponent(payload.uid)}&date=eq.${todayStr}&order=time.asc`);
-        if(!Array.isArray(todays)||todays.length===0){
-          setCameraError("本日のご予約が見つかりませんでした。予約状況をご確認ください。");
-          setCheckingIn(false);
-          return;
+        if(Array.isArray(todays)&&todays.length>0){
+          booking=todays[0];
+        }else{
+          // 本日の予約が無い場合：過去の予約から患者情報を取得し、その場で「飛び込み来院」としてカレンダーに自動登録する
+          const past=await sb.select("bookings",`?line_user_id=eq.${encodeURIComponent(payload.uid)}&order=date.desc&limit=1`);
+          if(!Array.isArray(past)||past.length===0){
+            setCameraError("お客様の情報が見つかりませんでした。受付スタッフへお声掛けください。");
+            setCheckingIn(false);
+            return;
+          }
+          const prev=past[0];
+          const now=new Date();
+          const roundedMin=Math.round(now.getMinutes()/10)*10;
+          const nowTime=`${String((roundedMin>=60?now.getHours()+1:now.getHours())%24).padStart(2,"0")}:${String(roundedMin%60).padStart(2,"0")}`;
+          const created=await sb.insert("bookings",{
+            patient_name:prev.patient_name,
+            phone:prev.phone||"",
+            staff_id:prev.staff_id,
+            date:todayStr,
+            time:nowTime,
+            menu:"飛び込み来院（要確認）",
+            store_id:prev.store_id,
+            line_notify:true,
+            line_user_id:payload.uid,
+            booked_via_line:true,
+            reminded:false,
+            checked_in_at:new Date().toISOString(),
+          });
+          if(!Array.isArray(created)||created.length===0){
+            setCameraError("受付の記録に失敗しました。スタッフへお声掛けください。");
+            setCheckingIn(false);
+            return;
+          }
+          booking=created[0];
+          isWalkIn=true;
         }
-        booking=todays[0];
         const all=await sb.select("bookings",`?line_user_id=eq.${encodeURIComponent(payload.uid)}`);
         visitCount=Array.isArray(all)?all.length:1;
       }else{
@@ -4938,12 +4969,14 @@ function CheckInPanel({bookings,onOpenPatient,onCheckedIn}){
 
       const isNew=visitCount<=1;
 
-      try{
-        await sb.update("bookings",booking.id,{checked_in_at:new Date().toISOString()});
-        if(onCheckedIn) onCheckedIn();
-      }catch(e){/* 列が無い場合などは無視 */}
+      if(!isWalkIn){
+        try{
+          await sb.update("bookings",booking.id,{checked_in_at:new Date().toISOString()});
+        }catch(e){/* 列が無い場合などは無視 */}
+      }
+      if(onCheckedIn) onCheckedIn();
 
-      setResult({booking,isNew,visitCount});
+      setResult({booking,isNew,visitCount,isWalkIn});
       setCheckingIn(false);
 
       if(isNew){
@@ -4954,6 +4987,11 @@ function CheckInPanel({bookings,onOpenPatient,onCheckedIn}){
           setReferralInfo(bonusResult);
         }
       }
+
+      // 受付内容を確認いただいてから、自動でカレンダー画面に戻る
+      setTimeout(()=>{
+        if(onGoToCalendar) onGoToCalendar();
+      }, isWalkIn?4000:2800);
     }catch(e){
       setCameraError("読み取り処理に失敗しました："+e.message);
       setCheckingIn(false);
@@ -5055,10 +5093,16 @@ function CheckInPanel({bookings,onOpenPatient,onCheckedIn}){
 
           {result&&(
             <div>
-              <div style={{textAlign:"center",marginBottom:16}}>
+                            <div style={{textAlign:"center",marginBottom:16}}>
                 <div style={{fontSize:40,marginBottom:8}}>{result.isNew?"📋":"✅"}</div>
                 <div style={{fontWeight:800,fontSize:17,color:"#1e3a5f"}}>{result.isNew?"初回の患者様です":"来院受付が完了しました"}</div>
                 {result.isNew&&<div style={{fontSize:12,color:"#94a3b8",marginTop:4}}>問診票を別タブで開きました</div>}
+                {result.isWalkIn&&(
+                  <div style={{marginTop:10,background:"#fef9ec",border:"1.5px solid #fde68a",borderRadius:10,padding:"10px 14px",fontSize:12,color:"#92400e",fontWeight:700}}>
+                    ⚠ 本日のご予約が無かったため、「飛び込み来院」として自動でカレンダーに登録しました
+                  </div>
+                )}
+                <div style={{fontSize:11,color:"#94a3b8",marginTop:10}}>まもなく自動でカレンダーに戻ります…</div>
               </div>
               <div style={{background:"#f8fafc",borderRadius:10,padding:"14px 16px",border:"1px solid #e2e8f0",marginBottom:16}}>
                 <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #f1f5f9"}}>
@@ -7325,7 +7369,7 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
           })()}
 
           {/* 来院受付（QR読み取り） */}
-          {view==="checkin"&&<CheckInPanel bookings={bookings} onOpenPatient={(patientName)=>{setView("patients");}} onCheckedIn={fetchAll}/>}
+                   {view==="checkin"&&<CheckInPanel bookings={bookings} onOpenPatient={(patientName)=>{setView("patients");}} onCheckedIn={fetchAll} onGoToCalendar={()=>setView("calendar")}/>}
 
           {/* 患者管理 */}
           {view==="patients"&&<PatientsPanel bookings={bookings} setView={setView} setForm={setForm} setEditId={setEditId} setConflict={setConflict} todayStr={todayStr} selStoreId={selStoreId}/>}
