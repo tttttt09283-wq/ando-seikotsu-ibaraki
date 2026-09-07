@@ -730,8 +730,6 @@ function scrollToPasses(){
       if(target) target.scrollIntoView({behavior:"smooth",block:"start"});
     },50);
   }
-}f(target) target.scrollIntoView({behavior:"smooth",block:"start"});
-
 function scrollToPlan(){
   const target=[...document.querySelectorAll(".section-title")].find(e=>e.textContent.includes("施術計画書"));
   if(target){target.scrollIntoView({behavior:"smooth",block:"start"});}
