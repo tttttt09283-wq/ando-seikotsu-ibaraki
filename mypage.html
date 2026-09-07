@@ -570,7 +570,7 @@ function renderUpcomingBookings(){
             `:""}
           </div>
         `}).join("")}
-        <button class="btn btn-primary" onclick="location.href='${BOOKING_URL}'" style="margin-top:${upcoming.length>0?'12':'0'}px;">
+        <button class="btn btn-primary" onclick="goToBooking()" style="margin-top:${upcoming.length>0?'12':'0'}px;">
           <span class="btn-icon">➕</span>
           <span class="btn-label">新しく予約する</span>
           <span class="btn-arrow">›</span>
@@ -691,7 +691,7 @@ function renderActions(){
   }
 
   const MENU_ITEMS=[
-    {icon:"📅",label:"予約する",sub:"",bg:"linear-gradient(160deg,#059669,#047857)",onClick:"location.href='"+BOOKING_URL+"'"},
+    {icon:"📅",label:"予約する",sub:"",bg:"linear-gradient(160deg,#059669,#047857)",onClick:"goToBooking()"},
     {icon:"🗓️",label:"予約確認",sub:bookingSub,bg:"linear-gradient(160deg,#2563eb,#1d4ed8)",onClick:"scrollToBookings()"},
     {icon:"🎫",label:"回数券の残",sub:passSub,bg:"linear-gradient(160deg,#d97706,#b45309)",onClick:"scrollToPasses()"},
     {icon:"📋",label:"施術計画",sub:"",bg:"linear-gradient(160deg,#7c3aed,#6d28d9)",onClick:"scrollToPlan()"},
@@ -893,7 +893,10 @@ function shareReferral(){
     navigator.clipboard.writeText(msg).then(()=>showToast("リンクをコピーしました！")).catch(()=>{});
   }
 }
-
+function goToBooking(){
+  const url = lineUserId ? (BOOKING_URL+"?uid="+encodeURIComponent(lineUserId)) : BOOKING_URL;
+  location.href = url;
+}
 function handleLineLogin(){
   if(liff.isLoggedIn()){
     liff.getProfile().then(p=>{lineProfile=p;lineUserId=p.userId;loadData();}).catch(()=>{});

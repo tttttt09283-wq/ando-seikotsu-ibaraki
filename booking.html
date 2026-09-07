@@ -213,6 +213,28 @@ function App(){
   var pastBookingState = useState(null);
   var pastBooking = pastBookingState[0]; var setPastBooking = pastBookingState[1];
 
+  // ===== マイページ経由のかんたん予約（URLの?uidパラメータを見つけたら、LINEの再ログインを待たずに即座にリピーター判定する） =====
+  useEffect(function(){
+    try{
+      var params = new URLSearchParams(window.location.search);
+      var uidParam = params.get("uid");
+      if(!uidParam) return;
+      setLineUserId(uidParam);
+      sb.select("bookings","?line_user_id=eq."+encodeURIComponent(uidParam)+"&order=date.desc&limit=1")
+        .then(function(past){
+          if(Array.isArray(past)&&past.length>0){
+            setIsRepeat(true);
+            setPastBooking(past[0]);
+            setForm(function(f){return Object.assign({},f,{
+              name:past[0].patient_name||"",
+              phone:past[0].phone||"",
+              lineNotify:true,
+            });});
+          }
+        }).catch(function(){});
+    }catch(e){}
+  }, []);
+
   // 電話番号による手動リピーター確認（LINE外からのアクセスや、初回にLINE連携していなかった方向け）
   var phoneLookupOpenState = useState(false);
   var phoneLookupOpen = phoneLookupOpenState[0]; var setPhoneLookupOpen = phoneLookupOpenState[1];
