@@ -730,6 +730,8 @@ function scrollToPasses(){
       if(target) target.scrollIntoView({behavior:"smooth",block:"start"});
     },50);
   }
+}
+
 function scrollToPlan(){
   const target=[...document.querySelectorAll(".section-title")].find(e=>e.textContent.includes("施術計画書"));
   if(target){target.scrollIntoView({behavior:"smooth",block:"start"});}
@@ -923,4 +925,3 @@ init();
 </script>
 </body>
 </html>
-}
