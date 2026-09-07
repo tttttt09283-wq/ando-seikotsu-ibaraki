@@ -6096,6 +6096,285 @@ function StaffOffConflictsPanel({bookings,weeklyShifts,storeStaff,onReassign,tod
     </div>
   );
 }
+const CAREER_LEVELS = ["新人","一般スタッフ","主任","副院長","院長","マネージャー"];
+const CAREER_WEIGHTS = {"新人":0,"一般スタッフ":10,"主任":30,"副院長":40,"院長":20,"マネージャー":0};
+
+function CareerWeightPanel({bookings,payments,storeStaff,selStoreId,todayStr}){
+  const [jobTitles,setJobTitles]=React.useState({});
+  const [savingId,setSavingId]=React.useState(null);
+  const [passes,setPasses]=React.useState([]);
+  const [selMonth,setSelMonth]=React.useState(todayStr.slice(0,7));
+
+  React.useEffect(()=>{
+    sb.select("clinic_staff","?select=id,job_title").then(rows=>{
+      const map={};
+      (Array.isArray(rows)?rows:[]).forEach(r=>{ if(r.job_title) map[r.id]=r.job_title; });
+      setJobTitles(map);
+    }).catch(()=>{});
+    sb.select("passes","?order=expiry_date.asc.nullslast").then(rows=>{
+      setPasses(Array.isArray(rows)?rows:[]);
+    }).catch(()=>setPasses([]));
+  },[]);
+
+  async function updateJobTitle(staffId,title){
+    setSavingId(staffId);
+    setJobTitles(prev=>({...prev,[staffId]:title}));
+    try{ await sb.update("clinic_staff",staffId,{job_title:title}); }catch(e){}
+    setSavingId(null);
+  }
+
+  const [y,m]=selMonth.split("-").map(Number);
+  const rangeStart=`${y}-${String(m).padStart(2,"0")}-01`;
+  const lastDay=new Date(y,m,0).getDate();
+  const rangeEnd=`${y}-${String(m).padStart(2,"0")}-${String(lastDay).padStart(2,"0")}`;
+  const inRange=(d)=>d>=rangeStart&&d<=rangeEnd;
+
+  const firstStoreId=1;
+  const scopedBookings=React.useMemo(()=>bookings.filter(b=>(b.store_id||firstStoreId)===selStoreId),[bookings,selStoreId]);
+
+  const patientHistory=React.useMemo(()=>{
+    const map={};
+    [...scopedBookings].filter(b=>!b.cancelled).sort((a,b)=>a.date.localeCompare(b.date)).forEach(b=>{
+      if(!map[b.patient_name]) map[b.patient_name]={dates:[],firstStaffId:b.staff_id,firstDate:b.date};
+      map[b.patient_name].dates.push(b.date);
+    });
+    return map;
+  },[scopedBookings]);
+
+  const newPatients=React.useMemo(()=>{
+    return Object.entries(patientHistory)
+      .filter(([name,h])=>inRange(h.firstDate))
+      .map(([name,h])=>({name,staffId:h.firstStaffId,totalVisits:h.dates.length}));
+  },[patientHistory,rangeStart,rangeEnd]);
+
+  const bookingByIdMap=React.useMemo(()=>{
+    const map={};
+    scopedBookings.forEach(b=>{map[b.id]=b;});
+    return map;
+  },[scopedBookings]);
+  const scopedPayments=React.useMemo(()=>{
+    const ids=new Set(scopedBookings.map(b=>b.id));
+    return payments.filter(p=>ids.has(p.booking_id)&&p.payment_date&&inRange(p.payment_date));
+  },[payments,scopedBookings,rangeStart,rangeEnd]);
+
+  function staffSalesActual(staffId){
+    return scopedPayments.filter(p=>{const b=bookingByIdMap[p.booking_id];return b&&b.staff_id===staffId;}).reduce((s,p)=>s+(p.total_amount||0),0);
+  }
+  function staffSalesTarget(staffId){
+    try{
+      const key=`ando_sales_target_staff_${selStoreId||"all"}_${staffId}_${selMonth}`;
+      return Number(localStorage.getItem(key))||0;
+    }catch(e){ return 0; }
+  }
+
+  const rolesPresent=React.useMemo(()=>{
+    const counts={};
+    (storeStaff||[]).forEach(s=>{
+      const role=jobTitles[s.id];
+      if(!role) return;
+      if(!counts[role]) counts[role]=[];
+      counts[role].push(s);
+    });
+    return counts;
+  },[storeStaff,jobTitles]);
+
+  const totalWeight=CAREER_LEVELS.reduce((sum,role)=>rolesPresent[role]&&rolesPresent[role].length>0?sum+CAREER_WEIGHTS[role]:sum,0);
+  const totalNewPatients=newPatients.length;
+
+  const roleRows=CAREER_LEVELS.map(role=>{
+    const members=rolesPresent[role]||[];
+    const headcount=members.length;
+    const baseWeight=CAREER_WEIGHTS[role];
+    const adjustedPct=(headcount>0&&totalWeight>0)?(baseWeight/totalWeight*100):0;
+    const requiredCount=totalNewPatients*adjustedPct/100;
+    const perPerson=headcount>0?requiredCount/headcount:0;
+    return {role,headcount,baseWeight,adjustedPct,requiredCount,perPerson};
+  });
+
+  function staffMetrics(staffId){
+    const mine=newPatients.filter(p=>p.staffId===staffId);
+    const assignedCount=mine.length;
+    const continuedCount=mine.filter(p=>p.totalVisits>=2).length;
+    const contractedCount=mine.filter(p=>passes.some(ps=>ps.patient_name===p.name&&ps.purchased_date&&inRange(ps.purchased_date))).length;
+    return {assignedCount,continuedCount,contractedCount};
+  }
+
+  const activePasses=passes.filter(p=>p.active!==false);
+  const ticketPasses=activePasses.filter(p=>!(p.pass_type||"").includes("フリーパス"));
+  const fpPasses=activePasses.filter(p=>(p.pass_type||"").includes("フリーパス"));
+  const ticketPatientCount=new Set(ticketPasses.map(p=>p.patient_name)).size;
+  const fpPatientCount=new Set(fpPasses.map(p=>p.patient_name)).size;
+
+  const insuranceOnlyCount=React.useMemo(()=>{
+    const byPatient={};
+    scopedPayments.forEach(p=>{
+      const b=bookingByIdMap[p.booking_id];
+      if(!b) return;
+      if(!byPatient[b.patient_name]) byPatient[b.patient_name]={ins:0,jifee:0};
+      byPatient[b.patient_name].ins+=(p.insurance_amount||0);
+      byPatient[b.patient_name].jifee+=(p.jifee_amount||0);
+    });
+    return Object.values(byPatient).filter(v=>v.ins>0&&v.jifee===0).length;
+  },[scopedPayments,bookingByIdMap]);
+
+  function daysUntil(dateStr){
+    if(!dateStr) return null;
+    return Math.ceil((new Date(dateStr+"T00:00:00")-new Date())/86400000);
+  }
+
+  return(
+    <div style={{maxWidth:1300,margin:"0 auto"}}>
+      <div className="card" style={{marginBottom:14,padding:"14px 16px"}}>
+        <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:10}}>⚖ 役職ウェイト・評価用サマリー</div>
+        <div style={{fontSize:12,color:"#94a3b8",marginBottom:10}}>ここで見えている数値を、評価シートへの入力にそのままお使いください。</div>
+        <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)}
+          style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700}}/>
+      </div>
+
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>役職別 新患配分（{selMonth}・新患合計{totalNewPatients}名）</div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:700}}>
+            <thead>
+              <tr style={{background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}>
+                {["役職","基本ウェイト","在籍人数","調整後配分率","役職必要数","1人あたり"].map(h=>(
+                  <th key={h} style={{padding:"8px 10px",textAlign:"left",fontWeight:800,color:"#64748b"}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {roleRows.map(r=>(
+                <tr key={r.role} style={{borderBottom:"1px solid #f1f5f9"}}>
+                  <td style={{padding:"8px 10px",fontWeight:700}}>{r.role}</td>
+                  <td style={{padding:"8px 10px"}}>{r.baseWeight}%</td>
+                  <td style={{padding:"8px 10px"}}>{r.headcount}名</td>
+                  <td style={{padding:"8px 10px",fontWeight:700,color:"#2563eb"}}>{r.adjustedPct.toFixed(1)}%</td>
+                  <td style={{padding:"8px 10px",fontWeight:700}}>{r.requiredCount.toFixed(1)}人</td>
+                  <td style={{padding:"8px 10px"}}>{r.perPerson>0?r.perPerson.toFixed(1)+"人":"—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>スタッフ別 実績（役職はここで設定できます）</div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:900}}>
+            <thead>
+              <tr style={{background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}>
+                {["スタッフ","役職","新患担当数","継続数","成約数","個人目標","個人実績"].map(h=>(
+                  <th key={h} style={{padding:"8px 10px",textAlign:"left",fontWeight:800,color:"#64748b"}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {(storeStaff||[]).map(s=>{
+                const met=staffMetrics(s.id);
+                const target=staffSalesTarget(s.id);
+                const actual=staffSalesActual(s.id);
+                return(
+                  <tr key={s.id} style={{borderBottom:"1px solid #f1f5f9"}}>
+                    <td style={{padding:"8px 10px",fontWeight:700}}>{s.name}</td>
+                    <td style={{padding:"8px 10px"}}>
+                      <select value={jobTitles[s.id]||""} disabled={savingId===s.id} onChange={e=>updateJobTitle(s.id,e.target.value)}
+                        style={{padding:"4px 8px",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit"}}>
+                        <option value="">未設定</option>
+                        {CAREER_LEVELS.map(r=><option key={r} value={r}>{r}</option>)}
+                      </select>
+                    </td>
+                    <td style={{padding:"8px 10px"}}>{met.assignedCount}人</td>
+                    <td style={{padding:"8px 10px"}}>{met.continuedCount}人</td>
+                    <td style={{padding:"8px 10px"}}>{met.contractedCount}人</td>
+                    <td style={{padding:"8px 10px"}}>{target>0?"¥"+target.toLocaleString():"未設定"}</td>
+                    <td style={{padding:"8px 10px",fontWeight:700,color:"#059669"}}>¥{actual.toLocaleString()}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={{padding:"10px 16px",fontSize:11,color:"#94a3b8"}}>
+          ・新患担当数／継続数／成約数は、その月に初来院した患者を初回担当スタッフに紐づけて集計しています<br/>
+          ・個人目標は「予約分析・サマリー」で設定した個人目標売上をそのまま表示しています<br/>
+          ・役職を選ぶとclinic_staffテーブルのjob_title列に保存されます（列が無い場合はエラーになるので、その際は追加をお願いします）
+        </div>
+      </div>
+
+      <div className="card" style={{marginBottom:14,padding:"14px 16px"}}>
+        <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:4}}>🎫 パス・保険サマリー</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginTop:10}}>
+          <div style={{background:"#f8fafc",borderRadius:10,padding:"12px",textAlign:"center"}}>
+            <div style={{fontSize:24,fontWeight:800,color:"#2563eb"}}>{insuranceOnlyCount}</div>
+            <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>保険のみ患者数（{selMonth}）</div>
+          </div>
+          <div style={{background:"#f8fafc",borderRadius:10,padding:"12px",textAlign:"center"}}>
+            <div style={{fontSize:24,fontWeight:800,color:"#d97706"}}>{ticketPatientCount}</div>
+            <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>回数券実施中の患者数</div>
+          </div>
+          <div style={{background:"#f8fafc",borderRadius:10,padding:"12px",textAlign:"center"}}>
+            <div style={{fontSize:24,fontWeight:800,color:"#7c3aed"}}>{fpPatientCount}</div>
+            <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>フリーパス実施中の患者数</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>回数券 実施中一覧（{ticketPasses.length}件）</div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:600}}>
+            <thead>
+              <tr style={{background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}>
+                {["患者名","券種","残数","期日"].map(h=>(<th key={h} style={{padding:"8px 10px",textAlign:"left",fontWeight:800,color:"#64748b"}}>{h}</th>))}
+              </tr>
+            </thead>
+            <tbody>
+              {ticketPasses.length===0?(
+                <tr><td colSpan={4} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>該当データなし</td></tr>
+              ):ticketPasses.map(p=>(
+                <tr key={p.id} style={{borderBottom:"1px solid #f1f5f9"}}>
+                  <td style={{padding:"8px 10px",fontWeight:700}}>{p.patient_name}</td>
+                  <td style={{padding:"8px 10px"}}>{p.pass_type}</td>
+                  <td style={{padding:"8px 10px",fontWeight:700,color:(p.remaining_count||0)<=2?"#dc2626":"#1e293b"}}>{p.remaining_count}/{p.total_count}枚</td>
+                  <td style={{padding:"8px 10px"}}>{p.expiry_date||"—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card">
+        <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>フリーパス 実施中一覧（{fpPasses.length}件）</div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:600}}>
+            <thead>
+              <tr style={{background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}>
+                {["患者名","種類","期日","残日数"].map(h=>(<th key={h} style={{padding:"8px 10px",textAlign:"left",fontWeight:800,color:"#64748b"}}>{h}</th>))}
+              </tr>
+            </thead>
+            <tbody>
+              {fpPasses.length===0?(
+                <tr><td colSpan={4} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>該当データなし</td></tr>
+              ):fpPasses.map(p=>{
+                const d=daysUntil(p.expiry_date);
+                return(
+                  <tr key={p.id} style={{borderBottom:"1px solid #f1f5f9"}}>
+                    <td style={{padding:"8px 10px",fontWeight:700}}>{p.patient_name}</td>
+                    <td style={{padding:"8px 10px"}}>{p.pass_type}</td>
+                    <td style={{padding:"8px 10px"}}>{p.expiry_date||"—"}</td>
+                    <td style={{padding:"8px 10px",fontWeight:700,color:d!=null&&d<=7?"#dc2626":"#1e293b"}}>{d!=null?d+"日":"—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
 function Dashboard({user,onLogout}){
   const [bookings,setBookings]=React.useState([]);
   const [breaks,setBreaks]=React.useState([]);
@@ -6732,7 +7011,8 @@ function Dashboard({user,onLogout}){
       {id:"stats",label:"予約分析・サマリー",special:""},
       {id:"preopen_stats",label:"📊 プレオープン集計",special:""},
       {id:"churn_alert",label:"🔔 離反防止アラート",special:""},
-      {id:"line_link_check",label:"🔗 LINE連携チェック",special:""},
+            {id:"line_link_check",label:"🔗 LINE連携チェック",special:""},
+      {id:"career_weight",label:"⚖ 役職ウェイト・パス管理",special:""},
     ]},
     {id:"clinical",label:"臨床サポート",color:"#7c3aed",items:[
       {id:"symptom_checker",label:"🔍 症状チェッカー（試験運用）",special:"",action:()=>window.open("/symptom-checker.html","_blank")},
@@ -7167,7 +7447,8 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
 
           {/* 離反防止アラート */}
           {view==="churn_alert"&&<ChurnAlertPanel bookings={bookings} todayStr={todayStr}/>}
-          {view==="line_link_check"&&<LineLinkCheckPanel bookings={bookings}/>}
+                    {view==="line_link_check"&&<LineLinkCheckPanel bookings={bookings}/>}
+          {view==="career_weight"&&<CareerWeightPanel bookings={bookings} payments={payments} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr}/>}
                     {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} todayStr={todayStr} onRestore={restoreBooking} onDelete={deleteCancelledBooking}/>}
           {view==="staff_off_conflicts"&&<StaffOffConflictsPanel bookings={bookings} weeklyShifts={weeklyShifts} storeStaff={storeStaff} onReassign={reassignStaffForBooking} todayStr={todayStr}/>}
           {/* キャンセル一覧 */}
