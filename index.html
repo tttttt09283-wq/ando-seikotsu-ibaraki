@@ -6885,7 +6885,6 @@ function Dashboard({user,onLogout}){
     {id:"booking",label:"予約・顧客",color:"#2563eb",items:[
       {id:"add",label:"新規予約",special:"btn-add",action:()=>openAdd()},
       {id:"checkin",label:"📷 来院受付",special:""},
-      {id:"calendar",label:"カレンダー",special:""},
       {id:"patients",label:"患者管理",special:""},
            {id:"cancelled_list",label:"🚫 キャンセル一覧",special:""},
       {id:"staff_off_conflicts",label:"⚠ 休みスタッフの予約",special:""},
@@ -6964,7 +6963,14 @@ function Dashboard({user,onLogout}){
           </div>
 
           {/* メニュー項目 */}
-          <div style={{flex:1,overflowY:"auto",padding:"8px 10px"}}>
+                   <div style={{flex:1,overflowY:"auto",padding:"8px 10px"}}>
+            <button
+              className={`sidebar-btn ${view==="calendar"?"active":""}`}
+              onClick={()=>setView("calendar")}
+              style={{background:view==="calendar"?"#e8f0fe":"#f8fafc",border:"1.5px solid "+(view==="calendar"?"#1e3a5f":"#e5e7eb"),borderRadius:10,fontWeight:800,marginBottom:8,boxShadow:"0 1px 2px rgba(0,0,0,.04)"}}
+            >
+              📅 カレンダー
+            </button>
             {SIDEBAR_GROUPS.map(group=>{
               const isCollapsed = !!collapsedGroups[group.id];
               const hasActive = group.items.some(it=>!it.action && view===it.id);
