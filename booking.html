@@ -1067,8 +1067,9 @@ function App(){
         isRepeat?React.createElement("div",{style:{background:"linear-gradient(135deg,#f0fdf4,#dcfce7)",border:"1.5px solid #86efac",borderRadius:12,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}},
           React.createElement("span",{style:{fontSize:24}},"👋"),
           React.createElement("div",null,
-            React.createElement("div",{style:{fontWeight:800,fontSize:14,color:"#065f46"}}),"おかえりなさい！ "+pastBooking.patient_name+" 様"),
-            React.createElement("div",{style:{fontSize:12,color:"#059669",marginTop:2}}),"日時だけ選べばすぐ予約できます"
+            React.createElement("div",{style:{fontWeight:800,fontSize:14,color:"#065f46"}},"おかえりなさい！ "+pastBooking.patient_name+" 様"),
+            React.createElement("div",{style:{fontSize:12,color:"#059669",marginTop:2}},"日時だけ選べばすぐ予約できます")
+          )
         ):React.createElement("div",{style:{marginBottom:16}},
           !phoneLookupOpen?React.createElement("div",null,
             React.createElement("button",{
@@ -1082,15 +1083,15 @@ function App(){
               )
             ),
             React.createElement("div",{style:{fontSize:13,fontWeight:700,color:"#374151",marginBottom:8}},"👋 ご来院状況を教えてください *"),
-            React.createElement("div",{style:{display:"flex",flexDirection:"row",gap:8}},
+            React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:8}},
               PATIENT_TYPE_OPTIONS.map(function(opt){
                 var sel=form.patientType===opt.label;
-               return React.createElement("button",{key:opt.label,onClick:function(){
+                return React.createElement("button",{key:opt.label,onClick:function(){
                   setF("patientType",opt.label);
                   var el=document.getElementById("calendarHeading");
                   if(el) el.scrollIntoView({behavior:"smooth",block:"start"});
                 },
-                  style:{flex:1,textAlign:"left",padding:"12px 10px",borderRadius:10,border:"1.5px solid "+(sel?"#1e3a5f":"#e5e7eb"),background:sel?"#1e3a5f":"white",cursor:"pointer",fontFamily:"inherit"}},
+                  style:{textAlign:"left",padding:"14px 16px",borderRadius:10,border:"1.5px solid "+(sel?"#1e3a5f":"#e5e7eb"),background:sel?"#1e3a5f":"white",cursor:"pointer",fontFamily:"inherit"}},
                   React.createElement("div",{style:{fontSize:14,fontWeight:800,color:sel?"white":"#1e293b"}},opt.label),
                   React.createElement("div",{style:{fontSize:11,color:sel?"rgba(255,255,255,.8)":"#94a3b8",marginTop:2}},opt.desc)
                 );
@@ -1220,8 +1221,12 @@ function App(){
         React.createElement("div",{style:{background:"linear-gradient(135deg,#fef3c7,#fde68a)",border:"1.5px solid #f59e0b",borderRadius:12,padding:"14px 16px",marginBottom:14,display:"flex",alignItems:"center",gap:12}},
           React.createElement("span",{style:{fontSize:26}},"🎁"),
           React.createElement("div",null,
-            React.createElement("div",{style:{fontWeight:800,fontSize:14,color:"#92400e"}},"友達を誘うと特典があります！"),
-            React.createElement("div",{style:{fontSize:12,color:"#92400e",marginTop:2,lineHeight:1.6}},"あんど整骨院にすでに通われている方のご紹介なら、下の「紹介者のお名前」欄にご記入いただくだけでOKです")
+            React.createElement("div",{style:{fontWeight:800,fontSize:14,color:"#92400e"}},"お友達をご紹介いただくと特典があります！"),
+            React.createElement("div",{style:{fontSize:12,color:"#92400e",marginTop:2,lineHeight:1.6}},
+              isRepeat
+                ?"ご紹介いただいたお友達が初めてご来院された際に、特典をご案内しています。ぜひあんど整骨院をお友達にもおすすめください！"
+                :"あんど整骨院にすでに通われている方のご紹介なら、下の「紹介者のお名前」欄にご記入いただくだけでOKです"
+            )
           )
         ),
 
@@ -1243,9 +1248,15 @@ function App(){
               style:{width:"100%",padding:"10px 12px",border:"1.5px solid #e2e8f0",borderRadius:10,fontSize:14,fontFamily:"inherit",resize:"none",lineHeight:1.6}
             })
           ),
-          // 予約内容プレビュー
-          React.createElement("div",{style:{background:"#f8fafc",border:"1.5px solid #e2e8f0",borderRadius:12,padding:"12px 16px",marginBottom:14}},
-            React.createElement("div",{style:{fontSize:12,fontWeight:700,color:"#64748b",marginBottom:8}},"📋 予約内容"),
+          // 予約内容プレビュー（タップでも予約を確定できます）
+          React.createElement("div",{
+            onClick:function(){ if(!submitting) submitRepeat(); },
+            style:{background:"#f8fafc",border:"1.5px solid #e2e8f0",borderRadius:12,padding:"12px 16px",marginBottom:14,cursor:submitting?"default":"pointer"}
+          },
+            React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},
+              React.createElement("div",{style:{fontSize:12,fontWeight:700,color:"#64748b"}},"📋 予約内容"),
+              React.createElement("div",{style:{fontSize:10,color:"#94a3b8"}},"タップして予約確定 ›")
+            ),
             React.createElement("div",{style:{fontSize:13,color:"#1e293b",lineHeight:2}},[
               "👤 "+pastBooking.patient_name+" 様",
               "📅 "+fmtDateJP(selDate)+" "+selTime,
