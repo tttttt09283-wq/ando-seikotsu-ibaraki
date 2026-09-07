@@ -144,6 +144,8 @@ let state={
   passes:[],
   treatmentPlan:null,
   loading:true,
+  showBookingsSection:false,
+  showPassesSection:false,
   modal:null, // null | "change" | "cancel" | "contact"
   selBooking:null,
   changeForm:{date:"",time:""},
@@ -530,6 +532,7 @@ function renderPatientQR(){
 }
 
 function renderUpcomingBookings(){
+  if(!state.showBookingsSection) return"";
   const upcoming=state.bookings.filter(b=>isFuture(b.date)&&!b.cancelled).slice(0,3);
   return`
     <div class="section-title">予約状況</div>
@@ -620,6 +623,7 @@ function renderTreatmentPlan(){
 }
 
 function renderPasses(){
+  if(!state.showPassesSection) return"";
   if(state.passes.length===0) return`
     <div class="section-title">回数券・フリーパス</div>
     <div class="card">
@@ -708,14 +712,26 @@ function renderActions(){
   `;
 }
 function scrollToBookings(){
-  const el=document.querySelector(".section-title");
-  const target=[...document.querySelectorAll(".section-title")].find(e=>e.textContent.includes("予約状況"));
-  if(target) target.scrollIntoView({behavior:"smooth",block:"start"});
+  state.showBookingsSection=!state.showBookingsSection;
+  render();
+  if(state.showBookingsSection){
+    setTimeout(()=>{
+      const target=[...document.querySelectorAll(".section-title")].find(e=>e.textContent.includes("予約状況"));
+      if(target) target.scrollIntoView({behavior:"smooth",block:"start"});
+    },50);
+  }
 }
 function scrollToPasses(){
-  const target=[...document.querySelectorAll(".section-title")].find(e=>e.textContent.includes("回数券"));
-  if(target) target.scrollIntoView({behavior:"smooth",block:"start"});
-}
+  state.showPassesSection=!state.showPassesSection;
+  render();
+  if(state.showPassesSection){
+    setTimeout(()=>{
+      const target=[...document.querySelectorAll(".section-title")].find(e=>e.textContent.includes("回数券"));
+      if(target) target.scrollIntoView({behavior:"smooth",block:"start"});
+    },50);
+  }
+}f(target) target.scrollIntoView({behavior:"smooth",block:"start"});
+
 function scrollToPlan(){
   const target=[...document.querySelectorAll(".section-title")].find(e=>e.textContent.includes("施術計画書"));
   if(target){target.scrollIntoView({behavior:"smooth",block:"start"});}
