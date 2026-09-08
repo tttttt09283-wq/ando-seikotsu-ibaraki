@@ -256,18 +256,21 @@ function calcInsuranceAmount(menuName, rate){
 
 // ===== 会計画面：施術区分・負担割合ボタンからの自動金額計算 =====
 // 鍼灸系（鍼灸併用・鍼灸のみ）は「初診／2回目以降」の2段階、手技療法は「初診／2回目／3回目／4回目以降」の4段階
+const MEDICAL_SUBSIDY_TABLE={"初診":500,"2回目":500,"3回目以降":0};
 function getVisitTierForType(type,visit){
-  if(type==="手技療法") return getInsMenuByVisit(visit);
+  if(type==="手技療法"||type==="医療助成") return getInsMenuByVisit(visit);
   return visit===1?"初診":"2回目以降";
 }
 function getInsuranceAmountFor(type,rate,tier){
+  if(type==="医療助成") return MEDICAL_SUBSIDY_TABLE[tier]||0;
   const table=INSURANCE_AMOUNT_TABLE[type];
   return (table&&table[rate]&&table[rate][tier])||0;
 }
 function selectInsuranceType(type){
   state.insuranceType=(state.insuranceType===type)?null:type;
-  state.insuranceRate=null;
-  state.insuranceTier=null;
+  // 医療助成は「割合」の概念が無いので、種別を選んだ時点で自動的に次のステップへ進める
+  state.insuranceRate=(state.insuranceType==="医療助成")?"－":null;
+  state.insuranceTier=state.insuranceType?getVisitTierForType(state.insuranceType,visitCount):null;
   render();
 }
 function selectInsuranceRate(rate){
@@ -704,7 +707,7 @@ function render(){
               <div class="ins-tab-row">
                 ${["鍼灸併用","鍼灸のみ","手技療法"].map(t=>`<button class="ins-tab-btn${state.insuranceType===t?" sel":""}" onclick="selectInsuranceType('${t}')">${t}</button>`).join("")}
               </div>
-              ${state.insuranceType?`
+                           ${state.insuranceType==="医療助成"?``:state.insuranceType?`
                 <div class="ins-rate-row">
                   ${["3割","2割","1割"].map(r=>`<button class="ins-rate-pill${state.insuranceRate===r?" sel":""}" onclick="selectInsuranceRate('${r}')">${r}</button>`).join("")}
                 </div>
