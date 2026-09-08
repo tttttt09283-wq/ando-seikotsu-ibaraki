@@ -148,6 +148,28 @@ const INSURANCE_AMOUNT_TABLE={
 };
 const JIFEE_PRICES={"姿勢矯正":3600,"骨盤矯正":3600,"ストレッチ":3600,"手技療法（マッサージ）":3600,"鍼":3600,"アジャスト・超音波":1100,"鍼治療・ハイボルテージ":1650};
 
+// ===== 予約時に選択されたメニュー名から、そのまま金額を自動反映するための対応表 =====
+// （施術記録がまだ作られていない状態で会計に進んだ場合のフォールバック用。index.htmlのMENU_CATEGORIESと同じ金額）
+const BOOKING_INSURANCE_MENU_PRICE={
+  "鍼灸併用 3割 初診":1150,"鍼灸併用 3割 2回目以降":600,"鍼灸のみ 3割 初診":1650,"鍼灸のみ 3割 2回目以降":800,
+  "手技療法 3割 初診":1650,"手技療法 3割 2回目":1100,"手技療法 3割 3回目":1100,"手技療法 3割 4回目以降":800,
+  "鍼灸併用 2割 初診":780,"鍼灸併用 2割 2回目以降":600,"鍼灸のみ 2割 初診":1300,"鍼灸のみ 2割 2回目以降":600,
+  "手技療法 2割 初診":1300,"手技療法 2割 2回目":950,"手技療法 2割 3回目":950,"手技療法 2割 4回目以降":600,
+  "鍼灸併用 1割 初診":400,"鍼灸併用 1割 2回目以降":400,"鍼灸のみ 1割 初診":950,"鍼灸のみ 1割 2回目以降":400,
+  "手技療法 1割 初診":950,"手技療法 1割 2回目":600,"手技療法 1割 3回目":600,"手技療法 1割 4回目以降":400,
+  "保険請求代行料（来院1日につき）":300,
+  "医療助成 初診":500,"医療助成 2回目":500,"医療助成 3回目以降":0,
+  "自賠責 初診":0,"自賠責 2回目以降":0,"労災 初診":0,"労災 2回目以降":0,
+};
+const BOOKING_JIFEE_MENU_PRICE={
+  "姿勢矯正":3600,"骨盤矯正":3600,"ストレッチ":3600,"手技療法（マッサージ）":3600,"鍼":3600,
+  "アジャスト・超音波":1100,"鍼治療・ハイボルテージ":1650,"手技療法（施術料）":3600,"カルテ管理料":500,"検査料":1500,
+  "アジャスト・超音波 5回券":4400,"アジャスト・超音波 11回券":8800,"アジャスト・超音波 23回券":17600,
+  "鍼治療・ハイボルテージ 5回券":6000,"鍼治療・ハイボルテージ 11回券":12000,"鍼治療・ハイボルテージ 23回券":24000,
+  "姿勢矯正・骨盤矯正・ストレッチ・鍼治療 8回券":28200,"姿勢矯正・骨盤矯正・ストレッチ・鍼治療 16回券":54600,"姿勢矯正・骨盤矯正・ストレッチ・鍼治療 24回券":79200,
+  "フリーパス 1ヶ月":13200,"フリーパス 3ヶ月":38000,"フリーパス 6ヶ月":72600,"フリーパス 12ヶ月":132000,
+};
+
 // カテゴリ別自費メニュー
 const JIFEE_CATEGORIES=[
   {
@@ -433,24 +455,36 @@ function renderNextBookings(){
               ${nb.visitNum}回目来院
               <span style="background:#dbeafe;color:#1e40af;border-radius:4px;padding:1px 6px;font-size:10px;margin-left:6px;">${nb.insMenu}</span>
             </div>
-            <div class="nb-grid">
-              <div><span class="nb-label">📅 日付</span><input type="date" class="nb-input" value="${nb.date}" min="${todayStr()}" onchange="onNBDateChange(${i},this.value)"/>
-                ${nb.date&&isClosedDatePos(nb.date)?`<div style="color:#dc2626;font-size:11px;font-weight:700;margin-top:4px;">⚠ この日は休診日です</div>`:""}
+            <div style="margin-bottom:8px;">
+              <span class="nb-label">📅 日付（休診日はボタンが押せません）</span>
+              <div style="display:flex;gap:5px;overflow-x:auto;padding:2px 2px 6px;">
+                ${buildUpcomingDateOptionsPos().map(opt=>{
+                  const DAYS_JP_POS=["日","月","火","水","木","金","土"];
+                  const isSel=nb.date===opt.ds;
+                  const dow=opt.d.getDay();
+                  const dowColor=opt.closed?"#cbd5e1":(dow===0?"#ef4444":dow===6?"#7c3aed":"#374151");
+                  return`<button type="button" ${opt.closed?"disabled":""} onclick="onNBDateChange(${i},'${opt.ds}')"
+                    style="flex:0 0 auto;width:46px;padding:6px 2px;border-radius:8px;border:1.5px solid ${isSel?"#0891b2":"#e2e8f0"};background:${isSel?"#0891b2":(opt.closed?"#f3f4f6":"white")};color:${isSel?"white":dowColor};font-size:11px;font-weight:700;cursor:${opt.closed?"default":"pointer"};text-align:center;">
+                    <div>${opt.d.getMonth()+1}/${opt.d.getDate()}</div>
+                    <div style="font-size:9px;">${opt.closed?"休":DAYS_JP_POS[dow]}</div>
+                  </button>`;
+                }).join("")}
               </div>
-              <div><span class="nb-label">🕐 時間</span>
-                <select class="nb-input" onchange="updateNB(${i},'time',this.value)" ${(nb.date&&isClosedDatePos(nb.date))?'disabled':''}>
-                  <option value="">選択</option>
-                  ${TIME_OPTS.map(t=>{
-                    const key=`${nb.date}_${nb.staffId}`;
-                    const fullSlots=slotCache[key]||[];
-                    const isFull=fullSlots.includes(t);
-                    const hours=nb.date?getOpenCloseForDatePos(nb.date):null;
-                    const outOfHours=hours?(t<hours.open||t>=hours.close):false;
-                    const disabled=isFull||outOfHours;
-                    return`<option value="${t}" ${nb.time===t?'selected':''} ${disabled?'disabled':''} style="color:${disabled?'#d1d5db':'inherit'}">${t}${isFull?' ×満員':(outOfHours?' ×営業時間外':'')}</option>`;
-                  }).join('')}
-                </select>
-              </div>
+            </div>
+            <div style="margin-bottom:8px;">
+              <span class="nb-label">🕐 時間</span>
+              <select class="nb-input" onchange="updateNB(${i},'time',this.value)" ${!nb.date?'disabled':''}>
+                <option value="">選択</option>
+                ${TIME_OPTS.map(t=>{
+                  const key=`${nb.date}_${nb.staffId}`;
+                  const fullSlots=slotCache[key]||[];
+                  const isFull=fullSlots.includes(t);
+                  const hours=nb.date?getOpenCloseForDatePos(nb.date):null;
+                  const outOfHours=hours?(t<hours.open||t>=hours.close):false;
+                  const disabled=isFull||outOfHours;
+                  return`<option value="${t}" ${nb.time===t?'selected':''} ${disabled?'disabled':''} style="color:${disabled?'#d1d5db':'inherit'}">${t}${isFull?' ×満員':(outOfHours?' ×営業時間外':'')}</option>`;
+                }).join('')}
+              </select>
             </div>
             <div style="margin-bottom:8px;">
               <span class="nb-label">👤 担当スタッフ</span>
@@ -533,6 +567,20 @@ function getOpenCloseForDatePos(ds){
   const dh=getDayHoursPos(d.getDay());
   if(!dh||dh.is_open===false) return null;
   return {open:dh.open_time||"09:00",close:dh.close_time||"19:00"};
+}
+
+// 次回予約のボタン式日付選択に使う、直近45日分の日付一覧（休診日フラグ付き）
+function buildUpcomingDateOptionsPos(){
+  const days=[];
+  const start=new Date();
+  start.setHours(0,0,0,0);
+  for(let i=0;i<45;i++){
+    const d=new Date(start);
+    d.setDate(start.getDate()+i);
+    const ds=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+    days.push({ds,d,closed:isClosedDatePos(ds)});
+  }
+  return days;
 }
 
 async function onNBDateChange(i, date){
@@ -795,6 +843,18 @@ async function init(){
       treatment.treatment_types.split("・").forEach(t=>{
         if(JIFEE_PRICES[t]!==undefined&&t!=="保険") state.jifeeItems.push({label:t,amount:JIFEE_PRICES[t]});
       });
+    }else{
+      // 施術記録がまだ作られていない場合は、予約時に選択されたメニューからそのまま金額を反映する
+      const bookingMenus = Array.isArray(booking.menus)&&booking.menus.length>0 ? booking.menus : (booking.menu?[booking.menu]:[]);
+      let autoInsurance=0;
+      bookingMenus.forEach(name=>{
+        if(BOOKING_INSURANCE_MENU_PRICE[name]!==undefined){
+          autoInsurance+=BOOKING_INSURANCE_MENU_PRICE[name];
+        }else if(BOOKING_JIFEE_MENU_PRICE[name]!==undefined){
+          state.jifeeItems.push({label:name,amount:BOOKING_JIFEE_MENU_PRICE[name]});
+        }
+      });
+      if(autoInsurance>0) state.insuranceAmount=autoInsurance;
     }
     // 店舗情報（住所・電話番号）をレシート用に取得。取得できなければ店舗名のみで表示する
     try{

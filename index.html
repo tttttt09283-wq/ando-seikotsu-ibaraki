@@ -2163,7 +2163,7 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
         </div>
       )}
       <div className="form-group"><label className="form-label">電話番号</label><input type="tel" className="form-input" value={form.phone||""} placeholder="090-0000-0000" onChange={e=>setForm(f=>({...f,phone:e.target.value}))}/></div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
         <div><label className="form-label">日付</label><input type="date" className="form-input" value={form.date||""} onChange={e=>{setForm(f=>({...f,date:e.target.value,time:""}));setConflict(false);}}/></div>
         <div>
           <label className="form-label">時間</label>
@@ -2174,6 +2174,11 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
               return <option key={t} value={t} disabled={!allowed} style={{color:allowed?"inherit":"#d1d5db"}}>{t}{allowed?"":" ×休業"}</option>;
             })}
           </select>
+        </div>
+        <div>
+          <label className="form-label">施術時間（分）</label>
+          <input type="number" min="10" step="10" className="form-input" value={form.duration||""} placeholder="自動"
+            onChange={e=>{const v=parseInt(e.target.value)||0;setForm(f=>({...f,duration:v}));setConflict(false);}}/>
         </div>
       </div>
       {isSelectedDateClosed&&(
