@@ -6107,8 +6107,9 @@ function QuickMemoEditor({booking,onSave}){
     </div>
   );
 }
-function StaffOffConflictsPanel({bookings,weeklyShifts,storeStaff,onReassign,todayStr}){
+function StaffOffConflictsPanel({bookings,weeklyShifts,storeStaff,onReassign,onReschedule,todayStr}){
   const [savingId,setSavingId]=React.useState(null);
+  const [rescheduleForm,setRescheduleForm]=React.useState({}); // {bookingId: {date, time}}
   function isWorkingLocal(staffId,dateStr){
     const dow=new Date(dateStr+"T00:00:00").getDay();
     const ws=weeklyShifts.find(w=>w.staff_id===staffId&&w.day_of_week===dow);
@@ -6124,12 +6125,22 @@ function StaffOffConflictsPanel({bookings,weeklyShifts,storeStaff,onReassign,tod
     await onReassign(booking,Number(newStaffId));
     setSavingId(null);
   }
+  async function reschedule(booking){
+    const f=rescheduleForm[booking.id];
+    if(!f||!f.date||!f.time){ return; }
+    setSavingId(booking.id);
+    await onReschedule(booking,f.date,f.time);
+    setSavingId(null);
+  }
+  function updateRescheduleField(bookingId,key,val){
+    setRescheduleForm(prev=>({...prev,[bookingId]:{...(prev[bookingId]||{}),[key]:val}}));
+  }
   return(
     <div style={{maxWidth:1000,margin:"0 auto"}}>
       <div className="card" style={{marginBottom:14}}>
         <div style={{padding:"14px 16px",borderBottom:"1px solid #f1f5f9",background:"linear-gradient(135deg,#d97706,#b45309)"}}>
           <div style={{color:"white",fontWeight:800,fontSize:15}}>⚠ 休みスタッフの予約（要対応）</div>
-          <div style={{color:"rgba(255,255,255,.85)",fontSize:12,marginTop:2}}>担当スタッフがその日休みに設定されているため、カレンダー上では表示されていない予約です。出勤しているスタッフへ振り替えてください。</div>
+          <div style={{color:"rgba(255,255,255,.85)",fontSize:12,marginTop:2}}>担当スタッフがその日休みに設定されているため、カレンダー上では表示されていない予約です。出勤しているスタッフへ振り替えるか、別の日に移動してください。</div>
         </div>
       </div>
       <div className="card">
@@ -6140,20 +6151,36 @@ function StaffOffConflictsPanel({bookings,weeklyShifts,storeStaff,onReassign,tod
           ):conflicts.map(b=>{
             const oldStaff=STAFF_ACCOUNTS.find(s=>s.id===b.staff_id)||{name:"不明",color:"#888"};
             const workingStaff=(storeStaff||STAFF_ACCOUNTS).filter(s=>isWorkingLocal(s.id,b.date));
+            const rf=rescheduleForm[b.id]||{date:"",time:""};
             return(
-              <div key={b.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 0",borderBottom:"1px solid #f1f5f9",gap:10,flexWrap:"wrap"}}>
-                <div>
-                  <div style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{b.patient_name}</div>
-                  <div style={{fontSize:12,color:"#64748b"}}>{b.date} {b.time}　{b.menu}</div>
-                  <div style={{fontSize:11,color:"#d97706",fontWeight:700,marginTop:2}}>現在の担当：{oldStaff.name}（この日休み）</div>
+              <div key={b.id} style={{padding:"12px 0",borderBottom:"1px solid #f1f5f9"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap",marginBottom:10}}>
+                  <div>
+                    <div style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{b.patient_name}</div>
+                    <div style={{fontSize:12,color:"#64748b"}}>{b.date} {b.time}　{b.menu}</div>
+                    <div style={{fontSize:11,color:"#d97706",fontWeight:700,marginTop:2}}>現在の担当：{oldStaff.name}（この日休み）</div>
+                  </div>
+                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                    <select disabled={savingId===b.id} onChange={e=>{if(e.target.value)reassign(b,e.target.value);}} defaultValue=""
+                      style={{padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:12,fontFamily:"inherit"}}>
+                      <option value="" disabled>同じ日で担当を選ぶ</option>
+                      {workingStaff.length===0?<option disabled>この日出勤スタッフなし</option>:workingStaff.map(s=>(<option key={s.id} value={s.id}>{s.name}</option>))}
+                    </select>
+                  </div>
                 </div>
-                <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                  <select disabled={savingId===b.id} onChange={e=>{if(e.target.value)reassign(b,e.target.value);}} defaultValue=""
-                    style={{padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:12,fontFamily:"inherit"}}>
-                    <option value="" disabled>担当を選ぶ</option>
-                    {workingStaff.length===0?<option disabled>この日出勤スタッフなし</option>:workingStaff.map(s=>(<option key={s.id} value={s.id}>{s.name}</option>))}
+                <div style={{background:"#fffbeb",border:"1px dashed #fde68a",borderRadius:8,padding:"10px 12px",display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                  <span style={{fontSize:11,fontWeight:700,color:"#92400e",whiteSpace:"nowrap"}}>📅 別の日に移動：</span>
+                  <input type="date" value={rf.date} onChange={e=>updateRescheduleField(b.id,"date",e.target.value)}
+                    style={{padding:"6px 8px",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit"}}/>
+                  <select value={rf.time} onChange={e=>updateRescheduleField(b.id,"time",e.target.value)}
+                    style={{padding:"6px 8px",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit"}}>
+                    <option value="">時間を選ぶ</option>
+                    {SLOTS.map(t=><option key={t} value={t}>{t}</option>)}
                   </select>
-                  {savingId===b.id&&<span style={{fontSize:11,color:"#94a3b8"}}>移動中...</span>}
+                  <button disabled={savingId===b.id||!rf.date||!rf.time} onClick={()=>reschedule(b)}
+                    style={{padding:"6px 14px",background:"#d97706",color:"white",border:"none",borderRadius:6,fontSize:12,fontWeight:700,cursor:(savingId===b.id||!rf.date||!rf.time)?"not-allowed":"pointer",opacity:(savingId===b.id||!rf.date||!rf.time)?0.5:1,fontFamily:"inherit"}}>
+                    {savingId===b.id?"移動中...":"移動する"}
+                  </button>
                 </div>
               </div>
             );
@@ -6769,6 +6796,39 @@ function Dashboard({user,onLogout}){
     const h=9+Math.floor(totalMin/60),m=totalMin%60;
     if(h<9||h>17) return null;
     return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
+  }
+    async function rescheduleBooking(booking,newDate,newTime){
+    const dow=new Date(newDate+"T00:00:00").getDay();
+    function isWorkingOnNewDate(staffId){
+      const ws=weeklyShifts.find(w=>w.staff_id===staffId&&w.day_of_week===dow);
+      if(ws) return ws.is_working!==false;
+      return true;
+    }
+    const list=(storeStaff&&storeStaff.length>0)?storeStaff:STAFF_ACCOUNTS;
+    const candidates=list.filter(s=>isWorkingOnNewDate(s.id));
+    if(candidates.length===0){
+      showToast("その日も出勤スタッフがいません。別の日付をお試しください","delete");
+      return;
+    }
+    function hasRoom(staffId){
+      const capacity=getLaneCount(staffId);
+      const overlapCount=bookings.filter(b=>b.id!==booking.id&&b.staff_id===staffId&&b.date===newDate&&!b.cancelled&&overlaps(b,{time:newTime,duration:booking.duration||DURATION[booking.menu]||30})).length;
+      return overlapCount<capacity;
+    }
+    const chosen=candidates.find(s=>hasRoom(s.id));
+    if(!chosen){
+      showToast("その時間は予約枠が埋まっています。別の時間をお試しください","delete");
+      return;
+    }
+    try{
+      const result=await sb.update("bookings",booking.id,{date:newDate,time:newTime,staff_id:chosen.id});
+      if(Array.isArray(result)&&result.length>0){
+        setBookings(prev=>prev.map(b=>b.id===booking.id?result[0]:b));
+        showToast("予約を"+newDate+" "+newTime+"（"+chosen.name+"）に移動しました");
+      }
+    }catch(e){
+      showToast("移動に失敗しました","delete");
+    }
   }
   async function reassignStaffForBooking(booking,newStaffId){
     const laneCapacity=getLaneCount(newStaffId);
@@ -7422,7 +7482,7 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
                     {view==="line_link_check"&&<LineLinkCheckPanel bookings={bookings}/>}
           {view==="career_weight"&&<CareerWeightPanel bookings={bookings} payments={payments} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr}/>}
                     {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} todayStr={todayStr} onRestore={restoreBooking} onDelete={deleteCancelledBooking}/>}
-          {view==="staff_off_conflicts"&&<StaffOffConflictsPanel bookings={bookings} weeklyShifts={weeklyShifts} storeStaff={storeStaff} onReassign={reassignStaffForBooking} todayStr={todayStr}/>}
+                    {view==="staff_off_conflicts"&&<StaffOffConflictsPanel bookings={bookings} weeklyShifts={weeklyShifts} storeStaff={storeStaff} onReassign={reassignStaffForBooking} onReschedule={rescheduleBooking} todayStr={todayStr}/>}
           {/* キャンセル一覧 */}
 
           {view==="posture_records"&&<PostureRecordsPanel bookings={bookings}/>}
