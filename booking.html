@@ -72,8 +72,8 @@ const DATE_CAPACITY_OVERRIDES = {
 const DAYS_JP = ["日","月","火","水","木","金","土"];
 const STEPS = ["日時","お客様情報","症状・問診","確認"];
 const HOW_KNOW_OPTIONS = [
-  {label:"チラシ①", icon:"📰", image:null},
-  {label:"チラシ②", icon:"📰", image:null},
+  {label:"チラシ①", icon:"📰", image:"/pure1.png"},
+  {label:"チラシ②", icon:"📰", image:"/pure2.png"},
   {label:"看板", icon:"🪧", image:null},
   {label:"Instagram", icon:"📷", image:null},
   {label:"Google検索", icon:"🔍", image:null},
@@ -142,8 +142,31 @@ var sb = {
       },
       body:JSON.stringify(data)
     }).then(function(r){return r.json();}).catch(function(){return null;});
+  },
+  upsert: function(table, data, conflictCol){
+    return fetch(SUPABASE_URL+"/rest/v1/"+table+"?on_conflict="+conflictCol, {
+      method:"POST",
+      headers:{
+        "apikey":SUPABASE_ANON_KEY,
+        "Authorization":"Bearer "+SUPABASE_ANON_KEY,
+        "Content-Type":"application/json",
+        "Prefer":"resolution=merge-duplicates,return=representation"
+      },
+      body:JSON.stringify(data)
+    }).then(function(r){return r.json();}).catch(function(){return null;});
   }
 };
+
+// 患者様のレシート発行頻度の希望を保存（電話番号ごとに1件、次回以降も引き継がれる）
+function savePatientReceiptPreference(phone, patientName, freq){
+  if(!phone||!freq) return;
+  sb.upsert("patient_preferences",{
+    phone:phone,
+    patient_name:patientName,
+    receipt_frequency:freq,
+    updated_at:new Date().toISOString()
+  },"phone").catch(function(){});
+}
 
 function App(){
   var useState = React.useState;
@@ -316,7 +339,8 @@ function App(){
     painWhen:"",painLevel:"",symptoms:[],
     otherClinic:"",otherClinicName:"",medicalHistory:"",
     wantContinue:"",wantContinueOther:"",howKnow:"",howKnowOther:"",lineNotify:false,
-    patientType:"" // イベント期間終了後（10/5以降）のみ使用："初めての方"|"久しぶりの方"|"2回目以降の方"
+    patientType:"", // イベント期間終了後（10/5以降）のみ使用："初めての方"|"久しぶりの方"|"2回目以降の方"
+    receiptFrequency:"毎回" // "毎回"|"月ごと"|"年ごと"|"不要"
   });
   var form = formState[0]; var setForm = formState[1];
   var detailFormOpenState = useState(false); // 事前問診票（任意の詳細項目）を開いているかどうか
@@ -771,6 +795,8 @@ function App(){
     var finalMenu=isEventDate(selDate)?pageSettings.eventMenuName:(patientTypeOpt?patientTypeOpt.menu:pageSettings.eventMenuName);
     // 「気になる症状」（簡易必須項目）と、任意の問診票で選んだ症状チップを両方保存する
     var combinedSymptoms=form.quickSymptom.trim()+(form.symptoms.length>0?"／"+form.symptoms.join("・"):"");
+
+    savePatientReceiptPreference(form.phone, form.name, form.receiptFrequency);
 
     sb.insert("bookings",{
       patient_name:form.name,
@@ -1559,6 +1585,18 @@ function App(){
               })
             ),
             form.howKnow==="その他"?React.createElement("input",{type:"text",value:form.howKnowOther,placeholder:"具体的に教えてください",onChange:function(e){setF("howKnowOther",e.target.value);},style:Object.assign({},H.input,{marginTop:10})}):null
+          ),
+
+          React.createElement("div",{style:H.sec},
+            React.createElement("div",{style:H.secT},"🧾 レシートの発行について"),
+            React.createElement("div",{style:{fontSize:12,color:"#9ca3af",marginBottom:10}},"ご希望の頻度を選んでください。次回以降も同じ設定が使われます（会計時に変更も可能です）。"),
+            React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:8}},
+              ["毎回","月ごと","年ごと","不要"].map(function(v){
+                var sel=form.receiptFrequency===v;
+                return React.createElement("button",{key:v,type:"button",onClick:function(){setF("receiptFrequency",v);},
+                  style:{padding:"9px 16px",borderRadius:20,border:"1.5px solid "+(sel?"#1e3a5f":"#ddd"),background:sel?"#1e3a5f":"white",color:sel?"white":"#444",cursor:"pointer",fontSize:13,fontWeight:sel?700:400,fontFamily:"inherit"}},v);
+              })
+            )
           )
         ):null,
 
