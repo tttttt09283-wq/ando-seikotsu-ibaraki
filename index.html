@@ -6723,6 +6723,56 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr}){
         <div style={{textAlign:"center",padding:40,color:"#94a3b8"}}>読み込み中...</div>
       ):(
         <>
+              {(()=>{
+        const activePasses=passes.filter(p=>p.active!==false);
+        const ticketPasses=activePasses.filter(p=>!(p.pass_type||"").includes("フリーパス"));
+        const fpPasses=activePasses.filter(p=>(p.pass_type||"").includes("フリーパス"));
+        const ticketPatientCount=new Set(ticketPasses.map(p=>p.patient_name)).size;
+        const fpPatientCount=new Set(fpPasses.map(p=>p.patient_name)).size;
+        const ticketLowCount=ticketPasses.filter(p=>(p.remaining_count||0)<=2).length;
+        function daysUntil(dateStr){ if(!dateStr) return null; return Math.ceil((new Date(dateStr+"T00:00:00")-new Date())/86400000); }
+        const fpExpiringSoonCount=fpPasses.filter(p=>{const d=daysUntil(p.expiry_date);return d!=null&&d<=7&&d>=0;}).length;
+        const scopedPaymentsForIns=payments.filter(p=>scopedBookings.some(b=>b.id===p.booking_id)&&p.payment_date&&inRange(p.payment_date));
+        const bookingByIdForIns={}; scopedBookings.forEach(b=>{bookingByIdForIns[b.id]=b;});
+        const byPatientIns={};
+        scopedPaymentsForIns.forEach(p=>{
+          const b=bookingByIdForIns[p.booking_id];
+          if(!b) return;
+          if(!byPatientIns[b.patient_name]) byPatientIns[b.patient_name]={ins:0,jifee:0};
+          byPatientIns[b.patient_name].ins+=(p.insurance_amount||0);
+          byPatientIns[b.patient_name].jifee+=(p.jifee_amount||0);
+        });
+        const insuranceOnlyCount=Object.values(byPatientIns).filter(v=>v.ins>0&&v.jifee===0).length;
+        return(
+          <div className="card" style={{marginBottom:14,padding:"14px 16px"}}>
+            <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:4}}>🎫 パス・保険サマリー</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginTop:10,marginBottom:10}}>
+              <div style={{background:"#f8fafc",borderRadius:10,padding:"12px",textAlign:"center"}}>
+                <div style={{fontSize:24,fontWeight:800,color:"#2563eb"}}>{insuranceOnlyCount}</div>
+                <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>保険のみ患者数（{selMonth}）</div>
+              </div>
+              <div style={{background:"#f8fafc",borderRadius:10,padding:"12px",textAlign:"center"}}>
+                <div style={{fontSize:24,fontWeight:800,color:"#d97706"}}>{ticketPatientCount}</div>
+                <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>回数券実施中の患者数</div>
+              </div>
+              <div style={{background:"#f8fafc",borderRadius:10,padding:"12px",textAlign:"center"}}>
+                <div style={{fontSize:24,fontWeight:800,color:"#7c3aed"}}>{fpPatientCount}</div>
+                <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>フリーパス実施中の患者数</div>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10}}>
+              <div style={{background:"#fef2f2",borderRadius:10,padding:"12px",textAlign:"center",border:"1px solid #fecaca"}}>
+                <div style={{fontSize:24,fontWeight:800,color:"#dc2626"}}>{ticketLowCount}</div>
+                <div style={{fontSize:11,color:"#991b1b",fontWeight:700}}>回数券 残りわずか（2回以下）</div>
+              </div>
+              <div style={{background:"#fef2f2",borderRadius:10,padding:"12px",textAlign:"center",border:"1px solid #fecaca"}}>
+                <div style={{fontSize:24,fontWeight:800,color:"#dc2626"}}>{fpExpiringSoonCount}</div>
+                <div style={{fontSize:11,color:"#991b1b",fontWeight:700}}>フリーパス 期限間近（7日以内）</div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
           {renderTable("新患（"+selMonth+"）",newRows)}
           {renderTable("再診（"+selMonth+"）",repeatRows)}
           <div className="card">
@@ -7440,8 +7490,7 @@ function Dashboard({user,onLogout}){
       {id:"preopen_stats",label:"📊 プレオープン集計",special:""},
       {id:"churn_alert",label:"🔔 離反防止アラート",special:""},
             {id:"line_link_check",label:"🔗 LINE連携チェック",special:""},
-           {id:"career_weight",label:"⚖ 役職ウェイト・パス管理",special:""},
-      {id:"staff_kpi",label:"📊 スタッフKPI管理",special:""},
+                {id:"staff_kpi",label:"📊 スタッフKPI管理",special:""},
     ]},
     {id:"clinical",label:"臨床サポート",color:"#7c3aed",items:[
       {id:"symptom_checker",label:"🔍 症状チェッカー（試験運用）",special:"",action:()=>window.open("/symptom-checker.html","_blank")},
@@ -7891,8 +7940,7 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
           {/* 離反防止アラート */}
           {view==="churn_alert"&&<ChurnAlertPanel bookings={bookings} todayStr={todayStr}/>}
                     {view==="line_link_check"&&<LineLinkCheckPanel bookings={bookings}/>}
-                    {view==="career_weight"&&<CareerWeightPanel bookings={bookings} payments={payments} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr}/>}
-          {view==="staff_kpi"&&<StaffKPIPanel bookings={bookings} payments={payments} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr}/>}
+                             {view==="staff_kpi"&&<StaffKPIPanel bookings={bookings} payments={payments} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr}/>}
                     {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} todayStr={todayStr} onRestore={restoreBooking} onDelete={deleteCancelledBooking}/>}
                            {view==="staff_off_conflicts"&&<StaffOffConflictsPanel bookings={bookings} weeklyShifts={weeklyShifts} storeStaff={storeStaff} onReassign={reassignStaffForBooking} onReschedule={rescheduleBooking} todayStr={todayStr}/>}
           {view==="bulk_receipt"&&<BulkReceiptPanel payments={payments} bookings={bookings}/>}
