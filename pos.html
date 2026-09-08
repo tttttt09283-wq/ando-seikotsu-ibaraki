@@ -237,6 +237,11 @@ async function sbPost(t,d){
   const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}`,{method:"POST",headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},body:JSON.stringify(d)});
   return res.json();
 }
+async function sbUpsert(t,d,conflictCol){
+  const token=await getAuthToken();
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}?on_conflict=${conflictCol}`,{method:"POST",headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=representation"},body:JSON.stringify(d)});
+  return res.json();
+}
 function fmt(n){return"¥"+Number(n||0).toLocaleString();}
 function todayStr(){
   const d=new Date();
@@ -244,7 +249,7 @@ function todayStr(){
 }
 
 let booking=null,treatment=null,visitCount=1,storeInfo=null;
-let state={insuranceAmount:0,insuranceType:null,insuranceRate:null,insuranceTier:null,jifeeItems:[],payments:[],done:false,saving:false,nextBookings:[],savingBookings:false,bookingsSaved:false,jifeeTab:"spot"};
+let state={insuranceAmount:0,insuranceType:null,insuranceRate:null,insuranceTier:null,jifeeItems:[],payments:[],done:false,saving:false,nextBookings:[],savingBookings:false,bookingsSaved:false,jifeeTab:"spot",receiptFrequency:null,receiptFrequencyKnown:false,savingReceiptPref:false};
 const CLINIC_NAME_FALLBACK="あんど整骨院";
 
 function getMenuByVisit(visit){if(visit===1) return "初診（60分）";if(visit===2) return "初診（60分）";return "再診（30分）";}
@@ -256,21 +261,18 @@ function calcInsuranceAmount(menuName, rate){
 
 // ===== 会計画面：施術区分・負担割合ボタンからの自動金額計算 =====
 // 鍼灸系（鍼灸併用・鍼灸のみ）は「初診／2回目以降」の2段階、手技療法は「初診／2回目／3回目／4回目以降」の4段階
-const MEDICAL_SUBSIDY_TABLE={"初診":500,"2回目":500,"3回目以降":0};
 function getVisitTierForType(type,visit){
-  if(type==="手技療法"||type==="医療助成") return getInsMenuByVisit(visit);
+  if(type==="手技療法") return getInsMenuByVisit(visit);
   return visit===1?"初診":"2回目以降";
 }
 function getInsuranceAmountFor(type,rate,tier){
-  if(type==="医療助成") return MEDICAL_SUBSIDY_TABLE[tier]||0;
   const table=INSURANCE_AMOUNT_TABLE[type];
   return (table&&table[rate]&&table[rate][tier])||0;
 }
 function selectInsuranceType(type){
   state.insuranceType=(state.insuranceType===type)?null:type;
-  // 医療助成は「割合」の概念が無いので、種別を選んだ時点で自動的に次のステップへ進める
-  state.insuranceRate=(state.insuranceType==="医療助成")?"－":null;
-  state.insuranceTier=state.insuranceType?getVisitTierForType(state.insuranceType,visitCount):null;
+  state.insuranceRate=null;
+  state.insuranceTier=null;
   render();
 }
 function selectInsuranceRate(rate){
@@ -372,6 +374,45 @@ function renderSummaryHtml(){
 }
 function renderSummary(){const el=document.getElementById("summaryArea");if(el) el.innerHTML=renderSummaryHtml();}
 
+async function saveReceiptFrequency(freq){
+  if(state.savingReceiptPref) return;
+  state.savingReceiptPref=true;render();
+  try{
+    await sbUpsert("patient_preferences",{
+      phone:booking.phone,
+      patient_name:booking.patient_name,
+      receipt_frequency:freq,
+      updated_at:new Date().toISOString()
+    },"phone");
+    state.receiptFrequency=freq;
+    state.receiptFrequencyKnown=true;
+  }catch(e){}
+  state.savingReceiptPref=false;render();
+}
+function renderReceiptFrequencyPicker(){
+  return`
+    <div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px;padding:14px 16px;margin-bottom:14px;">
+      <div style="font-size:13px;font-weight:800;color:#92400e;margin-bottom:8px;">🧾 レシートの発行頻度が未設定です</div>
+      <div style="font-size:11px;color:#92400e;margin-bottom:10px;">ご希望を選んでください。次回以降もこの設定が使われます。</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        ${["毎回","月ごと","年ごと","不要"].map(v=>`<button onclick="saveReceiptFrequency('${v}')" ${state.savingReceiptPref?"disabled":""} style="padding:8px 14px;border-radius:20px;border:1.5px solid #d97706;background:white;color:#d97706;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;opacity:${state.savingReceiptPref?0.6:1};">${v}</button>`).join("")}
+      </div>
+    </div>`;
+}
+function renderReceiptSection(){
+  if(!state.receiptFrequencyKnown){
+    return renderReceiptFrequencyPicker();
+  }
+  const freq=state.receiptFrequency;
+  if(freq==="毎回"){
+    return renderReceipt()+`<button class="btn-back" onclick="window.print()" style="border-color:#d97706;color:#d97706;">🖨️ 領収書を印刷</button>`;
+  }
+  if(freq==="不要"){
+    return `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:#64748b;text-align:center;">この患者様は「レシート不要」に設定されています。<br><button onclick="state.receiptFrequency='毎回';render();" style="margin-top:8px;background:none;border:none;color:#2563eb;font-size:11px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:inherit;">今回だけ発行する</button></div>`;
+  }
+  // 月ごと・年ごと
+  return `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:#1e40af;text-align:center;">この患者様のレシートは「${freq}」まとめて発行する設定です。管理画面の「まとめレシート発行」から発行してください。<br><button onclick="state.receiptFrequency='毎回';render();" style="margin-top:8px;background:none;border:none;color:#2563eb;font-size:11px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:inherit;">今回だけ発行する</button></div>`;
+}
 function renderReceipt(){
   const total=calcTotal();const ins=parseInt(state.insuranceAmount)||0;const now=new Date();const change=calcChange();
   const DAYS_JP=["日","月","火","水","木","金","土"];
@@ -687,8 +728,7 @@ function render(){
           <div style="color:#666;font-size:13px;margin-top:4px;">${booking.patient_name} 様　${fmt(calcTotal())}</div>
           ${change>0?`<div class="change-box" style="margin-top:10px;"><span style="font-size:13px;font-weight:700;color:#059669;">現金お釣り</span><span style="font-size:24px;font-weight:800;color:#059669;">${fmt(change)}</span></div>`:""}
         </div>
-        ${renderReceipt()}
-        <button class="btn-back" onclick="window.print()" style="border-color:#d97706;color:#d97706;">🖨️ 領収書を印刷</button>
+        ${renderReceiptSection()}
         ${renderNextBookings()}
         <button class="btn-back" onclick="goBackToCalendar()" style="margin-top:8px;">← カレンダーへ戻る</button>
       </div>`;
@@ -707,7 +747,7 @@ function render(){
               <div class="ins-tab-row">
                 ${["鍼灸併用","鍼灸のみ","手技療法"].map(t=>`<button class="ins-tab-btn${state.insuranceType===t?" sel":""}" onclick="selectInsuranceType('${t}')">${t}</button>`).join("")}
               </div>
-                           ${state.insuranceType==="医療助成"?``:state.insuranceType?`
+              ${state.insuranceType?`
                 <div class="ins-rate-row">
                   ${["3割","2割","1割"].map(r=>`<button class="ins-rate-pill${state.insuranceRate===r?" sel":""}" onclick="selectInsuranceRate('${r}')">${r}</button>`).join("")}
                 </div>
@@ -841,6 +881,16 @@ async function init(){
     const samePatient=await sbGet("bookings",`?patient_name=eq.${encodeURIComponent(booking.patient_name)}&order=date.asc`);
     visitCount=Array.isArray(samePatient)?samePatient.length:1;
     document.getElementById("patientBadge").textContent=booking.patient_name+" 様";
+    // レシート発行頻度の希望（問診票または過去の会計時の設定）を読み込む
+    try{
+      if(booking.phone){
+        const prefs=await sbGet("patient_preferences",`?phone=eq.${encodeURIComponent(booking.phone)}&limit=1`);
+        if(Array.isArray(prefs)&&prefs.length>0){
+          state.receiptFrequency=prefs[0].receipt_frequency;
+          state.receiptFrequencyKnown=true;
+        }
+      }
+    }catch(e){}
     state.insuranceAmount=INSURANCE_PRICES[booking.menu]||0;
     if(treatment&&treatment.treatment_types){
       treatment.treatment_types.split("・").forEach(t=>{
