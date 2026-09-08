@@ -6394,6 +6394,133 @@ function CareerWeightPanel({bookings,payments,storeStaff,selStoreId,todayStr}){
     </div>
   );
 }
+function BulkReceiptPanel({payments,bookings}){
+  const [freqFilter,setFreqFilter]=React.useState("月ごと"); // "月ごと" | "年ごと"
+  const [prefs,setPrefs]=React.useState([]);
+  const [loading,setLoading]=React.useState(true);
+  const [selPhone,setSelPhone]=React.useState(null);
+  const [period,setPeriod]=React.useState(()=>{
+    const now=new Date();
+    return {month:`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`,year:String(now.getFullYear())};
+  });
+
+  React.useEffect(()=>{
+    sb.select("patient_preferences","?order=patient_name.asc").then(rows=>{
+      setPrefs(Array.isArray(rows)?rows:[]);
+      setLoading(false);
+    }).catch(()=>setLoading(false));
+  },[]);
+
+  const targetPatients=prefs.filter(p=>p.receipt_frequency===freqFilter);
+
+  const bookingByPhone=React.useMemo(()=>{
+    const map={};
+    bookings.forEach(b=>{ if(b.phone){ if(!map[b.phone]) map[b.phone]=[]; map[b.phone].push(b); } });
+    return map;
+  },[bookings]);
+
+  function getRangeForSelected(){
+    if(freqFilter==="月ごと"){
+      const [y,m]=period.month.split("-").map(Number);
+      const start=`${y}-${String(m).padStart(2,"0")}-01`;
+      const lastDay=new Date(y,m,0).getDate();
+      const end=`${y}-${String(m).padStart(2,"0")}-${String(lastDay).padStart(2,"0")}`;
+      return {start,end,label:`${y}年${m}月分`};
+    }else{
+      const y=Number(period.year);
+      return {start:`${y}-01-01`,end:`${y}-12-31`,label:`${y}年分`};
+    }
+  }
+
+  const selPatient=selPhone?targetPatients.find(p=>p.phone===selPhone):null;
+  const range=getRangeForSelected();
+  const selBookingIds=selPhone?new Set((bookingByPhone[selPhone]||[]).filter(b=>b.date>=range.start&&b.date<=range.end).map(b=>b.id)):new Set();
+  const selPayments=selPhone?payments.filter(p=>selBookingIds.has(p.booking_id)):[];
+  const total=selPayments.reduce((s,p)=>s+(p.total_amount||0),0);
+
+  function fmt(n){return"¥"+Number(n||0).toLocaleString();}
+
+  return(
+    <div style={{maxWidth:1100,margin:"0 auto"}}>
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{padding:"14px 16px",borderBottom:"1px solid #f1f5f9",background:"linear-gradient(135deg,#7c3aed,#6d28d9)"}}>
+          <div style={{color:"white",fontWeight:800,fontSize:15}}>🧾 まとめレシート発行</div>
+          <div style={{color:"rgba(255,255,255,.8)",fontSize:12,marginTop:2}}>「月ごと」「年ごと」の発行を希望されている患者様のレシートを、期間を指定してまとめて発行します</div>
+        </div>
+        <div style={{padding:"14px 16px",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+          <div style={{display:"flex",gap:6}}>
+            {["月ごと","年ごと"].map(f=>(
+              <button key={f} onClick={()=>{setFreqFilter(f);setSelPhone(null);}}
+                style={{padding:"7px 16px",borderRadius:8,border:"1.5px solid",borderColor:freqFilter===f?"#7c3aed":"#e2e8f0",background:freqFilter===f?"#7c3aed":"white",color:freqFilter===f?"white":"#374151",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{f}</button>
+            ))}
+          </div>
+          {freqFilter==="月ごと"?(
+            <input type="month" value={period.month} onChange={e=>setPeriod(p=>({...p,month:e.target.value}))}
+              style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700}}/>
+          ):(
+            <input type="number" value={period.year} onChange={e=>setPeriod(p=>({...p,year:e.target.value}))}
+              style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700,width:100}}/>
+          )}
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"320px 1fr",gap:14}}>
+        <div className="card">
+          <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>{freqFilter}希望の患者様（{targetPatients.length}名）</div>
+          <div style={{padding:"6px 10px",maxHeight:520,overflowY:"auto"}}>
+            {loading?(
+              <div style={{textAlign:"center",padding:20,color:"#94a3b8"}}>読み込み中...</div>
+            ):targetPatients.length===0?(
+              <div style={{textAlign:"center",padding:20,color:"#94a3b8",fontSize:13}}>対象の患者様はいません</div>
+            ):targetPatients.map(p=>(
+              <div key={p.phone} onClick={()=>setSelPhone(p.phone)}
+                style={{padding:"10px 12px",borderRadius:8,marginBottom:4,cursor:"pointer",background:selPhone===p.phone?"#f5f3ff":"white",border:"1px solid "+(selPhone===p.phone?"#7c3aed":"#f1f5f9")}}>
+                <div style={{fontWeight:700,fontSize:13,color:"#1e293b"}}>{p.patient_name}</div>
+                <div style={{fontSize:11,color:"#94a3b8"}}>{p.phone}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="card">
+          {!selPatient?(
+            <div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>左の一覧から患者様を選んでください</div>
+          ):(
+            <div style={{padding:16}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                <div>
+                  <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f"}}>{selPatient.patient_name} 様</div>
+                  <div style={{fontSize:12,color:"#94a3b8"}}>{range.label}　対象{selPayments.length}件</div>
+                </div>
+                <button onClick={()=>window.print()} disabled={selPayments.length===0}
+                  style={{padding:"9px 18px",background:selPayments.length===0?"#e2e8f0":"linear-gradient(135deg,#7c3aed,#6d28d9)",color:"white",border:"none",borderRadius:8,fontSize:13,fontWeight:800,cursor:selPayments.length===0?"not-allowed":"pointer",fontFamily:"inherit"}}>
+                  🖨️ 印刷する
+                </button>
+              </div>
+              {selPayments.length===0?(
+                <div style={{textAlign:"center",padding:30,color:"#94a3b8",fontSize:13}}>この期間の会計データはありません</div>
+              ):(
+                <div id="bulkReceiptPrintArea" style={{border:"1px solid #e2e8f0",borderRadius:10,padding:20,fontFamily:"'MS Gothic','Osaka-Mono','Courier New',monospace"}}>
+                  <div style={{textAlign:"center",fontWeight:800,fontSize:16,letterSpacing:4,marginBottom:6}}>ま と め レ シ ー ト</div>
+                  <div style={{textAlign:"center",fontSize:12,color:"#64748b",marginBottom:14}}>{range.label}　{selPatient.patient_name} 様</div>
+                  <div style={{borderTop:"1px dashed #999",marginBottom:8}}/>
+                  {selPayments.sort((a,b)=>(a.payment_date||"").localeCompare(b.payment_date||"")).map(p=>(
+                    <div key={p.id} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"4px 0"}}>
+                      <span>{p.payment_date}　{p.memo||"施術"}</span>
+                      <span>{fmt(p.total_amount)}</span>
+                    </div>
+                  ))}
+                  <div style={{borderTop:"3px double #333",marginTop:10,paddingTop:10,display:"flex",justifyContent:"space-between",fontWeight:800,fontSize:15}}>
+                    <span>合　計</span>
+                    <span>{fmt(total)}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 function Dashboard({user,onLogout}){
   const [bookings,setBookings]=React.useState([]);
   const [breaks,setBreaks]=React.useState([]);
@@ -7064,8 +7191,9 @@ function Dashboard({user,onLogout}){
       {id:"add",label:"新規予約",special:"btn-add",action:()=>openAdd()},
       {id:"checkin",label:"📷 来院受付",special:""},
       {id:"patients",label:"患者管理",special:""},
-           {id:"cancelled_list",label:"🚫 キャンセル一覧",special:""},
+             {id:"cancelled_list",label:"🚫 キャンセル一覧",special:""},
       {id:"staff_off_conflicts",label:"⚠ 休みスタッフの予約",special:""},
+      {id:"bulk_receipt",label:"🧾 まとめレシート発行",special:""},
     ]},
     {id:"analysis",label:"分析",color:"#059669",items:[
       {id:"stats",label:"予約分析・サマリー",special:""},
@@ -7524,7 +7652,8 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
                     {view==="line_link_check"&&<LineLinkCheckPanel bookings={bookings}/>}
           {view==="career_weight"&&<CareerWeightPanel bookings={bookings} payments={payments} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr}/>}
                     {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} todayStr={todayStr} onRestore={restoreBooking} onDelete={deleteCancelledBooking}/>}
-                    {view==="staff_off_conflicts"&&<StaffOffConflictsPanel bookings={bookings} weeklyShifts={weeklyShifts} storeStaff={storeStaff} onReassign={reassignStaffForBooking} onReschedule={rescheduleBooking} todayStr={todayStr}/>}
+                           {view==="staff_off_conflicts"&&<StaffOffConflictsPanel bookings={bookings} weeklyShifts={weeklyShifts} storeStaff={storeStaff} onReassign={reassignStaffForBooking} onReschedule={rescheduleBooking} todayStr={todayStr}/>}
+          {view==="bulk_receipt"&&<BulkReceiptPanel payments={payments} bookings={bookings}/>}
           {/* キャンセル一覧 */}
 
           {view==="posture_records"&&<PostureRecordsPanel bookings={bookings}/>}
