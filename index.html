@@ -6110,7 +6110,16 @@ function QuickMemoEditor({booking,onSave}){
 function StaffOffConflictsPanel({bookings,weeklyShifts,storeStaff,onReassign,onReschedule,todayStr}){
   const [savingId,setSavingId]=React.useState(null);
   const [rescheduleForm,setRescheduleForm]=React.useState({}); // {bookingId: {date, time}}
-  function isWorkingLocal(staffId,dateStr){
+    function isWorkingLocal(staffId,dateStr){
+    const monthKey=dateStr.slice(0,7);
+    try{
+      const raw=localStorage.getItem("shifts_"+monthKey);
+      if(raw){
+        const map=JSON.parse(raw);
+        const val=map[staffId+"_"+dateStr];
+        if(val) return val==="出勤";
+      }
+    }catch(e){}
     const dow=new Date(dateStr+"T00:00:00").getDay();
     const ws=weeklyShifts.find(w=>w.staff_id===staffId&&w.day_of_week===dow);
     if(ws) return ws.is_working!==false;
