@@ -7478,40 +7478,39 @@ function Dashboard({user,onLogout}){
 
   const SIDEBAR_GROUPS = [
     {id:"booking",label:"予約・顧客",color:"#2563eb",items:[
-      {id:"add",label:"新規予約",special:"btn-add",action:()=>openAdd()},
-      {id:"checkin",label:"📷 来院受付",special:""},
-      {id:"patients",label:"患者管理",special:""},
-             {id:"cancelled_list",label:"🚫 キャンセル一覧",special:""},
-      {id:"staff_off_conflicts",label:"⚠ 休みスタッフの予約",special:""},
-      {id:"bulk_receipt",label:"🧾 まとめレシート発行",special:""},
+      {id:"add",label:"新規予約",icon:"plus",special:"btn-add",action:()=>openAdd()},
+      {id:"checkin",label:"来院受付",icon:"scan",special:""},
+      {id:"patients",label:"患者管理",icon:"users",special:""},
+      {id:"cancelled_list",label:"キャンセル一覧",icon:"x-circle",special:""},
+      {id:"staff_off_conflicts",label:"休みスタッフの予約",icon:"alert",special:""},
+      {id:"bulk_receipt",label:"まとめレシート発行",icon:"receipt",special:""},
     ]},
     {id:"analysis",label:"分析",color:"#059669",items:[
-      {id:"stats",label:"予約分析・サマリー",special:""},
-      {id:"preopen_stats",label:"📊 プレオープン集計",special:""},
-      {id:"churn_alert",label:"🔔 離反防止アラート",special:""},
-            {id:"line_link_check",label:"🔗 LINE連携チェック",special:""},
-                {id:"staff_kpi",label:"📊 スタッフKPI管理",special:""},
+      {id:"stats",label:"予約分析・サマリー",icon:"bar-chart",special:""},
+      {id:"preopen_stats",label:"プレオープン集計",icon:"bar-chart",special:""},
+      {id:"churn_alert",label:"離反防止アラート",icon:"bell",special:""},
+      {id:"line_link_check",label:"LINE連携チェック",icon:"link",special:""},
+      {id:"staff_kpi",label:"スタッフKPI管理",icon:"trending",special:""},
     ]},
     {id:"clinical",label:"臨床サポート",color:"#7c3aed",items:[
-      {id:"symptom_checker",label:"🔍 症状チェッカー（試験運用）",special:"",action:()=>window.open("/symptom-checker.html","_blank")},
-      {id:"posture_analysis",label:"🧍 姿勢評価",special:"",action:()=>window.open("/posture-analysis.html","_blank")},
-      {id:"posture_records",label:"🧍 姿勢の経過記録",special:""},
-      {id:"treatment_plans",label:"📋 施術計画書",special:""},
+      {id:"symptom_checker",label:"症状チェッカー（試験運用）",icon:"search",special:"",action:()=>window.open("/symptom-checker.html","_blank")},
+      {id:"posture_analysis",label:"姿勢評価",icon:"activity",special:"",action:()=>window.open("/posture-analysis.html","_blank")},
+      {id:"posture_records",label:"姿勢の経過記録",icon:"activity",special:""},
+      {id:"treatment_plans",label:"施術計画書",icon:"clipboard-list",special:""},
     ]},
     {id:"staff",label:"スタッフ",color:"#d97706",items:[
-      {id:"staff_mgmt",label:"スタッフ・シフト管理",special:""},
+      {id:"staff_mgmt",label:"スタッフ・シフト管理",icon:"users-cog",special:""},
     ]},
     {id:"store",label:"店舗設定",color:"#0891b2",items:[
-      {id:"store_mgmt",label:"店舗管理",special:""},
-      {id:"business_hours",label:"営業時間・休憩",special:""},
-      {id:"menu_mgmt",label:"メニュー・コース管理",special:""},
+      {id:"store_mgmt",label:"店舗管理",icon:"store",special:""},
+      {id:"business_hours",label:"営業時間・休憩",icon:"clock",special:""},
+      {id:"menu_mgmt",label:"メニュー・コース管理",icon:"menu",special:""},
     ]},
     {id:"system",label:"システム",color:"#64748b",items:[
-      {id:"user_mgmt",label:"ユーザー管理",special:""},
-      {id:"settings",label:"各種設定",special:""},
+      {id:"user_mgmt",label:"ユーザー管理",icon:"user",special:""},
+      {id:"settings",label:"各種設定",icon:"settings",special:""},
     ]},
   ];
-
   if(loading)return(<div className="loading"><div className="loading-spinner"></div><div style={{fontWeight:700,color:"#1e3a5f",fontSize:14}}>読み込み中...</div></div>);
 
   return(
