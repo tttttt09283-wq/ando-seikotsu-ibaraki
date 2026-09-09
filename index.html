@@ -1935,7 +1935,8 @@ function StatsPanel({bookings,payments,todayStr,stores}){
         const prevNewRate=prevUniquePatients.length>0?Math.round(prevNewCount/prevUniquePatients.length*100):0;
         const curUniqueSet=new Set(uniquePatients);
         const periodChurnCount=prevUniquePatients.filter(name=>!curUniqueSet.has(name)).length;
-        const periodChurnRate=prevUniquePatients.length>0?Math.round(periodChurnCount/prevUniquePatients.length*100):0;
+             const periodChurnRate=prevUniquePatients.length>0?Math.round(periodChurnCount/prevUniquePatients.length*100):0;
+        const dailyAvg=elapsedRangeDays>0?Math.round(storeTotalSales/elapsedRangeDays):0;
 
         // ===== ① 5つの気づき・注意点を自動判定 =====
         const insights=[];
