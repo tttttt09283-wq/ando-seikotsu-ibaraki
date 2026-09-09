@@ -1429,27 +1429,31 @@ function StatsPanel({bookings,payments,todayStr,stores}){
             <input type="date" value={customEnd} onChange={e=>{setCustomEnd(e.target.value);setRangeType("custom");}}
               style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:600}}/>
           </div>
-          <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                    <div style={{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
             {rangeButtons.filter(b=>b.id!=="custom").map(b=>(
               <button key={b.id} onClick={()=>setRangeType(b.id)} style={{padding:"6px 14px",borderRadius:8,fontSize:12,fontWeight:700,border:"1.5px solid",borderColor:rangeType===b.id?"#059669":"#e2e8f0",background:rangeType===b.id?"#059669":"white",color:rangeType===b.id?"white":"#374151",cursor:"pointer",fontFamily:"inherit"}}>{b.label}</button>
             ))}
+            {stores&&stores.length>0&&(
+              <select value={selStatsStoreId===null?"":selStatsStoreId} onChange={e=>setSelStatsStoreId(e.target.value===""?null:Number(e.target.value))}
+                style={{marginLeft:8,padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:12,fontWeight:700,color:"#374151",fontFamily:"inherit"}}>
+                <option value="">🏢 全店舗合算</option>
+                {stores.map(s=>(<option key={s.id} value={s.id}>{s.name}</option>))}
+              </select>
+            )}
           </div>
         </div>
         <div style={{fontSize:11,color:"#94a3b8",marginTop:8,marginBottom:14}}>期間：{range.start} 〜 {range.end}</div>
-
-        {/* 店舗／スタッフ タブ切り替え */}
+        {/* 担当スタッフ タブ切り替え（店舗はすぐ上のプルダウンに移動） */}
         <div style={{display:"flex",gap:4,borderBottom:"1.5px solid #f1f5f9",marginBottom:12}}>
           {[
-            {id:"store",label:"🏢 店舗"},
-            {id:"staff",label:"👥 担当スタッフ"},
+            {id:"staff",label:"👥 担当スタッフで絞り込み"},
           ].map(t=>(
-            <button key={t.id} onClick={()=>setFilterTab(t.id)}
+            <button key={t.id} onClick={()=>setFilterTab(filterTab==="staff"?"store":"staff")}
               style={{padding:"7px 16px",border:"none",borderBottom:`2px solid ${filterTab===t.id?"#1e3a5f":"transparent"}`,background:"none",fontSize:13,fontWeight:filterTab===t.id?800:600,color:filterTab===t.id?"#1e3a5f":"#94a3b8",cursor:"pointer",fontFamily:"inherit",marginBottom:-2}}>
               {t.label}
             </button>
           ))}
         </div>
-
         {filterTab==="store"&&stores&&stores.length>0&&(
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             <button onClick={()=>setSelStatsStoreId(null)} style={{padding:"7px 16px",borderRadius:20,border:"1.5px solid",borderColor:selStatsStoreId===null?"#1e3a5f":"#e2e8f0",background:selStatsStoreId===null?"#1e3a5f":"white",color:selStatsStoreId===null?"white":"#374151",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>
