@@ -1111,7 +1111,109 @@ function PreOpenStatsPanel({bookings,payments,stores}){
     </div>
   );
 }
-
+function StoreSimCard({baselineKarte,baselineFreq,baselineUnit,fmt}){
+  const mk=(name)=>({name,karte:baselineKarte||10,freq:baselineFreq||2,unit:baselineUnit||3000});
+  const [patterns,setPatterns]=React.useState([mk("パターンA"),mk("パターンB"),mk("パターンC")]);
+  function update(i,key,val){
+    setPatterns(prev=>prev.map((p,idx)=>idx===i?{...p,[key]:Number(val)||0}:p));
+  }
+  const baselineSales=Math.round((baselineKarte||0)*(baselineFreq||0)*(baselineUnit||0));
+  return(
+    <div className="card" style={{marginBottom:16,padding:"18px 20px"}}>
+      <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:4}}>🏥 院シミュレーション（売上＝カルテ数×頻度×単価）</div>
+      <div style={{fontSize:12,color:"#94a3b8",marginBottom:14}}>現状の実績：カルテ数{baselineKarte}／頻度{baselineFreq}回／単価{fmt(baselineUnit)}　→　売上目安 {fmt(baselineSales)}</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
+        {patterns.map((p,i)=>{
+          const sales=Math.round(p.karte*p.freq*p.unit);
+          const diff=sales-baselineSales;
+          return(
+            <div key={i} style={{background:"#f8fafc",borderRadius:12,padding:14,border:"1px solid #e2e8f0"}}>
+              <input value={p.name} onChange={e=>setPatterns(prev=>prev.map((x,idx)=>idx===i?{...x,name:e.target.value}:x))}
+                style={{width:"100%",fontWeight:800,fontSize:13,color:"#1e3a5f",border:"none",background:"none",marginBottom:10,padding:0}}/>
+              {[{key:"karte",label:"カルテ数",suffix:"人"},{key:"freq",label:"頻度",suffix:"回"},{key:"unit",label:"単価",suffix:"円"}].map(f=>(
+                <div key={f.key} style={{marginBottom:8}}>
+                  <div style={{fontSize:11,color:"#64748b",fontWeight:700,marginBottom:3}}>{f.label}</div>
+                  <div style={{display:"flex",alignItems:"center",gap:4}}>
+                    <input type="number" value={p[f.key]} onChange={e=>update(i,f.key,e.target.value)}
+                      style={{width:"100%",padding:"6px 8px",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:13,fontWeight:700}}/>
+                    <span style={{fontSize:11,color:"#94a3b8"}}>{f.suffix}</span>
+                  </div>
+                </div>
+              ))}
+              <div style={{marginTop:10,paddingTop:10,borderTop:"1px dashed #cbd5e1"}}>
+                <div style={{fontSize:11,color:"#94a3b8"}}>予想売上</div>
+                <div style={{fontSize:18,fontWeight:800,color:"#059669"}}>{fmt(sales)}</div>
+                <div style={{fontSize:11,fontWeight:700,color:diff>=0?"#059669":"#dc2626"}}>現状比 {diff>=0?"+":""}{fmt(diff)}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+function IndivSimCard({baselineTaiou,baselineHokenTanka,fmt}){
+  const [taiou,setTaiou]=React.useState(baselineTaiou||10);
+  const [hokenTanka,setHokenTanka]=React.useState(baselineHokenTanka||1000);
+  const [jihiCount,setJihiCount]=React.useState(0);
+  const [jihiTanka,setJihiTanka]=React.useState(3600);
+  const [kaisukenCount,setKaisukenCount]=React.useState(0);
+  const [kaisukenTanka,setKaisukenTanka]=React.useState(8800);
+  const [fpCount,setFpCount]=React.useState(0);
+  const [fpTanka,setFpTanka]=React.useState(13200);
+  const hokenSales=Math.round(taiou*hokenTanka);
+  const jihiSales=Math.round(jihiCount*jihiTanka);
+  const kaisukenSales=Math.round(kaisukenCount*kaisukenTanka);
+  const fpSales=Math.round(fpCount*fpTanka);
+  const madoguchiSales=jihiSales+kaisukenSales+fpSales;
+  const totalSales=hokenSales+madoguchiSales;
+  const numInput=(val,setter)=>(
+    <input type="number" value={val} onChange={e=>setter(Number(e.target.value)||0)}
+      style={{width:"100%",padding:"6px 8px",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:13,fontWeight:700}}/>
+  );
+  return(
+    <div className="card" style={{padding:"18px 20px"}}>
+      <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:4}}>👤 個人シミュレーション（売上＝対応数×保険請求単価＋窓口売上）</div>
+      <div style={{fontSize:12,color:"#94a3b8",marginBottom:14}}>窓口売上は自費・回数券・フリーパスの内訳から計算します</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+        <div>
+          <div style={{fontSize:12,fontWeight:800,color:"#374151",marginBottom:8}}>保険売上</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:10}}>
+            <div><div style={{fontSize:11,color:"#64748b",marginBottom:3}}>対応数（人）</div>{numInput(taiou,setTaiou)}</div>
+            <div><div style={{fontSize:11,color:"#64748b",marginBottom:3}}>保険請求単価（円）</div>{numInput(hokenTanka,setHokenTanka)}</div>
+          </div>
+          <div style={{background:"#eff6ff",borderRadius:8,padding:"10px 12px"}}>
+            <div style={{fontSize:11,color:"#1e40af"}}>保険売上</div>
+            <div style={{fontSize:18,fontWeight:800,color:"#1e40af"}}>{fmt(hokenSales)}</div>
+          </div>
+        </div>
+        <div>
+          <div style={{fontSize:12,fontWeight:800,color:"#374151",marginBottom:8}}>窓口売上の内訳</div>
+          {[
+            {label:"自費",count:jihiCount,setCount:setJihiCount,tanka:jihiTanka,setTanka:setJihiTanka,sales:jihiSales},
+            {label:"回数券",count:kaisukenCount,setCount:setKaisukenCount,tanka:kaisukenTanka,setTanka:setKaisukenTanka,sales:kaisukenSales},
+            {label:"フリーパス",count:fpCount,setCount:setFpCount,tanka:fpTanka,setTanka:setFpTanka,sales:fpSales},
+          ].map(row=>(
+            <div key={row.label} style={{display:"grid",gridTemplateColumns:"50px 1fr 1fr 90px",gap:6,alignItems:"center",marginBottom:6}}>
+              <div style={{fontSize:12,fontWeight:700,color:"#374151"}}>{row.label}</div>
+              {numInput(row.count,row.setCount)}
+              {numInput(row.tanka,row.setTanka)}
+              <div style={{fontSize:12,fontWeight:800,color:"#d97706",textAlign:"right"}}>{fmt(row.sales)}</div>
+            </div>
+          ))}
+          <div style={{background:"#fff7ed",borderRadius:8,padding:"10px 12px",marginTop:6}}>
+            <div style={{fontSize:11,color:"#92400e"}}>窓口売上 合計</div>
+            <div style={{fontSize:18,fontWeight:800,color:"#92400e"}}>{fmt(madoguchiSales)}</div>
+          </div>
+        </div>
+      </div>
+      <div style={{marginTop:16,paddingTop:14,borderTop:"1px dashed #cbd5e1",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span style={{fontSize:13,fontWeight:800,color:"#1e3a5f"}}>合計売上（保険＋窓口）</span>
+        <span style={{fontSize:24,fontWeight:800,color:"#059669"}}>{fmt(totalSales)}</span>
+      </div>
+    </div>
+  );
+}
 function StatsPanel({bookings,payments,todayStr,stores}){
   const today=new Date(todayStr+"T00:00:00");
   const fmt=n=>"¥"+Number(n||0).toLocaleString();
@@ -1488,7 +1590,7 @@ function StatsPanel({bookings,payments,todayStr,stores}){
 
       {/* 月間レポート／年間推移 タブ切り替え */}
       <div style={{display:"flex",gap:6,marginBottom:16}}>
-        {[{id:"monthly",label:"📅 月間レポート"},{id:"annual",label:"📈 年間推移"}].map(t=>(
+               {[{id:"monthly",label:"📅 月間レポート"},{id:"annual",label:"📈 年間推移"},{id:"budget",label:"🎯 予算・目標設定"}].map(t=>(
           <button key={t.id} onClick={()=>setReportTab(t.id)} style={{padding:"9px 20px",borderRadius:10,fontSize:13,fontWeight:800,border:"1.5px solid",borderColor:reportTab===t.id?"#1e3a5f":"#e2e8f0",background:reportTab===t.id?"#1e3a5f":"white",color:reportTab===t.id?"white":"#374151",cursor:"pointer",fontFamily:"inherit"}}>{t.label}</button>
         ))}
       </div>
@@ -1742,7 +1844,92 @@ function StatsPanel({bookings,payments,todayStr,stores}){
         </div>
       </div>
       </>)}
+      {reportTab==="budget"&&(()=>{
+        // ===== 比較用：直前の同じ長さの期間 =====
+        const prevEndDate=new Date(range.start+"T00:00:00");prevEndDate.setDate(prevEndDate.getDate()-1);
+        const prevStartDate=new Date(prevEndDate);prevStartDate.setDate(prevStartDate.getDate()-(totalRangeDays-1));
+        const prevStartStr=fmtDate(prevStartDate),prevEndStr=fmtDate(prevEndDate);
+        const prevInRange=d=>d>=prevStartStr&&d<=prevEndStr;
+        const prevBks=scopedBookings.filter(b=>b.date&&prevInRange(b.date));
+        const prevPays=scopedPayments.filter(p=>p.payment_date&&prevInRange(p.payment_date));
+        const prevTotalSales=prevPays.reduce((s,p)=>s+(p.total_amount||0),0);
+        const prevDailyAvg=totalRangeDays>0?Math.round(prevTotalSales/totalRangeDays):0;
+        const prevUniquePatients=[...new Set(prevBks.map(b=>b.patient_name))];
+        const prevNewCount=prevUniquePatients.filter(name=>{
+          const first=(allPatientDates[name]||[]).sort()[0];
+          return first&&first>=prevStartStr&&first<=prevEndStr;
+        }).length;
+        const prevNewRate=prevUniquePatients.length>0?Math.round(prevNewCount/prevUniquePatients.length*100):0;
+        const curUniqueSet=new Set(uniquePatients);
+        const periodChurnCount=prevUniquePatients.filter(name=>!curUniqueSet.has(name)).length;
+        const periodChurnRate=prevUniquePatients.length>0?Math.round(periodChurnCount/prevUniquePatients.length*100):0;
 
+        // ===== ① 5つの気づき・注意点を自動判定 =====
+        const insights=[];
+        if(storeSalesTarget&&Number(storeSalesTarget)>0){
+          const achievePct=Math.round(storeTotalSales/Number(storeSalesTarget)*100);
+          const gap=achievePct-rangeProgressPct;
+          insights.push({
+            ok:gap>=0,
+            title:gap>=0?"目標達成ペースは順調です":"目標に対して遅れが出ています",
+            detail:`達成率${achievePct}% ／ 期間進捗率${rangeProgressPct}%（差 ${gap>=0?"+":""}${gap}pt）`
+          });
+        }else{
+          insights.push({ok:null,title:"目標売上が未設定です",detail:"月間レポートで目標売上を入れると、達成ペースの判定が出るようになります"});
+        }
+        insights.push({
+          ok:dailyAvg>=prevDailyAvg,
+          title:dailyAvg>=prevDailyAvg?"1日あたり売上は前期間より伸びています":"1日あたり売上が前期間より落ちています",
+          detail:`今期 ${fmt(dailyAvg)}/日 ／ 前期間 ${fmt(prevDailyAvg)}/日`
+        });
+        if(salesByStaffList.length>=2){
+          const top=salesByStaffList[0],bottom=salesByStaffList[salesByStaffList.length-1];
+          const topShare=storeTotalSales>0?Math.round(top.total/storeTotalSales*100):0;
+          insights.push({
+            ok:topShare<60,
+            title:topShare>=60?`${top.staffInfo.name}さんへの売上集中度が高めです`:"スタッフ間の売上バランスは大きく偏っていません",
+            detail:`最大：${top.staffInfo.name} ${fmt(top.total)}（全体の${topShare}%）／最小：${bottom.staffInfo.name} ${fmt(bottom.total)}`
+          });
+        }else{
+          insights.push({ok:null,title:"スタッフ別データが不足しています",detail:"この期間の会計データが少ないため比較できません"});
+        }
+        insights.push({
+          ok:newRate>=prevNewRate,
+          title:newRate>=prevNewRate?"新規率は前期間より改善しています":"新規率が前期間より下がっています",
+          detail:`今期 ${newRate}% ／ 前期間 ${prevNewRate}%`
+        });
+        insights.push({
+          ok:periodChurnRate<=20,
+          title:periodChurnRate>20?"前期間の患者様の離反が多めです":"前期間の患者様の定着は良好です",
+          detail:`前期間に来院した${prevUniquePatients.length}名のうち、今期未来院：${periodChurnCount}名（${periodChurnRate}%）`
+        });
+
+        return(
+          <div>
+            <div className="card" style={{marginBottom:16,padding:"18px 20px"}}>
+              <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:12}}>🔍 気づき・注意点（自動判定）</div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {insights.map((ins,i)=>(
+                  <div key={i} style={{display:"flex",gap:10,padding:"10px 14px",borderRadius:10,background:ins.ok===null?"#f8fafc":ins.ok?"#f0fdf4":"#fef2f2",border:"1px solid "+(ins.ok===null?"#e2e8f0":ins.ok?"#bbf7d0":"#fecaca")}}>
+                    <span style={{fontSize:16,flexShrink:0}}>{ins.ok===null?"ℹ️":ins.ok?"✅":"⚠️"}</span>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:800,color:ins.ok===null?"#374151":ins.ok?"#065f46":"#991b1b"}}>{ins.title}</div>
+                      <div style={{fontSize:12,color:"#64748b",marginTop:2}}>{ins.detail}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ===== 院シミュレーション：カルテ×頻度×単価 ===== */}
+            <StoreSimCard baselineKarte={totalUnique} baselineFreq={totalUnique>0?Math.round(confirmedBk/totalUnique*10)/10:0} baselineUnit={allUnitPrice} fmt={fmt}/>
+
+            {/* ===== 個人シミュレーション：対応数×保険単価＋窓口内訳 ===== */}
+            <IndivSimCard baselineTaiou={paidBk} baselineHokenTanka={madoguchiUnit} fmt={fmt}/>
+          </div>
+        );
+      })()}
+      
       {reportTab==="annual"&&(
       <>
       {/* ===== 年間推移 ===== */}
