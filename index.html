@@ -5161,8 +5161,11 @@ function ShiftPanel({currentUser}){
 }
 
 // ===== 来院受付パネル（QRコード読み取り） =====
-function CheckInPanel({bookings,onOpenPatient,onCheckedIn,onGoToCalendar,weeklyShifts,storeStaff,getLaneCount}){
+function CheckInPanel({bookings,onOpenPatient,onCheckedIn,onGoToCalendar,weeklyShifts,dateOverrides,storeStaff,getLaneCount}){
   function isWorkingToday(staffId,dateObj){
+    const dateStr=fmtDate(dateObj);
+    const dov=(dateOverrides||[]).find(o=>o.staff_id===staffId&&o.date===dateStr);
+    if(dov) return dov.is_working!==false;
     const dow=dateObj.getDay();
     const ws=(weeklyShifts||[]).find(w=>w.staff_id===staffId&&w.day_of_week===dow);
     if(ws) return ws.is_working!==false;
@@ -6412,10 +6415,12 @@ function QuickMemoEditor({booking,onSave}){
     </div>
   );
 }
-function StaffOffConflictsPanel({bookings,weeklyShifts,storeStaff,onReassign,onReschedule,todayStr}){
+function StaffOffConflictsPanel({bookings,weeklyShifts,dateOverrides,storeStaff,onReassign,onReschedule,todayStr}){
   const [savingId,setSavingId]=React.useState(null);
   const [rescheduleForm,setRescheduleForm]=React.useState({}); // {bookingId: {date, time}}
     function isWorkingLocal(staffId,dateStr){
+    const dov=(dateOverrides||[]).find(o=>o.staff_id===staffId&&o.date===dateStr);
+    if(dov) return dov.is_working!==false;
     const monthKey=dateStr.slice(0,7);
     try{
       const raw=localStorage.getItem("shifts_"+monthKey);
@@ -7154,6 +7159,7 @@ function Dashboard({user,onLogout}){
   const [stores,setStores]=React.useState([]);
   const [selStoreId,setSelStoreId]=React.useState(null);
   const [weeklyShifts,setWeeklyShifts]=React.useState([]); // 全スタッフの週固定シフト
+  const [dateOverrides,setDateOverrides]=React.useState([]); // 特定日だけの出勤・休み変更（staff_date_overrides）
   const [staffStoreMap,setStaffStoreMap]=React.useState({}); // {staffId: [storeIds]}
   const [staffMenuMap,setStaffMenuMap]=React.useState({}); // {staffId: [対応可能メニュー名] | undefined(=全メニュー対応)}
   const [staffLaneMap,setStaffLaneMap]=React.useState({}); // {staffId: 同時受付レーン数（未設定は1）}
@@ -7185,12 +7191,13 @@ function Dashboard({user,onLogout}){
 
   async function fetchAll(){
     try{
-      const [b,br,py,st,ws,cs,mn]=await Promise.all([sb.select("bookings","?order=date.asc,time.asc"),sb.select("staff_breaks","?order=date.asc,time.asc"),sb.select("payments","?order=payment_date.desc"),sb.select("stores","?order=id.asc"),sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc"),sb.select("clinic_staff","?select=id,store_ids,allowed_menus,lane_count,name,email,password,role,color,initial,event_only"),sb.select("menus","?active=eq.true&order=display_order.asc,id.asc")]);
+      const [b,br,py,st,ws,cs,mn,dov]=await Promise.all([sb.select("bookings","?order=date.asc,time.asc"),sb.select("staff_breaks","?order=date.asc,time.asc"),sb.select("payments","?order=payment_date.desc"),sb.select("stores","?order=id.asc"),sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc"),sb.select("clinic_staff","?select=id,store_ids,allowed_menus,lane_count,name,email,password,role,color,initial,event_only"),sb.select("menus","?active=eq.true&order=display_order.asc,id.asc"),sb.select("staff_date_overrides","?order=date.asc")]);
       setBookings(Array.isArray(b)?b:[]);setBreaks(Array.isArray(br)?br:[]);setPayments(Array.isArray(py)?py:[]);
       const storeList=Array.isArray(st)?st:[];
       setStores(storeList);
       setSelStoreId(prev=>prev!==null?prev:(storeList.length>0?storeList[0].id:1));
       setWeeklyShifts(Array.isArray(ws)?ws:[]);
+      setDateOverrides(Array.isArray(dov)?dov:[]);
       // イベント開催期間を取得（応援スタッフの表示判定用。店舗が複数ある場合は先頭店舗の設定を使う）
       if(storeList.length>0){
         sb.select("store_settings",`?store_id=eq.${storeList[0].id}&order=updated_at.desc.nullslast,id.desc&limit=1`)
@@ -7242,9 +7249,12 @@ function Dashboard({user,onLogout}){
     return dateStr>=eventDateRange.start && dateStr<=eventDateRange.end;
   }
 
-  // 指定スタッフが指定日に出勤しているか（月次シフトの個別調整＞週固定シフトの順で判定）
+  // 指定スタッフが指定日に出勤しているか（①特定日の変更（DB保存・全員が同じ内容を見られる）＞②週固定シフトの順で判定）
   function isStaffWorkingOnDate(staffId,dateObj){
     const dateStr=fmtDate(dateObj);
+    const dov=dateOverrides.find(o=>o.staff_id===staffId&&o.date===dateStr);
+    if(dov) return dov.is_working!==false;
+    // 旧・ブラウザ限定の月次シフト設定も後方互換のため一応見る（新規の変更は上のstaff_date_overridesに保存されます）
     const monthKey=dateStr.slice(0,7);
     try{
       const raw=localStorage.getItem("shifts_"+monthKey);
@@ -7730,13 +7740,15 @@ function Dashboard({user,onLogout}){
     const todayBreakCount=breaks.filter(b=>b.date===todayStr).length;
   const staffOffConflictsCount=React.useMemo(()=>{
     function isWorkingLocal(staffId,dateStr){
+      const dov=dateOverrides.find(o=>o.staff_id===staffId&&o.date===dateStr);
+      if(dov) return dov.is_working!==false;
       const dow=new Date(dateStr+"T00:00:00").getDay();
       const ws=weeklyShifts.find(w=>w.staff_id===staffId&&w.day_of_week===dow);
       if(ws) return ws.is_working!==false;
       return true;
     }
     return bookings.filter(b=>!b.cancelled&&b.date>=todayStr&&!isWorkingLocal(b.staff_id,b.date)).length;
-  },[bookings,weeklyShifts,todayStr]);
+  },[bookings,weeklyShifts,dateOverrides,todayStr]);
 
   // ===== サイドバーメニュー定義 =====
   const SvgPlus=()=><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
@@ -8199,7 +8211,7 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
           })()}
 
           {/* 来院受付（QR読み取り） */}
-                         {view==="checkin"&&<CheckInPanel bookings={bookings} onOpenPatient={(patientName)=>{setView("patients");}} onCheckedIn={fetchAll} onGoToCalendar={()=>setView("calendar")} weeklyShifts={weeklyShifts} storeStaff={storeStaff} getLaneCount={getLaneCount}/>}
+                         {view==="checkin"&&<CheckInPanel bookings={bookings} onOpenPatient={(patientName)=>{setView("patients");}} onCheckedIn={fetchAll} onGoToCalendar={()=>setView("calendar")} weeklyShifts={weeklyShifts} dateOverrides={dateOverrides} storeStaff={storeStaff} getLaneCount={getLaneCount}/>}
 
           {/* 患者管理 */}
           {view==="patients"&&<PatientsPanel bookings={bookings} setView={setView} setForm={setForm} setEditId={setEditId} setConflict={setConflict} todayStr={todayStr} selStoreId={selStoreId}/>}
@@ -8213,7 +8225,7 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
                     {view==="line_link_check"&&<LineLinkCheckPanel bookings={bookings}/>}
                              {view==="staff_kpi"&&<StaffKPIPanel bookings={bookings} payments={payments} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr}/>}
                     {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} todayStr={todayStr} onRestore={restoreBooking} onDelete={deleteCancelledBooking}/>}
-                           {view==="staff_off_conflicts"&&<StaffOffConflictsPanel bookings={bookings} weeklyShifts={weeklyShifts} storeStaff={storeStaff} onReassign={reassignStaffForBooking} onReschedule={rescheduleBooking} todayStr={todayStr}/>}
+                           {view==="staff_off_conflicts"&&<StaffOffConflictsPanel bookings={bookings} weeklyShifts={weeklyShifts} dateOverrides={dateOverrides} storeStaff={storeStaff} onReassign={reassignStaffForBooking} onReschedule={rescheduleBooking} todayStr={todayStr}/>}
           {view==="bulk_receipt"&&<BulkReceiptPanel payments={payments} bookings={bookings}/>}
           {/* キャンセル一覧 */}
 
