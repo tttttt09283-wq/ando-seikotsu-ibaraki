@@ -3799,6 +3799,23 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
   const [bulkEnd,setBulkEnd]=React.useState("20:00");
   const [showAddStaff,setShowAddStaff]=React.useState(false);
   const [menuEditStaff,setMenuEditStaff]=React.useState(null);
+  async function deleteStaff(s){
+    if(!window.confirm(s.name+" を削除しますか？\nこの操作は取り消せません。")) return;
+    try{
+      // 念のため、この方が担当している今日以降の予約が残っていないか確認する
+      const bk=await sb.select("bookings",`?staff_id=eq.${s.id}&date=gte.${fmtDate(new Date())}&cancelled=eq.false&limit=1`);
+      if(Array.isArray(bk)&&bk.length>0){
+        if(!window.confirm(s.name+" には、今日以降の未対応の予約が残っています。削除すると予約は残ったまま担当者が一覧から消えます。本当に削除しますか？")) return;
+      }
+      await sb.delete("clinic_staff",s.id);
+      setToast(s.name+" を削除しました");
+      setTimeout(()=>setToast(""),3000);
+      if(onShiftsSaved) onShiftsSaved(); // スタッフ一覧を再読み込みする
+    }catch(e){
+      setToast("削除に失敗しました："+e.message);
+      setTimeout(()=>setToast(""),3000);
+    }
+  }
 
   // ===== 全スタッフ分をまとめた週次シフト表（休み／出勤／勤務地をその場で切り替え） =====
   const [gridShifts,setGridShifts]=React.useState({}); // {"staffId_day": {is_working, store_id}}
@@ -4282,7 +4299,7 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
               <button onClick={()=>setMenuEditStaff(s)} style={{padding:"6px 12px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>メニュー設定</button>
             </div>
             <div style={{padding:"14px"}}>
-              <button style={{padding:"6px 12px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>編集</button>
+              <button onClick={()=>deleteStaff(s)} style={{padding:"6px 12px",background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:6,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",color:"#dc2626"}}>🗑 削除</button>
             </div>
           </div>
           );
