@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>あんど整骨院 香里園院 無料施術体験会 ご予約</title>
+<title>あんど整骨院 無料施術体験会 ご予約</title>
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -17,7 +17,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 <div id="root"></div>
 <script type="text/babel">
 
-const CLINIC_NAME = "あんど整骨院 香里園院";
+const CLINIC_NAME = "あんど整骨院";
 const CLINIC_TEL = "072-813-1811";
 const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
@@ -40,7 +40,8 @@ const DEFAULT_ALLOW_SAME_DAY = true; // 当日予約を許可するか
 
 const STAFF = [
   {id:1,name:"奥田"},{id:2,name:"佐藤"},
-  {id:3,name:"細永"},{id:4,name:"田中"},{id:5,name:"岩永"}
+  {id:3,name:"細永"},{id:4,name:"田中"},{id:5,name:"岩永"},
+  {id:101,name:"応援①",event_only:true},{id:102,name:"応援②",event_only:true}
 ];
 
 // 予約枠の時間単位（分）を指定して時間の選択肢を生成する
@@ -60,7 +61,7 @@ function buildSlots(unit){
 // ===== 1枠あたりの同時受付可能数のデフォルト =====
 // 通常は「対応できるスタッフの人数」までは同時受付可能（管理画面の「同一時間帯の最大予約数」で上書き可能）。
 // 特定の日だけあえて絞りたい場合は DATE_CAPACITY_OVERRIDES に "YYYY-MM-DD": 件数 を追記してください。
-const DEFAULT_SLOT_CAPACITY = STAFF.length;
+const DEFAULT_SLOT_CAPACITY = 5; // 常駐5人分。イベント期間は店舗設定またはDATE_CAPACITY_OVERRIDESで上書き
 const DATE_CAPACITY_OVERRIDES = {
   // オープニングイベント期間（10/1〜10/4）は1枠あたり7件まで受付
   "2026-10-01": 7,
@@ -619,13 +620,18 @@ function App(){
     var ds = fmtDate(d);
     return weekData.booked.filter(function(b){return b.date===ds && overlapsSlot(b,t);}).length;
   }
-  // 指定した日時に対応可能なスタッフ一覧（その日休みのスタッフ・休憩中/既存予約が入っている人を除く。施術時間の重なりも考慮）
+  // 指定した日時に対応可能なスタッフ一覧（その日休みのスタッフ・休憩中/既存予約が入っている人を除く。施術時間の重なりも考慮。
+  // 応援スタッフ（event_only）は、オープニングイベント期間の日付でのみ対象に含める）
   function getFreeStaffListFor(d,t){
     var ds = fmtDate(d);
     var unavail = {};
     weekData.booked.forEach(function(b){if(b.date===ds&&overlapsSlot(b,t)) unavail[b.staff_id]=true;});
     weekData.breaks.forEach(function(b){if(b.date===ds&&b.time===t) unavail[b.staff_id]=true;});
-    return STAFF.filter(function(s){return !unavail[s.id] && isStaffWorkingOnDate(s.id,d);});
+    var isEvent=isEventDate(d);
+    return STAFF.filter(function(s){
+      if(s.event_only&&!isEvent) return false; // 応援スタッフはイベント期間以外は対象外
+      return !unavail[s.id] && isStaffWorkingOnDate(s.id,d);
+    });
   }
   // 指定した日時の残り受付可能数（「1枠あたりの上限」と「対応できるスタッフの人数」のうち小さい方）
   function getRemainingCount(d,t){
@@ -666,7 +672,11 @@ function App(){
       activeOverlapping.forEach(function(b){ unavail[b.staff_id]=true; });
       dayBreaks.forEach(function(b){ unavail[b.staff_id]=true; });
       var dateObj = new Date(dateStr+"T00:00:00");
-      var found = STAFF.find(function(s){return !unavail[s.id] && isStaffWorkingOnDate(s.id,dateObj);});
+      var isEvent = isEventDate(dateObj);
+      var found = STAFF.find(function(s){
+        if(s.event_only&&!isEvent) return false;
+        return !unavail[s.id] && isStaffWorkingOnDate(s.id,dateObj);
+      });
       return found ? found.id : null;
     }).catch(function(){
       return undefined; // 通信エラー時は判定不能。呼び出し側でフォールバックする
