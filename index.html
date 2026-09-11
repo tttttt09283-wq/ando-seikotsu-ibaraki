@@ -980,11 +980,18 @@ function PreOpenStatsPanel({bookings,payments,stores}){
     return !!menu&&(menu.includes("体験")||menu.includes("500"));
   }
 
+  // 会計（payments）が実際に記録されている予約IDの一覧（実来院数の判定に使う）
+  const paidBookingIds=React.useMemo(()=>{
+    const set=new Set();
+    (payments||[]).forEach(p=>{ if(p.booking_id!=null) set.add(p.booking_id); });
+    return set;
+  },[payments]);
+
   const dayStats=dateList.map(dateStr=>{
     const dayBookings=scopedBookings.filter(b=>b.date===dateStr);
     const totalBookings=dayBookings.length;
     const cancelledCount=dayBookings.filter(b=>b.cancelled).length;
-    const attended=dayBookings.filter(b=>!b.cancelled&&b.checked_in_at);
+    const attended=dayBookings.filter(b=>!b.cancelled&&paidBookingIds.has(b.id));
     const actualVisits=attended.length;
     const newPatients=attended.filter(b=>firstVisitByPatient[b.patient_name]===dateStr).length;
     const trialCount=attended.filter(b=>isTrialMenu(b.menu)).length;
@@ -1102,7 +1109,7 @@ function PreOpenStatsPanel({bookings,payments,stores}){
         </table>
       </div>
       <div style={{fontSize:11,color:"#94a3b8",marginTop:10,lineHeight:1.8}}>
-        ・実来院数：予約のうち「来院受付（QRチェックイン）」が完了したものを集計しています<br/>
+        ・実来院数：予約のうち「会計（お会計完了）」が記録されているものを集計しています<br/>
         ・500円体験：実来院者のうち、メニュー名に「体験」または「500」を含む予約の人数です<br/>
         ・成約人数：その日に回数券・フリーパスの購入があった患者数です（passesテーブル。店舗の絞り込みは反映されません）<br/>
         ・次回予約：来院した患者のうち、その日より後の日付で予約（キャンセル除く）を持っている人数です<br/>
@@ -1369,6 +1376,54 @@ function StatsPanel({bookings,payments,todayStr,stores}){
   else if(todayForRange>rangeEndDate) elapsedRangeDays=totalRangeDays;
   else elapsedRangeDays=Math.round((todayForRange-rangeStartDate)/86400000)+1;
   const rangeProgressPct=Math.round(elapsedRangeDays/totalRangeDays*100);
+
+  // ===== 診療日数（実際に営業していた日数）の自動計算 =====
+  const [allBusinessHours,setAllBusinessHours]=React.useState([]);
+  const [allClosures,setAllClosures]=React.useState([]);
+  React.useEffect(()=>{
+    Promise.all([
+      sb.select("business_hours","?order=store_id.asc,day_of_week.asc"),
+      sb.select("temp_closures","?order=store_id.asc,date.asc"),
+    ]).then(([bh,tc])=>{
+      setAllBusinessHours(Array.isArray(bh)?bh:[]);
+      setAllClosures(Array.isArray(tc)?tc:[]);
+    }).catch(()=>{});
+  },[]);
+  // 指定店舗・指定日が営業日かどうか（全店舗合算の時は1つ目の店舗の営業日を基準にする）
+  function isBusinessDay(dateStr,storeIdFilter){
+    const sid = storeIdFilter!=null ? storeIdFilter : (stores.length>0?stores[0].id:null);
+    if(sid==null) return true; // 店舗データが無ければフェイルセーフでカウントする
+    const closure=allClosures.find(c=>c.store_id===sid&&c.date===dateStr);
+    if(closure) return closure.is_closed===false; // 臨時休業日は除外／営業時間変更日は診療日として数える
+    const dow=new Date(dateStr+"T00:00:00").getDay();
+    const dh=allBusinessHours.find(h=>h.store_id===sid&&h.day_of_week===dow);
+    if(!dh) return true; // 営業時間データが無い店舗はフェイルセーフで診療日扱い
+    return dh.is_open!==false;
+  }
+  function countBusinessDays(startStr,endStr,storeIdFilter){
+    let count=0;
+    let d=new Date(startStr+"T00:00:00");
+    const endD=new Date(endStr+"T00:00:00");
+    let guard=0;
+    while(d<=endD&&guard<400){
+      const ds=fmtDate(d);
+      if(ds<=todayStr&&isBusinessDay(ds,storeIdFilter)) count++;
+      d.setDate(d.getDate()+1);guard++;
+    }
+    return count;
+  }
+  const totalBusinessDaysInRange=(()=>{
+    let count=0;
+    let d=new Date(range.start+"T00:00:00");
+    const endD=new Date(range.end+"T00:00:00");
+    let guard=0;
+    while(d<=endD&&guard<400){
+      if(isBusinessDay(fmtDate(d),selStatsStoreId)) count++;
+      d.setDate(d.getDate()+1);guard++;
+    }
+    return count;
+  })();
+  const elapsedBusinessDays=countBusinessDays(range.start,range.end,selStatsStoreId);
 
   // ===== 月間売上目標（院＝店舗全体、個人＝選択中スタッフ、それぞれ別々にブラウザへ保存） =====
   const storeTargetKey=`ando_sales_target_store_${selStatsStoreId||"all"}_${range.start.slice(0,7)}`;
@@ -1760,7 +1815,7 @@ function StatsPanel({bookings,payments,todayStr,stores}){
               <div style={{fontSize:11,color:"#92400e",fontWeight:700,background:"#fef3c7",padding:"4px 10px",borderRadius:20}}>期間の進捗　{elapsedRangeDays}/{totalRangeDays}日（{rangeProgressPct}%）</div>
             </div>
 
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:16}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:16,marginBottom:16}}>
               <div>
                 <div style={{fontSize:12,color:"#64748b",fontWeight:700}}>当期売上（院全体）</div>
                 <div style={{fontSize:32,fontWeight:800,color:"#d97706"}}>{fmt(storeTotalSales)}</div>
@@ -1775,6 +1830,11 @@ function StatsPanel({bookings,payments,todayStr,stores}){
                 <div style={{fontSize:12,color:"#64748b",fontWeight:700}}>1日あたり売上</div>
                 <div style={{fontSize:22,fontWeight:800,color:"#374151"}}>{fmt(dailyAvg)}</div>
                 <div style={{fontSize:10,color:"#94a3b8"}}>経過{elapsedRangeDays}日／残り{remainingDays}日</div>
+              </div>
+              <div>
+                <div style={{fontSize:12,color:"#64748b",fontWeight:700}}>診療日数</div>
+                <div style={{fontSize:22,fontWeight:800,color:"#374151"}}>{elapsedBusinessDays}<span style={{fontSize:13,color:"#94a3b8"}}>／{totalBusinessDaysInRange}日</span></div>
+                <div style={{fontSize:10,color:"#94a3b8"}}>休診日・臨時休業を除いた実営業日数</div>
               </div>
             </div>
 
