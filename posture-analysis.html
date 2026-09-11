@@ -281,6 +281,24 @@ function drawFrontReferenceLines(ctx,canvas,lm){
 
 // ===== 姿勢の判定ロジック（横向き） =====
 // MediaPipe Poseのランドマーク番号：耳7/8　肩11/12　股関節23/24　膝25/26　足首27/28　鼻0
+
+// 基準（許容範囲）に対してどれくらい超えているかで「軽度／中等度／重度」を判定する
+function severityLabel(absValue,tolerance){
+  if(tolerance<=0) return null;
+  const ratio=absValue/tolerance;
+  if(ratio<=1) return null; // 基準範囲内
+  if(ratio<=1.8) return"軽度";
+  if(ratio<=2.8) return"中等度";
+  return"重度";
+}
+// 点数から、画面の主役にする「総合評価」の言葉と色を決める（点数自体は表には出さない）
+function overallFromScore(score){
+  if(score>=85) return{label:"良好",color:"#059669",icon:"✅"};
+  if(score>=70) return{label:"軽度の歪みあり",color:"#d97706",icon:"⚠️"};
+  if(score>=50) return{label:"中等度の歪みあり",color:"#ea580c",icon:"⚠️"};
+  return{label:"歪みが大きく要注意",color:"#dc2626",icon:"🔴"};
+}
+
 function computeSideAnalysis(lm){
   const leftVis=(lm[7].visibility+lm[11].visibility+lm[23].visibility+lm[25].visibility+lm[27].visibility)/5;
   const rightVis=(lm[8].visibility+lm[12].visibility+lm[24].visibility+lm[26].visibility+lm[28].visibility)/5;
@@ -304,7 +322,7 @@ function computeSideAnalysis(lm){
   const hipOffset=offsetFromAnkle(hip);
   const kneeOffset=offsetFromAnkle(knee);
 
-  // ===== スコア計算（100点満点。理想的な直立に近いほど高得点） =====
+  // ===== スコア計算（100点満点。内部の記録・グラフ表示用に保持。画面の主役では見せない） =====
   function deduction(value,tolerance,weight,cap){
     const over=Math.max(0,Math.abs(value)-tolerance);
     return Math.min(cap,over*weight);
@@ -348,8 +366,56 @@ function computeSideAnalysis(lm){
     type+="／膝の過伸展あり";
   }
 
+  // ===== 部位ごとの所見：どこが、理想の位置からどうズレていて、身体にどんな負担がかかるか =====
+  const findings=[];
+  {
+    const sev=severityLabel(Math.max(0,headOffset),0.10); // 前に出ている場合だけ問題として扱う（後ろに残るのは稀かつ問題になりにくいため）
+    if(headOffset>0&&sev){
+      findings.push({part:"頭部",ok:false,severity:sev,
+        desc:"頭が理想の位置（くるぶしの真上）より前に出ています（頭部前方位）。",
+        impact:"首や肩の筋肉が常に頭の重さを支え続けることになり、肩こり・首の張り・頭痛につながりやすい状態です。"});
+    }else{
+      findings.push({part:"頭部",ok:true,desc:"くるぶしの真上に近く、理想的な位置に収まっています。"});
+    }
+  }
+  {
+    const sev=severityLabel(Math.max(0,shoulderOffset),0.07);
+    if(shoulderOffset>0&&sev){
+      findings.push({part:"肩",ok:false,severity:sev,
+        desc:"肩が理想の位置より前に出ています（巻き肩傾向）。",
+        impact:"胸の筋肉が縮こまり、背中側の筋肉が引き伸ばされた状態が続くため、猫背の助長や呼吸の浅さにつながりやすい状態です。"});
+    }else{
+      findings.push({part:"肩",ok:true,desc:"理想的な位置に近く、良好な範囲内です。"});
+    }
+  }
+  {
+    const sevF=severityLabel(Math.max(0,hipOffset),0.06);
+    const sevB=severityLabel(Math.max(0,-hipOffset),0.06);
+    if(hipOffset>0&&sevF){
+      findings.push({part:"骨盤",ok:false,severity:sevF,
+        desc:"骨盤が前に傾いています（反り腰傾向）。",
+        impact:"腰の反りが強くなることで腰椎まわりに負担が集中し、腰痛の原因になりやすい状態です。"});
+    }else if(hipOffset<0&&sevB){
+      findings.push({part:"骨盤",ok:false,severity:sevB,
+        desc:"骨盤が後ろに傾いています（骨盤後傾傾向）。",
+        impact:"お尻や太もも裏の張り、猫背の助長につながりやすく、腰全体が丸まった姿勢になりやすい状態です。"});
+    }else{
+      findings.push({part:"骨盤",ok:true,desc:"前後の傾きは理想的な範囲内です。"});
+    }
+  }
+  {
+    const sev=severityLabel(Math.max(0,kneeOffset),0.06);
+    if(kneeOffset>0&&sev){
+      findings.push({part:"膝",ok:false,severity:sev,
+        desc:"膝が伸びきった状態（過伸展）になっています。",
+        impact:"膝の関節や靭帯に体重の負担が集中しやすく、立位や歩行時に膝への負担が蓄積しやすい状態です。"});
+    }else{
+      findings.push({part:"膝",ok:true,desc:"適度な角度で、理想的な範囲内です。"});
+    }
+  }
+
   return{
-    score,type,
+    score,type,overall:overallFromScore(score),findings,
     side:useLeft?"左側面":"右側面",
     details:[
       {label:"頭部の前方位",value:headOffset,color:headForward?"#ef4444":"#059669"},
@@ -399,8 +465,55 @@ function computeFrontAnalysis(lm){
 
   const type=parts.length>0?parts.join("／"):"良好（左右バランス良好）";
 
+  // ===== 部位ごとの所見：どこが、どちらにどうズレていて、身体にどんな負担がかかるか =====
+  const findings=[];
+  {
+    const sev=severityLabel(Math.abs(shoulderTilt),0.05);
+    if(sev){
+      const dir=shoulderTilt>0?"右肩が下がっています":"左肩が下がっています";
+      findings.push({part:"肩の高さ",ok:false,severity:sev,
+        desc:`${dir}（左右で高さに差があります）。`,
+        impact:"下がっている側の首・肩の筋肉が常に引っ張られた状態になり、こりや痛みが片側に偏って出やすい状態です。"});
+    }else{
+      findings.push({part:"肩の高さ",ok:true,desc:"左右の高さがそろっており、良好な範囲内です。"});
+    }
+  }
+  {
+    const sev=severityLabel(Math.abs(hipTilt),0.05);
+    if(sev){
+      const dir=hipTilt>0?"骨盤が右に下がっています":"骨盤が左に下がっています";
+      findings.push({part:"骨盤の高さ",ok:false,severity:sev,
+        desc:`${dir}（左右で高さに差があります）。`,
+        impact:"歩行時のバランスが崩れやすくなり、下がっている側の股関節・膝・足首に負担が偏りやすい状態です。"});
+    }else{
+      findings.push({part:"骨盤の高さ",ok:true,desc:"左右の高さがそろっており、良好な範囲内です。"});
+    }
+  }
+  {
+    const sev=severityLabel(Math.abs(headTilt),0.06);
+    if(sev){
+      const dir=headTilt>0?"頭が右に傾いています":"頭が左に傾いています";
+      findings.push({part:"頭部の傾き",ok:false,severity:sev,
+        desc:`${dir}。`,
+        impact:"傾いている反対側の首の筋肉が常に伸ばされた状態になり、緊張型の頭痛や肩こりの原因になりやすい状態です。"});
+    }else{
+      findings.push({part:"頭部の傾き",ok:true,desc:"まっすぐに近く、良好な範囲内です。"});
+    }
+  }
+  {
+    const sev=severityLabel(Math.abs(bodyShift),0.08);
+    if(sev){
+      const dir=bodyShift>0?"体幹（上半身）が右に寄っています":"体幹（上半身）が左に寄っています";
+      findings.push({part:"体幹バランス",ok:false,severity:sev,
+        desc:`${dir}。`,
+        impact:"姿勢を支える筋肉に左右で偏った負担がかかり続け、疲労や張りが片側に出やすい状態です。"});
+    }else{
+      findings.push({part:"体幹バランス",ok:true,desc:"中心が骨盤の真上に近く、良好な範囲内です。"});
+    }
+  }
+
   return{
-    score,type,
+    score,type,overall:overallFromScore(score),findings,
     details:[
       {label:"肩の高さの左右差",value:shoulderTilt,color:shoulderAsym?"#ef4444":"#059669"},
       {label:"骨盤の高さの左右差",value:hipTilt,color:hipAsym?"#ef4444":"#059669"},
@@ -478,9 +591,13 @@ async function saveRecord(){
       photo_url:photoUrlSide,
       posture_score:state.side.analysis.score,
       posture_type:state.side.analysis.type,
+      findings_side:state.side.analysis.findings,
+      overall_side:state.side.analysis.overall?state.side.analysis.overall.label:null,
       photo_url_front:photoUrlFront,
       front_score:state.front?state.front.analysis.score:null,
       front_type:state.front?state.front.analysis.type:null,
+      findings_front:state.front?state.front.analysis.findings:null,
+      overall_front:state.front&&state.front.analysis.overall?state.front.analysis.overall.label:null,
       notes:state.notes||null,
     });
     showToast("✅ 記録を保存しました");
@@ -576,25 +693,32 @@ function render(){
         </div>
       `;
       const a=rec.analysis;
+      const ov=a.overall||{label:"—",color:"#64748b",icon:"ℹ️"};
       return`
         <div class="card">
           <div class="card-header"><span class="step-badge">${stepNum}</span>${label}の解析結果</div>
           <div class="card-body">
             <div class="captured-wrap" id="resultCanvasWrap_${view}"></div>
-            <div class="score-hero">
-              <div class="score-num" style="color:${scoreColor(a.score)};">${a.score}</div>
-              <div class="score-label">姿勢スコア（100点満点）</div>
+            <div style="text-align:center;padding:14px 0 6px;">
+              <div style="display:inline-flex;align-items:center;gap:8px;background:${ov.color}15;border:1.5px solid ${ov.color}55;border-radius:20px;padding:8px 18px;">
+                <span style="font-size:18px;">${ov.icon}</span>
+                <span style="font-weight:800;font-size:15px;color:${ov.color};">${ov.label}</span>
+              </div>
+              <div style="font-size:12px;color:#64748b;margin-top:8px;font-weight:700;">${a.type}</div>
             </div>
-            <div style="margin-top:14px;">
-              ${a.details.map(d=>{
-                const pct=Math.min(100,Math.round((Math.abs(d.value)/maxDetailAbs)*100));
-                return`
-                  <div class="detail-row">
-                    <span class="detail-label" style="min-width:130px;">${d.label}</span>
-                    <div class="detail-bar-wrap"><div class="detail-bar" style="width:${pct}%;background:${d.color};"></div></div>
+            <div style="margin-top:10px;display:flex;flex-direction:column;gap:8px;">
+              ${a.findings.map(f=>`
+                <div style="display:flex;gap:10px;padding:10px 12px;border-radius:10px;background:${f.ok?'#f0fdf4':'#fef2f2'};border:1px solid ${f.ok?'#bbf7d0':'#fecaca'};">
+                  <span style="font-size:16px;flex-shrink:0;">${f.ok?'✅':'⚠️'}</span>
+                  <div>
+                    <div style="font-size:12px;font-weight:800;color:${f.ok?'#065f46':'#991b1b'};">
+                      ${f.part}${f.severity?`　<span style="font-size:10px;font-weight:700;background:${f.ok?'':'#991b1b'}22;padding:1px 7px;border-radius:10px;">${f.severity}</span>`:''}
+                    </div>
+                    <div style="font-size:12.5px;color:#374151;margin-top:3px;line-height:1.6;">${f.desc}</div>
+                    ${f.impact?`<div style="font-size:11.5px;color:#92400e;margin-top:4px;line-height:1.6;background:#fffbeb;border-radius:6px;padding:6px 8px;">💡 身体への影響：${f.impact}</div>`:''}
                   </div>
-                `;
-              }).join("")}
+                </div>
+              `).join("")}
             </div>
             <div class="disclaimer">${a.side?`判定基準：${a.side}から検出　`:""}黄色い点線＝基準となる位置。あくまで傾向の目安であり、診断ではありません。</div>
             <button class="btn btn-outline" style="margin-top:12px;" onclick="retakeView('${view}')">撮り直す</button>
