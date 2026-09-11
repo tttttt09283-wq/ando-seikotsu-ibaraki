@@ -242,6 +242,11 @@ async function sbUpsert(t,d,conflictCol){
   const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}?on_conflict=${conflictCol}`,{method:"POST",headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=representation"},body:JSON.stringify(d)});
   return res.json();
 }
+async function sbPatch(t,id,d){
+  const token=await getAuthToken();
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}?id=eq.${id}`,{method:"PATCH",headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},body:JSON.stringify(d)});
+  return res.json();
+}
 function fmt(n){return"¥"+Number(n||0).toLocaleString();}
 function todayStr(){
   const d=new Date();
@@ -704,6 +709,23 @@ async function save(){
           staff_id:booking.staff_id,
           active:true,
         });
+      }
+    }
+
+    // ===== 回数券消費：会計完了のタイミングで、選択されていた回数券の残数を1減らす =====
+    if(booking.consumed_pass_id&&booking.consumed_pass_type==="回数券"){
+      try{
+        const passRows=await sbGet("passes",`?id=eq.${booking.consumed_pass_id}`);
+        const pass=Array.isArray(passRows)&&passRows.length>0?passRows[0]:null;
+        if(pass){
+          const newRemaining=Math.max(0,(pass.remaining_count||0)-1);
+          await sbPatch("passes",pass.id,{
+            remaining_count:newRemaining,
+            active:newRemaining>0,
+          });
+        }
+      }catch(e){
+        console.error("回数券の残数更新に失敗しました",e);
       }
     }
 

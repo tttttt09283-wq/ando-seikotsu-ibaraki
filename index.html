@@ -2407,6 +2407,34 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
   const [selCategory,setSelCategory]=React.useState(MENU_CATEGORIES[0].id);
   const [selSub,setSelSub]=React.useState(MENU_CATEGORIES[0].subs[0].id);
 
+  // この患者様が保有している回数券・フリーパス（電話番号で検索。パス消費タブ用）
+  const [patientPasses,setPatientPasses]=React.useState([]);
+  React.useEffect(()=>{
+    if(!form.phone){ setPatientPasses([]); return; }
+    let cancelled=false;
+    sb.select("passes","?phone=eq."+encodeURIComponent(form.phone)+"&active=eq.true").then(rows=>{
+      if(!cancelled) setPatientPasses(Array.isArray(rows)?rows:[]);
+    }).catch(()=>{ if(!cancelled) setPatientPasses([]); });
+    return ()=>{cancelled=true;};
+  },[form.phone]);
+
+  function togglePassConsume(pass){
+    const isTicket=!(pass.pass_type||"").includes("フリーパス");
+    const label=isTicket
+      ? `回数券消費：${pass.pass_type}（残り${pass.remaining_count}回）`
+      : `フリーパス利用：${pass.pass_type}（期限${pass.expiry_date||"—"}）`;
+    const already=selectedMenus.includes(label);
+    if(already){
+      setForm(f=>({...f,menus:selectedMenus.filter(m=>m!==label),consumed_pass_id:null,consumed_pass_type:null}));
+    }else{
+      // パス消費は同時に1件だけ（既に選んでいた別のパス消費ラベルは自動で外す）
+      const withoutOtherPassLabels=selectedMenus.filter(m=>!m.startsWith("回数券消費：")&&!m.startsWith("フリーパス利用："));
+      const next=[...withoutOtherPassLabels,label];
+      const maxDur=Math.max(30,...next.map(m=>DURATION[m]||30));
+      setForm(f=>({...f,menus:next,menu:next[0]||"",duration:maxDur,consumed_pass_id:pass.id,consumed_pass_type:isTicket?"回数券":"フリーパス"}));
+    }
+  }
+
   const selectedMenus=form.menus||[];
   const totalPrice=selectedMenus.reduce((s,m)=>s+(MENU_PRICE[m]||0),0);
   const visitCount=React.useMemo(()=>{
@@ -2588,7 +2616,36 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
               {cat.label}
             </button>
           ))}
+          <button onClick={()=>setSelCategory("pass_consume")} style={{padding:"5px 12px",borderRadius:8,border:"1.5px solid",borderColor:selCategory==="pass_consume"?"#d97706":"#e2e8f0",background:selCategory==="pass_consume"?"#d97706":"white",color:selCategory==="pass_consume"?"white":"#d97706",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+            🎫 パス消費
+          </button>
         </div>
+        {selCategory==="pass_consume"?(
+          <div>
+            {!form.phone?(
+              <div style={{fontSize:12,color:"#94a3b8",padding:"10px 4px"}}>電話番号を入力すると、その方が持っている回数券・フリーパスが表示されます</div>
+            ):patientPasses.length===0?(
+              <div style={{fontSize:12,color:"#94a3b8",padding:"10px 4px"}}>この電話番号で有効な回数券・フリーパスは見つかりませんでした</div>
+            ):(
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,maxHeight:220,overflowY:"auto",padding:2}}>
+                {patientPasses.map(pass=>{
+                  const isTicket=!(pass.pass_type||"").includes("フリーパス");
+                  const label=isTicket
+                    ? `回数券消費：${pass.pass_type}（残り${pass.remaining_count}回）`
+                    : `フリーパス利用：${pass.pass_type}（期限${pass.expiry_date||"—"}）`;
+                  const isSel=selectedMenus.includes(label);
+                  return(
+                    <button key={pass.id} onClick={()=>togglePassConsume(pass)} style={{padding:"8px 10px",borderRadius:8,border:"1.5px solid "+(isSel?"#d97706":"#e2e8f0"),background:isSel?"#d97706"+"18":"white",textAlign:"left",cursor:"pointer",fontFamily:"inherit"}}>
+                      <div style={{fontSize:12,fontWeight:700,color:isSel?"#d97706":"#374151"}}>{pass.pass_type}</div>
+                      <div style={{fontSize:10,color:"#94a3b8"}}>{isTicket?`残り${pass.remaining_count}/${pass.total_count}回`:`期限：${pass.expiry_date||"—"}`}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ):(
+        <>
         {(()=>{
           const cat=DISPLAY_CATEGORIES.find(c=>c.id===selCategory)||DISPLAY_CATEGORIES[0];
           const sub=cat.subs.find(s=>s.id===selSub)||cat.subs[0];
@@ -2617,13 +2674,21 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
             </div>
           );
         })()}
+        </>
+        )}
         {selectedMenus.length>0&&(
           <div style={{marginTop:12,padding:"10px 14px",background:"#f8fafc",borderRadius:8,border:"1px solid #e2e8f0"}}>
             <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:6}}>
               {selectedMenus.map(m=>(
                 <span key={m} className="badge badge-blue" style={{padding:"3px 8px"}}>
                   {m}
-                  <button onClick={()=>toggleMenu(m,30)} style={{marginLeft:4,background:"none",border:"none",cursor:"pointer",color:"inherit",padding:0,lineHeight:1}}>x</button>
+                  <button onClick={()=>{
+                    if(m.startsWith("回数券消費：")||m.startsWith("フリーパス利用：")){
+                      setForm(f=>({...f,menus:selectedMenus.filter(x=>x!==m),consumed_pass_id:null,consumed_pass_type:null}));
+                    }else{
+                      toggleMenu(m,30);
+                    }
+                  }} style={{marginLeft:4,background:"none",border:"none",cursor:"pointer",color:"inherit",padding:0,lineHeight:1}}>x</button>
                 </span>
               ))}
             </div>
@@ -2631,6 +2696,11 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
             {selectedMenus.some(m=>PASS_MENU_CONFIG[m])&&(
               <div style={{marginTop:8,padding:"8px 10px",background:"#fef9ec",border:"1px solid #fde68a",borderRadius:8,fontSize:11,color:"#92400e",fontWeight:700}}>
                 🎫 回数券・フリーパスが含まれています。確定するとマイページの残数・期限に反映されます。
+              </div>
+            )}
+            {form.consumed_pass_id&&(
+              <div style={{marginTop:8,padding:"8px 10px",background:"#fef9ec",border:"1px solid #fde68a",borderRadius:8,fontSize:11,color:"#92400e",fontWeight:700}}>
+                🎫 パス消費が選択されています。{form.consumed_pass_type==="回数券"?"残り回数は会計完了時に1つ減ります。":"フリーパスの利用として記録されます（残数は減りません）。"}
               </div>
             )}
           </div>
