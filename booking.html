@@ -879,6 +879,18 @@ function App(){
             is_event_campaign: isEventCampaignBooking,
             reward_status: "pending"
           }).catch(function(){});
+        }else if(form.referrerName.trim()){
+          // 紹介者名の手入力：フルネームが分からない・表記ゆれ等で自動特定できない場合があるため、
+          // 電話番号は未確定（null）のまま「要確認」として記録し、管理画面のスタッフが候補から選んで紐付ける
+          sb.insert("referrals",{
+            referrer_name: form.referrerName.trim(),
+            referrer_phone: null,
+            referred_patient_name: form.name,
+            referred_booking_id: newBookingId,
+            source: "name",
+            is_event_campaign: isEventCampaignBooking,
+            reward_status: "pending"
+          }).catch(function(){});
         }
       }
 
