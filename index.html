@@ -7147,56 +7147,6 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr}){
         <div style={{textAlign:"center",padding:40,color:"#94a3b8"}}>読み込み中...</div>
       ):(
         <>
-              {(()=>{
-        const activePasses=passes.filter(p=>p.active!==false);
-        const ticketPasses=activePasses.filter(p=>!(p.pass_type||"").includes("フリーパス"));
-        const fpPasses=activePasses.filter(p=>(p.pass_type||"").includes("フリーパス"));
-        const ticketPatientCount=new Set(ticketPasses.map(p=>p.patient_name)).size;
-        const fpPatientCount=new Set(fpPasses.map(p=>p.patient_name)).size;
-        const ticketLowCount=ticketPasses.filter(p=>(p.remaining_count||0)<=2).length;
-        function daysUntil(dateStr){ if(!dateStr) return null; return Math.ceil((new Date(dateStr+"T00:00:00")-new Date())/86400000); }
-        const fpExpiringSoonCount=fpPasses.filter(p=>{const d=daysUntil(p.expiry_date);return d!=null&&d<=7&&d>=0;}).length;
-        const scopedPaymentsForIns=payments.filter(p=>scopedBookings.some(b=>b.id===p.booking_id)&&p.payment_date&&inRange(p.payment_date));
-        const bookingByIdForIns={}; scopedBookings.forEach(b=>{bookingByIdForIns[b.id]=b;});
-        const byPatientIns={};
-        scopedPaymentsForIns.forEach(p=>{
-          const b=bookingByIdForIns[p.booking_id];
-          if(!b) return;
-          if(!byPatientIns[b.patient_name]) byPatientIns[b.patient_name]={ins:0,jifee:0};
-          byPatientIns[b.patient_name].ins+=(p.insurance_amount||0);
-          byPatientIns[b.patient_name].jifee+=(p.jifee_amount||0);
-        });
-        const insuranceOnlyCount=Object.values(byPatientIns).filter(v=>v.ins>0&&v.jifee===0).length;
-        return(
-          <div className="card" style={{marginBottom:14,padding:"14px 16px"}}>
-            <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:4}}>🎫 パス・保険サマリー</div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginTop:10,marginBottom:10}}>
-              <div style={{background:"#f8fafc",borderRadius:10,padding:"12px",textAlign:"center"}}>
-                <div style={{fontSize:24,fontWeight:800,color:"#2563eb"}}>{insuranceOnlyCount}</div>
-                <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>保険のみ患者数（{selMonth}）</div>
-              </div>
-              <div style={{background:"#f8fafc",borderRadius:10,padding:"12px",textAlign:"center"}}>
-                <div style={{fontSize:24,fontWeight:800,color:"#d97706"}}>{ticketPatientCount}</div>
-                <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>回数券実施中の患者数</div>
-              </div>
-              <div style={{background:"#f8fafc",borderRadius:10,padding:"12px",textAlign:"center"}}>
-                <div style={{fontSize:24,fontWeight:800,color:"#7c3aed"}}>{fpPatientCount}</div>
-                <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>フリーパス実施中の患者数</div>
-              </div>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10}}>
-              <div style={{background:"#fef2f2",borderRadius:10,padding:"12px",textAlign:"center",border:"1px solid #fecaca"}}>
-                <div style={{fontSize:24,fontWeight:800,color:"#dc2626"}}>{ticketLowCount}</div>
-                <div style={{fontSize:11,color:"#991b1b",fontWeight:700}}>回数券 残りわずか（2回以下）</div>
-              </div>
-              <div style={{background:"#fef2f2",borderRadius:10,padding:"12px",textAlign:"center",border:"1px solid #fecaca"}}>
-                <div style={{fontSize:24,fontWeight:800,color:"#dc2626"}}>{fpExpiringSoonCount}</div>
-                <div style={{fontSize:11,color:"#991b1b",fontWeight:700}}>フリーパス 期限間近（7日以内）</div>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
           {(()=>{
             const activePasses=passes.filter(p=>p.active!==false);
             const ticketPasses=activePasses.filter(p=>!(p.pass_type||"").includes("フリーパス")).sort((a,b)=>(a.remaining_count||0)-(b.remaining_count||0));
@@ -7307,6 +7257,7 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr}){
 function PassHoldersPanel({payments,bookings}){
   const [passes,setPasses]=React.useState([]);
   const [loading,setLoading]=React.useState(true);
+  const [selMonth,setSelMonth]=React.useState(()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
   React.useEffect(()=>{
     sb.select("passes","?order=expiry_date.asc.nullslast").then(rows=>{
       setPasses(Array.isArray(rows)?rows:[]);setLoading(false);
@@ -7316,6 +7267,24 @@ function PassHoldersPanel({payments,bookings}){
   const ticketPasses=activePasses.filter(p=>!(p.pass_type||"").includes("フリーパス")).sort((a,b)=>(a.remaining_count||0)-(b.remaining_count||0));
   const fpPasses=activePasses.filter(p=>(p.pass_type||"").includes("フリーパス")).sort((a,b)=>(a.expiry_date||"").localeCompare(b.expiry_date||""));
   function daysUntil(dateStr){ if(!dateStr) return null; return Math.ceil((new Date(dateStr+"T00:00:00")-new Date())/86400000); }
+  const ticketPatientCount=new Set(ticketPasses.map(p=>p.patient_name)).size;
+  const fpPatientCount=new Set(fpPasses.map(p=>p.patient_name)).size;
+  const ticketLowCount=ticketPasses.filter(p=>(p.remaining_count||0)<=2).length;
+  const fpExpiringSoonCount=fpPasses.filter(p=>{const d=daysUntil(p.expiry_date);return d!=null&&d<=7&&d>=0;}).length;
+  // 保険のみ患者数（選択した月・全店舗合算）：その月に会計があった患者のうち、自費金額が一切発生していない人数
+  const insuranceOnlyCount=(()=>{
+    const inRange=d=>!!d&&d.slice(0,7)===selMonth;
+    const bookingById={}; (bookings||[]).forEach(b=>{bookingById[b.id]=b;});
+    const byPatient={};
+    (payments||[]).filter(p=>inRange(p.payment_date)).forEach(p=>{
+      const b=bookingById[p.booking_id];
+      if(!b) return;
+      if(!byPatient[b.patient_name]) byPatient[b.patient_name]={ins:0,jifee:0};
+      byPatient[b.patient_name].ins+=(p.insurance_amount||0);
+      byPatient[b.patient_name].jifee+=(p.jifee_amount||0);
+    });
+    return Object.values(byPatient).filter(v=>v.ins>0&&v.jifee===0).length;
+  })();
   function toCSV(rows,headers){
     const esc=v=>{ const s=(v==null?"":String(v)); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
     return[headers.map(esc).join(","),...rows.map(r=>r.map(esc).join(","))].join("\r\n");
@@ -7337,6 +7306,35 @@ function PassHoldersPanel({payments,bookings}){
   }
   return(
     <div style={{maxWidth:1000,margin:"0 auto"}}>
+      <div className="card" style={{marginBottom:14,padding:"14px 16px"}}>
+        <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:10}}>🎫 パス・保険サマリー</div>
+        <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)}
+          style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700,marginBottom:10}}/>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:10}}>
+          <div style={{background:"#f8fafc",borderRadius:10,padding:"12px",textAlign:"center"}}>
+            <div style={{fontSize:24,fontWeight:800,color:"#2563eb"}}>{insuranceOnlyCount}</div>
+            <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>保険のみ患者数（{selMonth}）</div>
+          </div>
+          <div style={{background:"#f8fafc",borderRadius:10,padding:"12px",textAlign:"center"}}>
+            <div style={{fontSize:24,fontWeight:800,color:"#d97706"}}>{ticketPatientCount}</div>
+            <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>回数券実施中の患者数</div>
+          </div>
+          <div style={{background:"#f8fafc",borderRadius:10,padding:"12px",textAlign:"center"}}>
+            <div style={{fontSize:24,fontWeight:800,color:"#7c3aed"}}>{fpPatientCount}</div>
+            <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>フリーパス実施中の患者数</div>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10}}>
+          <div style={{background:"#fef2f2",borderRadius:10,padding:"12px",textAlign:"center",border:"1px solid #fecaca"}}>
+            <div style={{fontSize:24,fontWeight:800,color:"#dc2626"}}>{ticketLowCount}</div>
+            <div style={{fontSize:11,color:"#991b1b",fontWeight:700}}>回数券 残りわずか（2回以下）</div>
+          </div>
+          <div style={{background:"#fef2f2",borderRadius:10,padding:"12px",textAlign:"center",border:"1px solid #fecaca"}}>
+            <div style={{fontSize:24,fontWeight:800,color:"#dc2626"}}>{fpExpiringSoonCount}</div>
+            <div style={{fontSize:11,color:"#991b1b",fontWeight:700}}>フリーパス 期限間近（7日以内）</div>
+          </div>
+        </div>
+      </div>
       <div className="card">
         <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f"}}>🎫 回数券・フリーパス対象者一覧（{ticketPasses.length+fpPasses.length}名）</div>
