@@ -236,6 +236,8 @@ function App(){
       sb.select("patient_referral_codes","?code=eq."+encodeURIComponent(ref)).then(function(rows){
         if(Array.isArray(rows)&&rows.length>0){
           setReferrerInfo({name:rows[0].patient_name,phone:rows[0].phone});
+          // 「紹介者のお名前」欄にも自動で反映しておく（もう一度手入力しなくて済むように）
+          setForm(function(f){return Object.assign({},f,{referrerName:rows[0].patient_name});});
         }
         // 見つからない場合は何もしない＝通常予約として扱われる（referrerInfoはnullのまま）
       }).catch(function(){});
