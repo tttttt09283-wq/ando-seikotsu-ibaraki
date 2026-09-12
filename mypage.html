@@ -144,6 +144,8 @@ let state={
   passes:[],
   treatmentPlan:null,
   postureRecord:null,
+  referralCode:null,
+  referralStats:{count:0,offAmount:0},
   loading:true,
   showBookingsSection:false,
   showPassesSection:false,
@@ -232,6 +234,28 @@ async function loadData(){
       state.postureRecord=Array.isArray(records)&&records.length>0?records[0]:null;
     }else{
       state.postureRecord=null;
+    }
+
+    // 紹介コード（無ければこの場で自動発行）と、紹介実績（キャンペーン対象・来院確認済みの件数）を取得
+    if(phone){
+      try{
+        const codeRows=await sbGet("patient_referral_codes",`?phone=eq.${encodeURIComponent(phone)}`);
+        let codeRow=Array.isArray(codeRows)&&codeRows.length>0?codeRows[0]:null;
+        if(!codeRow){
+          const newCode=generateReferralCode();
+          const inserted=await sbPost("patient_referral_codes",{phone,patient_name:patientName,code:newCode});
+          codeRow=Array.isArray(inserted)&&inserted.length>0?inserted[0]:{code:newCode};
+        }
+        state.referralCode=codeRow.code;
+      }catch(e){ state.referralCode=null; }
+
+      try{
+        const refRows=await sbGet("referrals",`?referrer_phone=eq.${encodeURIComponent(phone)}&is_event_campaign=eq.true`);
+        const visitedCount=Array.isArray(refRows)?refRows.filter(r=>r.visited_at).length:0;
+        let offAmount=0;
+        if(visitedCount>=3) offAmount=3000; else if(visitedCount===2) offAmount=2000; else if(visitedCount===1) offAmount=1000;
+        state.referralStats={count:visitedCount,offAmount};
+      }catch(e){ state.referralStats={count:0,offAmount:0}; }
     }
   }catch(e){console.error(e);}
   state.loading=false;
@@ -794,24 +818,103 @@ function scrollToPlan(){
   if(target){target.scrollIntoView({behavior:"smooth",block:"start"});}
   else showToast("施術計画書はまだ作成されていません");
 }
+function generateReferralCode(){
+  const chars="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 紛らわしい0/O・1/Iを除く
+  let s="";
+  for(let i=0;i<6;i++) s+=chars[Math.floor(Math.random()*chars.length)];
+  return s;
+}
+function getReferralURL(){
+  const base=location.origin+BOOKING_URL;
+  return state.referralCode?`${base}?ref=${state.referralCode}`:base;
+}
+function copyReferralURL(){
+  navigator.clipboard.writeText(getReferralURL()).then(()=>showToast("紹介URLをコピーしました！")).catch(()=>{});
+}
 function scrollToReferral(){
   const target=[...document.querySelectorAll(".section-title")].find(e=>e.textContent.includes("お友達紹介"));
   if(target) target.scrollIntoView({behavior:"smooth",block:"start"});
 }
 
 function renderReferral(){
+  const url=getReferralURL();
+  const stats=state.referralStats||{count:0,offAmount:0};
+  const tiers=[
+    {n:1,off:1000},{n:2,off:2000},{n:3,off:3000},
+  ];
   return`
     <div class="section-title">お友達紹介</div>
     <div class="referral-card">
       <div class="referral-emoji">🎁</div>
-      <div class="referral-title">お友達紹介でお得な特典！</div>
-      <div class="referral-desc">ご家族・お友達をご紹介いただくと<br>紹介者様・ご紹介された方ともに<br><strong>特別割引をプレゼント</strong>いたします🌸</div>
+      <div class="referral-title">香里園院 無料体験会 紹介キャンペーン</div>
+      <div class="referral-desc" style="margin-top:6px;">ご紹介いただいた方が実際にご来院すると<br>紹介者様・ご紹介された方ともに<strong>特典</strong>があります🌸</div>
     </div>
-    <button class="btn btn-purple" onclick="shareReferral()">
-      <span class="btn-icon">👥</span>
-      <span class="btn-label">LINEでお友達に紹介する</span>
-      <span class="btn-arrow">›</span>
-    </button>
+
+    <div class="card" style="margin-bottom:10px;">
+      <div class="card-header">
+        <div class="card-header-icon" style="background:#eff6ff;">👤</div>
+        <div>
+          <div class="card-header-title">ご紹介された方の特典</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div style="background:#f8fafc;border-radius:10px;padding:12px 14px;">
+          <div style="font-size:13px;font-weight:800;color:#1e293b;">AI姿勢分析＋あなた専用姿勢レポート</div>
+          <div style="font-size:12px;color:#94a3b8;margin-top:4px;"><span style="text-decoration:line-through;">通常2,200円相当</span>　→　<span style="color:#dc2626;font-weight:800;">無料</span></div>
+          <div style="font-size:11px;color:#94a3b8;margin-top:4px;">※初回来院時に実施・無料体験会期間中が対象です</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:10px;">
+      <div class="card-header">
+        <div class="card-header-icon" style="background:#fff7ed;">🎉</div>
+        <div>
+          <div class="card-header-title">あなた（紹介者）の特典</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+          ${tiers.map(t=>`
+            <div style="flex:1;text-align:center;padding:10px 4px;border-radius:10px;background:${stats.count>=t.n?'#fef3c7':'#f8fafc'};border:1.5px solid ${stats.count>=t.n?'#f59e0b':'#e5e7eb'};">
+              <div style="font-size:11px;color:#64748b;font-weight:700;">${t.n}人紹介</div>
+              <div style="font-size:15px;font-weight:800;color:${stats.count>=t.n?'#92400e':'#94a3b8'};">${t.off.toLocaleString()}円OFF</div>
+            </div>
+          `).join("")}
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;padding-top:10px;border-top:1px solid #f1f5f9;">
+          <div>
+            <div style="font-size:11px;color:#94a3b8;">現在の紹介人数（来院確認済み）</div>
+            <div style="font-size:20px;font-weight:800;color:#1e293b;">${stats.count}人</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size:11px;color:#94a3b8;">獲得中のOFF金額</div>
+            <div style="font-size:20px;font-weight:800;color:#d97706;">${stats.offAmount.toLocaleString()}円</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px;">
+      <div class="card-header">
+        <div class="card-header-icon" style="background:#f5f3ff;">🔗</div>
+        <div>
+          <div class="card-header-title">あなた専用の紹介URL</div>
+        </div>
+      </div>
+      <div class="card-body">
+        <div style="background:#f8fafc;border-radius:8px;padding:10px 12px;word-break:break-all;font-size:11px;color:#374151;margin-bottom:10px;">${url}</div>
+        <button class="btn btn-outline" onclick="copyReferralURL()" style="margin-bottom:8px;">
+          <span class="btn-icon" style="color:#1e3a5f;">📋</span>
+          <span class="btn-label" style="color:#1e3a5f;">URLをコピーする</span>
+        </button>
+        <button class="btn btn-line" onclick="shareReferral()">
+          <span class="btn-icon">💬</span>
+          <span class="btn-label">LINEで紹介する</span>
+          <span class="btn-arrow">›</span>
+        </button>
+      </div>
+    </div>
   `;
 }
 
@@ -943,7 +1046,7 @@ function submitChange(){changeBooking();}
 function submitCancel(){cancelBooking();}
 
 function shareReferral(){
-  const msg=`あんど整骨院でお体のケアをしています！初回無料体験会もあるのでぜひ👇\nhttps://ando-seikotsu-ibaraki.vercel.app/booking.html`;
+  const msg=`あんど整骨院 香里園院で無料体験会やってるよ！\n\nこの紹介URLから予約すると、AI姿勢分析＋あなた専用姿勢レポート（2,200円相当）が無料でもらえるみたい！\n\nよかったら使ってみて！\n${getReferralURL()}`;
   if(liff.isInClient()){
     liff.shareTargetPicker([{type:"text",text:msg}]).catch(()=>{});
   }else{
