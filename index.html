@@ -7313,6 +7313,183 @@ function PassHoldersPanel({payments,bookings}){
     </div>
   );
 }
+function ReferralMgmtPanel({bookings,payments}){
+  const [referrals,setReferrals]=React.useState([]);
+  const [codes,setCodes]=React.useState([]);
+  const [loading,setLoading]=React.useState(true);
+  const [rangeStart,setRangeStart]=React.useState("");
+  const [rangeEnd,setRangeEnd]=React.useState("");
+  const [savingId,setSavingId]=React.useState(null);
+
+  function fetchAll(){
+    setLoading(true);
+    Promise.all([
+      sb.select("referrals","?order=created_at.desc"),
+      sb.select("patient_referral_codes","?order=created_at.desc"),
+    ]).then(([r,c])=>{
+      setReferrals(Array.isArray(r)?r:[]);
+      setCodes(Array.isArray(c)?c:[]);
+      setLoading(false);
+    }).catch(()=>setLoading(false));
+  }
+  React.useEffect(()=>{ fetchAll(); },[]);
+
+  const filtered=referrals.filter(r=>{
+    if(rangeStart&&r.created_at&&r.created_at.slice(0,10)<rangeStart) return false;
+    if(rangeEnd&&r.created_at&&r.created_at.slice(0,10)>rangeEnd) return false;
+    return true;
+  });
+  const campaignReferrals=filtered.filter(r=>r.is_event_campaign);
+
+  const bookingById={}; (bookings||[]).forEach(b=>{bookingById[b.id]=b;});
+  const paymentByBookingId={}; (payments||[]).forEach(p=>{ if(p.booking_id!=null) paymentByBookingId[p.booking_id]=p; });
+
+  function currentTierFor(phone){
+    const count=referrals.filter(r=>r.referrer_phone===phone&&r.is_event_campaign&&r.visited_at).length;
+    if(count>=3) return 3000; if(count===2) return 2000; if(count===1) return 1000; return 0;
+  }
+
+  async function markVisited(r){
+    setSavingId(r.id);
+    try{
+      const reward=currentTierFor(r.referrer_phone)>0?currentTierFor(r.referrer_phone):1000; // これが確定すれば少なくとも1人分=1000円
+      // 実際にはこの紹介を含めた新しい合計で再計算する
+      const willBeCount=referrals.filter(x=>x.referrer_phone===r.referrer_phone&&x.is_event_campaign&&x.visited_at&&x.id!==r.id).length+1;
+      const newReward=willBeCount>=3?3000:willBeCount===2?2000:1000;
+      await sb.update("referrals",r.id,{visited_at:new Date().toISOString(),reward_amount:newReward,reward_status:"granted"});
+      fetchAll();
+    }catch(e){}
+    setSavingId(null);
+  }
+  async function undoVisited(r){
+    setSavingId(r.id);
+    try{
+      await sb.update("referrals",r.id,{visited_at:null,reward_amount:null,reward_status:"pending"});
+      fetchAll();
+    }catch(e){}
+    setSavingId(null);
+  }
+
+  // ===== KPI =====
+  const issuedCodesCount=codes.length;
+  const referredBookingsCount=campaignReferrals.length;
+  const referredVisitsCount=campaignReferrals.filter(r=>r.visited_at).length;
+  const conversionRate=referredBookingsCount>0?Math.round(referredVisitsCount/referredBookingsCount*100):0;
+  const referredRevenue=campaignReferrals.reduce((sum,r)=>{
+    const b=bookingById[r.referred_booking_id];
+    const p=b?paymentByBookingId[b.id]:null;
+    return sum+(p?(p.total_amount||0):0);
+  },0);
+  const rankingMap={};
+  campaignReferrals.filter(r=>r.visited_at).forEach(r=>{
+    if(!rankingMap[r.referrer_name]) rankingMap[r.referrer_name]={name:r.referrer_name,phone:r.referrer_phone,count:0};
+    rankingMap[r.referrer_name].count++;
+  });
+  const ranking=Object.values(rankingMap).sort((a,b)=>b.count-a.count).slice(0,10);
+
+  function fmt(n){return"¥"+Number(n||0).toLocaleString();}
+
+  return(
+    <div style={{maxWidth:1300,margin:"0 auto"}}>
+      <div className="card" style={{marginBottom:14,padding:"14px 16px"}}>
+        <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:10}}>🎁 紹介キャンペーン管理</div>
+        <div style={{fontSize:11,color:"#94a3b8",marginBottom:10}}>キャンペーン名：香里園院 無料体験会 紹介キャンペーン（紹介URL経由のみを集計。紹介者名の手入力分は含みません）</div>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{fontSize:12,color:"#64748b",fontWeight:700}}>期間：</span>
+          <input type="date" value={rangeStart} onChange={e=>setRangeStart(e.target.value)} style={{padding:"6px 8px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:12}}/>
+          <span style={{color:"#94a3b8"}}>〜</span>
+          <input type="date" value={rangeEnd} onChange={e=>setRangeEnd(e.target.value)} style={{padding:"6px 8px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:12}}/>
+          {(rangeStart||rangeEnd)&&<button onClick={()=>{setRangeStart("");setRangeEnd("");}} style={{padding:"6px 10px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>クリア</button>}
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:14}}>
+        {[
+          {label:"紹介URL発行人数",value:issuedCodesCount+"人",color:"#2563eb"},
+          {label:"紹介予約数",value:referredBookingsCount+"件",color:"#7c3aed"},
+          {label:"紹介来院数",value:referredVisitsCount+"件",color:"#059669"},
+          {label:"紹介成立率",value:conversionRate+"%",color:"#d97706"},
+          {label:"紹介経由売上",value:fmt(referredRevenue),color:"#dc2626"},
+          {label:"来院確認待ち",value:(referredBookingsCount-referredVisitsCount)+"件",color:"#64748b"},
+        ].map(item=>(
+          <div key={item.label} className="card" style={{padding:"14px",textAlign:"center",marginBottom:0}}>
+            <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:4}}>{item.label}</div>
+            <div style={{fontSize:22,fontWeight:800,color:item.color}}>{item.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>紹介者ランキング（来院確認済み・上位10名）</div>
+        <div style={{padding:"8px 16px"}}>
+          {ranking.length===0?(
+            <div style={{textAlign:"center",padding:16,color:"#94a3b8",fontSize:12}}>まだ実績がありません</div>
+          ):ranking.map((r,i)=>(
+            <div key={r.name+r.phone} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:"1px solid #f1f5f9"}}>
+              <div style={{width:22,fontWeight:800,color:i<3?"#d97706":"#94a3b8",fontSize:13}}>{i+1}</div>
+              <div style={{flex:1,fontSize:13,fontWeight:700,color:"#1e293b"}}>{r.name}</div>
+              <div style={{fontSize:12,color:"#059669",fontWeight:800}}>{r.count}人成立</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="card">
+        <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>紹介一覧（{filtered.length}件）</div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:1100}}>
+            <thead>
+              <tr style={{background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}>
+                {["紹介者","紹介コード","被紹介者","予約日","予約状況","来院","紹介成立数","付与OFF","特典状況","操作"].map(h=>(
+                  <th key={h} style={{padding:"8px 10px",textAlign:"left",fontWeight:800,color:"#64748b",whiteSpace:"nowrap"}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading?(
+                <tr><td colSpan={10} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>読み込み中...</td></tr>
+              ):filtered.length===0?(
+                <tr><td colSpan={10} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>対象データがありません</td></tr>
+              ):filtered.map(r=>{
+                const b=bookingById[r.referred_booking_id];
+                const tierNow=currentTierFor(r.referrer_phone);
+                return(
+                  <tr key={r.id} style={{borderBottom:"1px solid #f1f5f9",opacity:b&&b.cancelled?0.5:1}}>
+                    <td style={{padding:"8px 10px",fontWeight:700}}>{r.referrer_name}</td>
+                    <td style={{padding:"8px 10px",color:"#64748b"}}>{r.referral_code||(r.source==="name"?"（手入力）":"—")}</td>
+                    <td style={{padding:"8px 10px",fontWeight:700}}>{r.referred_patient_name}</td>
+                    <td style={{padding:"8px 10px"}}>{b?b.date+" "+b.time:"—"}</td>
+                    <td style={{padding:"8px 10px"}}>{b?(b.cancelled?<span className="badge badge-red">キャンセル</span>:<span className="badge badge-blue">予約中</span>):"—"}</td>
+                    <td style={{padding:"8px 10px"}}>{r.visited_at?<span className="badge badge-green">来院済み</span>:<span className="badge badge-gray">未来院</span>}</td>
+                    <td style={{padding:"8px 10px"}}>{r.is_event_campaign?tierNow>0?Math.min(3,Math.round(tierNow/1000))+"人目安":"0":"—"}</td>
+                    <td style={{padding:"8px 10px",fontWeight:700,color:"#d97706"}}>{r.reward_amount?fmt(r.reward_amount):"—"}</td>
+                    <td style={{padding:"8px 10px"}}>{r.reward_status==="granted"?<span className="badge badge-green">付与済み</span>:<span className="badge badge-yellow">未付与</span>}</td>
+                    <td style={{padding:"8px 10px"}}>
+                      {!r.is_event_campaign?(
+                        <span style={{fontSize:11,color:"#94a3b8"}}>対象外</span>
+                      ):b&&b.cancelled?(
+                        <span style={{fontSize:11,color:"#94a3b8"}}>キャンセル済み</span>
+                      ):r.visited_at?(
+                        <button onClick={()=>undoVisited(r)} disabled={savingId===r.id} style={{padding:"5px 10px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>取り消す</button>
+                      ):(
+                        <button onClick={()=>markVisited(r)} disabled={savingId===r.id} style={{padding:"5px 10px",background:"#059669",border:"none",borderRadius:6,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",color:"white"}}>{savingId===r.id?"処理中...":"来院済みにする"}</button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <div style={{padding:"10px 16px",fontSize:11,color:"#94a3b8",lineHeight:1.8}}>
+          ・「来院済みにする」を押すと、その紹介が成立扱いになり、紹介者のその時点での紹介成立数に応じてOFF金額（1人1,000円／2人2,000円／3人以上3,000円）が自動計算されます<br/>
+          ・キャンセルされた予約は「来院済みにする」ボタンが出ないようになっています（誤って成立扱いにならないようにするためです）<br/>
+          ・付与されたOFF金額は、紹介者様の次回ご来院時のお会計で、スタッフが手動で割引を適用してください（現時点では会計画面への自動連携はしていません）
+        </div>
+      </div>
+    </div>
+  );
+}
 function Dashboard({user,onLogout}){
   const [bookings,setBookings]=React.useState([]);
   const [breaks,setBreaks]=React.useState([]);
@@ -8001,6 +8178,7 @@ function Dashboard({user,onLogout}){
       {id:"line_link_check",label:"LINE連携チェック",icon:"link",special:""},
       {id:"staff_kpi",label:"スタッフKPI管理",icon:"trending",special:""},
       {id:"pass_holders",label:"回数券・FP対象者",icon:"receipt",special:""},
+      {id:"referral_mgmt",label:"紹介キャンペーン管理",icon:"users",special:""},
     ]},
     {id:"clinical",label:"臨床サポート",color:"#7c3aed",items:[
       {id:"symptom_checker",label:"症状チェッカー（試験運用）",icon:"search",special:"",action:()=>window.open("/symptom-checker.html","_blank")},
@@ -8451,6 +8629,7 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
                     {view==="line_link_check"&&<LineLinkCheckPanel bookings={bookings}/>}
                              {view==="staff_kpi"&&<StaffKPIPanel bookings={bookings} payments={payments} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr}/>}
                              {view==="pass_holders"&&<PassHoldersPanel payments={payments} bookings={bookings}/>}
+                             {view==="referral_mgmt"&&<ReferralMgmtPanel bookings={bookings} payments={payments}/>}
                     {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} todayStr={todayStr} onRestore={restoreBooking} onDelete={deleteCancelledBooking}/>}
                            {view==="staff_off_conflicts"&&<StaffOffConflictsPanel bookings={bookings} weeklyShifts={weeklyShifts} dateOverrides={dateOverrides} storeStaff={storeStaff} onReassign={reassignStaffForBooking} onReschedule={rescheduleBooking} todayStr={todayStr}/>}
           {view==="bulk_receipt"&&<BulkReceiptPanel payments={payments} bookings={bookings}/>}
