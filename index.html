@@ -1058,7 +1058,7 @@ function PreOpenStatsPanel({bookings,payments,stores}){
         <table style={{borderCollapse:"collapse",width:"100%",fontSize:13,minWidth:1180}}>
           <thead>
             <tr style={{background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}>
-              {["日付","予約数","実来院数","新患数","キャンセル数","500円体験","LINE登録","次回予約","次回予約率","成約人数","成約率","売上","1人あたり","稼働スタッフ"].map(h=>(
+              {["日付","予約数","実来院数","新患数","キャンセル数","無料体験","LINE登録","次回予約","次回予約率","成約人数","成約率","売上","1人あたり","稼働スタッフ"].map(h=>(
                 <th key={h} style={{padding:"10px 12px",textAlign:"left",fontWeight:800,color:"#64748b",whiteSpace:"nowrap"}}>{h}</th>
               ))}
             </tr>
@@ -1110,7 +1110,7 @@ function PreOpenStatsPanel({bookings,payments,stores}){
       </div>
       <div style={{fontSize:11,color:"#94a3b8",marginTop:10,lineHeight:1.8}}>
         ・実来院数：予約のうち「会計（お会計完了）」が記録されているものを集計しています<br/>
-        ・500円体験：実来院者のうち、メニュー名に「体験」または「500」を含む予約の人数です<br/>
+        ・無料体験：実来院者のうち、メニュー名に「体験」または「500」を含む予約の人数です<br/>
         ・成約人数：その日に回数券・フリーパスの購入があった患者数です（passesテーブル。店舗の絞り込みは反映されません）<br/>
         ・次回予約：来院した患者のうち、その日より後の日付で予約（キャンセル除く）を持っている人数です<br/>
         ・稼働スタッフ：その日に予約対応があったスタッフの人数（ユニーク人数）と、実来院数を割った「1人あたり対応件数」です
