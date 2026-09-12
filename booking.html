@@ -221,6 +221,27 @@ function App(){
   var lineUserIdState = useState(null);
   var lineUserId = lineUserIdState[0]; var setLineUserId = lineUserIdState[1];
 
+  // ===== 紹介キャンペーン（?ref=コードで来た場合） =====
+  var referralCodeState = useState(null); // URLの?refパラメータ（見つかった生の値）
+  var referralCode = referralCodeState[0]; var setReferralCode = referralCodeState[1];
+  var referrerInfoState = useState(null); // {name, phone} コードから引き当てた紹介者情報。無効なコードならnullのまま
+  var referrerInfo = referrerInfoState[0]; var setReferrerInfo = referrerInfoState[1];
+
+  useEffect(function(){
+    try{
+      var params = new URLSearchParams(window.location.search);
+      var ref = params.get("ref");
+      if(!ref) return;
+      setReferralCode(ref);
+      sb.select("patient_referral_codes","?code=eq."+encodeURIComponent(ref)).then(function(rows){
+        if(Array.isArray(rows)&&rows.length>0){
+          setReferrerInfo({name:rows[0].patient_name,phone:rows[0].phone});
+        }
+        // 見つからない場合は何もしない＝通常予約として扱われる（referrerInfoはnullのまま）
+      }).catch(function(){});
+    }catch(e){}
+  }, []);
+
   var liffReadyState = useState(false);
   var liffReady = liffReadyState[0]; var setLiffReady = liffReadyState[1];
 
@@ -808,6 +829,11 @@ function App(){
 
     savePatientReceiptPreference(form.phone, form.name, form.receiptFrequency);
 
+    // 紹介URL経由の場合の自己紹介チェック（自分の紹介コードで自分が予約するのを防ぐ）
+    var isSelfReferral = !!(referrerInfo && referrerInfo.phone && form.phone && referrerInfo.phone.replace(/[^0-9]/g,"")===form.phone.replace(/[^0-9]/g,""));
+    var validCodeReferral = referrerInfo && !isSelfReferral;
+    var isEventCampaignBooking = isEventDate(new Date(dateStr+"T00:00:00"));
+
     sb.insert("bookings",{
       patient_name:form.name,
       phone:form.phone,
@@ -820,6 +846,7 @@ function App(){
       menu:finalMenu,
       store_id:resolvedStoreId,
       referrer_name:form.referrerName.trim()||null,
+      referral_code_used: validCodeReferral ? referralCode : null,
       line_notify: !!lineUserId, // LINE連携済みなら自動でリマインド
       line_user_id: lineUserId || null,
       booked_via_line: !!lineUserId, // LINE経由での予約かどうか（管理画面での目印用）
@@ -839,6 +866,20 @@ function App(){
       if(Array.isArray(result) && result.length > 0){
         newBookingId = result[0].id;
         setBookingId(newBookingId);
+
+        // 紹介URL経由の予約であれば、紹介記録を作成する（特典は管理画面で来院確認後に確定）
+        if(validCodeReferral){
+          sb.insert("referrals",{
+            referrer_name: referrerInfo.name,
+            referrer_phone: referrerInfo.phone,
+            referred_patient_name: form.name,
+            referred_booking_id: newBookingId,
+            source: "code",
+            referral_code: referralCode,
+            is_event_campaign: isEventCampaignBooking,
+            reward_status: "pending"
+          }).catch(function(){});
+        }
       }
 
       // グループLINEへ通知（事前問診票が未記入の項目は省略する）
@@ -853,7 +894,8 @@ function App(){
         (form.wantContinue?"\n💭 継続意思："+formatWantContinue():"")+
         "\n📣 経路："+(howKnowText||"未記入")+"\n"+
         "🔔 LINE連携："+(form.lineNotify && lineUserId ? "あり" : "なし")+
-        (form.referrerName.trim()?"\n🎁 紹介者："+form.referrerName+" 様（体験会無料）":"");
+        (form.referrerName.trim()?"\n🎁 紹介者："+form.referrerName+" 様（体験会無料）":"")+
+        (validCodeReferral?"\n🎁 紹介URL経由："+referrerInfo.name+" 様のご紹介":"");
 
       fetch("/api/line-notify",{
         method:"POST",
@@ -1122,6 +1164,24 @@ function App(){
 
       // ===== STEP 0: 日時選択 =====
       step===0?React.createElement("div",{style:{paddingBottom:96}},
+        // 紹介キャンペーンバナー（?refで来た場合。無効なコードなら何も表示されない＝通常予約）
+        referrerInfo?React.createElement("div",{style:{background:"linear-gradient(135deg,#fef3c7,#fde68a)",border:"2px solid #f59e0b",borderRadius:14,padding:"16px 16px",marginBottom:16}},
+          React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:8}},
+            React.createElement("span",{style:{fontSize:22}},"🎁"),
+            React.createElement("span",{style:{fontWeight:800,fontSize:14,color:"#92400e"}},"ご紹介特典対象")
+          ),
+          React.createElement("div",{style:{fontSize:13,color:"#78350f",lineHeight:1.7,marginBottom:6}},
+            (referrerInfo.name||"")+"様からのご紹介です！"
+          ),
+          React.createElement("div",{style:{background:"white",borderRadius:10,padding:"10px 12px",fontSize:13,color:"#1e293b",fontWeight:700}},
+            "AI姿勢分析＋あなた専用姿勢レポート",
+            React.createElement("br"),
+            React.createElement("span",{style:{color:"#94a3b8",fontWeight:600,textDecoration:"line-through",fontSize:12}},"通常2,200円相当"),
+            "　→　",
+            React.createElement("span",{style:{color:"#dc2626",fontWeight:800}},"無料")
+          ),
+          React.createElement("div",{style:{fontSize:11,color:"#92400e",marginTop:6}},"※無料体験会期間中のご来院が対象です")
+        ):null,
         // リピーター向けバナー
         isRepeat?React.createElement("div",{style:{background:"linear-gradient(135deg,#f0fdf4,#dcfce7)",border:"1.5px solid #86efac",borderRadius:12,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}},
           React.createElement("span",{style:{fontSize:24}},"👋"),
