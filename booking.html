@@ -718,7 +718,7 @@ function App(){
     if(selDate&&!isEventDate(selDate)){
       var opt=PATIENT_TYPE_OPTIONS.find(function(o){return o.label===form.patientType;});
       var label=opt?opt.menu:"ご予約";
-      return "🩺 "+label+"　※料金は保険証をご提示のうえ受付にてご案内します";
+      return "🩺 "+label+"　※マイナンバーカードまたは資格確認書のご持参をお願いいたします";
     }
     if(pageSettings.eventMenuPrice<=0){
       return "🎁 "+pageSettings.eventMenuName+"　無料";
