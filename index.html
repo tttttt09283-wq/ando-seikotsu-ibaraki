@@ -7320,6 +7320,40 @@ function ReferralMgmtPanel({bookings,payments}){
   const [rangeStart,setRangeStart]=React.useState("");
   const [rangeEnd,setRangeEnd]=React.useState("");
   const [savingId,setSavingId]=React.useState(null);
+  const [identifyingId,setIdentifyingId]=React.useState(null); // 「紹介者を特定」を開いている紹介のid
+  const [searchQ,setSearchQ]=React.useState("");
+  const [searchResults,setSearchResults]=React.useState([]);
+  const [searching,setSearching]=React.useState(false);
+
+  function openIdentify(referralId){
+    setIdentifyingId(referralId);
+    setSearchQ("");
+    setSearchResults([]);
+  }
+  function searchCandidates(q){
+    setSearchQ(q);
+    if(!q||q.trim().length<1){ setSearchResults([]); return; }
+    setSearching(true);
+    sb.select("bookings",`?patient_name=ilike.*${encodeURIComponent(q.trim())}*&select=patient_name,phone&order=date.desc&limit=50`).then(rows=>{
+      const seen=new Set(); const list=[];
+      (Array.isArray(rows)?rows:[]).forEach(r=>{
+        const key=r.patient_name+"_"+r.phone;
+        if(!r.patient_name||!r.phone||seen.has(key)) return;
+        seen.add(key); list.push(r);
+      });
+      setSearchResults(list.slice(0,8));
+      setSearching(false);
+    }).catch(()=>setSearching(false));
+  }
+  async function confirmReferrer(referral,candidate){
+    setSavingId(referral.id);
+    try{
+      await sb.update("referrals",referral.id,{referrer_name:candidate.patient_name,referrer_phone:candidate.phone});
+      setIdentifyingId(null);
+      fetchAll();
+    }catch(e){}
+    setSavingId(null);
+  }
 
   function fetchAll(){
     setLoading(true);
@@ -7455,7 +7489,32 @@ function ReferralMgmtPanel({bookings,payments}){
                 const tierNow=currentTierFor(r.referrer_phone);
                 return(
                   <tr key={r.id} style={{borderBottom:"1px solid #f1f5f9",opacity:b&&b.cancelled?0.5:1}}>
-                    <td style={{padding:"8px 10px",fontWeight:700}}>{r.referrer_name}</td>
+                    <td style={{padding:"8px 10px",fontWeight:700,minWidth:180}}>
+                      {r.referrer_phone?r.referrer_name:(
+                        <div>
+                          <div style={{color:"#92400e"}}>{r.referrer_name}<span style={{fontSize:10,fontWeight:800,background:"#fef3c7",color:"#92400e",borderRadius:8,padding:"1px 6px",marginLeft:6}}>要確認</span></div>
+                          {identifyingId!==r.id?(
+                            <button onClick={()=>openIdentify(r.id)} style={{marginTop:4,padding:"3px 8px",background:"white",border:"1.5px solid #f59e0b",borderRadius:6,fontSize:10,fontWeight:700,color:"#92400e",cursor:"pointer",fontFamily:"inherit"}}>🔍 紹介者を特定する</button>
+                          ):(
+                            <div style={{marginTop:6,background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8,padding:8,width:220}}>
+                              <input autoFocus value={searchQ} onChange={e=>searchCandidates(e.target.value)} placeholder="患者様のお名前で検索"
+                                style={{width:"100%",padding:"5px 7px",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:11,marginBottom:6,boxSizing:"border-box"}}/>
+                              {searching?(
+                                <div style={{fontSize:10,color:"#94a3b8"}}>検索中...</div>
+                              ):searchResults.length===0?(
+                                <div style={{fontSize:10,color:"#94a3b8"}}>{searchQ?"該当なし":"1文字以上入力してください"}</div>
+                              ):searchResults.map((c,i)=>(
+                                <div key={i} onClick={()=>confirmReferrer(r,c)} style={{padding:"5px 6px",fontSize:11,cursor:"pointer",borderRadius:5,background:"white",marginBottom:3}}
+                                  onMouseOver={e=>e.currentTarget.style.background="#fef3c7"} onMouseOut={e=>e.currentTarget.style.background="white"}>
+                                  {c.patient_name}　<span style={{color:"#94a3b8"}}>{c.phone}</span>
+                                </div>
+                              ))}
+                              <button onClick={()=>setIdentifyingId(null)} style={{marginTop:4,padding:"3px 8px",background:"none",border:"none",color:"#94a3b8",fontSize:10,cursor:"pointer",fontFamily:"inherit"}}>閉じる</button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </td>
                     <td style={{padding:"8px 10px",color:"#64748b"}}>{r.referral_code||(r.source==="name"?"（手入力）":"—")}</td>
                     <td style={{padding:"8px 10px",fontWeight:700}}>{r.referred_patient_name}</td>
                     <td style={{padding:"8px 10px"}}>{b?b.date+" "+b.time:"—"}</td>
@@ -7467,6 +7526,8 @@ function ReferralMgmtPanel({bookings,payments}){
                     <td style={{padding:"8px 10px"}}>
                       {!r.is_event_campaign?(
                         <span style={{fontSize:11,color:"#94a3b8"}}>対象外</span>
+                      ):!r.referrer_phone?(
+                        <span style={{fontSize:11,color:"#94a3b8"}}>紹介者の特定が先です</span>
                       ):b&&b.cancelled?(
                         <span style={{fontSize:11,color:"#94a3b8"}}>キャンセル済み</span>
                       ):r.visited_at?(
@@ -7482,6 +7543,7 @@ function ReferralMgmtPanel({bookings,payments}){
           </table>
         </div>
         <div style={{padding:"10px 16px",fontSize:11,color:"#94a3b8",lineHeight:1.8}}>
+          ・紹介者名を手入力された予約は、フルネームが分からない等で自動特定できないことがあるため、まず「要確認」として記録されます。「🔍 紹介者を特定する」から、実際の患者様を検索して選ぶと確定します（この検索・候補一覧は管理画面だけの表示で、患者様には一切見えません）<br/>
           ・「来院済みにする」を押すと、その紹介が成立扱いになり、紹介者のその時点での紹介成立数に応じてOFF金額（1人1,000円／2人2,000円／3人以上3,000円）が自動計算されます<br/>
           ・キャンセルされた予約は「来院済みにする」ボタンが出ないようになっています（誤って成立扱いにならないようにするためです）<br/>
           ・付与されたOFF金額は、紹介者様の次回ご来院時のお会計で、スタッフが手動で割引を適用してください（現時点では会計画面への自動連携はしていません）
