@@ -111,6 +111,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
   <div><h1>💴 会計</h1><p>あんど整骨院 香里園駅前院</p></div>
   <div id="patientBadge" style="background:rgba(255,255,255,0.2);border-radius:8px;padding:6px 12px;font-size:13px;font-weight:700;"></div>
 </div>
+<div id="trainingBanner" style="display:none;background:#facc15;color:#78350f;text-align:center;padding:6px 10px;font-size:12px;font-weight:800;letter-spacing:1px;">🎓 トレーニング予約の会計です（分析・KPIには反映されません）</div>
 <div class="container" id="root">
   <div style="text-align:center;padding:60px;color:#9ca3af;">読み込み中...</div>
 </div>
@@ -666,6 +667,7 @@ async function save(){
       payment_date:booking.date,insurance_amount:parseInt(state.insuranceAmount)||0,jifee_amount:jifeeTotal,
       total_amount:total,payment_method:methodStr,staff_id:booking.staff_id,
       memo:state.jifeeItems.map(i=>i.label).join("・")||null,
+      is_training:!!booking.is_training,
     });
     if(result&&result.error){throw new Error(result.message||result.error||"保存に失敗しました");}
 
@@ -903,6 +905,7 @@ async function init(){
     const samePatient=await sbGet("bookings",`?patient_name=eq.${encodeURIComponent(booking.patient_name)}&order=date.asc`);
     visitCount=Array.isArray(samePatient)?samePatient.length:1;
     document.getElementById("patientBadge").textContent=booking.patient_name+" 様";
+    if(booking.is_training){ document.getElementById("trainingBanner").style.display="block"; }
     // レシート発行頻度の希望（問診票または過去の会計時の設定）を読み込む
     try{
       if(booking.phone){

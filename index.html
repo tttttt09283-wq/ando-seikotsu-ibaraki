@@ -7553,9 +7553,23 @@ function ReferralMgmtPanel({bookings,payments}){
   );
 }
 function Dashboard({user,onLogout}){
-  const [bookings,setBookings]=React.useState([]);
+  const [allBookings,setAllBookings]=React.useState([]);
   const [breaks,setBreaks]=React.useState([]);
   const [loading,setLoading]=React.useState(true);
+  // トレーニングモード：ONの間に作られた予約・会計は「練習用」として分析・KPIに一切カウントされない
+  const [trainingMode,setTrainingMode]=React.useState(()=>{
+    try{ return localStorage.getItem("ando_training_mode")==="1"; }catch(e){ return false; }
+  });
+  function toggleTrainingMode(){
+    setTrainingMode(prev=>{
+      const next=!prev;
+      try{ localStorage.setItem("ando_training_mode", next?"1":"0"); }catch(e){}
+      return next;
+    });
+  }
+  // 今の表示モードに応じて、実データと練習データを出し分ける
+  // （以降のコード全体で使う"bookings"は、常にこのフィルタ後の値。生データはallBookings/allPaymentsとして残す）
+  const bookings=React.useMemo(()=>allBookings.filter(b=>!!b.is_training===trainingMode),[allBookings,trainingMode]);
   const [view,setViewRaw]=React.useState(()=>{
     try{
       const saved=localStorage.getItem("ando_admin_last_view");
@@ -7617,7 +7631,8 @@ function Dashboard({user,onLogout}){
   const [resizeDeltaPx,setResizeDeltaPx]=React.useState(0); // 見た目の追従用（横方向の移動量）
   const resizeRef=React.useRef({startX:0,deltaPx:0});
   const [historyPatient,setHistoryPatient]=React.useState(null);
-  const [payments,setPayments]=React.useState([]);
+  const [allPayments,setAllPayments]=React.useState([]);
+  const payments=React.useMemo(()=>allPayments.filter(p=>!!p.is_training===trainingMode),[allPayments,trainingMode]);
   const [businessHours,setBusinessHours]=React.useState([]);
   const [closures,setClosures]=React.useState([]);
   const [stores,setStores]=React.useState([]);
@@ -7656,7 +7671,7 @@ function Dashboard({user,onLogout}){
   async function fetchAll(){
     try{
       const [b,br,py,st,ws,cs,mn,dov]=await Promise.all([sb.select("bookings","?order=date.asc,time.asc"),sb.select("staff_breaks","?order=date.asc,time.asc"),sb.select("payments","?order=payment_date.desc"),sb.select("stores","?order=id.asc"),sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc"),sb.select("clinic_staff","?select=id,store_ids,allowed_menus,lane_count,name,email,password,role,color,initial,event_only"),sb.select("menus","?active=eq.true&order=display_order.asc,id.asc"),sb.select("staff_date_overrides","?order=date.asc")]);
-      setBookings(Array.isArray(b)?b:[]);setBreaks(Array.isArray(br)?br:[]);setPayments(Array.isArray(py)?py:[]);
+      setAllBookings(Array.isArray(b)?b:[]);setBreaks(Array.isArray(br)?br:[]);setAllPayments(Array.isArray(py)?py:[]);
       const storeList=Array.isArray(st)?st:[];
       setStores(storeList);
       setSelStoreId(prev=>prev!==null?prev:(storeList.length>0?storeList[0].id:1));
@@ -7832,13 +7847,13 @@ function Dashboard({user,onLogout}){
         if(!Array.isArray(result)||result.length===0){
           throw new Error((result&&result.message)||"更新に失敗しました（対象の予約が見つかりませんでした）");
         }
-        setBookings(prev=>prev.map(b=>b.id===editId?result[0]:b));
+        setAllBookings(prev=>prev.map(b=>b.id===editId?result[0]:b));
       }else{
-        const result=await sb.insert("bookings",form);
+        const result=await sb.insert("bookings",Object.assign({},form,{is_training:trainingMode}));
         if(!Array.isArray(result)||result.length===0){
           throw new Error((result&&result.message)||"登録に失敗しました");
         }
-        setBookings(prev=>[...prev,result[0]]);
+        setAllBookings(prev=>[...prev,result[0]]);
       }
       // 回数券・フリーパスが選択されていればpassesテーブルへ反映（マイページの残数・期限表示用）
       await syncPassesFromMenus(form);
@@ -7849,7 +7864,7 @@ function Dashboard({user,onLogout}){
   }
   async function del(id){
     try{await sb.delete("bookings",id);}catch{}
-    setBookings(prev=>prev.filter(b=>b.id!==id));setDelConfirm(null);setView("calendar");showToast("削除しました","delete");
+    setAllBookings(prev=>prev.filter(b=>b.id!==id));setDelConfirm(null);setView("calendar");showToast("削除しました","delete");
   }
   async function cancelBooking(reason,rebookInfo){
     if(!cancelModalBooking) return;
@@ -7869,7 +7884,7 @@ function Dashboard({user,onLogout}){
       if(!Array.isArray(updated)||updated.length===0){
         throw new Error("対象の予約が見つからず、キャンセルが保存されませんでした。");
       }
-      setBookings(prev=>prev.map(b=>b.id===cancelModalBooking.id?updated[0]:b));
+      setAllBookings(prev=>prev.map(b=>b.id===cancelModalBooking.id?updated[0]:b));
 
       // 「この場で次回予約も作成する」が選ばれていれば、続けて新しい予約を登録する
       let rebookOk=false;
@@ -7891,7 +7906,7 @@ function Dashboard({user,onLogout}){
           };
           const rebookResult=await sb.insert("bookings",newBookingData);
           if(Array.isArray(rebookResult)&&rebookResult.length>0){
-            setBookings(prev=>[...prev,rebookResult[0]]);
+            setAllBookings(prev=>[...prev,rebookResult[0]]);
             rebookOk=true;
           }
         }catch(e){
@@ -7924,7 +7939,7 @@ function Dashboard({user,onLogout}){
       if(!Array.isArray(updated)||updated.length===0){
         throw new Error("対象の予約が見つからず、復元が保存されませんでした。");
       }
-      setBookings(prev=>prev.map(b=>b.id===id?updated[0]:b));
+      setAllBookings(prev=>prev.map(b=>b.id===id?updated[0]:b));
       showToast("予約に戻しました");
     }catch(e){
       alert("復元に失敗しました：\n"+(e.message||"不明なエラー"));
@@ -7947,7 +7962,7 @@ function Dashboard({user,onLogout}){
       if(!Array.isArray(deleted)||deleted.length===0){
         throw new Error("対象の予約が見つからず、削除できませんでした。");
       }
-      setBookings(prev=>prev.filter(b=>b.id!==id));
+      setAllBookings(prev=>prev.filter(b=>b.id!==id));
       showToast("キャンセル履歴から削除しました");
     }catch(e){
       alert("削除に失敗しました：\n"+(e.message||"不明なエラー"));
@@ -7990,7 +8005,7 @@ function Dashboard({user,onLogout}){
     try{
       const result=await sb.update("bookings",booking.id,{date:newDate,time:newTime,staff_id:chosen.id});
       if(Array.isArray(result)&&result.length>0){
-        setBookings(prev=>prev.map(b=>b.id===booking.id?result[0]:b));
+        setAllBookings(prev=>prev.map(b=>b.id===booking.id?result[0]:b));
         showToast("予約を"+newDate+" "+newTime+"（"+chosen.name+"）に移動しました");
       }
     }catch(e){
@@ -8007,7 +8022,7 @@ function Dashboard({user,onLogout}){
     try{
       const result=await sb.update("bookings",booking.id,{staff_id:newStaffId});
       if(Array.isArray(result)&&result.length>0){
-        setBookings(prev=>prev.map(b=>b.id===booking.id?result[0]:b));
+        setAllBookings(prev=>prev.map(b=>b.id===booking.id?result[0]:b));
         showToast("担当スタッフを変更しました");
       }
     }catch(e){
@@ -8038,7 +8053,7 @@ function Dashboard({user,onLogout}){
       if(!Array.isArray(result)||result.length===0){
         throw new Error((result&&result.message)||"移動に失敗しました");
       }
-      setBookings(prev=>prev.map(b=>b.id===booking.id?result[0]:b));
+      setAllBookings(prev=>prev.map(b=>b.id===booking.id?result[0]:b));
       showToast("予約を移動しました");
     }catch(e){
       alert("移動に失敗しました："+(e.message||"不明なエラー"));
@@ -8065,7 +8080,7 @@ function Dashboard({user,onLogout}){
       if(!Array.isArray(result)||result.length===0){
         throw new Error((result&&result.message)||"時間の変更に失敗しました");
       }
-      setBookings(prev=>prev.map(b=>b.id===booking.id?result[0]:b));
+      setAllBookings(prev=>prev.map(b=>b.id===booking.id?result[0]:b));
       showToast(`対応時間を${clamped}分に変更しました`);
     }catch(e){
       alert("時間の変更に失敗しました："+(e.message||"不明なエラー"));
@@ -8241,6 +8256,10 @@ function Dashboard({user,onLogout}){
               </div>
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <button onClick={toggleTrainingMode} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 12px",borderRadius:20,border:"1.5px solid "+(trainingMode?"#facc15":"rgba(255,255,255,.25)"),background:trainingMode?"#facc15":"rgba(255,255,255,.1)",cursor:"pointer",fontFamily:"inherit"}}>
+                <span style={{fontSize:14}}>🎓</span>
+                <span style={{fontSize:12,fontWeight:800,color:trainingMode?"#78350f":"rgba(255,255,255,.85)"}}>{trainingMode?"トレーニング中":"トレーニングモード"}</span>
+              </button>
               <div style={{position:"relative"}}>
                 <button onClick={()=>setShowMenu(v=>!v)} className="btn btn-icon" style={{display:"flex",alignItems:"center",gap:6}}>
                   <div style={{width:24,height:24,borderRadius:"50%",background:user.color,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:12,color:"white",boxShadow:`0 0 0 2px rgba(255,255,255,.3)`}}>{user.initial}</div>
@@ -8257,6 +8276,13 @@ function Dashboard({user,onLogout}){
           </div>
         </div>
       </div>
+
+      {/* トレーニングモード中は、常に目立つバナーを出して間違い防止する */}
+      {trainingMode&&(
+        <div style={{background:"#facc15",color:"#78350f",textAlign:"center",padding:"6px 10px",fontSize:12,fontWeight:800,letterSpacing:1}}>
+          🎓 トレーニングモード中：ここで作成した予約・会計は練習用として扱われ、分析・KPIには一切カウントされません
+        </div>
+      )}
 
       {/* メインレイアウト：サイドバー＋コンテンツ */}
       <div style={{display:"flex",minHeight:"calc(100vh - 68px)"}} onClick={()=>setShowMenu(false)}>
@@ -8774,7 +8800,7 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
                 try{
                   const result=await sb.update("bookings",b.id,{memo:val||null});
                   if(Array.isArray(result)&&result.length>0){
-                    setBookings(prev=>prev.map(x=>x.id===b.id?result[0]:x));
+                    setAllBookings(prev=>prev.map(x=>x.id===b.id?result[0]:x));
                     setBookingPopup(prev=>prev?{...prev,booking:{...prev.booking,memo:val}}:prev);
                     showToast("メモを保存しました");
                   }
