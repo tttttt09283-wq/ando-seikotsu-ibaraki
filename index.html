@@ -400,6 +400,11 @@ function getWeekDates(base){
   return Array.from({length:7},(_,i)=>{const d=new Date(mon);d.setDate(mon.getDate()+i);return d;});
 }
 function toMin(t){const[h,m]=t.split(":").map(Number);return h*60+m;}
+function addMinutesToTime(t,mins){
+  const total=toMin(t)+mins;
+  const h=Math.floor(total/60),m=total%60;
+  return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
+}
 function overlaps(a,b){
   const as=toMin(a.time),ae=as+(a.duration||DURATION[a.menu]||30),bs=toMin(b.time),be=bs+(b.duration||DURATION[b.menu]||30);
   return as<be&&bs<ae;
@@ -690,23 +695,21 @@ function LoginScreen({onLogin}){
 function BreakModal({onClose,bookings,breaks,setBreaks}){
   const [selDate,setSelDate]=React.useState(fmtDate(today));
   const [selStaff,setSelStaff]=React.useState(1);
-  const [selTimes,setSelTimes]=React.useState([]);
+  const [selStartTime,setSelStartTime]=React.useState("");
+  const [selDuration,setSelDuration]=React.useState(30);
   const [reason,setReason]=React.useState("休憩");
   const [saving,setSaving]=React.useState(false);
   const [toast,setToast]=React.useState("");
   const todayBreaks=breaks.filter(b=>b.date===selDate);
+  const DURATION_OPTIONS_BREAK=Array.from({length:12},(_,i)=>(i+1)*10); // 10分刻みで10〜120分
   async function addBreak(){
-    if(selTimes.length===0){setToast("時間帯を選択してください");setTimeout(()=>setToast(""),2500);return;}
+    if(!selStartTime){setToast("開始時刻を選択してください");setTimeout(()=>setToast(""),2500);return;}
     setSaving(true);
     try{
-      const newBreaks=[];
-      for(const t of selTimes){
-        const data=await sb.insert("staff_breaks",{staff_id:selStaff,date:selDate,time:t,reason});
-        if(Array.isArray(data)&&data.length>0)newBreaks.push(...data);
-        else newBreaks.push({id:Date.now()+Math.random(),staff_id:selStaff,date:selDate,time:t,reason});
-      }
-      setBreaks(prev=>[...prev,...newBreaks]);setSelTimes([]);
-      setToast(selTimes.length+"件登録しました");setTimeout(()=>setToast(""),2500);
+      const data=await sb.insert("staff_breaks",{staff_id:selStaff,date:selDate,time:selStartTime,duration:selDuration,reason});
+      const newBreak=(Array.isArray(data)&&data.length>0)?data[0]:{id:Date.now()+Math.random(),staff_id:selStaff,date:selDate,time:selStartTime,duration:selDuration,reason};
+      setBreaks(prev=>[...prev,newBreak]);setSelStartTime("");
+      setToast("休憩を登録しました");setTimeout(()=>setToast(""),2500);
     }catch(e){setToast("エラー");setTimeout(()=>setToast(""),3000);}
     setSaving(false);
   }
@@ -738,13 +741,22 @@ function BreakModal({onClose,bookings,breaks,setBreaks}){
                 {STAFF_ACCOUNTS.map(s=>(<button key={s.id} onClick={()=>setSelStaff(s.id)} className="btn" style={{background:selStaff===s.id?s.color:"white",color:selStaff===s.id?"white":"#374151",border:`2px solid ${s.color}`,borderRadius:20,padding:"5px 12px",fontSize:12,boxShadow:selStaff===s.id?`0 2px 8px ${s.color}66`:"none"}}>{s.name}</button>))}
               </div>
             </div>
-            <div className="form-group">
-              <label className="form-label">時間帯（複数選択可）</label>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:5}}>
-                {SLOTS.map(t=>{const isSel=selTimes.includes(t);return <button key={t} onClick={()=>setSelTimes(prev=>prev.includes(t)?prev.filter(x=>x!==t):[...prev,t])} className="btn" style={{padding:"7px 4px",borderRadius:7,border:`2px solid ${isSel?"#1e3a5f":"#e2e8f0"}`,background:isSel?"#1e3a5f":"white",color:isSel?"white":"#374151",fontSize:12,fontWeight:isSel?700:400,boxShadow:isSel?"0 2px 6px rgba(30,58,95,.3)":"none"}}>{t}</button>;})}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <div className="form-group">
+                <label className="form-label">開始時刻</label>
+                <select className="form-input" value={selStartTime} onChange={e=>setSelStartTime(e.target.value)}>
+                  <option value="">選択</option>
+                  {SLOTS.map(t=><option key={t} value={t}>{t}</option>)}
+                </select>
               </div>
-              {selTimes.length>0&&<div style={{marginTop:8,fontSize:12,color:"#2563eb",fontWeight:600}}>選択：{selTimes.join("　")}</div>}
+              <div className="form-group">
+                <label className="form-label">長さ</label>
+                <select className="form-input" value={selDuration} onChange={e=>setSelDuration(Number(e.target.value))}>
+                  {DURATION_OPTIONS_BREAK.map(d=><option key={d} value={d}>{d}分</option>)}
+                </select>
+              </div>
             </div>
+            {selStartTime&&<div style={{marginTop:-4,marginBottom:10,fontSize:12,color:"#2563eb",fontWeight:600}}>{selStartTime}　〜　{addMinutesToTime(selStartTime,selDuration)}（{selDuration}分間）</div>}
             <div className="form-group" style={{marginBottom:14}}>
               <label className="form-label">理由</label>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -761,7 +773,7 @@ function BreakModal({onClose,bookings,breaks,setBreaks}){
                 <div style={{width:28,height:28,borderRadius:"50%",background:s.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:12,boxShadow:`0 2px 6px ${s.color}66`}}>{s.initial}</div>
                 <div style={{flex:1}}>
                   <div style={{fontWeight:700,fontSize:13,color:"#1e3a5f"}}>{s.name}</div>
-                  <div style={{fontSize:12,color:"#6b7280"}}>{b.time}　{b.reason}</div>
+                  <div style={{fontSize:12,color:"#6b7280"}}>{b.time}〜{addMinutesToTime(b.time,b.duration||10)}（{b.duration||10}分）　{b.reason}</div>
                 </div>
                 <button onClick={()=>delBreak(b.id)} className="btn btn-danger btn-xs">削除</button>
               </div>
@@ -7552,6 +7564,169 @@ function ReferralMgmtPanel({bookings,payments}){
     </div>
   );
 }
+function AttendancePanel({currentUser,isAdmin}){
+  const [records,setRecords]=React.useState([]);
+  const [loading,setLoading]=React.useState(true);
+  const [selMonth,setSelMonth]=React.useState(()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
+  const [saving,setSaving]=React.useState(false);
+  const todayStrLocal=fmtDate(new Date());
+
+  function fetchRecords(){
+    setLoading(true);
+    sb.select("attendance_records","?order=date.desc,clock_in.desc").then(rows=>{
+      setRecords(Array.isArray(rows)?rows:[]);
+      setLoading(false);
+    }).catch(()=>setLoading(false));
+  }
+  React.useEffect(()=>{ fetchRecords(); },[]);
+
+  const myOpenRecord=records.find(r=>r.staff_id===currentUser.id&&r.date===todayStrLocal&&r.clock_in&&!r.clock_out);
+  const myTodayRecords=records.filter(r=>r.staff_id===currentUser.id&&r.date===todayStrLocal);
+
+  async function clockIn(){
+    setSaving(true);
+    try{
+      await sb.insert("attendance_records",{staff_id:currentUser.id,date:todayStrLocal,clock_in:new Date().toISOString()});
+      fetchRecords();
+    }catch(e){}
+    setSaving(false);
+  }
+  async function clockOut(){
+    if(!myOpenRecord) return;
+    setSaving(true);
+    try{
+      await sb.update("attendance_records",myOpenRecord.id,{clock_out:new Date().toISOString()});
+      fetchRecords();
+    }catch(e){}
+    setSaving(false);
+  }
+
+  function fmtTime(iso){
+    if(!iso) return"—";
+    const d=new Date(iso);
+    return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+  }
+  function hoursOf(r){
+    if(!r.clock_in||!r.clock_out) return null;
+    return (new Date(r.clock_out)-new Date(r.clock_in))/3600000;
+  }
+
+  const monthRecords=records.filter(r=>r.date&&r.date.slice(0,7)===selMonth&&(isAdmin||r.staff_id===currentUser.id));
+
+  // スタッフ別の月間合計時間
+  const totalsByStaff={};
+  monthRecords.forEach(r=>{
+    const h=hoursOf(r);
+    if(h==null) return;
+    if(!totalsByStaff[r.staff_id]) totalsByStaff[r.staff_id]=0;
+    totalsByStaff[r.staff_id]+=h;
+  });
+
+  function toCSV(rows,headers){
+    const esc=v=>{ const s=(v==null?"":String(v)); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
+    return[headers.map(esc).join(","),...rows.map(r=>r.map(esc).join(","))].join("\r\n");
+  }
+  function downloadCSV(filename,csv){
+    const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;a.download=filename;document.body.appendChild(a);a.click();
+    document.body.removeChild(a);URL.revokeObjectURL(url);
+  }
+  function exportCSV(){
+    const headers=["スタッフ","日付","出勤","退勤","勤務時間"];
+    const sorted=[...monthRecords].sort((a,b)=>a.date.localeCompare(b.date)||(a.staff_id-b.staff_id));
+    const rows=sorted.map(r=>{
+      const s=STAFF_ACCOUNTS.find(x=>x.id===r.staff_id)||{name:"不明"};
+      const h=hoursOf(r);
+      return[s.name,r.date,fmtTime(r.clock_in),fmtTime(r.clock_out),h!=null?h.toFixed(2):""];
+    });
+    downloadCSV("勤怠記録_"+selMonth+".csv",toCSV(rows,headers));
+  }
+
+  return(
+    <div style={{maxWidth:1100,margin:"0 auto"}}>
+      <div className="card" style={{marginBottom:14,padding:"18px 20px",textAlign:"center"}}>
+        <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:4}}>⏰ 本日の打刻（{currentUser.name}）</div>
+        <div style={{fontSize:13,color:"#94a3b8",marginBottom:14}}>{todayStrLocal}</div>
+        {myTodayRecords.length>0&&(
+          <div style={{marginBottom:14,display:"flex",flexDirection:"column",gap:6,maxWidth:320,marginLeft:"auto",marginRight:"auto"}}>
+            {myTodayRecords.map(r=>(
+              <div key={r.id} style={{display:"flex",justifyContent:"space-between",background:"#f8fafc",borderRadius:8,padding:"8px 14px",fontSize:13}}>
+                <span style={{fontWeight:700,color:"#1e293b"}}>出勤 {fmtTime(r.clock_in)}</span>
+                <span style={{fontWeight:700,color:r.clock_out?"#1e293b":"#d97706"}}>{r.clock_out?"退勤 "+fmtTime(r.clock_out):"勤務中"}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {myOpenRecord?(
+          <button onClick={clockOut} disabled={saving} style={{padding:"16px 40px",background:"linear-gradient(135deg,#dc2626,#991b1b)",color:"white",border:"none",borderRadius:14,fontSize:16,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px rgba(220,38,38,.3)"}}>
+            {saving?"処理中...":"🔴 退勤する"}
+          </button>
+        ):(
+          <button onClick={clockIn} disabled={saving} style={{padding:"16px 40px",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:14,fontSize:16,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px rgba(5,150,105,.3)"}}>
+            {saving?"処理中...":"🟢 出勤する"}
+          </button>
+        )}
+      </div>
+
+      <div className="card" style={{marginBottom:14,padding:"14px 16px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+          <div>
+            <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:8}}>📊 月間勤務時間集計{isAdmin?"（全スタッフ）":"（自分のみ）"}</div>
+            <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)}
+              style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700}}/>
+          </div>
+          <button onClick={exportCSV} style={{padding:"9px 16px",background:"#059669",color:"white",border:"none",borderRadius:8,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>⬇ CSVダウンロード</button>
+        </div>
+        {isAdmin&&(
+          <div style={{display:"flex",flexWrap:"wrap",gap:10,marginTop:14}}>
+            {STAFF_ACCOUNTS.map(s=>(
+              <div key={s.id} style={{background:"#f8fafc",borderRadius:10,padding:"10px 16px",minWidth:130}}>
+                <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>{s.name}</div>
+                <div style={{fontSize:18,fontWeight:800,color:s.color}}>{(totalsByStaff[s.id]||0).toFixed(1)}<span style={{fontSize:11,color:"#94a3b8"}}>時間</span></div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>打刻履歴（{monthRecords.length}件）</div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:600}}>
+            <thead>
+              <tr style={{background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}>
+                {(isAdmin?["スタッフ","日付","出勤","退勤","勤務時間"]:["日付","出勤","退勤","勤務時間"]).map(h=>(
+                  <th key={h} style={{padding:"8px 10px",textAlign:"left",fontWeight:800,color:"#64748b"}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading?(
+                <tr><td colSpan={5} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>読み込み中...</td></tr>
+              ):monthRecords.length===0?(
+                <tr><td colSpan={5} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>対象データがありません</td></tr>
+              ):[...monthRecords].sort((a,b)=>b.date.localeCompare(a.date)).map(r=>{
+                const s=STAFF_ACCOUNTS.find(x=>x.id===r.staff_id)||{name:"不明",color:"#888"};
+                const h=hoursOf(r);
+                return(
+                  <tr key={r.id} style={{borderBottom:"1px solid #f1f5f9"}}>
+                    {isAdmin&&<td style={{padding:"8px 10px",fontWeight:700,color:s.color}}>{s.name}</td>}
+                    <td style={{padding:"8px 10px"}}>{r.date}</td>
+                    <td style={{padding:"8px 10px"}}>{fmtTime(r.clock_in)}</td>
+                    <td style={{padding:"8px 10px"}}>{r.clock_out?fmtTime(r.clock_out):<span style={{color:"#d97706",fontWeight:700}}>勤務中</span>}</td>
+                    <td style={{padding:"8px 10px",fontWeight:700}}>{h!=null?h.toFixed(2)+"時間":"—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
 function Dashboard({user,onLogout}){
   const [allBookings,setAllBookings]=React.useState([]);
   const [breaks,setBreaks]=React.useState([]);
@@ -7628,6 +7803,8 @@ function Dashboard({user,onLogout}){
   const [dragPos,setDragPos]=React.useState({x:0,y:0,moved:false}); // 見た目の追従用（頻繁に変化する）
   const dragPosRef=React.useRef({x:0,y:0,startX:0,startY:0,moved:false});
   const [resizeBooking,setResizeBooking]=React.useState(null); // 右端ドラッグで時間調整中の予約
+  const [resizeBreak,setResizeBreak]=React.useState(null); // 右端ドラッグで長さ調整中の休憩
+  const [resizeBreakDeltaPx,setResizeBreakDeltaPx]=React.useState(0);
   const [resizeDeltaPx,setResizeDeltaPx]=React.useState(0); // 見た目の追従用（横方向の移動量）
   const resizeRef=React.useRef({startX:0,deltaPx:0});
   const [historyPatient,setHistoryPatient]=React.useState(null);
@@ -8060,6 +8237,21 @@ function Dashboard({user,onLogout}){
     }
   }
 
+  async function attemptResizeBreak(br,newDuration){
+    const clamped=Math.max(10,Math.min(120,newDuration)); // 10分〜120分の範囲に収める
+    if(clamped===(br.duration||10)) return;
+    try{
+      const result=await sb.update("staff_breaks",br.id,{duration:clamped});
+      if(!Array.isArray(result)||result.length===0){
+        throw new Error((result&&result.message)||"長さの変更に失敗しました");
+      }
+      setBreaks(prev=>prev.map(b=>b.id===br.id?result[0]:b));
+      showToast(`休憩の長さを${clamped}分に変更しました`);
+    }catch(e){
+      showToast("長さの変更に失敗しました","delete");
+    }
+  }
+
   async function attemptResizeBooking(booking,newDuration){
     const clamped=Math.max(10,Math.min(240,newDuration)); // 10分〜4時間の範囲に収める
     if(clamped===(booking.duration||DURATION[booking.menu]||30)) return; // 変化なし
@@ -8178,6 +8370,39 @@ function Dashboard({user,onLogout}){
     };
   },[resizeBooking]);
 
+  // 休憩枠の右端をドラッグして長さを伸縮する
+  React.useEffect(()=>{
+    if(!resizeBreak) return;
+    function onMove(e){
+      const deltaPx=e.clientX-resizeRef.current.startX;
+      resizeRef.current.deltaPx=deltaPx;
+      setResizeBreakDeltaPx(deltaPx);
+    }
+    function onUp(e){
+      e.preventDefault();
+      e.stopPropagation();
+      suppressNextClick();
+      const br=resizeBreak;
+      const currentDuration=br.duration||10;
+      const headerW=100;
+      const screenW=Math.max(window.innerWidth-130-48,600);
+      const cellW=Math.max(Math.floor((screenW-headerW)/54),12);
+      const deltaMin=Math.round(resizeRef.current.deltaPx/cellW)*10;
+      attemptResizeBreak(br,currentDuration+deltaMin);
+      setResizeBreak(null);
+      setResizeBreakDeltaPx(0);
+    }
+    function onCancel(){ setResizeBreak(null); setResizeBreakDeltaPx(0); }
+    window.addEventListener("pointermove",onMove);
+    window.addEventListener("pointerup",onUp);
+    window.addEventListener("pointercancel",onCancel);
+    return()=>{
+      window.removeEventListener("pointermove",onMove);
+      window.removeEventListener("pointerup",onUp);
+      window.removeEventListener("pointercancel",onCancel);
+    };
+  },[resizeBreak]);
+
     const todayBreakCount=breaks.filter(b=>b.date===todayStr).length;
   const staffOffConflictsCount=React.useMemo(()=>{
     function isWorkingLocal(staffId,dateStr){
@@ -8227,6 +8452,7 @@ function Dashboard({user,onLogout}){
     ]},
     {id:"staff",label:"スタッフ",color:"#d97706",items:[
       {id:"staff_mgmt",label:"スタッフ・シフト管理",icon:"users-cog",special:""},
+      {id:"attendance",label:"勤怠管理",icon:"clock",special:""},
     ]},
     {id:"store",label:"店舗設定",color:"#0891b2",items:[
       {id:"store_mgmt",label:"店舗管理",icon:"store",special:""},
@@ -8593,11 +8819,27 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
                                   {totalLanes>1&&Array.from({length:totalLanes-1}).map((_,i)=>(
                                     <div key={`lane-${i}`} style={{position:"absolute",left:0,right:0,top:(i+1)*laneH,height:1,background:"#f1f5f9",pointerEvents:"none"}}/>
                                   ))}
-                                  {staffBreaks.map(br=>(
-                                    <div key={`br-${br.id}`} style={{position:"absolute",left:timeToX(br.time),top:4,bottom:4,width:CELL_W*3,background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1,pointerEvents:"none"}}>
-                                      <span style={{fontSize:9,color:"#94a3b8",fontWeight:600}}>{br.reason}</span>
+                                  {staffBreaks.map(br=>{
+                                    const isBeingResizedBr=resizeBreak&&resizeBreak.id===br.id;
+                                    const baseWBr=(br.duration||10)/10*CELL_W;
+                                    const liveWBr=isBeingResizedBr?Math.max(baseWBr+resizeBreakDeltaPx,CELL_W):baseWBr;
+                                    const liveDurBr=isBeingResizedBr?Math.max(10,(br.duration||10)+Math.round(resizeBreakDeltaPx/CELL_W)*10):(br.duration||10);
+                                    return(
+                                    <div key={`br-${br.id}`} style={{position:"absolute",left:timeToX(br.time),top:4,bottom:4,width:liveWBr,background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1,overflow:"hidden"}}>
+                                      <span style={{fontSize:9,color:"#94a3b8",fontWeight:600,pointerEvents:"none"}}>{br.reason}{isBeingResizedBr&&<span style={{marginLeft:2,fontWeight:800}}>（{liveDurBr}分）</span>}</span>
+                                      {isAdmin&&(
+                                        <div
+                                          onPointerDown={e=>{
+                                            e.stopPropagation();e.preventDefault();
+                                            resizeRef.current={startX:e.clientX,deltaPx:0};
+                                            setResizeBreak(br);setResizeBreakDeltaPx(0);
+                                          }}
+                                          style={{position:"absolute",right:0,top:0,bottom:0,width:8,cursor:"ew-resize",background:"rgba(148,163,184,.35)"}}
+                                        />
+                                      )}
                                     </div>
-                                  ))}
+                                    );
+                                  })}
                                   {staffBookings.map(b=>{
                                     const x=timeToX(b.time);const w=durationToW(b);const cnt=visitCounts[b.id]||1;
                                     const isPaid=paidBookingIds.has(b.id);
@@ -8686,6 +8928,7 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
 
           {/* スタッフ・シフト管理（統合） */}
           {view==="staff_mgmt"&&<StaffMgmtPanel currentUser={user} onShiftsSaved={fetchAll}/>}
+          {view==="attendance"&&<AttendancePanel currentUser={user} isAdmin={isAdmin}/>}
 
           {/* メニュー・コース管理 */}
           {view==="menu_mgmt"&&<MenuMgmtPanel/>}
