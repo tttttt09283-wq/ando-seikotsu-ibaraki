@@ -779,6 +779,7 @@ function App(){
     var e = {};
     if(!form.name.trim()) e.name = "お名前を入力してください";
     if(!form.phone.trim()) e.phone = "電話番号を入力してください";
+    if(!form.address.trim()) e.address = "ご住所を入力してください";
     setErrors(e);
     return Object.keys(e).length===0;
   }
@@ -1447,7 +1448,7 @@ function App(){
             {label:"お名前 *",key:"name",type:"text",ph:"山本 花子"},
             {label:"フリガナ",key:"nameKana",type:"text",ph:"ヤマモト ハナコ"},
             {label:"電話番号 *",key:"phone",type:"tel",ph:"090-0000-0000"},
-            {label:"ご住所（任意）",key:"address",type:"text",ph:"例：大阪府寝屋川市〇〇町1-2-3"}
+            {label:"ご住所 *",key:"address",type:"text",ph:"例：大阪府寝屋川市〇〇町1-2-3"}
           ].map(function(f){
             return React.createElement("div",{key:f.key,style:{marginBottom:14}},
               React.createElement("label",{style:H.label},f.label),
