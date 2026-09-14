@@ -7569,7 +7569,9 @@ function AttendancePanel({currentUser,isAdmin}){
   const [loading,setLoading]=React.useState(true);
   const [selMonth,setSelMonth]=React.useState(()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
   const [saving,setSaving]=React.useState(false);
+  const [selectedStaffId,setSelectedStaffId]=React.useState(currentUser.id); // 打刻する対象スタッフ（誰でも選べる）
   const todayStrLocal=fmtDate(new Date());
+  const selectedStaff=STAFF_ACCOUNTS.find(s=>s.id===selectedStaffId)||currentUser;
 
   function fetchRecords(){
     setLoading(true);
@@ -7580,13 +7582,13 @@ function AttendancePanel({currentUser,isAdmin}){
   }
   React.useEffect(()=>{ fetchRecords(); },[]);
 
-  const myOpenRecord=records.find(r=>r.staff_id===currentUser.id&&r.date===todayStrLocal&&r.clock_in&&!r.clock_out);
-  const myTodayRecords=records.filter(r=>r.staff_id===currentUser.id&&r.date===todayStrLocal);
+  const myOpenRecord=records.find(r=>r.staff_id===selectedStaffId&&r.date===todayStrLocal&&r.clock_in&&!r.clock_out);
+  const myTodayRecords=records.filter(r=>r.staff_id===selectedStaffId&&r.date===todayStrLocal);
 
   async function clockIn(){
     setSaving(true);
     try{
-      await sb.insert("attendance_records",{staff_id:currentUser.id,date:todayStrLocal,clock_in:new Date().toISOString()});
+      await sb.insert("attendance_records",{staff_id:selectedStaffId,date:todayStrLocal,clock_in:new Date().toISOString()});
       fetchRecords();
     }catch(e){}
     setSaving(false);
@@ -7611,7 +7613,7 @@ function AttendancePanel({currentUser,isAdmin}){
     return (new Date(r.clock_out)-new Date(r.clock_in))/3600000;
   }
 
-  const monthRecords=records.filter(r=>r.date&&r.date.slice(0,7)===selMonth&&(isAdmin||r.staff_id===currentUser.id));
+  const monthRecords=records.filter(r=>r.date&&r.date.slice(0,7)===selMonth);
 
   // スタッフ別の月間合計時間
   const totalsByStaff={};
@@ -7647,7 +7649,15 @@ function AttendancePanel({currentUser,isAdmin}){
   return(
     <div style={{maxWidth:1100,margin:"0 auto"}}>
       <div className="card" style={{marginBottom:14,padding:"18px 20px",textAlign:"center"}}>
-        <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:4}}>⏰ 本日の打刻（{currentUser.name}）</div>
+        <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:10}}>⏰ 出退勤の打刻</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"center",marginBottom:16}}>
+          {STAFF_ACCOUNTS.map(s=>(
+            <button key={s.id} onClick={()=>setSelectedStaffId(s.id)} style={{padding:"6px 14px",borderRadius:20,border:"2px solid "+s.color,background:selectedStaffId===s.id?s.color:"white",color:selectedStaffId===s.id?"white":s.color,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",boxShadow:selectedStaffId===s.id?`0 2px 8px ${s.color}66`:"none"}}>
+              {s.name}
+            </button>
+          ))}
+        </div>
+        <div style={{fontWeight:800,fontSize:14,color:"#1e293b",marginBottom:2}}>{selectedStaff.name} さんの本日の打刻</div>
         <div style={{fontSize:13,color:"#94a3b8",marginBottom:14}}>{todayStrLocal}</div>
         {myTodayRecords.length>0&&(
           <div style={{marginBottom:14,display:"flex",flexDirection:"column",gap:6,maxWidth:320,marginLeft:"auto",marginRight:"auto"}}>
@@ -7673,22 +7683,20 @@ function AttendancePanel({currentUser,isAdmin}){
       <div className="card" style={{marginBottom:14,padding:"14px 16px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
           <div>
-            <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:8}}>📊 月間勤務時間集計{isAdmin?"（全スタッフ）":"（自分のみ）"}</div>
+            <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:8}}>📊 月間勤務時間集計（全スタッフ）</div>
             <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)}
               style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700}}/>
           </div>
           <button onClick={exportCSV} style={{padding:"9px 16px",background:"#059669",color:"white",border:"none",borderRadius:8,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>⬇ CSVダウンロード</button>
         </div>
-        {isAdmin&&(
-          <div style={{display:"flex",flexWrap:"wrap",gap:10,marginTop:14}}>
-            {STAFF_ACCOUNTS.map(s=>(
-              <div key={s.id} style={{background:"#f8fafc",borderRadius:10,padding:"10px 16px",minWidth:130}}>
-                <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>{s.name}</div>
-                <div style={{fontSize:18,fontWeight:800,color:s.color}}>{(totalsByStaff[s.id]||0).toFixed(1)}<span style={{fontSize:11,color:"#94a3b8"}}>時間</span></div>
-              </div>
-            ))}
-          </div>
-        )}
+        <div style={{display:"flex",flexWrap:"wrap",gap:10,marginTop:14}}>
+          {STAFF_ACCOUNTS.map(s=>(
+            <div key={s.id} style={{background:"#f8fafc",borderRadius:10,padding:"10px 16px",minWidth:130}}>
+              <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>{s.name}</div>
+              <div style={{fontSize:18,fontWeight:800,color:s.color}}>{(totalsByStaff[s.id]||0).toFixed(1)}<span style={{fontSize:11,color:"#94a3b8"}}>時間</span></div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="card">
@@ -7697,7 +7705,7 @@ function AttendancePanel({currentUser,isAdmin}){
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:600}}>
             <thead>
               <tr style={{background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}>
-                {(isAdmin?["スタッフ","日付","出勤","退勤","勤務時間"]:["日付","出勤","退勤","勤務時間"]).map(h=>(
+                {["スタッフ","日付","出勤","退勤","勤務時間"].map(h=>(
                   <th key={h} style={{padding:"8px 10px",textAlign:"left",fontWeight:800,color:"#64748b"}}>{h}</th>
                 ))}
               </tr>
@@ -7712,7 +7720,7 @@ function AttendancePanel({currentUser,isAdmin}){
                 const h=hoursOf(r);
                 return(
                   <tr key={r.id} style={{borderBottom:"1px solid #f1f5f9"}}>
-                    {isAdmin&&<td style={{padding:"8px 10px",fontWeight:700,color:s.color}}>{s.name}</td>}
+                    <td style={{padding:"8px 10px",fontWeight:700,color:s.color}}>{s.name}</td>
                     <td style={{padding:"8px 10px"}}>{r.date}</td>
                     <td style={{padding:"8px 10px"}}>{fmtTime(r.clock_in)}</td>
                     <td style={{padding:"8px 10px"}}>{r.clock_out?fmtTime(r.clock_out):<span style={{color:"#d97706",fontWeight:700}}>勤務中</span>}</td>
