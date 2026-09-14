@@ -1026,23 +1026,6 @@ function App(){
     });
   }
 
-  // テスト用ワンタップ予約
-  function quickTest(){
-    var today=new Date();
-    var d=new Date(today);
-    d.setDate(d.getDate()+1);
-    setSelDate(d);
-    setSelTime("10:00");
-    setForm({
-      name:"テスト 花子",nameKana:"テスト ハナコ",phone:"090-1234-5678",
-      bodyParts:["腰部","肩"],injuryCause:"日常生活中のケガ",injuryCauseDetail:"",
-      painWhen:"1週間以内",painLevel:"5",symptoms:["痛み","こり・張り"],
-      otherClinic:"受診していない",otherClinicName:"",medicalHistory:"なし",
-      wantContinue:"しっかり根本から改善したい",wantContinueOther:"",howKnow:"Instagram",howKnowOther:"",
-      lineNotify:!!lineUserId
-    });
-    setStep(3);
-  }
 
   var H = {
     label:{display:"block",fontSize:13,fontWeight:700,color:"#444",marginBottom:6},
@@ -1412,12 +1395,6 @@ function App(){
             )
           ):null
         ),
-
-        // テスト用ワンタップボタン
-        React.createElement("button",{
-          onClick:quickTest,
-          style:{marginTop:12,width:"100%",padding:"10px",borderRadius:10,border:"2px dashed #d97706",background:"#fef9ec",color:"#92400e",fontSize:13,fontWeight:700,cursor:"pointer"}
-        },"🧪 テスト用：ワンタップで確認画面へ")
       ):null,
 
       // ===== STEP 0 用：画面下部に固定される操作バー（スクロールしなくても常に押せる）=====
