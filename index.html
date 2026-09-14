@@ -7746,44 +7746,6 @@ function Dashboard({user,onLogout}){
     }).catch(()=>{});
   },[selStoreId]);
 
-  async function insertTestBooking(){
-    const today=new Date();
-    const dateStr=fmtDate(today);
-    const h=today.getHours();
-    const nextHour=h>=18?9:h+1;
-    const timeStr=`${String(nextHour).padStart(2,"0")}:00`;
-    // LINEのuser_idを入力してもらう（マイページ確認用）
-    const lineId=window.prompt("LINEのuser_idを入力してください（マイページ確認用・不要なら空のままOK）","");
-    const testData={
-      patient_name:"テスト 太郎",
-      phone:"090-0000-0000",
-      staff_id:user.id||1,
-      date:dateStr,
-      time:timeStr,
-      menu:"無料施術体験会（約60分・カウンセリング込み）",
-      store_id:selStoreId,
-      line_notify:!!lineId,
-      line_user_id:lineId||null,
-      reminded:false,
-      body_parts:"腰部",
-      injury_cause:"日常生活中のケガ",
-      pain_when:"1週間以内",
-      pain_level:"5",
-      symptoms:"痛み・こり・張り",
-      want_continue:"はい、通いたいです",
-      how_know:"Instagram",
-    };
-    try{
-      const result=await sb.insert("bookings",testData);
-      const newBooking=Array.isArray(result)&&result.length>0?result[0]:{...testData,id:Date.now()};
-      setBookings(prev=>[...prev,newBooking]);
-      showToast(`✅ テスト予約を追加しました（${dateStr} ${timeStr}）`);
-      setView("calendar");
-    }catch(e){
-      showToast("❌ テスト予約の追加に失敗しました","delete");
-    }
-  }
-
   React.useEffect(()=>{fetchAll();const t=setInterval(fetchAll,30000);return()=>clearInterval(t);},[]);
 
   function showToast(msg,type="success"){setToast({msg,type});setTimeout(()=>setToast(null),3000);}
@@ -8365,13 +8327,6 @@ function Dashboard({user,onLogout}){
             <button className="sidebar-btn" onClick={()=>setShowBreakModal(true)}>
               休憩管理
             </button>
-
-            {/* テスト予約（管理者のみ） */}
-            {isAdmin&&(
-              <button onClick={insertTestBooking} className="sidebar-btn" style={{color:"#d97706",fontWeight:700}}>
-                テスト予約
-              </button>
-            )}
           </div>
 
           {/* 下部：同期・ログアウト */}
