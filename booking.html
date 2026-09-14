@@ -90,6 +90,11 @@ const BODY_PARTS = [
 ];
 // 左右の区別がある部位（選択すると「右・左・両方」を選べるようにする）
 const LATERAL_PARTS = ["肩","上腕","肘","前腕","手首・手","大腿（太もも）","膝","下腿（すね・ふくらはぎ）","足首・足"];
+// 主症状（負傷部位）とは別の、鍼灸・柔整で対応できそうなその他のお悩み（任意選択）
+const OTHER_CONCERNS = [
+  "頭痛","めまい","耳鳴り","自律神経の乱れ","内臓の不調",
+  "ダイエット・体型","むくみ","冷え性","巻き爪","外反母趾","その他"
+];
 const INJURY_CAUSES = [
   {label:"日常生活中のケガ",icon:"🏠",desc:"家事・歩行中など"},
   {label:"スポーツ中のケガ",icon:"⚽",desc:"運動・練習・試合中"},
@@ -361,7 +366,7 @@ function App(){
   var formState = useState({
     name:"",nameKana:"",phone:"",address:"",gender:"",age:"",referrerName:"",
     quickSymptom:"", // かんたん予約で必須にする「気になる症状」の自由記入欄
-    bodyParts:[],bodyPartsOther:"",bodyPartsSides:{},injuryCause:"",injuryCauseDetail:"",
+    bodyParts:[],bodyPartsOther:"",bodyPartsSides:{},otherConcerns:[],otherConcernsOther:"",injuryCause:"",injuryCauseDetail:"",
     painWhen:"",painLevel:"",symptoms:[],
     otherClinic:"",otherClinicName:"",medicalHistory:"",
     wantContinue:"",wantContinueOther:"",howKnow:"",howKnowOther:"",lineNotify:false,
@@ -717,6 +722,9 @@ function App(){
       return p;
     }).join("・");
   }
+  function formatOtherConcerns(){
+    return form.otherConcerns.map(function(c){return c==="その他"&&form.otherConcernsOther?"その他（"+form.otherConcernsOther+"）":c;}).join("・");
+  }
   function formatWantContinue(){
     return form.wantContinue==="その他"?"その他："+(form.wantContinueOther||""):form.wantContinue;
   }
@@ -882,6 +890,7 @@ function App(){
       booked_via_line: !!lineUserId, // LINE経由での予約かどうか（管理画面での目印用）
       reminded:false,
       body_parts:formatBodyParts(form.bodyParts,form.bodyPartsOther,form.bodyPartsSides),
+      other_concerns:formatOtherConcerns()||null,
       injury_cause:form.injuryCause,
       injury_cause_detail:form.injuryCauseDetail,
       pain_when:form.painWhen,
@@ -930,6 +939,7 @@ function App(){
         "📞 "+form.phone+"\n"+
         "📅 "+fmtDateJP(selDate)+" "+selTime+"\n"+
         "💬 気になる症状："+formatBodyParts(form.bodyParts,form.bodyPartsOther,form.bodyPartsSides)+
+        (formatOtherConcerns()?"\n🌿 その他気になること："+formatOtherConcerns():"")+
         (form.injuryCause?"\n⚡ 原因："+form.injuryCause:"")+
         (form.painWhen?"\n📅 いつから："+form.painWhen:"")+
         (form.wantContinue?"\n💭 継続意思："+formatWantContinue():"")+
@@ -977,7 +987,7 @@ function App(){
   function reset(){
     setStep(0); setSelDate(null); setSelTime(null);
     setSlotData({booked:[],breaks:[]});
-    setForm({name:"",nameKana:"",phone:"",gender:"",age:"",referrerName:"",bodyParts:[],bodyPartsOther:"",bodyPartsSides:{},injuryCause:"",injuryCauseDetail:"",painWhen:"",painLevel:"",symptoms:[],otherClinic:"",otherClinicName:"",medicalHistory:"",wantContinue:"",wantContinueOther:"",howKnow:"",howKnowOther:"",lineNotify:false});
+    setForm({name:"",nameKana:"",phone:"",gender:"",age:"",referrerName:"",bodyParts:[],bodyPartsOther:"",bodyPartsSides:{},otherConcerns:[],otherConcernsOther:"",injuryCause:"",injuryCauseDetail:"",painWhen:"",painLevel:"",symptoms:[],otherClinic:"",otherClinicName:"",medicalHistory:"",wantContinue:"",wantContinueOther:"",howKnow:"",howKnowOther:"",lineNotify:false});
     setDone(false); setBookingId(null); setMemo("");
   }
 
@@ -1111,6 +1121,7 @@ function App(){
         React.createElement("div",{style:{background:"#059669",color:"white",padding:"12px 16px",fontSize:13,fontWeight:700}},"🩺 ご入力いただいた問診内容"),
         [
           ["気になる症状",formatBodyParts(form.bodyParts,form.bodyPartsOther,form.bodyPartsSides)||"—"],
+          ["その他気になること",formatOtherConcerns()||"未記入（任意）"],
           ["負傷原因",form.injuryCause||"—"],
           ["いつから",form.painWhen||"—"],
           ["痛みの強さ",form.painLevel ? form.painLevel+"/10" : "—"],
@@ -1561,6 +1572,23 @@ function App(){
           errors.bodyParts?React.createElement("div",{style:{color:"#ef4444",fontSize:12,marginTop:6}},"⚠ "+errors.bodyParts):null
         ),
 
+        React.createElement("div",{style:H.sec},
+          React.createElement("div",{style:H.secT},"🌿 その他気になること（任意）"),
+          React.createElement("div",{style:{fontSize:11,color:"#9ca3af",marginBottom:8}},"頭痛・めまい・冷え性など、上記の主症状とは別にお悩みがあれば教えてください"),
+          React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:6}},
+            OTHER_CONCERNS.map(function(c){
+              return chip(form.otherConcerns.indexOf(c)>-1, c, function(){toggleArr("otherConcerns",c);});
+            })
+          ),
+          form.otherConcerns.indexOf("その他")>-1?React.createElement("input",{
+            type:"text",
+            value:form.otherConcernsOther,
+            placeholder:"具体的にご記入ください",
+            onChange:function(e){setF("otherConcernsOther",e.target.value);},
+            style:Object.assign({},H.input,{marginTop:10})
+          }):null
+        ),
+
         !detailFormOpen?React.createElement("div",{style:{background:"linear-gradient(135deg,#eff6ff,#dbeafe)",border:"1.5px solid #93c5fd",borderRadius:14,padding:"18px 18px 16px",marginBottom:20,boxShadow:"0 2px 10px rgba(59,130,246,.12)"}},
           React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:10}},
             React.createElement("span",{style:{fontSize:24}},"📋"),
@@ -1722,6 +1750,7 @@ function App(){
           React.createElement("div",{style:{background:"#059669",color:"white",padding:"12px 16px",fontSize:13,fontWeight:700}},"🩺 症状・問診情報"),
           [
             ["気になる症状",formatBodyParts(form.bodyParts,form.bodyPartsOther,form.bodyPartsSides)||"—"],
+          ["その他気になること",formatOtherConcerns()||"未記入（任意）"],
             ["負傷原因",form.injuryCause||"未記入（任意）"],
             ["いつから",form.painWhen||"未記入（任意）"],
             ["継続意思",formatWantContinue()||"未記入（任意）"],
