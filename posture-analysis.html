@@ -155,9 +155,18 @@ function toggleMirror(){
   render();
 }
 
-function captureFromVideo(){
+function captureFromVideo(retryCount){
+  retryCount=retryCount||0;
   const video=document.getElementById("camVideo");
-  if(!video||!video.videoWidth) return;
+  if(!video||!video.videoWidth){
+    // iPad等でカメラ映像の準備に時間がかかることがあるため、最大1.5秒（150ms×10回）まで待って再試行する
+    if(retryCount<10){
+      setTimeout(function(){captureFromVideo(retryCount+1);},150);
+    }else{
+      showToast("カメラの準備ができていません。少し待ってからもう一度お試しください。");
+    }
+    return;
+  }
   const canvas=document.createElement("canvas");
   canvas.width=video.videoWidth;canvas.height=video.videoHeight;
   const ctx=canvas.getContext("2d");
@@ -373,7 +382,9 @@ function computeSideAnalysis(lm){
     if(headOffset>0&&sev){
       findings.push({part:"頭部",ok:false,severity:sev,
         desc:"頭が理想の位置（くるぶしの真上）より前に出ています（頭部前方位）。",
-        impact:"首や肩の筋肉が常に頭の重さを支え続けることになり、肩こり・首の張り・頭痛につながりやすい状態です。"});
+        impact:"首や肩の筋肉が常に頭の重さを支え続けることになり、負担が蓄積しやすい状態です。",
+        muscles:["僧帽筋（上部）","肩甲挙筋","後頭下筋群"],
+        symptoms:["肩こり","首の張り","緊張型頭痛","眼精疲労"]});
     }else{
       findings.push({part:"頭部",ok:true,desc:"くるぶしの真上に近く、理想的な位置に収まっています。"});
     }
@@ -383,7 +394,9 @@ function computeSideAnalysis(lm){
     if(shoulderOffset>0&&sev){
       findings.push({part:"肩",ok:false,severity:sev,
         desc:"肩が理想の位置より前に出ています（巻き肩傾向）。",
-        impact:"胸の筋肉が縮こまり、背中側の筋肉が引き伸ばされた状態が続くため、猫背の助長や呼吸の浅さにつながりやすい状態です。"});
+        impact:"胸の筋肉が縮こまり、背中側の筋肉が引き伸ばされた状態が続きます。",
+        muscles:["大胸筋・小胸筋（縮こまる）","僧帽筋（中部・下部）・菱形筋（伸びて弱くなる）"],
+        symptoms:["猫背の助長","呼吸が浅くなる","肩甲骨まわりのこり","肩の可動域低下"]});
     }else{
       findings.push({part:"肩",ok:true,desc:"理想的な位置に近く、良好な範囲内です。"});
     }
@@ -394,11 +407,15 @@ function computeSideAnalysis(lm){
     if(hipOffset>0&&sevF){
       findings.push({part:"骨盤",ok:false,severity:sevF,
         desc:"骨盤が前に傾いています（反り腰傾向）。",
-        impact:"腰の反りが強くなることで腰椎まわりに負担が集中し、腰痛の原因になりやすい状態です。"});
+        impact:"腰の反りが強くなることで腰椎まわりに負担が集中しやすい状態です。",
+        muscles:["腸腰筋・大腿直筋（縮こまる）","腹筋群・大殿筋（伸びて弱くなる）"],
+        symptoms:["腰痛","反り腰による疲労感","股関節前面の張り"]});
     }else if(hipOffset<0&&sevB){
       findings.push({part:"骨盤",ok:false,severity:sevB,
         desc:"骨盤が後ろに傾いています（骨盤後傾傾向）。",
-        impact:"お尻や太もも裏の張り、猫背の助長につながりやすく、腰全体が丸まった姿勢になりやすい状態です。"});
+        impact:"腰全体が丸まりやすく、お尻や太もも裏に負担が集中しやすい状態です。",
+        muscles:["ハムストリングス（縮こまる）","腸腰筋（伸びて弱くなる）"],
+        symptoms:["お尻・太もも裏の張り","猫背の助長","腰の重だるさ"]});
     }else{
       findings.push({part:"骨盤",ok:true,desc:"前後の傾きは理想的な範囲内です。"});
     }
@@ -408,7 +425,9 @@ function computeSideAnalysis(lm){
     if(kneeOffset>0&&sev){
       findings.push({part:"膝",ok:false,severity:sev,
         desc:"膝が伸びきった状態（過伸展）になっています。",
-        impact:"膝の関節や靭帯に体重の負担が集中しやすく、立位や歩行時に膝への負担が蓄積しやすい状態です。"});
+        impact:"膝の関節や靭帯に体重の負担が集中しやすい状態です。",
+        muscles:["大腿四頭筋","下腿三頭筋（ふくらはぎ）"],
+        symptoms:["膝の疲労感・違和感","立ち仕事での膝の痛み","膝関節への負担蓄積"]});
     }else{
       findings.push({part:"膝",ok:true,desc:"適度な角度で、理想的な範囲内です。"});
     }
@@ -473,7 +492,9 @@ function computeFrontAnalysis(lm){
       const dir=shoulderTilt>0?"右肩が下がっています":"左肩が下がっています";
       findings.push({part:"肩の高さ",ok:false,severity:sev,
         desc:`${dir}（左右で高さに差があります）。`,
-        impact:"下がっている側の首・肩の筋肉が常に引っ張られた状態になり、こりや痛みが片側に偏って出やすい状態です。"});
+        impact:"下がっている側の首・肩の筋肉が常に引っ張られた状態になりやすいです。",
+        muscles:["僧帽筋","肩甲挙筋"],
+        symptoms:["こり・痛みの左右差","片側だけの首の張り","肩の高さの見た目の左右差"]});
     }else{
       findings.push({part:"肩の高さ",ok:true,desc:"左右の高さがそろっており、良好な範囲内です。"});
     }
@@ -484,7 +505,9 @@ function computeFrontAnalysis(lm){
       const dir=hipTilt>0?"骨盤が右に下がっています":"骨盤が左に下がっています";
       findings.push({part:"骨盤の高さ",ok:false,severity:sev,
         desc:`${dir}（左右で高さに差があります）。`,
-        impact:"歩行時のバランスが崩れやすくなり、下がっている側の股関節・膝・足首に負担が偏りやすい状態です。"});
+        impact:"歩行時のバランスが崩れやすく、下がっている側の関節に負担が偏りやすい状態です。",
+        muscles:["中殿筋","腰方形筋"],
+        symptoms:["歩行時のバランスの崩れ","股関節・膝・足首への負担の偏り","脚の疲れやすさの左右差"]});
     }else{
       findings.push({part:"骨盤の高さ",ok:true,desc:"左右の高さがそろっており、良好な範囲内です。"});
     }
@@ -495,7 +518,9 @@ function computeFrontAnalysis(lm){
       const dir=headTilt>0?"頭が右に傾いています":"頭が左に傾いています";
       findings.push({part:"頭部の傾き",ok:false,severity:sev,
         desc:`${dir}。`,
-        impact:"傾いている反対側の首の筋肉が常に伸ばされた状態になり、緊張型の頭痛や肩こりの原因になりやすい状態です。"});
+        impact:"傾いている反対側の首の筋肉が常に伸ばされた状態になりやすいです。",
+        muscles:["胸鎖乳突筋","斜角筋"],
+        symptoms:["緊張型頭痛","肩こり","首を回した時の左右差"]});
     }else{
       findings.push({part:"頭部の傾き",ok:true,desc:"まっすぐに近く、良好な範囲内です。"});
     }
@@ -506,7 +531,9 @@ function computeFrontAnalysis(lm){
       const dir=bodyShift>0?"体幹（上半身）が右に寄っています":"体幹（上半身）が左に寄っています";
       findings.push({part:"体幹バランス",ok:false,severity:sev,
         desc:`${dir}。`,
-        impact:"姿勢を支える筋肉に左右で偏った負担がかかり続け、疲労や張りが片側に出やすい状態です。"});
+        impact:"姿勢を支える筋肉に左右で偏った負担がかかり続けやすい状態です。",
+        muscles:["腹斜筋群","脊柱起立筋"],
+        symptoms:["疲労・張りの左右差","姿勢の崩れやすさ","バランスの取りにくさ"]});
     }else{
       findings.push({part:"体幹バランス",ok:true,desc:"中心が骨盤の真上に近く、良好な範囲内です。"});
     }
@@ -635,10 +662,26 @@ function render(){
 
   if(state.screen==="camera_side"||state.screen==="camera_front"){
     const isFront=state.screen==="camera_front";
+    // すでに同じカメラ画面を表示中なら、video要素を作り直さず（＝カメラ映像を維持したまま）
+    // 反転ボタンの見た目だけを直接書き換える（Safari/iPadでvideoWidthの再取得待ちが発生し
+    // 「撮影ボタンを押しても反応しない」原因になっていたため）
+    if(root.dataset.camScreen===state.screen){
+      const video=document.getElementById("camVideo");
+      if(video) video.style.transform=`scaleX(${state.mirrorCam?-1:1})`;
+      if(state.stream&&video&&video.srcObject!==state.stream){
+        video.srcObject=state.stream;video.play().catch(()=>{});
+      }
+      const toastEl=document.getElementById("camToast");
+      if(toastEl) toastEl.textContent=state.toast||"";
+      if(toastEl) toastEl.style.display=state.toast?"block":"none";
+      return;
+    }
+    root.dataset.camScreen=state.screen;
     root.innerHTML=`
       <div class="card">
         <div class="card-header"><span class="step-badge">${isFront?"2":"1"}</span>${isFront?"次に正面を撮影してください":"まず横向きを撮影してください"}</div>
         <div class="card-body">
+          <div id="camToast" style="display:${state.toast?"block":"none"};background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 12px;color:#dc2626;font-size:12px;font-weight:700;margin-bottom:10px;">${state.toast||""}</div>
           <div class="cam-wrap">
             <video id="camVideo" autoplay playsinline muted style="transform:scaleX(${state.mirrorCam?-1:1});"></video>
             <div class="cam-guide"><div class="cam-guide-line"></div></div>
@@ -646,7 +689,7 @@ function render(){
             <button onclick="toggleMirror()" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.5);color:white;border:none;border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;">🔄 反転</button>
           </div>
           <div class="btn-row" style="margin-bottom:8px;">
-            <button class="btn btn-primary" onclick="captureFromVideo()">📷 撮影する</button>
+            <button class="btn btn-primary" id="captureBtn" onclick="captureFromVideo()">📷 撮影する</button>
           </div>
           <input type="file" id="fileInput" accept="image/*" capture="environment" style="display:none;"/>
           <button class="btn btn-outline" onclick="document.getElementById('fileInput').click()">🖼️ 写真を選択する</button>
@@ -665,6 +708,7 @@ function render(){
     }
     return;
   }
+  root.dataset.camScreen="";
 
   if(state.screen==="analyzing_side"||state.screen==="analyzing_front"){
     root.innerHTML=`
@@ -715,7 +759,9 @@ function render(){
                       ${f.part}${f.severity?`　<span style="font-size:10px;font-weight:700;background:${f.ok?'':'#991b1b'}22;padding:1px 7px;border-radius:10px;">${f.severity}</span>`:''}
                     </div>
                     <div style="font-size:12.5px;color:#374151;margin-top:3px;line-height:1.6;">${f.desc}</div>
-                    ${f.impact?`<div style="font-size:11.5px;color:#92400e;margin-top:4px;line-height:1.6;background:#fffbeb;border-radius:6px;padding:6px 8px;">💡 身体への影響：${f.impact}</div>`:''}
+                    ${f.impact?`<div style="font-size:11.5px;color:#92400e;margin-top:4px;line-height:1.6;background:#fffbeb;border-radius:6px;padding:6px 8px;">💡 ${f.impact}</div>`:''}
+                    ${f.muscles?`<div style="font-size:11.5px;color:#1e40af;margin-top:4px;line-height:1.7;"><strong>🦴 関連する筋肉：</strong>${f.muscles.join("・")}</div>`:''}
+                    ${f.symptoms?`<div style="font-size:11.5px;color:#991b1b;margin-top:4px;line-height:1.7;"><strong>⚠️ 考えられる症状：</strong>${f.symptoms.join("・")}</div>`:''}
                   </div>
                 </div>
               `).join("")}
