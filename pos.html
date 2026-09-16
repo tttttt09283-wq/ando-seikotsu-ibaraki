@@ -5,6 +5,76 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>会計 - あんど整骨院</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script>
+//
+// StarWebPrintBuilder API
+//
+// Version 1.3.0
+//
+// Copyright 2012 STAR MICRONICS CO., LTD. All Rights Reserved.
+//
+
+var StarWebPrintBuilder=function(){};StarWebPrintBuilder.prototype.createAlignmentElement=function(b){var a="<alignment";void 0!=b&&(a+=this._analysisEnumAttribute("position",b.position,/^(left|center|right)$/));return a+"/>"};
+StarWebPrintBuilder.prototype.createBarcodeElement=function(b){var a;if(void 0!=b){a="<barcode"+this._analysisEnumAttribute("symbology",b.symbology,/^(UPCE|UPCA|JAN8|JAN13|Code39|ITF|Code128|Code93|NW7)$/);a+=this._analysisEnumAttribute("width",b.width,/^(width[2-6]|width_mode[1-9]|width_mode1[0-5])$/);a+=this._analysisEnumAttribute("hri",b.hri,/^(false|true)$/);a+=this._analysisValueAttribute("height",b.height,1,255);if(void 0==b.data)throw Error('Argument "data" is undefined.');a=a+">"+this._encodeEscapeSequenceBinary(b.data)}else throw Error("Argument is undefined.");
+return a+="</barcode>"};
+StarWebPrintBuilder.prototype.createBitImageElement=function(b){var a="<bitimage";if(void 0!=b){var d=0,e=0,c=0,f=0;void 0!=b.x&&(d=b.x);void 0!=b.y&&(e=b.y);void 0!=b.width&&(c=b.width);void 0!=b.height&&(f=b.height);this._analysisValueAttribute("x",d,0,65535);this._analysisValueAttribute("y",e,0,65535);a+=this._analysisValueAttribute("width",c,0,65535);a+=this._analysisValueAttribute("height",f,0,65535);if(void 0==b.context)throw Error('Argument "context" is undefined.');a=a+">"+this._encodeRasterImage(b.context.getImageData(d,
+e,c,f).data,c,f)}else throw Error("Argument is undefined.");return a+="</bitimage>"};StarWebPrintBuilder.prototype.createCutPaperElement=function(b){var a="<cutpaper";void 0!=b&&(a+=this._analysisEnumAttribute("feed",b.feed,/^(false|true)$/),a+=this._analysisEnumAttribute("type",b.type,/^(full|partial)$/));return a+"/>"};
+StarWebPrintBuilder.prototype.createFeedElement=function(b){var a;if(void 0!=b)if(void 0!=b.line||void 0!=b.unit)a="<feed"+this._analysisValueAttribute("line",b.line,1,255),a+=this._analysisValueAttribute("unit",b.unit,1,255);else throw Error('Argument "line / unit" is undefined.');else throw Error("Argument is undefined.");return a+"/>"};
+StarWebPrintBuilder.prototype.createInitializationElement=function(b){var a="<initialization";void 0!=b&&(a+=this._analysisEnumAttribute("reset",b.reset,/^(false|true)$/),a+=this._analysisEnumAttribute("print",b.print,/^(false|true)$/));return a+"/>"};
+StarWebPrintBuilder.prototype.createLogoElement=function(b){var a="<logo";void 0!=b&&(a+=this._analysisEnumAttribute("width",b.width,/^(single|double)$/),a+=this._analysisEnumAttribute("height",b.height,/^(single|double)$/),a+=this._analysisValueAttribute("number",b.number,1,255));return a+"/>"};
+StarWebPrintBuilder.prototype.createPdf417Element=function(b){var a;if(void 0!=b){a="<pdf417"+this._analysisEnumAttribute("level",b.level,/^(level[0-8])$/);void 0!=b.line&&(a=0!=b.line?a+this._analysisValueAttribute("line",b.line,3,90):a+' line="0"');a+=this._analysisValueAttribute("column",b.column,0,30);a+=this._analysisValueAttribute("module",b.module,1,8);a+=this._analysisValueAttribute("aspect",b.aspect,1,8);if(void 0==b.data)throw Error('Argument "data" is undefined.');a=a+">"+this._encodeEscapeSequenceBinary(b.data)}else throw Error("Argument is undefined.");
+return a+="</pdf417>"};StarWebPrintBuilder.prototype.createPeripheralElement=function(b){var a="<peripheral";void 0!=b&&(a+=this._analysisValueAttribute("channel",b.channel,1,2),a+=this._analysisValueAttribute("on",b.on,1,65535),a+=this._analysisValueAttribute("off",b.off,1,65535));return a+"/>"};
+StarWebPrintBuilder.prototype.createQrCodeElement=function(b){var a;if(void 0!=b){a="<qrcode"+this._analysisEnumAttribute("model",b.model,/^(model[12])$/);a+=this._analysisEnumAttribute("level",b.level,/^(level_[lmqh])$/);a+=this._analysisValueAttribute("cell",b.cell,1,12);if(void 0==b.data)throw Error('Argument "data" is undefined.');a=a+">"+this._encodeEscapeSequenceBinary(b.data)}else throw Error("Argument is undefined.");return a+="</qrcode>"};
+StarWebPrintBuilder.prototype.createRawDataElement=function(b){if(void 0!=b){if(void 0==b.data)throw Error('Argument "data" is undefined.');b="<rawdata>"+this._encodeBase64Binary(b.data)}else throw Error("Argument is undefined.");return b+"</rawdata>"};
+StarWebPrintBuilder.prototype.createRuledLineElement=function(b){var a="<ruledline";void 0!=b&&(a+=this._analysisEnumAttribute("thickness",b.thickness,/^(thin|medium|thick|double_(thin|medium|thick))$/),a+=this._analysisValueAttribute("width",b.width,1,65535));return a+"/>"};StarWebPrintBuilder.prototype.createSoundElement=function(b){var a="<sound";void 0!=b&&(a+=this._analysisValueAttribute("channel",b.channel,1,2),a+=this._analysisValueAttribute("repeat",b.repeat,1,20));return a+"/>"};
+StarWebPrintBuilder.prototype.createSoundWithSettingElement=function(b){var a="<sound_with_setting";if(void 0!=b){if(void 0!=b.sound_storage_area&&void 0==b.sound_number||void 0==b.sound_storage_area&&void 0!=b.sound_number)throw Error("Only one of sound_storage_area and sound_number was set.");a+=this._analysisValueAttribute("sound_storage_area",b.sound_storage_area,1,2);a+=this._analysisValueAttribute("sound_number",b.sound_number,0,7);a+=this._analysisEnumAttribute("volume",b.volume,/^(volume(0|1|2|3|4|5|6|7|8|9|10|11|12|13|14|15|_off|_min|_max))$/)}return a+
+"/>"};
+StarWebPrintBuilder.prototype.createTextElement=function(b){var a;if(void 0!=b)a="<text"+this._analysisEnumAttribute("emphasis",b.emphasis,/^(false|true)$/),a+=this._analysisEnumAttribute("invert",b.invert,/^(false|true)$/),a+=this._analysisEnumAttribute("linespace",b.linespace,/^(24|32)$/),a+=this._analysisEnumAttribute("font",b.font,/^(font_[ab])$/),a+=this._analysisEnumAttribute("underline",b.underline,/^(false|true)$/),a+=this._analysisValueAttribute("characterspace",b.characterspace,0,7),a+=
+this._analysisValueAttribute("width",b.width,1,6),a+=this._analysisValueAttribute("height",b.height,1,6),a+=this._analysisEnumAttribute("codepage",b.codepage,/^(cp(437|737|772|774|851|852|855|857|858|860|861|862|863|864|865|866|869|874|928|932|998|999|1001|1250|1251|1252|2001|3001|3002|3011|3012|3021|3041|3840|3841|3843|3844|3845|3846|3847|3848)|utf8|blank|utf8|shift_jis|gb18030|gb2312|big5|korea)$/),a+=this._analysisEnumAttribute("international",b.international,/^(usa|france|germany|uk|denmark|sweden|italy|spain|japan|norway|denmark2|spain2|latin_america|korea|ireland|legal)$/),
+a+=this._analysisEnumAttribute("base_text_magnification",b.base_text_magnification,/^(standard|x1_5)$/),void 0!=b.data?(a+=">",a=!0==b.binary?a+this._encodeEscapeSequenceBinary(b.data):a+this._encodeEscapeSequence(b.data),a+="</text>"):a+="/>";else throw Error("Argument is undefined.");return a};StarWebPrintBuilder.prototype.createHoldPrintElement=function(b){var a="<holdprint";void 0!=b&&(a+=this._analysisEnumAttribute("type",b.type,/^(valid|invalid|default)$/));return a+"/>"};
+StarWebPrintBuilder.prototype._analysisEnumAttribute=function(b,a,d){if(void 0!=a){if(!d.test(a))throw Error('Argument "'+b+'" is invalid.');return" "+b+'="'+a+'"'}return""};StarWebPrintBuilder.prototype._analysisValueAttribute=function(b,a,d,e){if(void 0!=a){if(a<d||a>e)throw Error('Argument "'+b+'" is invalid.');return" "+b+'="'+a+'"'}return""};
+StarWebPrintBuilder.prototype._encodeEscapeSequence=function(b){var a=/[\\\x00-\x20\x26\x3c\x3e\x7f]/g;a.test(b)&&(b=b.replace(a,function(a){return"\\"==a?"\\\\":"\\x"+("0"+a.charCodeAt(0).toString(16)).slice(-2)}));return b};StarWebPrintBuilder.prototype._encodeEscapeSequenceBinary=function(b){var a=/[\\\x00-\x20\x26\x3c\x3e\x7f-\xff]/g;a.test(b)&&(b=b.replace(a,function(a){return"\\"==a?"\\\\":"\\x"+("0"+a.charCodeAt(0).toString(16)).slice(-2)}));return b};
+StarWebPrintBuilder.prototype._encodeBase64Binary=function(b){var a="",d=b.length;b+="\x00\x00";for(var e=0;e<d;e+=3)var c=b.charCodeAt(e)<<16|b.charCodeAt(e+1)<<8|b.charCodeAt(e+2),a=a+("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".charAt(c>>18&63)+"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".charAt(c>>12&63)+"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".charAt(c>>6&63)+"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".charAt(c&
+63));switch(d%3){case 1:return a.slice(0,-2)+"==";case 2:return a.slice(0,-1)+"="}return a};
+StarWebPrintBuilder.prototype._encodeRasterImage=function(b,a,d){for(var e=[[-254,-126,-222,-94,-246,-118,-214,-86],[-62,-190,-30,-158,-54,-182,-22,-150],[-206,-78,-238,-110,-198,-70,-230,-102],[-14,-142,-46,-174,-6,-134,-38,-166],[-242,-114,-210,-82,-250,-122,-218,-90],[-50,-178,-18,-146,-58,-186,-26,-154],[-194,-66,-226,-98,-202,-74,-234,-106],[-2,-130,-34,-162,-10,-138,-42,-170]],c="",f=0,g=0;g<d;g++){for(var h=0,k=128,l=0;l<a;l++)if(((30*b[f]+59*b[f+1]+11*b[f+2])*b[f+3]+12800)/25500-b[f+3]<e[g&
+7][l&7]&&(h|=k),f+=4,0==(k>>=1))c+=String.fromCharCode(h),h=0,k=128;128!=k&&(c+=String.fromCharCode(h))}b=c;c="";a=b.length;b+="\x00\x00";for(g=0;g<a;g+=3)d=b.charCodeAt(g)<<16|b.charCodeAt(g+1)<<8|b.charCodeAt(g+2),c+="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".charAt(d>>18&63)+"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".charAt(d>>12&63)+"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".charAt(d>>6&63)+"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/".charAt(d&
+63);switch(a%3){case 1:return c.slice(0,-2)+"==";case 2:return c.slice(0,-1)+"="}return c};
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = StarWebPrintBuilder;
+}
+
+</script>
+<script>
+//
+// StarWebPrintTrader API
+//
+// Version 1.2.0
+//
+// Copyright 2012 STAR MICRONICS CO., LTD. All Rights Reserved.
+//
+
+var StarWebPrintTrader=function(a){this.papertype=this.checkedblock=this.url=null;this.timeout=9E4;this.onTimeout=this.onError=this.onReceive=null;this.holdprint_timeout=void 0;this._json=this._url=null;void 0!=a&&(void 0!=a.url&&(this.url=a.url),void 0!=a.checkedblock&&(this.checkedblock=a.checkedblock),void 0!=a.papertype&&(this.papertype=a.papertype),void 0!=a.timeout&&(this.timeout=a.timeout),void 0!=a.holdprint_timeout&&(this.holdprint_timeout=a.holdprint_timeout))},_handlerCallback={};
+function _onFinish(a){var b=_handlerCallback[a.url],c=a.response;_handlerCallback[a.url]=null;if(200==a.htmlCode)b.onReceive({traderSuccess:c.slice(c.indexOf("&lt;success&gt;")+15,c.indexOf("&lt;/success&gt;")),traderCode:c.slice(c.indexOf("&lt;code&gt;")+12,c.indexOf("&lt;/code&gt;")),traderStatus:c.slice(c.indexOf("&lt;status&gt;")+14,c.indexOf("&lt;/status&gt;")),status:a.htmlCode,responseText:c});else b.onError({status:a.htmlCode,responseText:c})}
+StarWebPrintTrader.prototype._callMessageHandler=function(){var a=this;null==_handlerCallback[a._url]?(_handlerCallback[a._url]=a,webkit.messageHandlers.sendMessageHandler.postMessage(a._json)):setTimeout(function(){a._callMessageHandler()},500)};
+StarWebPrintTrader.prototype.sendMessage=function(a){var b="<root";void 0!=a.checkedblock?!1==a.checkedblock&&(b+=' checkedblock="false"'):!1==this.checkedblock&&(b+=' checkedblock="false"');void 0!=a.papertype?"normal"==a.papertype?b+=' papertype="normal"':"black_mark"==a.papertype?b+=' papertype="black_mark"':"black_mark_and_detect_at_power_on"==a.papertype?b+=' papertype="black_mark_and_detect_at_power_on"':"gap"==a.papertype?b+=' papertype="gap"':"gap_and_detect_at_power_on"==a.papertype&&(b+=
+' papertype="gap_and_detect_at_power_on"'):"normal"==this.papertype?b+=' papertype="normal"':"black_mark"==this.papertype?b+=' papertype="black_mark"':"black_mark_and_detect_at_power_on"==this.papertype?b+=' papertype="black_mark_and_detect_at_power_on"':"gap"==this.papertype?b+=' papertype="gap"':"gap_and_detect_at_power_on"==this.papertype&&(b+=' papertype="gap_and_detect_at_power_on"');void 0!=a.holdprint_timeout?b+=' holdprint_timeout="'+a.holdprint_timeout+'"':void 0!=this.holdprint_timeout&&
+(b+=' holdprint_timeout="'+this.holdprint_timeout+'"');var b=b+(">"+a.request+"</root>"),c;c='<StarWebPrint xmlns="http://www.star-m.jp" xmlns:i="http://www.w3.org/2001/XMLSchema-instance"><Request>';c+=this._encodeEscapeSequence(b);c+="</Request>";c+="</StarWebPrint>";b="";b=void 0!=a.url?a.url:this.url;if(/^https?:\/\/(localhost|127\.0\.0\.1):8001\//.test(b.toLowerCase())&&-1!=navigator.userAgent.indexOf("webPRNTSupportMessageHandler"))this._json=JSON.stringify({url:b,body:c}),this._url=b,this._callMessageHandler();
+else{var d=null;if(window.XMLHttpRequest)d=new XMLHttpRequest;else if(window.ActiveXObject)d=new ActiveXObject("Microsoft.XMLHTTP");else{if(this.onError)this.onError({status:10001,responseText:"XMLHttpRequest is not supported."});return}if(-1!=navigator.userAgent.indexOf("iPad;")||-1!=navigator.userAgent.indexOf("iPhone;")||-1!=navigator.userAgent.indexOf("iPod touch;")||-1!=navigator.userAgent.indexOf("Android"))if(-1==navigator.userAgent.indexOf("WebPRNTSupportHTTPS")&&(0==b.toLowerCase().indexOf("https://localhost")||
+0==b.toLowerCase().indexOf("https://127.0.0.1")))b="http://"+b.substring(8);try{d.open("POST",b,!0)}catch(f){if(this.onError)this.onError({status:10002,responseText:f.message});return}try{void 0!=a.timeout?d.timeout=a.timeout:this.timeout&&(d.timeout=this.timeout)}catch(h){}d.setRequestHeader("Content-Type","text/xml; charset=UTF-8");var e=this;d.onreadystatechange=function(){if(4==d.readyState)try{if(200==d.status){var a=d.responseXML.getElementsByTagName("Response");if(0<a.length){if(e.onReceive){var b=
+a[0].childNodes[0].nodeValue;e.onReceive({traderSuccess:b.slice(b.indexOf("<success>")+9,b.indexOf("</success>")),traderCode:b.slice(b.indexOf("<code>")+6,b.indexOf("</code>")),traderStatus:b.slice(b.indexOf("<status>")+8,b.indexOf("</status>")),status:d.status,responseText:d.responseText})}}else if(e.onError)e.onError({status:d.status,responseText:d.responseText})}else if(e.onError)e.onError({status:d.status,responseText:d.responseText})}catch(c){if(e.onError)e.onError({status:0,responseText:"Connection timeout occurred."})}};
+try{d.ontimeout=function(){if(e.onTimeout)e.onTimeout()}}catch(k){}try{d.send(c)}catch(g){if(this.onError)this.onError({status:10003,responseText:g.message})}}};StarWebPrintTrader.prototype._onHandlerSuccess=function(a){if(trader.onReceive)trader.onReceive(a)};StarWebPrintTrader.prototype._onHandlerError=function(a){if(trader.onError)trader.onError(a)};StarWebPrintTrader.prototype.isCoverOpen=function(a){return parseInt(a.traderStatus.substr(4,2),16)&32?!0:!1};
+StarWebPrintTrader.prototype.isOffLine=function(a){return parseInt(a.traderStatus.substr(4,2),16)&8?!0:!1};StarWebPrintTrader.prototype.isCompulsionSwitchClose=function(a){return parseInt(a.traderStatus.substr(4,2),16)&4?!0:!1};StarWebPrintTrader.prototype.isEtbCommandExecute=function(a){return parseInt(a.traderStatus.substr(4,2),16)&2?!0:!1};StarWebPrintTrader.prototype.isHighTemperatureStop=function(a){return parseInt(a.traderStatus.substr(6,2),16)&64?!0:!1};
+StarWebPrintTrader.prototype.isNonRecoverableError=function(a){return parseInt(a.traderStatus.substr(6,2),16)&32?!0:!1};StarWebPrintTrader.prototype.isAutoCutterError=function(a){return parseInt(a.traderStatus.substr(6,2),16)&8?!0:!1};StarWebPrintTrader.prototype.isBlackMarkError=function(a){return parseInt(a.traderStatus.substr(8,2),16)&8?!0:!1};StarWebPrintTrader.prototype.isPaperEnd=function(a){return parseInt(a.traderStatus.substr(10,2),16)&8?!0:!1};
+StarWebPrintTrader.prototype.isPaperNearEnd=function(a){return parseInt(a.traderStatus.substr(10,2),16)&4?!0:!1};StarWebPrintTrader.prototype.isPaperPresent=function(a){return parseInt(a.traderStatus.substr(12,2),16)&2?!0:!1};StarWebPrintTrader.prototype.isRollPositionError=function(a){return parseInt(a.traderStatus.substr(10,2),16)&32?!0:!1};
+StarWebPrintTrader.prototype.extractionEtbCounter=function(a){var b=0;parseInt(a.traderStatus.substr(14,2),16)&64&&(b|=16);parseInt(a.traderStatus.substr(14,2),16)&32&&(b|=8);parseInt(a.traderStatus.substr(14,2),16)&8&&(b|=4);parseInt(a.traderStatus.substr(14,2),16)&4&&(b|=2);parseInt(a.traderStatus.substr(14,2),16)&2&&(b|=1);return b};
+StarWebPrintTrader.prototype._encodeEscapeSequence=function(a){var b=/[<>&]/g;b.test(a)&&(a=a.replace(b,function(a){switch(a){case "<":return"&lt;";case ">":return"&gt;"}return"&amp;"}));return a};
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = StarWebPrintTrader;
+}
+
+</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#f0f4f8;min-height:100vh;}
@@ -411,7 +481,7 @@ function renderReceiptSection(){
   }
   const freq=state.receiptFrequency;
   if(freq==="毎回"){
-    return renderReceipt()+`<button class="btn-back" onclick="window.print()" style="border-color:#d97706;color:#d97706;">🖨️ 領収書を印刷</button>`;
+    return renderReceipt()+`<button class="btn-back" onclick="printReceiptViaWebPRNT()" style="border-color:#d97706;color:#d97706;">🖨️ 領収書を印刷</button>`;
   }
   if(freq==="不要"){
     return `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:#64748b;text-align:center;">この患者様は「レシート不要」に設定されています。<br><button onclick="state.receiptFrequency='毎回';render();" style="margin-top:8px;background:none;border:none;color:#2563eb;font-size:11px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:inherit;">今回だけ発行する</button></div>`;
@@ -419,6 +489,110 @@ function renderReceiptSection(){
   // 月ごと・年ごと
   return `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:#1e40af;text-align:center;">この患者様のレシートは「${freq}」まとめて発行する設定です。管理画面の「まとめレシート発行」から発行してください。<br><button onclick="state.receiptFrequency='毎回';render();" style="margin-top:8px;background:none;border:none;color:#2563eb;font-size:11px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:inherit;">今回だけ発行する</button></div>`;
 }
+// ===== StarWebPRNTでmPOPに直接印刷する処理 =====
+function padRow(left,right,width){
+  left=String(left);right=String(right);
+  const space=Math.max(1,width-left.length-right.length);
+  return left+" ".repeat(space)+right;
+}
+function buildReceiptText(){
+  const total=calcTotal();const ins=parseInt(state.insuranceAmount)||0;const change=calcChange();
+  const DAYS_JP=["日","月","火","水","木","金","土"];
+  const bd=new Date(booking.date+"T00:00:00");
+  const dateLabel=`${bd.getFullYear()}年${String(bd.getMonth()+1).padStart(2,"0")}月${String(bd.getDate()).padStart(2,"0")}日（${DAYS_JP[bd.getDay()]}）`;
+  const now=new Date();
+  const denNo=String(booking.id).padStart(8,"0");
+  const clinicName=(storeInfo&&storeInfo.name)?storeInfo.name:CLINIC_NAME_FALLBACK;
+  const clinicAddr=storeInfo&&storeInfo.address?storeInfo.address:"";
+  const clinicTel=storeInfo&&storeInfo.tel?storeInfo.tel:"";
+  const taxIncluded=Math.round(total*8/108);
+  const items=[
+    ...(ins>0?[{label:booking.menu||"保険窓口負担",amount:ins}]:[]),
+    ...state.jifeeItems.map(i=>({label:i.label,amount:i.amount})),
+  ];
+  const W=32; // mPOPは58mm幅（半角32文字目安）
+  const lines=[];
+  lines.push({center:true,bold:true,text:clinicName});
+  if(clinicAddr) lines.push({center:true,small:true,text:clinicAddr});
+  if(clinicTel) lines.push({center:true,small:true,text:"TEL："+clinicTel});
+  lines.push({text:""});
+  lines.push({center:true,bold:true,text:"レシート"});
+  lines.push({text:"-".repeat(W)});
+  lines.push({text:booking.patient_name+" 様"});
+  lines.push({text:"-".repeat(W)});
+  lines.push({text:padRow("伝票No.",denNo,W)});
+  lines.push({text:padRow(dateLabel,booking.time,W)});
+  lines.push({text:padRow("主担当",STAFF[booking.staff_id]||"",W)});
+  lines.push({text:padRow("来院回数",visitCount+"回目",W)});
+  lines.push({text:"-".repeat(W)});
+  lines.push({text:"【ご利用メニュー】"});
+  if(items.length>0){
+    items.forEach(i=>{ lines.push({text:padRow(i.label,fmt(i.amount),W)}); });
+  }else{
+    lines.push({text:padRow("－","－",W)});
+  }
+  lines.push({text:"-".repeat(W)});
+  lines.push({text:padRow("値引",fmt(0),W)});
+  lines.push({text:padRow("小計（税込）",fmt(total),W)});
+  lines.push({text:padRow("消費税（内8%対象）",fmt(taxIncluded),W)});
+  lines.push({text:"=".repeat(W)});
+  lines.push({bold:true,width:2,text:padRow("合計",fmt(total),Math.ceil(W/2))});
+  lines.push({text:"-".repeat(W)});
+  state.payments.forEach(p=>{ lines.push({text:padRow("お預かり（"+p.method+"）",fmt(p.amount),W)}); });
+  if(change>0) lines.push({bold:true,text:padRow("お釣り",fmt(change),W)});
+  lines.push({text:"-".repeat(W)});
+  lines.push({center:true,small:true,text:`${dateLabel} ${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")} 発行`});
+  lines.push({center:true,text:"ご来院ありがとうございました"});
+  return lines;
+}
+function printReceiptViaWebPRNT(){
+  const isInWebPRNTApp=navigator.userAgent.indexOf("webPRNTSupportMessageHandler")>=0;
+  if(!isInWebPRNTApp){
+    // Star webPRNT Browserアプリの中でなければ従来の印刷（ブラウザの印刷機能）にフォールバックする
+    window.print();
+    return;
+  }
+  try{
+    const builder=new StarWebPrintBuilder();
+    let request="";
+    request+=builder.createInitializationElement();
+    buildReceiptText().forEach(l=>{
+      request+=builder.createAlignmentElement({position:l.center?"center":"left"});
+      request+=builder.createTextElement({
+        data:l.text+"\n",
+        emphasis:l.bold?"true":"false",
+        width:l.width||1,
+        height:l.width||1,
+        codepage:"shift_jis",
+      });
+    });
+    request+=builder.createFeedElement({line:3});
+    request+=builder.createCutPaperElement({feed:true});
+
+    const trader=new StarWebPrintTrader({url:"https://localhost:8001/StarWebPRNT/SendMessage"});
+    trader.onReceive=function(response){
+      if(response.traderSuccess==="true"){
+        showPrintToast("🖨️ 印刷しました");
+      }else{
+        showPrintToast("❌ 印刷に失敗しました（プリンターの状態をご確認ください）");
+      }
+    };
+    trader.onError=function(response){
+      showPrintToast("❌ 印刷エラー："+(response.responseText||"接続できませんでした"));
+    };
+    trader.sendMessage({request:request});
+  }catch(e){
+    showPrintToast("❌ 印刷処理でエラーが発生しました："+e.message);
+  }
+}
+function showPrintToast(msg){
+  const el=document.createElement("div");
+  el.textContent=msg;
+  el.style.cssText="position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1e293b;color:white;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:700;z-index:999;box-shadow:0 8px 24px rgba(0,0,0,.25);";
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(),3500);
+}
+
 function renderReceipt(){
   const total=calcTotal();const ins=parseInt(state.insuranceAmount)||0;const now=new Date();const change=calcChange();
   const DAYS_JP=["日","月","火","水","木","金","土"];
