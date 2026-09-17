@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>あんど整骨院 茨木院 無料施術体験会 ご予約</title>
+<title>あんど整骨院 無料施術体験会 ご予約</title>
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -17,41 +17,83 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 <div id="root"></div>
 <script type="text/babel">
 
-const CLINIC_NAME = "あんど整骨院 茨木院";
-const CLINIC_TEL = "0000-00-0000";
+const CLINIC_NAME = "あんど整骨院";
+const CLINIC_TEL = "090-4036-3071";
 const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
 const LINE_GROUP_ID = "Cfd9d54fedc95bbe4ce1a7ac64ec97fa0";
 const LIFF_ID = "2010529910-NlBCzfsM";
 const LINE_OFFICIAL_URL = "https://lin.ee/UmNuuyy";
-// このページの対象店舗名（stores テーブルの name 部分一致で自動検索されます）
-const STORE_NAME_KEYWORD = "茨木";
-const STORE_ID_FALLBACK = 2; // 店舗が見つからなかった場合の保険（実際のIDに合わせて変更可）
+const STORE_ID = 1;
 
-// 全スタッフ一覧（表示は「このページの店舗で勤務可能」なスタッフのみに絞り込まれます）
-const ALL_STAFF = [
-  {id:1,name:"岩永"},{id:2,name:"大皿"},
-  {id:3,name:"定井"},{id:4,name:"細永"},{id:5,name:"広川"}
+// ===== 予約受付開始日・イベント期間（デフォルト値。管理画面の「各種設定」で上書きされます） =====
+const DEFAULT_BOOKING_MIN_DATE = "2026-10-01"; // 受付開始日のデフォルト（管理画面の設定が優先されます）
+const DEFAULT_EVENT_START_DATE = "2026-10-01"; // イベント開催期間（開始）
+const DEFAULT_EVENT_END_DATE = "2026-10-04";   // イベント開催期間（終了）
+const DEFAULT_EVENT_MENU_NAME = "無料施術体験会（約60分・カウンセリング込み）"; // イベント用メニュー名
+const DEFAULT_EVENT_MENU_PRICE = 0; // イベント価格（円）
+const DEFAULT_SLOT_UNIT = 20; // 予約枠の単位（分）
+const DEFAULT_HOURS_BEFORE = 0; // 何時間前まで予約可能か（0＝制限なし）
+const DEFAULT_DAYS_AHEAD = 60; // 何日先まで予約可能か
+const DEFAULT_ALLOW_SAME_DAY = true; // 当日予約を許可するか
+
+
+const STAFF = [
+  {id:1,name:"奥田"},{id:2,name:"佐藤"},
+  {id:3,name:"細永"},{id:4,name:"田中"},{id:5,name:"岩永"},
+  {id:101,name:"応援①",event_only:true},{id:102,name:"応援②",event_only:true}
 ];
 
-const SLOTS = (()=>{
+// 予約枠の時間単位（分）を指定して時間の選択肢を生成する
+function buildSlots(unit){
+  unit = unit || DEFAULT_SLOT_UNIT;
   const slots=[];
-  for(let h=9;h<=19;h++){
-    for(let m=0;m<60;m+=10){
-      if(h===19&&m>0) break;
+  // 平日10:00〜20:00・土日祝9:00〜18:00の両方をカバーできるよう、9:00〜20:00の最大範囲で生成する。
+  // 実際にその曜日で予約可能かどうかは isTimeAllowedForDate が営業時間データを見て判定する。
+  for(let h=9;h<20;h++){
+    for(let m=0;m<60;m+=unit){
       slots.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
     }
   }
   return slots;
-})();
+}
+
+// ===== 1枠あたりの同時受付可能数のデフォルト =====
+// 通常は「対応できるスタッフの人数」までは同時受付可能（管理画面の「同一時間帯の最大予約数」で上書き可能）。
+// 特定の日だけあえて絞りたい場合は DATE_CAPACITY_OVERRIDES に "YYYY-MM-DD": 件数 を追記してください。
+const DEFAULT_SLOT_CAPACITY = 5; // 常駐5人分。イベント期間は店舗設定またはDATE_CAPACITY_OVERRIDESで上書き
+const DATE_CAPACITY_OVERRIDES = {
+  // オープニングイベント期間（10/1〜10/4）は1枠あたり7件まで受付
+  "2026-10-01": 7,
+  "2026-10-02": 7,
+  "2026-10-03": 7,
+  "2026-10-04": 7,
+};
 
 const DAYS_JP = ["日","月","火","水","木","金","土"];
 const STEPS = ["日時","お客様情報","症状・問診","確認"];
-const HOW_KNOW = ["Instagram","Facebook","Twitter/X","Google検索","チラシ・ポスター","友人・知人の紹介","その他"];
+const HOW_KNOW_OPTIONS = [
+  {label:"チラシ①", icon:"📰", image:"/pure1.png"},
+  {label:"チラシ②", icon:"📰", image:"/pure2.png"},
+  {label:"看板", icon:"🪧", image:null},
+  {label:"Instagram", icon:"📷", image:"data:image/svg+xml;utf8,"+encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48' width='48' height='48'><defs><radialGradient id='ig' cx='30%' cy='107%' r='150%'><stop offset='0%' stop-color='#fdf497'/><stop offset='5%' stop-color='#fdf497'/><stop offset='45%' stop-color='#fd5949'/><stop offset='60%' stop-color='#d6249f'/><stop offset='90%' stop-color='#285AEB'/></radialGradient></defs><rect width='48' height='48' rx='12' fill='url(#ig)'/><rect x='12' y='12' width='24' height='24' rx='7' fill='none' stroke='white' stroke-width='2.5'/><circle cx='24' cy='24' r='6' fill='none' stroke='white' stroke-width='2.5'/><circle cx='33' cy='15' r='1.7' fill='white'/></svg>")},
+  {label:"Google検索", icon:"🔍", image:"data:image/svg+xml;utf8,"+encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48' width='48' height='48'><path fill='#FFC107' d='M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.5 29.5 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z'/><path fill='#FF3D00' d='M6.3 14.7l6.6 4.8C14.6 15.1 18.9 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.5 29.5 4 24 4 16.3 4 9.7 8.3 6.3 14.7z'/><path fill='#4CAF50' d='M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.5 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.6 39.6 16.3 44 24 44z'/><path fill='#1976D2' d='M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.1 5.6l6.2 5.2C39.9 36.9 44 31 44 24c0-1.3-.1-2.7-.4-3.5z'/></svg>")},
+  {label:"通りがかり", icon:"🚶", image:null},
+  {label:"紹介", icon:"👥", image:null},
+  {label:"その他", icon:"📋", image:null},
+];
+const HOW_KNOW = HOW_KNOW_OPTIONS.map(o=>o.label);
 const BODY_PARTS = [
   "頸部（首）","肩","上腕","肘","前腕","手首・手",
   "胸部","腰部","臀部","大腿（太もも）","膝",
   "下腿（すね・ふくらはぎ）","足首・足","その他"
+];
+// 左右の区別がある部位（選択すると「右・左・両方」を選べるようにする）
+const LATERAL_PARTS = ["肩","上腕","肘","前腕","手首・手","大腿（太もも）","膝","下腿（すね・ふくらはぎ）","足首・足"];
+// 主症状（負傷部位）とは別の、鍼灸・柔整で対応できそうなその他のお悩み（任意選択）
+const OTHER_CONCERNS = [
+  "頭痛","めまい","耳鳴り","自律神経の乱れ","内臓の不調",
+  "ダイエット・体型","むくみ","冷え性","巻き爪","外反母趾","その他"
 ];
 const INJURY_CAUSES = [
   {label:"日常生活中のケガ",icon:"🏠",desc:"家事・歩行中など"},
@@ -108,21 +150,44 @@ var sb = {
       },
       body:JSON.stringify(data)
     }).then(function(r){return r.json();}).catch(function(){return null;});
+  },
+  upsert: function(table, data, conflictCol){
+    return fetch(SUPABASE_URL+"/rest/v1/"+table+"?on_conflict="+conflictCol, {
+      method:"POST",
+      headers:{
+        "apikey":SUPABASE_ANON_KEY,
+        "Authorization":"Bearer "+SUPABASE_ANON_KEY,
+        "Content-Type":"application/json",
+        "Prefer":"resolution=merge-duplicates,return=representation"
+      },
+      body:JSON.stringify(data)
+    }).then(function(r){return r.json();}).catch(function(){return null;});
   }
 };
+
+// 患者様のレシート発行頻度の希望を保存（電話番号ごとに1件、次回以降も引き継がれる）
+function savePatientReceiptPreference(phone, patientName, freq){
+  if(!phone||!freq) return;
+  sb.upsert("patient_preferences",{
+    phone:phone,
+    patient_name:patientName,
+    receipt_frequency:freq,
+    updated_at:new Date().toISOString()
+  },"phone").catch(function(){});
+}
 
 function App(){
   var useState = React.useState;
   var useEffect = React.useEffect;
-
-  var storeIdState = useState(null);
-  var storeId = storeIdState[0]; var setStoreId = storeIdState[1];
-
-  var staffState = useState(ALL_STAFF); // 店舗が確定するまでは全員を仮表示
-  var STAFF = staffState[0]; var setStaff = staffState[1];
+  var useRef = React.useRef;
 
   var stepState = useState(0);
   var step = stepState[0]; var setStep = stepState[1];
+
+  // ステップが切り替わるたびに、画面を一番上までスクロールする
+  useEffect(function(){
+    window.scrollTo({top:0,left:0,behavior:"instant"});
+  },[step]);
 
   var dateState = useState(null);
   var selDate = dateState[0]; var setSelDate = dateState[1];
@@ -130,7 +195,12 @@ function App(){
   var timeState = useState(null);
   var selTime = timeState[0]; var setSelTime = timeState[1];
 
-  var weekStartState = useState(function(){var d=new Date();d.setHours(0,0,0,0);return d;});
+  var weekStartState = useState(function(){
+    var today0=new Date();today0.setHours(0,0,0,0);
+    if(!DEFAULT_BOOKING_MIN_DATE) return today0;
+    var minD=new Date(DEFAULT_BOOKING_MIN_DATE+"T00:00:00");
+    return today0>minD?today0:minD;
+  });
   var weekStart = weekStartState[0]; var setWeekStart = weekStartState[1];
 
   var weekDataState = useState({booked:[],breaks:[]});
@@ -139,11 +209,18 @@ function App(){
   var doneState = useState(false);
   var done = doneState[0]; var setDone = doneState[1];
 
+  useEffect(function(){
+    if(done) window.scrollTo({top:0,left:0,behavior:"instant"});
+  },[done]);
+
   var submittingState = useState(false);
   var submitting = submittingState[0]; var setSubmitting = submittingState[1];
 
   var errState = useState({});
   var errors = errState[0]; var setErrors = errState[1];
+
+  var slotFullState = useState("");
+  var slotFullMsg = slotFullState[0]; var setSlotFullMsg = slotFullState[1];
 
   var bookingIdState = useState(null);
   var bookingId = bookingIdState[0]; var setBookingId = bookingIdState[1];
@@ -151,14 +228,98 @@ function App(){
   var lineUserIdState = useState(null);
   var lineUserId = lineUserIdState[0]; var setLineUserId = lineUserIdState[1];
 
+  // ===== 紹介キャンペーン（?ref=コードで来た場合） =====
+  var referralCodeState = useState(null); // URLの?refパラメータ（見つかった生の値）
+  var referralCode = referralCodeState[0]; var setReferralCode = referralCodeState[1];
+  var referrerInfoState = useState(null); // {name, phone} コードから引き当てた紹介者情報。無効なコードならnullのまま
+  var referrerInfo = referrerInfoState[0]; var setReferrerInfo = referrerInfoState[1];
+
+  useEffect(function(){
+    try{
+      var params = new URLSearchParams(window.location.search);
+      var ref = params.get("ref");
+      if(!ref) return;
+      setReferralCode(ref);
+      sb.select("patient_referral_codes","?code=eq."+encodeURIComponent(ref)).then(function(rows){
+        if(Array.isArray(rows)&&rows.length>0){
+          setReferrerInfo({name:rows[0].patient_name,phone:rows[0].phone});
+          // 「紹介者のお名前」欄にも自動で反映しておく（もう一度手入力しなくて済むように）
+          setForm(function(f){return Object.assign({},f,{referrerName:rows[0].patient_name});});
+        }
+        // 見つからない場合は何もしない＝通常予約として扱われる（referrerInfoはnullのまま）
+      }).catch(function(){});
+    }catch(e){}
+  }, []);
+
   var liffReadyState = useState(false);
   var liffReady = liffReadyState[0]; var setLiffReady = liffReadyState[1];
+
+  var toastState = useState("");
+  var toastMsg = toastState[0]; var setToastMsg = toastState[1];
+  function showToast(msg){
+    setToastMsg(msg);
+    setTimeout(function(){setToastMsg("");}, 3200);
+  }
 
   // リピーター判定・過去予約情報
   var isRepeatState = useState(false);
   var isRepeat = isRepeatState[0]; var setIsRepeat = isRepeatState[1];
   var pastBookingState = useState(null);
   var pastBooking = pastBookingState[0]; var setPastBooking = pastBookingState[1];
+
+  // ===== マイページ経由のかんたん予約（URLの?uidパラメータを見つけたら、LINEの再ログインを待たずに即座にリピーター判定する） =====
+  useEffect(function(){
+    try{
+      var params = new URLSearchParams(window.location.search);
+      var uidParam = params.get("uid");
+      if(!uidParam) return;
+      setLineUserId(uidParam);
+      sb.select("bookings","?line_user_id=eq."+encodeURIComponent(uidParam)+"&order=date.desc&limit=1")
+        .then(function(past){
+          if(Array.isArray(past)&&past.length>0){
+            setIsRepeat(true);
+            setPastBooking(past[0]);
+            setForm(function(f){return Object.assign({},f,{
+              name:past[0].patient_name||"",
+              phone:past[0].phone||"",
+              lineNotify:true,
+            });});
+          }
+        }).catch(function(){});
+    }catch(e){}
+  }, []);
+
+  // 電話番号による手動リピーター確認（LINE外からのアクセスや、初回にLINE連携していなかった方向け）
+  var phoneLookupOpenState = useState(false);
+  var phoneLookupOpen = phoneLookupOpenState[0]; var setPhoneLookupOpen = phoneLookupOpenState[1];
+  var phoneLookupValueState = useState("");
+  var phoneLookupValue = phoneLookupValueState[0]; var setPhoneLookupValue = phoneLookupValueState[1];
+  var phoneLookupStatusState = useState(""); // "" | "searching" | "notfound"
+  var phoneLookupStatus = phoneLookupStatusState[0]; var setPhoneLookupStatus = phoneLookupStatusState[1];
+
+  function lookupByPhone(){
+    var phone = phoneLookupValue.trim();
+    if(!phone) return;
+    setPhoneLookupStatus("searching");
+    sb.select("bookings","?phone=eq."+encodeURIComponent(phone)+"&order=date.desc&limit=1")
+      .then(function(past){
+        if(Array.isArray(past)&&past.length>0){
+          setIsRepeat(true);
+          setPastBooking(past[0]);
+          setForm(function(f){return Object.assign({},f,{
+            name:past[0].patient_name||"",
+            phone:past[0].phone||"",
+            lineNotify:!!lineUserId,
+          });});
+          setPhoneLookupOpen(false);
+          setPhoneLookupStatus("");
+        }else{
+          setPhoneLookupStatus("notfound");
+        }
+      }).catch(function(){
+        setPhoneLookupStatus("notfound");
+      });
+  }
 
   // リピーター用メモ（任意）
   var memoState = useState("");
@@ -171,15 +332,50 @@ function App(){
   var closures = closuresState[0]; var setClosures = closuresState[1];
   var hoursLoadedState = useState(false);
   var hoursLoaded = hoursLoadedState[0]; var setHoursLoaded = hoursLoadedState[1];
+  var resolvedStoreIdState = useState(STORE_ID);
+  var resolvedStoreId = resolvedStoreIdState[0]; var setResolvedStoreId = resolvedStoreIdState[1];
+  // スタッフの週固定シフト（曜日ごとの出勤・休みの設定。管理画面の「スタッフ・シフト管理」と同じデータ）
+  var weeklyShiftsState = useState([]);
+  var weeklyShifts = weeklyShiftsState[0]; var setWeeklyShifts = weeklyShiftsState[1];
+
+  // 管理画面の「各種設定」から読み込む、患者様向け予約ページの動的設定
+  // （Supabaseから取得できるまでは、デフォルト値で動作します）
+  var pageSettingsState = useState({
+    bookingMinDate: DEFAULT_BOOKING_MIN_DATE,
+    eventStartDate: DEFAULT_EVENT_START_DATE,
+    eventEndDate: DEFAULT_EVENT_END_DATE,
+    eventMenuName: DEFAULT_EVENT_MENU_NAME,
+    eventMenuPrice: DEFAULT_EVENT_MENU_PRICE,
+    slotUnit: DEFAULT_SLOT_UNIT,
+    hoursBefore: DEFAULT_HOURS_BEFORE,
+    daysAhead: DEFAULT_DAYS_AHEAD,
+    slotCapacity: DEFAULT_SLOT_CAPACITY,
+    allowSameDay: DEFAULT_ALLOW_SAME_DAY,
+  });
+  var pageSettings = pageSettingsState[0]; var setPageSettings = pageSettingsState[1];
+
+  function getSlotCapacity(dateStr){
+    return DATE_CAPACITY_OVERRIDES[dateStr] || pageSettings.slotCapacity || DEFAULT_SLOT_CAPACITY;
+  }
+  function isEventDate(d){
+    var ds = fmtDate(d);
+    if(!pageSettings.eventStartDate || !pageSettings.eventEndDate) return false;
+    return ds>=pageSettings.eventStartDate && ds<=pageSettings.eventEndDate;
+  }
 
   var formState = useState({
-    name:"",nameKana:"",phone:"",
-    bodyParts:[],bodyPartsOther:"",injuryCause:"",injuryCauseDetail:"",
+    name:"",nameKana:"",phone:"",address:"",gender:"",age:"",referrerName:"",
+    quickSymptom:"", // かんたん予約で必須にする「気になる症状」の自由記入欄
+    bodyParts:[],bodyPartsOther:"",bodyPartsSides:{},otherConcerns:[],otherConcernsOther:"",injuryCause:"",injuryCauseDetail:"",
     painWhen:"",painLevel:"",symptoms:[],
     otherClinic:"",otherClinicName:"",medicalHistory:"",
-    wantContinue:"",howKnow:"",howKnowOther:"",lineNotify:false
+    wantContinue:"",wantContinueOther:"",howKnow:"",howKnowOther:"",lineNotify:false,
+    patientType:"", // イベント期間終了後（10/5以降）のみ使用："初めての方"|"久しぶりの方"|"2回目以降の方"
+    receiptFrequency:"毎回" // "毎回"|"月ごと"|"年ごと"|"不要"
   });
   var form = formState[0]; var setForm = formState[1];
+  var detailFormOpenState = useState(false); // 事前問診票（任意の詳細項目）を開いているかどうか
+  var detailFormOpen = detailFormOpenState[0]; var setDetailFormOpen = detailFormOpenState[1];
 
 
 
@@ -188,9 +384,11 @@ function App(){
       setLiffReady(true);
 
       // LINEログインへの遷移前に保存しておいた入力内容があれば復元する
+      var hadDraft=false;
       try{
         var saved=sessionStorage.getItem("booking_draft");
         if(saved){
+          hadDraft=true;
           var draft=JSON.parse(saved);
           if(draft.selDate) setSelDate(new Date(draft.selDate+"T00:00:00"));
           if(draft.selTime) setSelTime(draft.selTime);
@@ -203,6 +401,11 @@ function App(){
       if(liff.isLoggedIn()){
         liff.getProfile().then(function(profile){
           setLineUserId(profile.userId);
+          // LINEログイン画面から戻ってきた直後であれば、連携完了をお知らせする
+          if(hadDraft){
+            setF("lineNotify", true);
+            showToast("✅ LINEリマインドの登録が完了しました！");
+          }
           // 過去予約を確認してリピーター判定
           sb.select("bookings","?line_user_id=eq."+encodeURIComponent(profile.userId)+"&order=date.desc&limit=1")
             .then(function(past){
@@ -224,59 +427,98 @@ function App(){
     });
   }, []);
 
-  // このページの対象店舗（茨木院）を名前で検索し、営業時間・スタッフをその店舗に絞り込む
+  // 営業時間・臨時休業日を取得（1回だけ）
+  // 店舗名「香里園」で該当店舗を検索し、この予約フォーム専用の店舗として使う。
+  // （複数店舗が登録されている場合、先頭の店舗を決め打ちで使ってしまうと
+  //   別店舗の予約として登録されてしまうため、必ず名前で特定する）
   useEffect(function(){
-    var usedStoreId = STORE_ID_FALLBACK;
-    sb.select("stores","?order=id.asc").then(function(stores){
-      var list = Array.isArray(stores)?stores:[];
-      var matched = list.find(function(s){return s.name && s.name.indexOf(STORE_NAME_KEYWORD)>-1;});
-      usedStoreId = matched ? matched.id : STORE_ID_FALLBACK;
-      if(!matched){
-        console.warn("店舗「"+STORE_NAME_KEYWORD+"」が見つからなかったため、店舗ID "+STORE_ID_FALLBACK+" を仮に使用しています。");
-      }
-      setStoreId(usedStoreId);
-      return Promise.all([
+    sb.select("stores","?name=ilike.*香里園*&limit=1").then(function(stores){
+      var usedStoreId = (Array.isArray(stores)&&stores.length>0) ? stores[0].id : STORE_ID;
+      setResolvedStoreId(usedStoreId);
+      return Promise.allSettled([
         sb.select("business_hours","?store_id=eq."+usedStoreId+"&order=day_of_week.asc"),
         sb.select("temp_closures","?store_id=eq."+usedStoreId),
-        sb.select("clinic_staff","?select=id,store_ids")
+        sb.select("store_settings","?store_id=eq."+usedStoreId+"&order=updated_at.desc.nullslast,id.desc&limit=1"),
+        sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc")
       ]);
     }).then(function(results){
-      setBusinessHours(Array.isArray(results[0])?results[0]:[]);
-      setClosures(Array.isArray(results[1])?results[1]:[]);
-      var staffRows = Array.isArray(results[2])?results[2]:[];
-      if(staffRows.length>0){
-        var map = {};
-        staffRows.forEach(function(row){ if(row.store_ids) map[row.id]=row.store_ids; });
-        var scoped = ALL_STAFF.filter(function(s){
-          var ids = map[s.id];
-          if(!ids) return true; // 未設定＝全店舗扱い（フェイルセーフ）
-          return ids.indexOf(usedStoreId)>-1;
-        });
-        if(scoped.length>0) setStaff(scoped);
+      // Promise.allSettledなので、3つのうちどれか1つが失敗しても、成功した分だけは反映する
+      var businessHoursResult=results[0];
+      var closuresResult=results[1];
+      var settingsResult=results[2];
+      var weeklyShiftsResult=results[3];
+
+      setBusinessHours((businessHoursResult.status==="fulfilled"&&Array.isArray(businessHoursResult.value))?businessHoursResult.value:[]);
+      setClosures((closuresResult.status==="fulfilled"&&Array.isArray(closuresResult.value))?closuresResult.value:[]);
+      setWeeklyShifts((weeklyShiftsResult.status==="fulfilled"&&Array.isArray(weeklyShiftsResult.value))?weeklyShiftsResult.value:[]);
+
+      if(settingsResult.status==="fulfilled"){
+        var settingsRows=settingsResult.value;
+        if(Array.isArray(settingsRows)&&settingsRows.length>0){
+          var s=settingsRows[0];
+          setPageSettings({
+            bookingMinDate: s.booking_min_date || DEFAULT_BOOKING_MIN_DATE,
+            eventStartDate: s.event_start_date || DEFAULT_EVENT_START_DATE,
+            eventEndDate: s.event_end_date || DEFAULT_EVENT_END_DATE,
+            eventMenuName: s.event_menu_name || DEFAULT_EVENT_MENU_NAME,
+            eventMenuPrice: (s.event_menu_price!=null&&s.event_menu_price!=="") ? s.event_menu_price : DEFAULT_EVENT_MENU_PRICE,
+            slotUnit: s.slot_unit || DEFAULT_SLOT_UNIT,
+            hoursBefore: (s.hours_before!=null) ? s.hours_before : DEFAULT_HOURS_BEFORE,
+            daysAhead: s.days_ahead || DEFAULT_DAYS_AHEAD,
+            slotCapacity: s.max_per_slot || DEFAULT_SLOT_CAPACITY,
+            allowSameDay: s.allow_same_day!==false,
+          });
+        }
+      }else{
+        console.error("store_settingsの取得に失敗しました",settingsResult.reason);
       }
       setHoursLoaded(true);
-    }).catch(function(){
+    }).catch(function(e){
+      console.error("店舗情報の取得に失敗しました",e);
       setHoursLoaded(true);
     });
   }, []);
+
+  // 受付開始日の設定が読み込まれた後、初期表示の週を正しい開始日に合わせる（前方向・後方向どちらの補正にも対応）
+  // ※ pageSettings.bookingMinDate はDB取得前からデフォルト値で埋まっているため、
+  //   「実際にDB取得が完了したか」を示す hoursLoaded を条件にする（そうしないとデフォルト値の時点で補正が消費されてしまう）
+  var appliedInitialCorrection = useRef(false);
+  useEffect(function(){
+    if(!hoursLoaded) return;
+    if(appliedInitialCorrection.current) return; // 初回読み込み時だけ補正する（以降はユーザーの週送り操作を優先）
+    appliedInitialCorrection.current = true;
+    var minD=new Date(pageSettings.bookingMinDate+"T00:00:00");
+    var today0=new Date();today0.setHours(0,0,0,0);
+    var base=today0>minD?today0:minD;
+    setWeekStart(base);
+  },[hoursLoaded]);
 
   function getWeekDays(start){
     return Array.from({length:7},function(_,i){var d=new Date(start);d.setDate(start.getDate()+i);return d;});
   }
   var weekDays = getWeekDays(weekStart);
+  var SLOTS = buildSlots(pageSettings.slotUnit); // 予約枠の時間単位（分）は管理画面の設定に従う
 
-  useEffect(function(){
-    var startStr = fmtDate(weekDays[0]);
-    var endStr = fmtDate(weekDays[6]);
-    Promise.all([
-      sb.select("bookings","?date=gte."+startStr+"&date=lte."+endStr+"&menu=eq.無料施術体験会（60分）"),
+  function refreshWeekData(){
+    var wd = getWeekDays(weekStart);
+    var startStr = fmtDate(wd[0]);
+    var endStr = fmtDate(wd[6]);
+    return Promise.all([
+      // メニューを問わず、その日時にスタッフが埋まっているかどうかを見る必要があるため、
+      // 特定メニューだけに絞り込まず全予約を取得する（キャンセル済みは除外）
+      sb.select("bookings","?date=gte."+startStr+"&date=lte."+endStr),
       sb.select("staff_breaks","?date=gte."+startStr+"&date=lte."+endStr)
     ]).then(function(results){
+      var allBookings = Array.isArray(results[0]) ? results[0] : [];
       setWeekData({
-        booked: Array.isArray(results[0])?results[0]:[],
+        booked: allBookings.filter(function(b){return !b.cancelled;}),
         breaks: Array.isArray(results[1])?results[1]:[]
       });
     });
+  }
+
+  useEffect(function(){
+    refreshWeekData();
   }, [fmtDate(weekStart)]);
 
   // ===== 営業時間ヘルパー =====
@@ -286,63 +528,221 @@ function App(){
     }
     return null;
   }
+  function getClosureForDate(ds){
+    for(var i=0;i<closures.length;i++){
+      if(closures[i].date===ds) return closures[i];
+    }
+    return null;
+  }
   function isClosedDate(d){
     var ds = fmtDate(d);
-    for(var i=0;i<closures.length;i++){
-      if(closures[i].date===ds) return true;
+    if(pageSettings.bookingMinDate && ds < pageSettings.bookingMinDate) return true; // 受付開始日より前は常にクローズ扱い
+    var today0=new Date();today0.setHours(0,0,0,0);
+    if(pageSettings.allowSameDay===false && ds===fmtDate(today0)) return true; // 当日予約を許可しない設定
+    if(pageSettings.daysAhead){
+      var maxD=new Date(today0);maxD.setDate(maxD.getDate()+pageSettings.daysAhead);
+      if(ds > fmtDate(maxD)) return true; // 「何日先まで予約可能か」を超えている
     }
+    var closureEntry = getClosureForDate(ds);
+    if(closureEntry && closureEntry.is_closed!==false) return true; // 終日休業（is_closedがfalseの行＝営業時間変更は除く）
+    // イベント期間中（10/1〜10/4）は曜日にかかわらず必ず営業（定休日等の通常設定より優先）
+    if(isEventDate(d)) return false;
+    if(closureEntry && closureEntry.is_closed===false) return false; // 営業時間変更日は「開いている」扱い（時間はisTimeAllowedForDateで判定）
     // 営業時間データが未設定の場合は制限しない（フェイルセーフ）
     if(businessHours.length===0) return false;
     var dh = getDayHours(d.getDay());
     if(!dh) return false;
     return dh.is_open===false;
   }
+  // 現在選択されている（もしくは想定される）施術時間。閉店時刻をまたぐ枠を除外するために使う。
+  function getCurrentDuration(d){
+    if(isEventDate(d)) return 40;
+    var opt=PATIENT_TYPE_OPTIONS.find(function(o){return o.label===form.patientType;});
+    if(opt) return DURATION_MAP[opt.menu]||40;
+    return 40; // 未選択の時点では安全側（長め）に見積もっておく
+  }
   function isTimeAllowedForDate(d,t){
+    var ds = fmtDate(d);
+    var duration = getCurrentDuration(d);
+    var tm = toMin(t);
+    var closureEntry = getClosureForDate(ds);
+    // 「営業時間だけ変更」の日は、通常の曜日設定ではなくこの時間帯を使う（イベント期間中でも優先）
+    if(closureEntry && closureEntry.is_closed===false && closureEntry.open_time && closureEntry.close_time){
+      return tm>=toMin(closureEntry.open_time) && (tm+duration)<=toMin(closureEntry.close_time);
+    }
+    // イベント期間中（10/1〜10/4）は曜日にかかわらず10:00〜20:00で固定
+    if(isEventDate(d)){
+      return tm>=toMin("10:00") && (tm+duration)<=toMin("20:00");
+    }
     if(businessHours.length===0) return true;
     var dh = getDayHours(d.getDay());
     if(!dh || dh.is_open===false) return false;
-    var tm = toMin(t);
     var openM = toMin(dh.open_time||"09:00");
     var closeM = toMin(dh.close_time||"19:00");
-    if(tm<openM || tm>=closeM) return false;
+    if(tm<openM || (tm+duration)>closeM) return false;
     var brs = dh.break_times||[];
     for(var i=0;i<brs.length;i++){
       var bs=toMin(brs[i].start), be=toMin(brs[i].end);
-      if(tm>=bs && tm<be) return false;
+      if(tm<be && (tm+duration)>bs) return false; // 施術時間が休憩時間と重なる場合も除外
     }
     return true;
   }
   function isPastSlotForDate(d,t){
     var now = new Date();
-    if(fmtDate(d) > fmtDate(now)) return false;
-    if(fmtDate(d) < fmtDate(now)) return true;
-    var nowMin = now.getHours()*60 + now.getMinutes();
-    return toMin(t) <= nowMin;
+    var slotDateTime = new Date(fmtDate(d)+"T"+t+":00");
+    // 「何時間前まで予約可能か」の設定を考慮（0＝制限なし＝今の瞬間までOK）
+    var cutoff = new Date(now.getTime() + (pageSettings.hoursBefore||0)*60*60*1000);
+    return slotDateTime <= cutoff;
   }
-  // 指定した日付・時間の「空いているスタッフ数」を返す（同一スタッフの重複はカウントしない）
-  function getRemainingCount(d,t){
+  // メニューごとの施術時間（分）。管理画面側のメニューマスタと同じ内容。
+  // bookingsテーブルに duration が保存されている場合はそちらを優先する。
+  var DURATION_MAP = {
+    "鍼灸併用 3割 初診":20,"鍼灸併用 3割 2回目以降":20,"鍼灸のみ 3割 初診":20,"鍼灸のみ 3割 2回目以降":20,
+    "鍼灸併用 2割 初診":20,"鍼灸併用 2割 2回目以降":20,"鍼灸のみ 2割 初診":20,"鍼灸のみ 2割 2回目以降":20,
+    "鍼灸併用 1割 初診":20,"鍼灸併用 1割 2回目以降":20,"鍼灸のみ 1割 初診":20,"鍼灸のみ 1割 2回目以降":20,
+    "保険請求代行料（来院1日につき）":0,
+    "手技療法 3割 初診":20,"手技療法 3割 2回目":20,"手技療法 3割 3回目":20,"手技療法 3割 4回目以降":20,
+    "手技療法 2割 初診":20,"手技療法 2割 2回目":20,"手技療法 2割 3回目":20,"手技療法 2割 4回目以降":20,
+    "手技療法 1割 初診":20,"手技療法 1割 2回目":20,"手技療法 1割 3回目":20,"手技療法 1割 4回目以降":20,
+    "医療助成 初診":20,"医療助成 2回目":20,"医療助成 3回目以降":20,
+    "自賠責 初診":20,"自賠責 2回目以降":20,
+    "労災 初診":20,"労災 2回目以降":20,
+    "手技療法（施術料）":20,
+    "姿勢矯正":30,"骨盤矯正":30,"ストレッチ":30,"手技療法（マッサージ）":30,"鍼":30,
+    "アジャスト・超音波":20,"鍼治療・ハイボルテージ":20,
+    "アジャスト・超音波 5回券":20,"アジャスト・超音波 11回券":20,"アジャスト・超音波 23回券":20,
+    "鍼治療・ハイボルテージ 5回券":20,"鍼治療・ハイボルテージ 11回券":20,"鍼治療・ハイボルテージ 23回券":20,
+    "姿勢矯正・骨盤矯正・ストレッチ・鍼治療 8回券":30,"姿勢矯正・骨盤矯正・ストレッチ・鍼治療 16回券":30,"姿勢矯正・骨盤矯正・ストレッチ・鍼治療 24回券":30,
+    "フリーパス 1ヶ月":30,"フリーパス 3ヶ月":30,"フリーパス 6ヶ月":30,"フリーパス 12ヶ月":30,
+    "無料カウンセリング":60,"体験施術":60,
+    "初めての方（初診）":40,"久しぶりの方（要確認）":40,"2回目以降の方":30,
+  };
+  // 表記上は「60分（カウンセリング込み）」だが、実際に予約枠として確保する時間は40分
+  DURATION_MAP[pageSettings.eventMenuName]=40;
+  DURATION_MAP["再診（20分）"]=20;
+  function getBookingDuration(b){
+    return b.duration || DURATION_MAP[b.menu] || 30;
+  }
+  // イベント期間終了後（10/5以降）に選んでいただく3パターン
+  var PATIENT_TYPE_OPTIONS = [
+    {label:"初めての方",menu:"初めての方（初診）",desc:"当院へのご来院が初めての方"},
+    {label:"久しぶりの方",menu:"久しぶりの方（要確認）",desc:"しばらく期間が空いている方（最終来院から30日以上など）"},
+    {label:"2回目以降の方",menu:"2回目以降の方",desc:"継続して通院されている方"},
+  ];
+  // 予約の施術時間が、患者ページの1枠（20分）と時間的に重なっているかどうか
+  function overlapsSlot(b,t){
+    var bs=toMin(b.time), be=bs+getBookingDuration(b);
+    var ss=toMin(t), se=ss+20;
+    return bs<se && ss<be;
+  }
+  // 指定したスタッフが指定日に出勤しているか（staff_weekly_shiftsに設定が無いスタッフはフェイルセーフで出勤扱い）
+  function isStaffWorkingOnDate(staffId,d){
+    var dow = d.getDay();
+    var found = null;
+    for(var i=0;i<weeklyShifts.length;i++){
+      if(weeklyShifts[i].staff_id===staffId && weeklyShifts[i].day_of_week===dow){ found=weeklyShifts[i]; break; }
+    }
+    if(!found) return true;
+    return found.is_working!==false;
+  }
+  // 指定した日に既に入っている予約数（キャンセル除く・施術時間の重なりも考慮）
+  function getBookedCountAt(d,t){
+    var ds = fmtDate(d);
+    return weekData.booked.filter(function(b){return b.date===ds && overlapsSlot(b,t);}).length;
+  }
+  // 指定した日時に対応可能なスタッフ一覧（その日休みのスタッフ・休憩中/既存予約が入っている人を除く。施術時間の重なりも考慮。
+  // 応援スタッフ（event_only）は、オープニングイベント期間の日付でのみ対象に含める）
+  function getFreeStaffListFor(d,t){
     var ds = fmtDate(d);
     var unavail = {};
-    weekData.booked.forEach(function(b){if(b.date===ds&&b.time===t) unavail[b.staff_id]=true;});
+    weekData.booked.forEach(function(b){if(b.date===ds&&overlapsSlot(b,t)) unavail[b.staff_id]=true;});
     weekData.breaks.forEach(function(b){if(b.date===ds&&b.time===t) unavail[b.staff_id]=true;});
-    return STAFF.length - Object.keys(unavail).length;
+    var isEvent=isEventDate(d);
+    return STAFF.filter(function(s){
+      if(s.event_only&&!isEvent) return false; // 応援スタッフはイベント期間以外は対象外
+      return !unavail[s.id] && isStaffWorkingOnDate(s.id,d);
+    });
+  }
+  // 指定した日時の残り受付可能数（「1枠あたりの上限」と「対応できるスタッフの人数」のうち小さい方）
+  function getRemainingCount(d,t){
+    var capacity = getSlotCapacity(fmtDate(d));
+    var capacityLeft = capacity - getBookedCountAt(d,t);
+    var freeStaffCount = getFreeStaffListFor(d,t).length;
+    return Math.max(0, Math.min(capacityLeft, freeStaffCount));
   }
   function getAvailableStaffIdFor(d,t){
-    var ds = fmtDate(d);
-    var unavail = {};
-    weekData.booked.forEach(function(b){if(b.date===ds&&b.time===t) unavail[b.staff_id]=true;});
-    weekData.breaks.forEach(function(b){if(b.date===ds&&b.time===t) unavail[b.staff_id]=true;});
-    var found = STAFF.find(function(s){return !unavail[s.id];});
-    return found ? found.id : 1;
+    if(getRemainingCount(d,t)<=0) return null;
+    var free = getFreeStaffListFor(d,t);
+    return free.length>0 ? free[0].id : null;
   }
 
   function getAvailableStaffId(t){
-    if(!selDate) return 1;
+    if(!selDate) return null;
     return getAvailableStaffIdFor(selDate,t);
   }
 
-  function formatBodyParts(parts,other){
-    return parts.map(function(p){return p==="その他"&&other?"その他（"+other+"）":p;}).join("・");
+  // 予約を確定する直前に、その場でもう一度Supabaseへ空き状況を問い合わせて確認する。
+  // 画面表示中の空き情報は多少タイムラグがあるため、ほぼ同時に他の方が同じ枠を
+  // 予約してしまう「かぶり」を防ぐための最終チェック。
+  // 空いていれば staff_id を、埋まっていれば null を返す。
+  function checkStaffAvailabilityNow(dateStr,time){
+    return Promise.all([
+      sb.select("bookings","?date=eq."+dateStr),
+      sb.select("staff_breaks","?date=eq."+dateStr+"&time=eq."+time)
+    ]).then(function(results){
+      var dayBookings = Array.isArray(results[0]) ? results[0] : [];
+      var dayBreaks = Array.isArray(results[1]) ? results[1] : [];
+      var activeOverlapping = dayBookings.filter(function(b){return !b.cancelled && overlapsSlot(b,time);});
+
+      // 1枠あたりの上限に達していないか確認（施術時間の重なりも考慮）
+      var capacity = getSlotCapacity(dateStr);
+      if(activeOverlapping.length >= capacity) return null;
+
+      var unavail = {};
+      activeOverlapping.forEach(function(b){ unavail[b.staff_id]=true; });
+      dayBreaks.forEach(function(b){ unavail[b.staff_id]=true; });
+      var dateObj = new Date(dateStr+"T00:00:00");
+      var isEvent = isEventDate(dateObj);
+      var found = STAFF.find(function(s){
+        if(s.event_only&&!isEvent) return false;
+        return !unavail[s.id] && isStaffWorkingOnDate(s.id,dateObj);
+      });
+      return found ? found.id : null;
+    }).catch(function(){
+      return undefined; // 通信エラー時は判定不能。呼び出し側でフォールバックする
+    });
+  }
+
+
+  function formatBodyParts(parts,other,sides){
+    sides = sides || {};
+    return parts.map(function(p){
+      if(p==="その他") return other?"その他（"+other+"）":"その他";
+      if(LATERAL_PARTS.indexOf(p)>-1 && sides[p]) return p+"（"+sides[p]+"）";
+      return p;
+    }).join("・");
+  }
+  function formatOtherConcerns(){
+    return form.otherConcerns.map(function(c){return c==="その他"&&form.otherConcernsOther?"その他（"+form.otherConcernsOther+"）":c;}).join("・");
+  }
+  function formatWantContinue(){
+    return form.wantContinue==="その他"?"その他："+(form.wantContinueOther||""):form.wantContinue;
+  }
+  function isReferred(){
+    return !!(form.referrerName&&form.referrerName.trim());
+  }
+  function formatMenuPrice(){
+    if(selDate&&!isEventDate(selDate)){
+      var opt=PATIENT_TYPE_OPTIONS.find(function(o){return o.label===form.patientType;});
+      var label=opt?opt.menu:"ご予約";
+      return "🩺 "+label+"　※マイナンバーカードまたは資格確認書のご持参をお願いいたします";
+    }
+    if(pageSettings.eventMenuPrice<=0){
+      return "🎁 "+pageSettings.eventMenuName+"　無料";
+    }
+    return isReferred()
+      ? "🎁 "+pageSettings.eventMenuName+"　紹介特典で無料！"
+      : "🪙 "+pageSettings.eventMenuName+"　¥"+pageSettings.eventMenuPrice;
   }
 
   function toggleArr(key, val){
@@ -352,9 +752,39 @@ function App(){
     setForm(Object.assign({}, form, upd));
   }
 
+  // 負傷部位の選択（左右の区別がある部位は、選択と同時に「両方」を仮設定する）
+  function toggleBodyPart(p){
+    var selected = form.bodyParts.indexOf(p)>-1;
+    var newSides = Object.assign({}, form.bodyPartsSides);
+    if(selected){
+      var newParts = form.bodyParts.filter(function(x){return x!==p;});
+      delete newSides[p];
+      setForm(Object.assign({}, form, {bodyParts:newParts, bodyPartsSides:newSides}));
+    }else{
+      var newParts2 = form.bodyParts.concat([p]);
+      if(LATERAL_PARTS.indexOf(p)>-1) newSides[p] = "両方";
+      setForm(Object.assign({}, form, {bodyParts:newParts2, bodyPartsSides:newSides}));
+    }
+  }
+  function setBodySide(p, side){
+    var newSides = Object.assign({}, form.bodyPartsSides);
+    newSides[p] = side;
+    setForm(Object.assign({}, form, {bodyPartsSides:newSides}));
+  }
+
   function setF(key, val){
     var upd = {}; upd[key] = val;
     setForm(Object.assign({}, form, upd));
+  }
+
+  function renderToast(){
+    if(!toastMsg) return null;
+    return React.createElement("div",{style:{
+      position:"fixed",left:"50%",bottom:24,transform:"translateX(-50%)",
+      background:"#1e293b",color:"white",padding:"12px 20px",borderRadius:10,
+      fontSize:13,fontWeight:700,boxShadow:"0 8px 24px rgba(0,0,0,.25)",
+      zIndex:999,whiteSpace:"nowrap",maxWidth:"90vw",textAlign:"center"
+    }},toastMsg);
   }
 
   function handleLineLogin(){
@@ -363,6 +793,7 @@ function App(){
       liff.getProfile().then(function(profile){
         setLineUserId(profile.userId);
         setF("lineNotify", true);
+        showToast("✅ LINEリマインドの登録が完了しました！");
       }).catch(function(){});
     } else {
       // ページ全体がLINEログイン画面へ遷移してしまうため、戻ってきた時に
@@ -383,17 +814,14 @@ function App(){
     var e = {};
     if(!form.name.trim()) e.name = "お名前を入力してください";
     if(!form.phone.trim()) e.phone = "電話番号を入力してください";
+    if(!form.address.trim()) e.address = "ご住所を入力してください";
     setErrors(e);
     return Object.keys(e).length===0;
   }
 
   function validate3(){
     var e = {};
-    if(form.bodyParts.length===0) e.bodyParts = "負傷部位を選択してください";
-    if(!form.injuryCause) e.injuryCause = "負傷原因を選択してください";
-    if(!form.painWhen) e.painWhen = "時期を選択してください";
-    if(!form.wantContinue) e.wantContinue = "ご回答をお選びください";
-    if(!form.howKnow) e.howKnow = "お選びください";
+    if(form.bodyParts.length===0) e.bodyParts = "負傷部位を1つ以上選択してください";
     setErrors(e);
     return Object.keys(e).length===0;
   }
@@ -401,49 +829,124 @@ function App(){
   function submit(){
     if(!validate3()) return;
     setSubmitting(true);
-    var staffId = getAvailableStaffId(selTime);
+    setSlotFullMsg("");
+    var dateStr = fmtDate(selDate);
+    checkStaffAvailabilityNow(dateStr, selTime).then(function(freshStaffId){
+      if(freshStaffId===null){
+        // 直前で他の方に予約が埋まってしまった
+        setSubmitting(false);
+        setSlotFullMsg("大変申し訳ございません、ちょうどこの日時が埋まってしまいました。お手数ですが別の日時をお選びください。");
+        setSelDate(null);
+        setSelTime(null);
+        setStep(0);
+        refreshWeekData();
+        return;
+      }
+      // 通信エラーで判定できなかった場合は、これまで通り画面上の情報から選ぶ（フォールバック）
+      var staffId = (freshStaffId===undefined) ? getAvailableStaffId(selTime) : freshStaffId;
+      if(!staffId){
+        setSubmitting(false);
+        setSlotFullMsg("大変申し訳ございません、ちょうどこの日時が埋まってしまいました。お手数ですが別の日時をお選びください。");
+        setSelDate(null);
+        setSelTime(null);
+        setStep(0);
+        refreshWeekData();
+        return;
+      }
+      doSubmitBooking(staffId, dateStr);
+    });
+  }
+
+  function doSubmitBooking(staffId, dateStr){
     var howKnowText = form.howKnow==="その他" ? "その他："+form.howKnowOther : form.howKnow;
     var newBookingId = null;
+    var patientTypeOpt=PATIENT_TYPE_OPTIONS.find(function(o){return o.label===form.patientType;});
+    var finalMenu=isEventDate(selDate)?pageSettings.eventMenuName:(patientTypeOpt?patientTypeOpt.menu:pageSettings.eventMenuName);
+    // 任意の問診票で選んだ症状チップ（気になる症状の自由記入は廃止し、負傷部位の選択に一本化）
+    var combinedSymptoms=form.symptoms.join("・");
+
+    savePatientReceiptPreference(form.phone, form.name, form.receiptFrequency);
+
+    // 紹介URL経由の場合の自己紹介チェック（自分の紹介コードで自分が予約するのを防ぐ）
+    var isSelfReferral = !!(referrerInfo && referrerInfo.phone && form.phone && referrerInfo.phone.replace(/[^0-9]/g,"")===form.phone.replace(/[^0-9]/g,""));
+    var validCodeReferral = referrerInfo && !isSelfReferral;
+    var isEventCampaignBooking = isEventDate(new Date(dateStr+"T00:00:00"));
 
     sb.insert("bookings",{
       patient_name:form.name,
       phone:form.phone,
+      address:form.address||null,
+      gender:form.gender||null,
+      age:form.age?parseInt(form.age):null,
       staff_id:staffId,
-      date:fmtDate(selDate),
+      date:dateStr,
       time:selTime,
-      menu:"無料施術体験会（60分）",
-      store_id: storeId,
+      menu:finalMenu,
+      store_id:resolvedStoreId,
+      referrer_name:form.referrerName.trim()||null,
+      referral_code_used: validCodeReferral ? referralCode : null,
       line_notify: !!lineUserId, // LINE連携済みなら自動でリマインド
       line_user_id: lineUserId || null,
+      booked_via_line: !!lineUserId, // LINE経由での予約かどうか（管理画面での目印用）
       reminded:false,
-      body_parts:formatBodyParts(form.bodyParts,form.bodyPartsOther),
+      body_parts:formatBodyParts(form.bodyParts,form.bodyPartsOther,form.bodyPartsSides),
+      other_concerns:formatOtherConcerns()||null,
       injury_cause:form.injuryCause,
       injury_cause_detail:form.injuryCauseDetail,
       pain_when:form.painWhen,
       pain_level:form.painLevel,
-      symptoms:form.symptoms.join("・"),
+      symptoms:combinedSymptoms,
       other_clinic:form.otherClinic+(form.otherClinicName?"（"+form.otherClinicName+"）":""),
       medical_history:form.medicalHistory,
-      want_continue:form.wantContinue,
+      want_continue:formatWantContinue(),
       how_know:howKnowText
     }).then(function(result){
       // 予約IDを取得
       if(Array.isArray(result) && result.length > 0){
         newBookingId = result[0].id;
         setBookingId(newBookingId);
+
+        // 紹介URL経由の予約であれば、紹介記録を作成する（特典は管理画面で来院確認後に確定）
+        if(validCodeReferral){
+          sb.insert("referrals",{
+            referrer_name: referrerInfo.name,
+            referrer_phone: referrerInfo.phone,
+            referred_patient_name: form.name,
+            referred_booking_id: newBookingId,
+            source: "code",
+            referral_code: referralCode,
+            is_event_campaign: isEventCampaignBooking,
+            reward_status: "pending"
+          }).catch(function(){});
+        }else if(form.referrerName.trim()){
+          // 紹介者名の手入力：フルネームが分からない・表記ゆれ等で自動特定できない場合があるため、
+          // 電話番号は未確定（null）のまま「要確認」として記録し、管理画面のスタッフが候補から選んで紐付ける
+          sb.insert("referrals",{
+            referrer_name: form.referrerName.trim(),
+            referrer_phone: null,
+            referred_patient_name: form.name,
+            referred_booking_id: newBookingId,
+            source: "name",
+            is_event_campaign: isEventCampaignBooking,
+            reward_status: "pending"
+          }).catch(function(){});
+        }
       }
 
-      // グループLINEへ通知
-      var msg = "🏥【あんど整骨院 茨木院 新規予約】\n\n"+
+      // グループLINEへ通知（事前問診票が未記入の項目は省略する）
+      var msg = "🏥【あんど整骨院 新規予約】\n\n"+
         "👤 "+form.name+" 様\n"+
         "📞 "+form.phone+"\n"+
         "📅 "+fmtDateJP(selDate)+" "+selTime+"\n"+
-        "🦴 負傷部位："+formatBodyParts(form.bodyParts,form.bodyPartsOther)+"\n"+
-        "⚡ 原因："+form.injuryCause+"\n"+
-        "📅 いつから："+form.painWhen+"\n"+
-        "💭 継続意思："+form.wantContinue+"\n"+
-        "📣 経路："+howKnowText+"\n"+
-        "🔔 LINE連携："+(form.lineNotify && lineUserId ? "あり" : "なし");
+        "💬 気になる症状："+formatBodyParts(form.bodyParts,form.bodyPartsOther,form.bodyPartsSides)+
+        (formatOtherConcerns()?"\n🌿 その他気になること："+formatOtherConcerns():"")+
+        (form.injuryCause?"\n⚡ 原因："+form.injuryCause:"")+
+        (form.painWhen?"\n📅 いつから："+form.painWhen:"")+
+        (form.wantContinue?"\n💭 継続意思："+formatWantContinue():"")+
+        "\n📣 経路："+(howKnowText||"未記入")+"\n"+
+        "🔔 LINE連携："+(form.lineNotify && lineUserId ? "あり" : "なし")+
+        (form.referrerName.trim()?"\n🎁 紹介者："+form.referrerName+" 様（体験会無料）":"")+
+        (validCodeReferral?"\n🎁 紹介URL経由："+referrerInfo.name+" 様のご紹介":"");
 
       fetch("/api/line-notify",{
         method:"POST",
@@ -484,7 +987,7 @@ function App(){
   function reset(){
     setStep(0); setSelDate(null); setSelTime(null);
     setSlotData({booked:[],breaks:[]});
-    setForm({name:"",nameKana:"",phone:"",bodyParts:[],bodyPartsOther:"",injuryCause:"",injuryCauseDetail:"",painWhen:"",painLevel:"",symptoms:[],otherClinic:"",otherClinicName:"",medicalHistory:"",wantContinue:"",howKnow:"",howKnowOther:"",lineNotify:false});
+    setForm({name:"",nameKana:"",phone:"",gender:"",age:"",referrerName:"",bodyParts:[],bodyPartsOther:"",bodyPartsSides:{},otherConcerns:[],otherConcernsOther:"",injuryCause:"",injuryCauseDetail:"",painWhen:"",painLevel:"",symptoms:[],otherClinic:"",otherClinicName:"",medicalHistory:"",wantContinue:"",wantContinueOther:"",howKnow:"",howKnowOther:"",lineNotify:false});
     setDone(false); setBookingId(null); setMemo("");
   }
 
@@ -492,18 +995,45 @@ function App(){
   function submitRepeat(){
     if(!selDate||!selTime) return;
     setSubmitting(true);
-    var staffId=getAvailableStaffId(selTime);
+    setSlotFullMsg("");
+    var dateStr=fmtDate(selDate);
+    checkStaffAvailabilityNow(dateStr, selTime).then(function(freshStaffId){
+      if(freshStaffId===null){
+        setSubmitting(false);
+        setSlotFullMsg("大変申し訳ございません、ちょうどこの日時が埋まってしまいました。お手数ですが別の日時をお選びください。");
+        setSelDate(null);
+        setSelTime(null);
+        refreshWeekData();
+        return;
+      }
+      var staffId=(freshStaffId===undefined)?getAvailableStaffId(selTime):freshStaffId;
+      if(!staffId){
+        setSubmitting(false);
+        setSlotFullMsg("大変申し訳ございません、ちょうどこの日時が埋まってしまいました。お手数ですが別の日時をお選びください。");
+        setSelDate(null);
+        setSelTime(null);
+        refreshWeekData();
+        return;
+      }
+      doSubmitRepeatBooking(staffId, dateStr);
+    });
+  }
+
+  function doSubmitRepeatBooking(staffId, dateStr){
     var newBookingId=null;
     sb.insert("bookings",{
       patient_name:pastBooking.patient_name,
       phone:pastBooking.phone||"",
+      gender:pastBooking.gender||null,
+      age:pastBooking.age||null,
       staff_id:staffId,
-      date:fmtDate(selDate),
+      date:dateStr,
       time:selTime,
-      menu:"再診（30分）",
-      store_id: storeId,
+      menu:"再診（20分）",
+      store_id:resolvedStoreId,
       line_notify:true,
       line_user_id:lineUserId||null,
+      booked_via_line: !!lineUserId,
       reminded:false,
       // 伝えたいことがあれば症状欄に入れる
       symptoms:memo||null,
@@ -517,7 +1047,7 @@ function App(){
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
           groupId:LINE_GROUP_ID,
-          message:"🏥【茨木院 リピーター予約】\n👤 "+pastBooking.patient_name+" 様\n📅 "+fmtDateJP(selDate)+" "+selTime+(memo?"\n💬 "+memo:"")
+          message:"🏥【リピーター予約】\n👤 "+pastBooking.patient_name+" 様\n📅 "+fmtDateJP(selDate)+" "+selTime+(memo?"\n💬 "+memo:"")
         })
       }).catch(function(){});
       // QR・確認メッセージ送信
@@ -533,23 +1063,6 @@ function App(){
     });
   }
 
-  // テスト用ワンタップ予約
-  function quickTest(){
-    var today=new Date();
-    var d=new Date(today);
-    d.setDate(d.getDate()+1);
-    setSelDate(d);
-    setSelTime("10:00");
-    setForm({
-      name:"テスト 花子",nameKana:"テスト ハナコ",phone:"090-1234-5678",
-      bodyParts:["腰部","肩"],injuryCause:"日常生活中のケガ",injuryCauseDetail:"",
-      painWhen:"1週間以内",painLevel:"5",symptoms:["痛み","こり・張り"],
-      otherClinic:"受診していない",otherClinicName:"",medicalHistory:"なし",
-      wantContinue:"はい、ぜひ通いたいです",howKnow:"Instagram",howKnowOther:"",
-      lineNotify:!!lineUserId
-    });
-    setStep(3);
-  }
 
   var H = {
     label:{display:"block",fontSize:13,fontWeight:700,color:"#444",marginBottom:6},
@@ -580,7 +1093,7 @@ function App(){
         React.createElement("div",{style:{fontSize:64,marginBottom:12}},"🎉"),
         React.createElement("div",{style:{fontSize:22,fontWeight:800,color:"#1e3a5f",marginBottom:6}},"予約が完了しました！"),
         React.createElement("div",{style:{color:"#666",fontSize:14,lineHeight:1.8}},
-          "無料施術体験会のご予約ありがとうございます。",React.createElement("br"),
+          (selDate&&!isEventDate(selDate)?"ご予約ありがとうございます。":pageSettings.eventMenuName+"のご予約ありがとうございます。"),React.createElement("br"),
           "ご来院をお待ちしております🌸"
         )
       ),
@@ -589,7 +1102,7 @@ function App(){
       React.createElement("div",{style:{background:"white",borderRadius:14,border:"2px solid #e5e7eb",overflow:"hidden",marginBottom:12}},
         React.createElement("div",{style:{background:"#1e3a5f",color:"white",padding:"12px 16px",fontSize:13,fontWeight:700}},"📅 予約情報"),
         [
-          ["メニュー","🎁 無料施術体験会（60分）¥0"],
+          ["メニュー",formatMenuPrice()],
           ["日付",selDate?fmtDateJP(selDate):""],
           ["時間",selTime||""],
           ["お名前",form.name+" 様"],
@@ -607,14 +1120,15 @@ function App(){
       React.createElement("div",{style:{background:"white",borderRadius:14,border:"2px solid #e5e7eb",overflow:"hidden",marginBottom:12}},
         React.createElement("div",{style:{background:"#059669",color:"white",padding:"12px 16px",fontSize:13,fontWeight:700}},"🩺 ご入力いただいた問診内容"),
         [
-          ["負傷部位",formatBodyParts(form.bodyParts,form.bodyPartsOther)||"—"],
+          ["気になる症状",formatBodyParts(form.bodyParts,form.bodyPartsOther,form.bodyPartsSides)||"—"],
+          ["その他気になること",formatOtherConcerns()||"未記入（任意）"],
           ["負傷原因",form.injuryCause||"—"],
           ["いつから",form.painWhen||"—"],
           ["痛みの強さ",form.painLevel ? form.painLevel+"/10" : "—"],
           ["主な症状",form.symptoms.length>0 ? form.symptoms.join("・") : "—"],
           ["他院受診",form.otherClinic||(form.otherClinicName?"（"+form.otherClinicName+"）":"")||"—"],
           ["既往歴",form.medicalHistory||"—"],
-          ["継続意思",form.wantContinue||"—"],
+          ["継続意思",formatWantContinue()||"—"],
           ["来院経路",form.howKnow==="その他"?"その他："+form.howKnowOther:form.howKnow||"—"]
         ].map(function(item){
           return React.createElement("div",{key:item[0],style:{display:"flex",justifyContent:"space-between",padding:"8px 16px",borderBottom:"1px solid #f0f0f0",gap:12}},
@@ -629,8 +1143,13 @@ function App(){
         React.createElement("div",{style:{fontWeight:800,marginBottom:4}},"📱 LINEに予約確認をお送りしました"),
         "前日にもリマインドメッセージをお送りします。"
       ) : React.createElement("div",{style:{background:"#fef9ec",border:"1px solid #fde68a",borderRadius:10,padding:"12px 16px",marginBottom:12,fontSize:13,color:"#92400e"}},
-        React.createElement("div",{style:{fontWeight:800,marginBottom:4}},"🔔 LINEリマインドについて"),
-        "次回ご来院時にLINE連携をお勧めします。"
+        React.createElement("div",{style:{fontWeight:800,marginBottom:6}},"🔔 LINE連携がまだのようです"),
+        React.createElement("div",{style:{lineHeight:1.9}},
+          "✓ 前日リマインドが届く",React.createElement("br"),
+          "✓ 次回予約が電話番号だけでかんたんに",React.createElement("br"),
+          "✓ お得なお知らせが届く"
+        ),
+        React.createElement("div",{style:{marginTop:6,fontSize:11}},"あんど整骨院のLINE公式アカウントを友だち追加のうえ、次回はトーク画面からこの予約ページを開いてみてください。")
       ),
 
       // キャンセル案内
@@ -645,7 +1164,8 @@ function App(){
           React.createElement("span",{style:{fontSize:18}},"💬"),
           "公式LINEに戻る"
         )
-      )
+      ),
+      renderToast()
     )
   );
 
@@ -653,10 +1173,10 @@ function App(){
   return React.createElement("div",{style:{minHeight:"100vh",background:"#f0f4f8"}},
     React.createElement("div",{style:{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",color:"white",padding:"18px 16px",textAlign:"center"}},
       React.createElement("div",{style:{fontSize:20,fontWeight:800,letterSpacing:2}},CLINIC_NAME),
-      React.createElement("div",{style:{fontSize:12,opacity:0.75,marginTop:2}},"無料施術体験会 オンライン予約")
+      React.createElement("div",{style:{fontSize:12,opacity:0.75,marginTop:2}},pageSettings.eventMenuName+" オンライン予約")
     ),
     React.createElement("div",{style:{background:"#fef9ec",borderBottom:"2px solid #fde68a",padding:"10px 16px",textAlign:"center"}},
-      React.createElement("span",{style:{fontWeight:800,color:"#92400e",fontSize:14}},"🎁 無料施術体験会（60分）¥0"),
+      React.createElement("span",{style:{fontWeight:800,color:"#92400e",fontSize:14}},formatMenuPrice()),
       React.createElement("span",{style:{fontSize:12,color:"#a16207",marginLeft:8}},"初めての方限定")
     ),
     React.createElement("div",{style:{background:"white",borderBottom:"1px solid #eee",padding:"12px 16px"}},
@@ -674,24 +1194,117 @@ function App(){
         })
       )
     ),
-    React.createElement("div",{style:{maxWidth:480,margin:"0 auto",padding:"20px 16px"}},
+    React.createElement("div",{style:{maxWidth:840,margin:"0 auto",padding:"20px 16px"}},
 
       // ===== STEP 0: 日時選択 =====
-      step===0?React.createElement("div",null,
+      step===0?React.createElement("div",{style:{paddingBottom:96}},
+        // 紹介キャンペーンバナー（?refで来た場合。無効なコードなら何も表示されない＝通常予約）
+        referrerInfo?React.createElement("div",{style:{background:"linear-gradient(135deg,#fef3c7,#fde68a)",border:"2px solid #f59e0b",borderRadius:14,padding:"16px 16px",marginBottom:16}},
+          React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:8}},
+            React.createElement("span",{style:{fontSize:22}},"🎁"),
+            React.createElement("span",{style:{fontWeight:800,fontSize:14,color:"#92400e"}},"ご紹介特典対象")
+          ),
+          React.createElement("div",{style:{fontSize:13,color:"#78350f",lineHeight:1.7,marginBottom:6}},
+            (referrerInfo.name||"")+"様からのご紹介です！"
+          ),
+          React.createElement("div",{style:{background:"white",borderRadius:10,padding:"10px 12px",fontSize:13,color:"#1e293b",fontWeight:700}},
+            "AI姿勢分析＋あなた専用姿勢レポート",
+            React.createElement("br"),
+            React.createElement("span",{style:{color:"#94a3b8",fontWeight:600,textDecoration:"line-through",fontSize:12}},"通常2,200円相当"),
+            "　→　",
+            React.createElement("span",{style:{color:"#dc2626",fontWeight:800}},"無料")
+          ),
+          React.createElement("div",{style:{fontSize:11,color:"#92400e",marginTop:6}},"※無料体験会期間中のご来院が対象です")
+        ):null,
         // リピーター向けバナー
         isRepeat?React.createElement("div",{style:{background:"linear-gradient(135deg,#f0fdf4,#dcfce7)",border:"1.5px solid #86efac",borderRadius:12,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}},
           React.createElement("span",{style:{fontSize:24}},"👋"),
           React.createElement("div",null,
-            React.createElement("div",{style:{fontWeight:800,fontSize:14,color:"#065f46"}}),"おかえりなさい！ "+pastBooking.patient_name+" 様"),
-            React.createElement("div",{style:{fontSize:12,color:"#059669",marginTop:2}}),"日時だけ選べばすぐ予約できます"
+            React.createElement("div",{style:{fontWeight:800,fontSize:14,color:"#065f46"}},"おかえりなさい！ "+pastBooking.patient_name+" 様"),
+            React.createElement("div",{style:{fontSize:12,color:"#059669",marginTop:2}},"日時だけ選べばすぐ予約できます")
+          )
+        ):React.createElement("div",{style:{marginBottom:16}},
+          !phoneLookupOpen?React.createElement("div",null,
+            React.createElement("button",{
+              onClick:function(){setPhoneLookupOpen(true);setPhoneLookupStatus("");},
+              style:{width:"100%",background:"linear-gradient(135deg,#06C755,#04a648)",border:"none",borderRadius:12,padding:"16px 14px",cursor:"pointer",boxShadow:"0 4px 14px rgba(6,199,85,.4)",display:"flex",alignItems:"center",justifyContent:"center",gap:10,marginBottom:16}
+            },
+              React.createElement("span",{style:{fontSize:24}},"👋"),
+              React.createElement("div",{style:{textAlign:"left"}},
+                React.createElement("div",{style:{fontWeight:800,fontSize:14,color:"white",lineHeight:1.4}},"一度来たことある方は必ずこちらを押してください"),
+                React.createElement("div",{style:{fontSize:11,color:"rgba(255,255,255,.9)"}},"LINE連携でかんたん予約")
+              )
+            ),
+            React.createElement("div",{style:{fontSize:13,fontWeight:700,color:"#374151",marginBottom:8}},"👋 ご来院状況を教えてください *"),
+            React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:8}},
+              PATIENT_TYPE_OPTIONS.map(function(opt){
+                var sel=form.patientType===opt.label;
+                return React.createElement("button",{key:opt.label,onClick:function(){
+                  setF("patientType",opt.label);
+                  var el=document.getElementById("calendarHeading");
+                  if(el) el.scrollIntoView({behavior:"smooth",block:"start"});
+                },
+                  style:{textAlign:"left",padding:"14px 16px",borderRadius:10,border:"1.5px solid "+(sel?"#1e3a5f":"#e5e7eb"),background:sel?"#1e3a5f":"white",cursor:"pointer",fontFamily:"inherit"}},
+                  React.createElement("div",{style:{fontSize:14,fontWeight:800,color:sel?"white":"#1e293b"}},opt.label),
+                  React.createElement("div",{style:{fontSize:11,color:sel?"rgba(255,255,255,.8)":"#94a3b8",marginTop:2}},opt.desc)
+                );
+              })
+            )
+          ):
+          React.createElement("div",{style:{background:"#f0f9ff",border:"1.5px solid #bae6fd",borderRadius:10,padding:"12px 14px"}},
+            React.createElement("div",{style:{fontSize:12,color:"#0369a1",fontWeight:700,marginBottom:8}},"ご登録の電話番号を入力してください"),
+            React.createElement("div",{style:{display:"flex",gap:8}},
+              React.createElement("input",{type:"tel",value:phoneLookupValue,placeholder:"090-0000-0000",
+                onChange:function(e){setPhoneLookupValue(e.target.value);setPhoneLookupStatus("");},
+                style:{flex:1,padding:"9px 12px",border:"1.5px solid #bae6fd",borderRadius:8,fontSize:14}
+              }),
+              React.createElement("button",{onClick:lookupByPhone,disabled:phoneLookupStatus==="searching",
+                style:{padding:"9px 16px",background:"#0891b2",color:"white",border:"none",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",opacity:phoneLookupStatus==="searching"?0.6:1}
+              },phoneLookupStatus==="searching"?"確認中...":"確認する")
+            ),
+            phoneLookupStatus==="notfound"?React.createElement("div",{style:{fontSize:12,color:"#dc2626",marginTop:8,fontWeight:700}},"見つかりませんでした。恐れ入りますが、通常の予約からお進みください。"):null,
+            React.createElement("button",{onClick:function(){setPhoneLookupOpen(false);setPhoneLookupStatus("");},
+              style:{background:"none",border:"none",color:"#94a3b8",fontSize:11,cursor:"pointer",marginTop:8,padding:0}
+            },"閉じる")
+          )
+        ),
+
+        // ===== LINE未連携の方向け：連携のメリットを伝えるバナー =====
+        !lineUserId?React.createElement("div",{style:{background:"linear-gradient(135deg,#f0fdf4,#dcfce7)",border:"1.5px solid #86efac",borderRadius:12,padding:"14px 16px",marginBottom:16}},
+          React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:8}},
+            React.createElement("span",{style:{fontSize:20}},"💬"),
+            React.createElement("span",{style:{fontWeight:800,fontSize:14,color:"#065f46"}},"LINE連携がおすすめです")
+          ),
+          React.createElement("div",{style:{fontSize:12,color:"#065f46",lineHeight:1.9}},
+            React.createElement("div",null,"✓ 前日にリマインド通知が届く（うっかり忘れを防止）"),
+            React.createElement("div",null,"✓ 次回のご予約が電話番号だけでかんたんに"),
+            React.createElement("div",null,"✓ キャンペーン・空き状況のお知らせが届く")
+          ),
+          React.createElement("div",{style:{fontSize:11,color:"#059669",marginTop:8,fontWeight:700}},
+            "※あんど整骨院のLINE公式アカウントを友だち追加のうえ、トーク画面からこの予約ページを開くと自動で連携されます。"
+          )
         ):null,
 
-        React.createElement("div",{style:{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:16}},"日時を選んでください"),
+        React.createElement("div",{id:"calendarHeading",style:{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:16}},"日時を選んでください"),
+
+        // ===== 直前チェックで埋まっていた場合の警告 =====
+        slotFullMsg?React.createElement("div",{style:{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:12,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}},
+          React.createElement("span",{style:{fontSize:20}},"⚠️"),
+          React.createElement("div",{style:{fontSize:13,color:"#991b1b",fontWeight:700}},slotFullMsg)
+        ):null,
+
+        // ===== イベント開催のお知らせ =====
+        React.createElement("div",{style:{background:"linear-gradient(135deg,#fef2f2,#fff1f2)",border:"1.5px solid #fecaca",borderRadius:12,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10}},
+          React.createElement("span",{style:{fontSize:22}},"🎉"),
+          React.createElement("div",null,
+            React.createElement("div",{style:{fontWeight:800,fontSize:13,color:"#991b1b"}},"10月1日（木）〜10月4日（日）はオープニングイベント開催期間です！")
+          )
+        ),
 
         // ===== 週間ナビゲーション =====
         React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}},
           React.createElement("button",{
-            onClick:function(){var d=new Date(weekStart);d.setDate(d.getDate()-7);var today0=new Date();today0.setHours(0,0,0,0);if(d<today0)d=today0;setWeekStart(d);},
+            onClick:function(){var d=new Date(weekStart);d.setDate(d.getDate()-7);var today0=new Date();today0.setHours(0,0,0,0);var minD=pageSettings.bookingMinDate?new Date(pageSettings.bookingMinDate+"T00:00:00"):today0;if(today0>minD)minD=today0;if(d<minD)d=minD;setWeekStart(d);},
             style:{background:"none",border:"none",color:"#64748b",fontSize:13,fontWeight:700,cursor:"pointer",padding:"6px 4px"}
           },"‹ 前の週へ"),
           React.createElement("div",{style:{fontSize:13,fontWeight:800,color:"#1e3a5f"}},weekDays[0].getFullYear()+"年"+(weekDays[0].getMonth()+1)+"月"),
@@ -711,12 +1324,14 @@ function App(){
                   var isSat=d.getDay()===6, isSun=d.getDay()===0;
                   var isSel=selDate&&fmtDate(selDate)===fmtDate(d);
                   var closed=isClosedDate(d);
+                  var isEvent=isEventDate(d);
                   return React.createElement("th",{key:i,style:{padding:"8px 4px",textAlign:"center",fontSize:13,fontWeight:800,
-                    background:isSel?"#eff6ff":closed?"#f3f4f6":"#f8fafc",
+                    background:isSel?"#eff6ff":isEvent?"#fff1f2":closed?"#f3f4f6":"#f8fafc",
                     color:closed?"#cbd5e1":isSun?"#ef4444":isSat?"#2563eb":"#1e293b",
                     borderBottom:"2px solid #e5e7eb",minWidth:60}},
                     React.createElement("div",null,d.getDate()),
-                    React.createElement("div",{style:{fontSize:10,fontWeight:600}},DAYS_JP[d.getDay()])
+                    React.createElement("div",{style:{fontSize:10,fontWeight:600}},DAYS_JP[d.getDay()]),
+                    isEvent?React.createElement("div",{style:{fontSize:8,fontWeight:800,color:"#dc2626",marginTop:2,whiteSpace:"nowrap"}},"🎉イベント"):null
                   );
                 })
               )
@@ -741,8 +1356,9 @@ function App(){
                     if(remaining<=0){
                       return React.createElement("td",{key:di,style:Object.assign({},cellStyle,{color:"#f59e0b",fontSize:10,cursor:"default"})},"TEL");
                     }
-                    var symbol=remaining>=3?"◎":remaining===2?"○":"△";
-                    var symColor=remaining>=3?"#7c3aed":remaining===2?"#7c3aed":"#d97706";
+                    // 空き枠が「4枠以下」なら△、「5枠以上」なら◎
+                    var symbol=remaining<5?"△":"◎";
+                    var symColor=remaining<5?"#d97706":"#7c3aed";
                     return React.createElement("td",{key:di,onClick:function(){setSelDate(d);setSelTime(t);},
                       style:Object.assign({},cellStyle,{cursor:"pointer",color:isSel?"white":symColor,background:isSel?"#1e3a5f":"transparent"})},
                       symbol
@@ -753,8 +1369,22 @@ function App(){
             )
           )
         ),
+
+        // ===== 友達を誘うと特典バナー =====
+        React.createElement("div",{style:{background:"linear-gradient(135deg,#fef3c7,#fde68a)",border:"1.5px solid #f59e0b",borderRadius:12,padding:"14px 16px",marginBottom:14,display:"flex",alignItems:"center",gap:12}},
+          React.createElement("span",{style:{fontSize:26}},"🎁"),
+          React.createElement("div",null,
+            React.createElement("div",{style:{fontWeight:800,fontSize:14,color:"#92400e"}},"お友達をご紹介いただくと特典があります！"),
+            React.createElement("div",{style:{fontSize:12,color:"#92400e",marginTop:2,lineHeight:1.6}},
+              isRepeat
+                ?"ご紹介いただいたお友達が初めてご来院された際に、特典をご案内しています。ぜひあんど整骨院をお友達にもおすすめください！"
+                :"あんど整骨院にすでに通われている方のご紹介なら、下の「紹介者のお名前」欄にご記入いただくだけでOKです"
+            )
+          )
+        ),
+
         React.createElement("div",{style:{fontSize:11,color:"#94a3b8",marginBottom:20,lineHeight:1.7}},
-          "◎○ … 空きあり　△ … 残りわずか　TEL … 満枠のためお電話でご相談ください　× … 受付時間外／休診",React.createElement("br"),
+          "◎ … 空きあり（5枠以上）　△ … 残りわずか（1〜4枠）　TEL … 満枠のためお電話でご相談ください　× … 受付時間外／休診　🎉イベント … オープニングイベント開催日",React.createElement("br"),
           selDate&&selTime?"選択中："+fmtDateJP(selDate)+" "+selTime:"日時を選択してください"
         ),
 
@@ -771,60 +1401,67 @@ function App(){
               style:{width:"100%",padding:"10px 12px",border:"1.5px solid #e2e8f0",borderRadius:10,fontSize:14,fontFamily:"inherit",resize:"none",lineHeight:1.6}
             })
           ),
-          // 予約内容プレビュー
-          React.createElement("div",{style:{background:"#f8fafc",border:"1.5px solid #e2e8f0",borderRadius:12,padding:"12px 16px",marginBottom:14}},
-            React.createElement("div",{style:{fontSize:12,fontWeight:700,color:"#64748b",marginBottom:8}},"📋 予約内容"),
+          // 予約内容プレビュー（タップでも予約を確定できます）
+          React.createElement("div",{
+            onClick:function(){ if(!submitting) submitRepeat(); },
+            style:{background:"#f8fafc",border:"1.5px solid #e2e8f0",borderRadius:12,padding:"12px 16px",marginBottom:14,cursor:submitting?"default":"pointer"}
+          },
+            React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}},
+              React.createElement("div",{style:{fontSize:12,fontWeight:700,color:"#64748b"}},"📋 予約内容"),
+              React.createElement("div",{style:{fontSize:10,color:"#94a3b8"}},"タップして予約確定 ›")
+            ),
             React.createElement("div",{style:{fontSize:13,color:"#1e293b",lineHeight:2}},[
               "👤 "+pastBooking.patient_name+" 様",
               "📅 "+fmtDateJP(selDate)+" "+selTime,
-              "🩺 再診（30分）",
+              "🩺 再診（20分）",
               "📞 "+pastBooking.phone,
             ].join("\n"))
           ),
-          React.createElement("button",{
-            onClick:submitRepeat,
-            disabled:submitting,
-            style:Object.assign({},H.btn,{fontSize:16,padding:"16px",opacity:submitting?0.7:1,background:"linear-gradient(180deg,#059669,#047857)",boxShadow:"0 4px 0 #065f46,0 6px 16px rgba(5,150,105,.35)"})
-          },submitting?"送信中...":"⚡ かんたん予約する"),
-          React.createElement("div",{style:{textAlign:"center",marginTop:12}},
+          React.createElement("div",{style:{textAlign:"center"}},
             React.createElement("button",{
               onClick:function(){setIsRepeat(false);setStep(1);},
               style:{background:"none",border:"none",color:"#94a3b8",fontSize:12,cursor:"pointer",textDecoration:"underline"}
             },"初回の方・情報を変更する場合はこちら")
           )
-        ):React.createElement("button",{
-          onClick:function(){setStep(isRepeat?0:1);if(!isRepeat)setStep(1);},
-          disabled:!selDate||!selTime,
-          style:Object.assign({},H.btn,{opacity:(!selDate||!selTime)?0.4:1})
-        },"次へ →"),
+        ):(
+          selDate&&selTime?React.createElement("div",{style:{background:"#eff6ff",border:"1.5px solid #93c5fd",borderRadius:12,padding:"14px 16px",marginBottom:14,display:"flex",alignItems:"center",gap:10}},
+            React.createElement("span",{style:{fontSize:22}},"✅"),
+            React.createElement("div",null,
+              React.createElement("div",{style:{fontSize:11,fontWeight:700,color:"#1e40af"}},"選択した日時"),
+              React.createElement("div",{style:{fontSize:16,fontWeight:800,color:"#1e3a5f"}},fmtDateJP(selDate)+"　"+selTime)
+            )
+          ):null
+        ),
+      ):null,
 
-        // テスト用ワンタップボタン
-        React.createElement("button",{
-          onClick:quickTest,
-          style:{marginTop:12,width:"100%",padding:"10px",borderRadius:10,border:"2px dashed #d97706",background:"#fef9ec",color:"#92400e",fontSize:13,fontWeight:700,cursor:"pointer"}
-        },"🧪 テスト用：ワンタップで確認画面へ")
+      // ===== STEP 0 用：画面下部に固定される操作バー（スクロールしなくても常に押せる）=====
+      step===0?React.createElement("div",{style:{position:"fixed",left:0,right:0,bottom:0,background:"white",boxShadow:"0 -6px 20px rgba(0,0,0,.1)",padding:"12px 16px",zIndex:60}},
+        React.createElement("div",{style:{maxWidth:480,margin:"0 auto"}},
+          selDate&&selTime?React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:8,padding:"6px 10px",background:"#eff6ff",borderRadius:8}},
+            React.createElement("span",{style:{fontSize:14}},"📅"),
+            React.createElement("span",{style:{fontSize:13,fontWeight:800,color:"#1e3a5f"}},fmtDateJP(selDate)+"　"+selTime)
+          ):null,
+          isRepeat&&selDate&&selTime?React.createElement("button",{
+            onClick:submitRepeat,
+            disabled:submitting,
+            style:Object.assign({},H.btn,{fontSize:16,padding:"16px",opacity:submitting?0.7:1,background:"linear-gradient(180deg,#059669,#047857)",boxShadow:"0 4px 0 #065f46,0 6px 16px rgba(5,150,105,.35)"})
+          },submitting?"送信中...":"⚡ かんたん予約する"):(()=>{
+            var needsPatientType=selDate&&!isEventDate(selDate);
+            var canProceed=selDate&&selTime&&(!needsPatientType||form.patientType);
+            return React.createElement("button",{
+              onClick:function(){setStep(1);},
+              disabled:!canProceed,
+              style:Object.assign({},H.btn,{opacity:canProceed?1:0.4})
+            },!selDate||!selTime?"日時を選択してください":(needsPatientType&&!form.patientType)?"ご来院状況を選択してください":"次へ →");
+          })()
+        )
       ):null,
 
       // ===== STEP 1: 基本情報 =====
       step===1?React.createElement("div",null,
         React.createElement("div",{style:{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:16}},"基本情報を入力してください"),
-        React.createElement("div",{style:H.sec},
-          React.createElement("div",{style:H.secT},"👤 お客様情報"),
-          [
-            {label:"お名前 *",key:"name",type:"text",ph:"山本 花子"},
-            {label:"フリガナ",key:"nameKana",type:"text",ph:"ヤマモト ハナコ"},
-            {label:"電話番号 *",key:"phone",type:"tel",ph:"090-0000-0000"}
-          ].map(function(f){
-            return React.createElement("div",{key:f.key,style:{marginBottom:14}},
-              React.createElement("label",{style:H.label},f.label),
-              React.createElement("input",{type:f.type,value:form[f.key],placeholder:f.ph,
-                onChange:function(e){setF(f.key,e.target.value);},
-                style:Object.assign({},H.input,{border:errors[f.key]?"2px solid #ef4444":"1.5px solid #ddd"})
-              }),
-              errors[f.key]?React.createElement("div",{style:{color:"#ef4444",fontSize:12,marginTop:4}},"⚠ "+errors[f.key]):null
-            );
-          })
-        ),
+
+        // ===== LINE連携（前日リマインド） — 最優先で一番上に表示 =====
         React.createElement("div",{style:{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12,padding:16,marginBottom:20}},
           React.createElement("div",{style:{fontWeight:800,fontSize:14,color:"#065f46",marginBottom:6}},"🔔 前日リマインドについて"),
           React.createElement("div",{style:{fontSize:13,color:"#059669",lineHeight:1.7}},"ご予約の前日に自動でLINEリマインドをお送りします。"),
@@ -840,6 +1477,60 @@ function App(){
                 "LINEと連携してリマインドを受け取る"
               )
         ),
+
+        React.createElement("div",{style:H.sec},
+          React.createElement("div",{style:H.secT},"👤 お客様情報"),
+          [
+            {label:"お名前 *",key:"name",type:"text",ph:"山本 花子"},
+            {label:"フリガナ",key:"nameKana",type:"text",ph:"ヤマモト ハナコ"},
+            {label:"電話番号 *",key:"phone",type:"tel",ph:"090-0000-0000"},
+            {label:"ご住所 *",key:"address",type:"text",ph:"例：大阪府寝屋川市〇〇町1-2-3"}
+          ].map(function(f){
+            return React.createElement("div",{key:f.key,style:{marginBottom:14}},
+              React.createElement("label",{style:H.label},f.label),
+              React.createElement("input",{type:f.type,value:form[f.key],placeholder:f.ph,
+                onChange:function(e){setF(f.key,e.target.value);},
+                style:Object.assign({},H.input,{border:errors[f.key]?"2px solid #ef4444":"1.5px solid #ddd"})
+              }),
+              errors[f.key]?React.createElement("div",{style:{color:"#ef4444",fontSize:12,marginTop:4}},"⚠ "+errors[f.key]):null
+            );
+          }),
+          React.createElement("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:4}},
+            React.createElement("div",null,
+              React.createElement("label",{style:H.label},"性別（任意）"),
+              React.createElement("div",{style:{display:"flex",gap:6}},
+                ["女性","男性","回答しない"].map(function(v){
+                  return React.createElement("button",{key:v,type:"button",onClick:function(){setF("gender",v);},
+                    style:{flex:1,padding:"10px 4px",borderRadius:8,border:"1.5px solid "+(form.gender===v?"#1e3a5f":"#ddd"),background:form.gender===v?"#1e3a5f":"white",color:form.gender===v?"white":"#444",cursor:"pointer",fontSize:12,fontWeight:form.gender===v?700:400}},v);
+                })
+              )
+            ),
+            React.createElement("div",null,
+              React.createElement("label",{style:H.label},"年齢（任意）"),
+              React.createElement("input",{type:"number",inputMode:"numeric",min:"0",max:"120",value:form.age,placeholder:"例：34",
+                onChange:function(e){setF("age",e.target.value);},
+                style:H.input
+              })
+            )
+          )
+        ),
+
+        // ===== 紹介者のお名前（任意） =====
+        React.createElement("div",{style:H.sec},
+          React.createElement("div",{style:H.secT},"🎁 紹介者のお名前（任意）"),
+          React.createElement("div",{style:{fontSize:12,color:"#9ca3af",marginBottom:10,lineHeight:1.7}},
+            pageSettings.eventMenuPrice<=0
+              ? "あんど整骨院にすでに通われている方からのご紹介の場合、そのお名前をご記入ください。"
+              : "あんど整骨院にすでに通われている方からのご紹介の場合、そのお名前をご記入ください。"+pageSettings.eventMenuName+"が無料になります🎉"
+          ),
+          React.createElement("input",{type:"text",value:form.referrerName,placeholder:"例：山本 花子",
+            onChange:function(e){setF("referrerName",e.target.value);},
+            style:H.input
+          }),
+          (form.referrerName.trim()&&pageSettings.eventMenuPrice>0)?React.createElement("div",{style:{marginTop:10,background:"#f5f3ff",border:"1px solid #ddd6fe",borderRadius:8,padding:"10px 12px",fontSize:13,color:"#6d28d9",fontWeight:700}},
+            "🎉 "+form.referrerName+"様のご紹介で、今回の体験会が無料になります！"
+          ):null
+        ),
         React.createElement("div",{style:{display:"flex",gap:10}},
           React.createElement("button",{onClick:function(){setStep(0);},style:H.btnB},"← 戻る"),
           React.createElement("button",{onClick:function(){if(validate2())setStep(2);},style:Object.assign({},H.btn,{flex:1,width:"auto"})},"次へ →")
@@ -848,16 +1539,29 @@ function App(){
 
       // ===== STEP 2: 問診 =====
       step===2?React.createElement("div",null,
-        React.createElement("div",{style:{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:4}},"症状・問診票"),
-        React.createElement("div",{style:{fontSize:12,color:"#9ca3af",marginBottom:16}},"保険請求に必要な情報です。"),
+        React.createElement("div",{style:{fontSize:17,fontWeight:800,color:"#1e3a5f",marginBottom:4}},"気になる症状を教えてください"),
+        React.createElement("div",{style:{fontSize:12,color:"#9ca3af",marginBottom:16}},"かんたんで構いません。詳しい問診は任意です（来院時にもお伺いできます）。"),
 
         React.createElement("div",{style:H.sec},
-          React.createElement("div",{style:H.secT},"🦴 負傷部位（複数選択可）*"),
+          React.createElement("div",{style:H.secT},"💬 気になる症状（複数選択可） *"),
           React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:6}},
             BODY_PARTS.map(function(p){
-              return chip(form.bodyParts.indexOf(p)>-1, p, function(){toggleArr("bodyParts",p);});
+              return chip(form.bodyParts.indexOf(p)>-1, p, function(){toggleBodyPart(p);});
             })
           ),
+          form.bodyParts.filter(function(p){return LATERAL_PARTS.indexOf(p)>-1;}).length>0?React.createElement("div",{style:{marginTop:12,display:"flex",flexDirection:"column",gap:8}},
+            form.bodyParts.filter(function(p){return LATERAL_PARTS.indexOf(p)>-1;}).map(function(p){
+              return React.createElement("div",{key:p,style:{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}},
+                React.createElement("span",{style:{fontSize:12,color:"#374151",fontWeight:700,minWidth:60}},p),
+                ["右","左","両方"].map(function(side){
+                  var sel=(form.bodyPartsSides[p]||"両方")===side;
+                  return React.createElement("button",{key:side,type:"button",onClick:function(){setBodySide(p,side);},
+                    style:{padding:"5px 12px",borderRadius:16,border:"1.5px solid "+(sel?"#1e3a5f":"#ddd"),background:sel?"#1e3a5f":"white",color:sel?"white":"#444",fontSize:12,fontWeight:sel?700:400,cursor:"pointer"}
+                  },side);
+                })
+              );
+            })
+          ):null,
           form.bodyParts.indexOf("その他")>-1?React.createElement("input",{
             type:"text",
             value:form.bodyPartsOther,
@@ -865,98 +1569,159 @@ function App(){
             onChange:function(e){setF("bodyPartsOther",e.target.value);},
             style:Object.assign({},H.input,{marginTop:10})
           }):null,
-          errors.bodyParts?React.createElement("div",{style:{color:"#ef4444",fontSize:12,marginTop:8}},"⚠ "+errors.bodyParts):null,
-          form.bodyParts.length>0?React.createElement("div",{style:{marginTop:10,padding:"8px 12px",background:"#eff6ff",borderRadius:8,fontSize:13,color:"#1e3a5f",fontWeight:600}},"選択中："+form.bodyParts.map(function(p){return p==="その他"&&form.bodyPartsOther?"その他（"+form.bodyPartsOther+"）":p;}).join("・")):null
+          errors.bodyParts?React.createElement("div",{style:{color:"#ef4444",fontSize:12,marginTop:6}},"⚠ "+errors.bodyParts):null
         ),
 
         React.createElement("div",{style:H.sec},
-          React.createElement("div",{style:H.secT},"⚡ 負傷原因 *"),
-          INJURY_CAUSES.map(function(c){
-            return React.createElement("button",{key:c.label,
-              onClick:function(){setF("injuryCause",c.label);},
-              style:{width:"100%",padding:"12px 14px",borderRadius:10,border:"1.5px solid "+(form.injuryCause===c.label?"#1e3a5f":"#e5e7eb"),background:form.injuryCause===c.label?"#eff6ff":"white",textAlign:"left",cursor:"pointer",marginBottom:8,display:"flex",alignItems:"center",gap:10}},
-              React.createElement("span",{style:{fontSize:20}},c.icon),
-              React.createElement("div",null,
-                React.createElement("div",{style:{fontWeight:700,fontSize:14,color:"#1e3a5f"}},c.label),
-                React.createElement("div",{style:{fontSize:12,color:"#666"}},c.desc)
-              ),
-              form.injuryCause===c.label?React.createElement("span",{style:{marginLeft:"auto",color:"#2563eb"}},"✓"):null
-            );
-          }),
-          errors.injuryCause?React.createElement("div",{style:{color:"#ef4444",fontSize:12}},"⚠ "+errors.injuryCause):null
-        ),
-
-        React.createElement("div",{style:H.sec},
-          React.createElement("div",{style:H.secT},"📅 いつ頃から痛みがありますか？ *"),
+          React.createElement("div",{style:H.secT},"🌿 その他気になること（任意）"),
+          React.createElement("div",{style:{fontSize:11,color:"#9ca3af",marginBottom:8}},"頭痛・めまい・冷え性など、上記の主症状とは別にお悩みがあれば教えてください"),
           React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:6}},
-            PAIN_WHEN.map(function(w){
-              return chip(form.painWhen===w, w, function(){setF("painWhen",w);});
+            OTHER_CONCERNS.map(function(c){
+              return chip(form.otherConcerns.indexOf(c)>-1, c, function(){toggleArr("otherConcerns",c);});
             })
           ),
-          errors.painWhen?React.createElement("div",{style:{color:"#ef4444",fontSize:12,marginTop:8}},"⚠ "+errors.painWhen):null
+          form.otherConcerns.indexOf("その他")>-1?React.createElement("input",{
+            type:"text",
+            value:form.otherConcernsOther,
+            placeholder:"具体的にご記入ください",
+            onChange:function(e){setF("otherConcernsOther",e.target.value);},
+            style:Object.assign({},H.input,{marginTop:10})
+          }):null
         ),
 
-        React.createElement("div",{style:H.sec},
-          React.createElement("div",{style:H.secT},"😣 痛みの強さ（0〜10）"),
-          React.createElement("div",{style:{fontSize:12,color:"#9ca3af",marginBottom:10}},"0=痛みなし　10=我慢できないほど痛い"),
-          React.createElement("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
-            ["0","1","2","3","4","5","6","7","8","9","10"].map(function(n){
-              return React.createElement("button",{key:n,onClick:function(){setF("painLevel",n);},
-                style:{width:40,height:40,borderRadius:"50%",border:"1.5px solid "+(form.painLevel===n?"#1e3a5f":"#ddd"),background:form.painLevel===n?"#1e3a5f":"white",color:form.painLevel===n?"white":"#444",cursor:"pointer",fontSize:14,fontWeight:form.painLevel===n?700:400}},n);
+        !detailFormOpen?React.createElement("div",{style:{background:"linear-gradient(135deg,#eff6ff,#dbeafe)",border:"1.5px solid #93c5fd",borderRadius:14,padding:"18px 18px 16px",marginBottom:20,boxShadow:"0 2px 10px rgba(59,130,246,.12)"}},
+          React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:10}},
+            React.createElement("span",{style:{fontSize:24}},"📋"),
+            React.createElement("div",{style:{fontWeight:800,fontSize:15,color:"#1e40af"}},"事前問診票のご記入がおすすめです")
+          ),
+          React.createElement("div",{style:{fontSize:13,color:"#1e40af",lineHeight:2,marginBottom:14}},
+            React.createElement("div",null,"✅ 来院時の待ち時間が短くなります"),
+            React.createElement("div",null,"✅ 初回カウンセリングがよりスムーズに進みます"),
+            React.createElement("div",null,"✅ 症状に合わせた施術のご提案に役立ちます")
+          ),
+          React.createElement("button",{
+            type:"button",
+            onClick:function(){setDetailFormOpen(true);},
+            style:{width:"100%",padding:"13px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#2563eb,#1e40af)",color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px rgba(37,99,235,.35)",marginBottom:8}
+          },"📝 事前問診票に記入する（約1分）"),
+          React.createElement("div",{style:{fontSize:11,color:"#60a5fa",textAlign:"center"}},"※記入しなくてもご予約は可能です。来院時にお伺いすることもできます")
+        ):React.createElement("div",{style:{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#eff6ff",border:"1.5px solid #93c5fd",borderRadius:12,padding:"12px 16px",marginBottom:16}},
+          React.createElement("div",{style:{fontWeight:800,fontSize:13,color:"#1e40af"}},"📋 事前問診票 ご記入中"),
+          React.createElement("button",{
+            type:"button",
+            onClick:function(){setDetailFormOpen(false);},
+            style:{background:"none",border:"none",color:"#3b82f6",fontSize:12,fontWeight:700,cursor:"pointer"}
+          },"閉じる ▲")
+        ),
+
+        detailFormOpen?React.createElement("div",null,
+          React.createElement("div",{style:H.sec},
+            React.createElement("div",{style:H.secT},"⚡ 負傷原因"),
+            INJURY_CAUSES.map(function(c){
+              return React.createElement("button",{key:c.label,
+                onClick:function(){setF("injuryCause",c.label);},
+                style:{width:"100%",padding:"12px 14px",borderRadius:10,border:"1.5px solid "+(form.injuryCause===c.label?"#1e3a5f":"#e5e7eb"),background:form.injuryCause===c.label?"#eff6ff":"white",textAlign:"left",cursor:"pointer",marginBottom:8,display:"flex",alignItems:"center",gap:10}},
+                React.createElement("span",{style:{fontSize:20}},c.icon),
+                React.createElement("div",null,
+                  React.createElement("div",{style:{fontWeight:700,fontSize:14,color:"#1e3a5f"}},c.label),
+                  React.createElement("div",{style:{fontSize:12,color:"#666"}},c.desc)
+                ),
+                form.injuryCause===c.label?React.createElement("span",{style:{marginLeft:"auto",color:"#2563eb"}},"✓"):null
+              );
             })
+          ),
+
+          React.createElement("div",{style:H.sec},
+            React.createElement("div",{style:H.secT},"📅 いつ頃から痛みがありますか？"),
+            React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:6}},
+              PAIN_WHEN.map(function(w){
+                return chip(form.painWhen===w, w, function(){setF("painWhen",w);});
+              })
+            )
+          ),
+
+          React.createElement("div",{style:H.sec},
+            React.createElement("div",{style:H.secT},"😣 痛みの強さ（0〜10）"),
+            React.createElement("div",{style:{fontSize:12,color:"#9ca3af",marginBottom:10}},"0=痛みなし　10=我慢できないほど痛い"),
+            React.createElement("div",{style:{display:"flex",gap:6,flexWrap:"wrap"}},
+              ["0","1","2","3","4","5","6","7","8","9","10"].map(function(n){
+                return React.createElement("button",{key:n,onClick:function(){setF("painLevel",n);},
+                  style:{width:40,height:40,borderRadius:"50%",border:"1.5px solid "+(form.painLevel===n?"#1e3a5f":"#ddd"),background:form.painLevel===n?"#1e3a5f":"white",color:form.painLevel===n?"white":"#444",cursor:"pointer",fontSize:14,fontWeight:form.painLevel===n?700:400}},n);
+              })
+            )
+          ),
+
+          React.createElement("div",{style:H.sec},
+            React.createElement("div",{style:H.secT},"💬 主な症状（複数選択可）"),
+            React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:6}},
+              ["痛み","しびれ","こり・張り","むくみ","だるさ","動かしにくい","寝返りが辛い","歩行が辛い","その他"].map(function(s){
+                return chip(form.symptoms.indexOf(s)>-1, s, function(){toggleArr("symptoms",s);}, "#059669");
+              })
+            )
+          ),
+
+          React.createElement("div",{style:H.sec},
+            React.createElement("div",{style:H.secT},"🏥 他の整骨院・病院への受診"),
+            React.createElement("div",{style:{display:"flex",gap:10,marginBottom:10}},
+              ["受診している","受診していない"].map(function(v){
+                return React.createElement("button",{key:v,onClick:function(){setF("otherClinic",v);},
+                  style:{flex:1,padding:"10px",borderRadius:8,border:"1.5px solid "+(form.otherClinic===v?"#1e3a5f":"#ddd"),background:form.otherClinic===v?"#1e3a5f":"white",color:form.otherClinic===v?"white":"#444",cursor:"pointer",fontSize:14,fontWeight:form.otherClinic===v?700:400}},v);
+              })
+            ),
+            form.otherClinic==="受診している"?React.createElement("input",{type:"text",value:form.otherClinicName,placeholder:"院名・病院名を入力",onChange:function(e){setF("otherClinicName",e.target.value);},style:H.input}):null
+          ),
+
+          React.createElement("div",{style:H.sec},
+            React.createElement("div",{style:H.secT},"📋 既往歴"),
+            React.createElement("textarea",{value:form.medicalHistory,placeholder:"過去の病気・手術・骨折など\nなければ「なし」とご記入ください",rows:3,onChange:function(e){setF("medicalHistory",e.target.value);},style:Object.assign({},H.input,{resize:"none",lineHeight:1.6})})
+          ),
+
+          React.createElement("div",{style:H.sec},
+            React.createElement("div",{style:H.secT},"💭 治療についてどう考えていますか？"),
+            React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:8}},
+              ["しっかり根本から改善したい","痛みが引くまで通いたい","今回だけでも様子を見たい","費用や続けやすさを見て決めたい","その他"].map(function(v){
+                return React.createElement("button",{key:v,onClick:function(){setF("wantContinue",v);},
+                  style:{padding:"11px 14px",borderRadius:8,border:"1.5px solid "+(form.wantContinue===v?"#1e3a5f":"#ddd"),background:form.wantContinue===v?"#1e3a5f":"white",color:form.wantContinue===v?"white":"#444",cursor:"pointer",fontSize:14,textAlign:"left",fontWeight:form.wantContinue===v?700:400}},v);
+              })
+            ),
+            form.wantContinue==="その他"?React.createElement("input",{
+              type:"text",
+              value:form.wantContinueOther,
+              placeholder:"具体的に教えてください",
+              onChange:function(e){setF("wantContinueOther",e.target.value);},
+              style:Object.assign({},H.input,{marginTop:10})
+            }):null
+          ),
+
+          React.createElement("div",{style:H.sec},
+            React.createElement("div",{style:H.secT},"📣 当院を何でお知りになりましたか？"),
+            React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8}},
+              HOW_KNOW_OPTIONS.map(function(o){
+                var sel=form.howKnow===o.label;
+                return React.createElement("button",{key:o.label,onClick:function(){setF("howKnow",o.label);},
+                  style:{padding:o.image?0:"14px 8px",borderRadius:10,border:"1.5px solid "+(sel?"#1e3a5f":"#ddd"),background:sel?"#1e3a5f":"white",color:sel?"white":"#444",cursor:"pointer",fontSize:13,fontWeight:sel?700:400,overflow:"hidden",display:"flex",flexDirection:"column",alignItems:"center",gap:6}},
+                  o.image?React.createElement("img",{src:o.image,alt:o.label,style:{width:"100%",height:110,objectFit:"contain",background:"#f8fafc",padding:4,boxSizing:"border-box"}}):React.createElement("div",{style:{fontSize:22,marginTop:6}},o.icon),
+                  React.createElement("div",{style:{paddingBottom:o.image?8:0}},o.label)
+                );
+              })
+            ),
+            form.howKnow==="その他"?React.createElement("input",{type:"text",value:form.howKnowOther,placeholder:"具体的に教えてください",onChange:function(e){setF("howKnowOther",e.target.value);},style:Object.assign({},H.input,{marginTop:10})}):null
+          ),
+
+          React.createElement("div",{style:H.sec},
+            React.createElement("div",{style:H.secT},"🧾 レシートの発行について"),
+            React.createElement("div",{style:{fontSize:12,color:"#9ca3af",marginBottom:10}},"ご希望の頻度を選んでください。次回以降も同じ設定が使われます（会計時に変更も可能です）。"),
+            React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:8}},
+              ["毎回","月ごと","年ごと","不要"].map(function(v){
+                var sel=form.receiptFrequency===v;
+                return React.createElement("button",{key:v,type:"button",onClick:function(){setF("receiptFrequency",v);},
+                  style:{padding:"9px 16px",borderRadius:20,border:"1.5px solid "+(sel?"#1e3a5f":"#ddd"),background:sel?"#1e3a5f":"white",color:sel?"white":"#444",cursor:"pointer",fontSize:13,fontWeight:sel?700:400,fontFamily:"inherit"}},v);
+              })
+            )
           )
-        ),
+        ):null,
 
-        React.createElement("div",{style:H.sec},
-          React.createElement("div",{style:H.secT},"💬 主な症状（複数選択可）"),
-          React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:6}},
-            ["痛み","しびれ","こり・張り","むくみ","だるさ","動かしにくい","寝返りが辛い","歩行が辛い","その他"].map(function(s){
-              return chip(form.symptoms.indexOf(s)>-1, s, function(){toggleArr("symptoms",s);}, "#059669");
-            })
-          )
-        ),
-
-        React.createElement("div",{style:H.sec},
-          React.createElement("div",{style:H.secT},"🏥 他の整骨院・病院への受診"),
-          React.createElement("div",{style:{display:"flex",gap:10,marginBottom:10}},
-            ["受診している","受診していない"].map(function(v){
-              return React.createElement("button",{key:v,onClick:function(){setF("otherClinic",v);},
-                style:{flex:1,padding:"10px",borderRadius:8,border:"1.5px solid "+(form.otherClinic===v?"#1e3a5f":"#ddd"),background:form.otherClinic===v?"#1e3a5f":"white",color:form.otherClinic===v?"white":"#444",cursor:"pointer",fontSize:14,fontWeight:form.otherClinic===v?700:400}},v);
-            })
-          ),
-          form.otherClinic==="受診している"?React.createElement("input",{type:"text",value:form.otherClinicName,placeholder:"院名・病院名を入力",onChange:function(e){setF("otherClinicName",e.target.value);},style:H.input}):null
-        ),
-
-        React.createElement("div",{style:H.sec},
-          React.createElement("div",{style:H.secT},"📋 既往歴"),
-          React.createElement("textarea",{value:form.medicalHistory,placeholder:"過去の病気・手術・骨折など\nなければ「なし」とご記入ください",rows:3,onChange:function(e){setF("medicalHistory",e.target.value);},style:Object.assign({},H.input,{resize:"none",lineHeight:1.6})})
-        ),
-
-        React.createElement("div",{style:H.sec},
-          React.createElement("div",{style:H.secT},"💭 今後について *"),
-          React.createElement("div",{style:{fontSize:13,color:"#555",marginBottom:10,lineHeight:1.7}},"お体の根本改善に向けて、今回の体験会で状態が良くなりそうであれば、今後も継続して通いたいですか？"),
-          React.createElement("div",{style:{display:"flex",flexDirection:"column",gap:8}},
-            ["はい、ぜひ通いたいです","できれば通いたいです","また機会があれば検討したいです"].map(function(v){
-              return React.createElement("button",{key:v,onClick:function(){setF("wantContinue",v);},
-                style:{padding:"11px 14px",borderRadius:8,border:"1.5px solid "+(form.wantContinue===v?"#1e3a5f":"#ddd"),background:form.wantContinue===v?"#1e3a5f":"white",color:form.wantContinue===v?"white":"#444",cursor:"pointer",fontSize:14,textAlign:"left",fontWeight:form.wantContinue===v?700:400}},v);
-            })
-          ),
-          errors.wantContinue?React.createElement("div",{style:{color:"#ef4444",fontSize:12,marginTop:6}},"⚠ "+errors.wantContinue):null
-        ),
-
-        React.createElement("div",{style:H.sec},
-          React.createElement("div",{style:H.secT},"📣 当院を何でお知りになりましたか？ *"),
-          React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8}},
-            HOW_KNOW.map(function(v){
-              return React.createElement("button",{key:v,onClick:function(){setF("howKnow",v);},
-                style:{padding:"10px 8px",borderRadius:8,border:"1.5px solid "+(form.howKnow===v?"#1e3a5f":"#ddd"),background:form.howKnow===v?"#1e3a5f":"white",color:form.howKnow===v?"white":"#444",cursor:"pointer",fontSize:13,fontWeight:form.howKnow===v?700:400}},v);
-            })
-          ),
-          form.howKnow==="その他"?React.createElement("input",{type:"text",value:form.howKnowOther,placeholder:"具体的に教えてください",onChange:function(e){setF("howKnowOther",e.target.value);},style:Object.assign({},H.input,{marginTop:10})}):null,
-          errors.howKnow?React.createElement("div",{style:{color:"#ef4444",fontSize:12,marginTop:6}},"⚠ "+errors.howKnow):null
-        ),
-
-        React.createElement("div",{style:{display:"flex",gap:10}},
+        React.createElement("div",{style:{display:"flex",gap:10,marginTop:4}},
           React.createElement("button",{onClick:function(){setStep(1);},style:H.btnB},"← 戻る"),
           React.createElement("button",{onClick:function(){if(validate3())setStep(3);},style:Object.assign({},H.btn,{flex:1,width:"auto"})},"確認画面へ →")
         )
@@ -968,7 +1733,7 @@ function App(){
         React.createElement("div",{style:{background:"white",borderRadius:14,border:"2px solid #e5e7eb",overflow:"hidden",marginBottom:12}},
           React.createElement("div",{style:{background:"#1e3a5f",color:"white",padding:"12px 16px",fontSize:13,fontWeight:700}},"📅 予約情報"),
           [
-            ["メニュー","🎁 無料施術体験会（60分）¥0"],
+            ["メニュー",formatMenuPrice()],
             ["日付",selDate?fmtDateJP(selDate):""],
             ["時間",selTime],
             ["お名前",form.name+" 様"],
@@ -982,13 +1747,14 @@ function App(){
           })
         ),
         React.createElement("div",{style:{background:"white",borderRadius:14,border:"2px solid #e5e7eb",overflow:"hidden",marginBottom:12}},
-          React.createElement("div",{style:{background:"#059669",color:"white",padding:"12px 16px",fontSize:13,fontWeight:700}},"🩺 問診情報"),
+          React.createElement("div",{style:{background:"#059669",color:"white",padding:"12px 16px",fontSize:13,fontWeight:700}},"🩺 症状・問診情報"),
           [
-            ["負傷部位",formatBodyParts(form.bodyParts,form.bodyPartsOther)],
-            ["負傷原因",form.injuryCause],
-            ["いつから",form.painWhen],
-            ["継続意思",form.wantContinue],
-            ["何で知った",form.howKnow==="その他"?"その他："+form.howKnowOther:form.howKnow]
+            ["気になる症状",formatBodyParts(form.bodyParts,form.bodyPartsOther,form.bodyPartsSides)||"—"],
+          ["その他気になること",formatOtherConcerns()||"未記入（任意）"],
+            ["負傷原因",form.injuryCause||"未記入（任意）"],
+            ["いつから",form.painWhen||"未記入（任意）"],
+            ["継続意思",formatWantContinue()||"未記入（任意）"],
+            ["何で知った",(form.howKnow==="その他"?"その他："+form.howKnowOther:form.howKnow)||"未記入（任意）"]
           ].map(function(item){
             return React.createElement("div",{key:item[0],style:{display:"flex",justifyContent:"space-between",padding:"9px 16px",borderBottom:"1px solid #f0f0f0",gap:12}},
               React.createElement("span",{style:{fontSize:12,color:"#9ca3af",fontWeight:600,whiteSpace:"nowrap",minWidth:80}},item[0]),
@@ -1008,7 +1774,8 @@ function App(){
           )
         )
       ):null
-    )
+    ),
+    renderToast()
   );
 }
 
