@@ -481,6 +481,89 @@ function PatientHistoryModal({patientName,bookings,onClose}){
     {id:"history",label:`来院履歴（${visitCount}回）`},
   ];
 
+  function printIntakeSheet(){
+    if(!firstBooking) return;
+    const rows=[
+      {label:"気になる症状",value:firstBooking.body_parts},
+      {label:"その他気になること",value:firstBooking.other_concerns},
+      {label:"負傷原因",value:firstBooking.injury_cause+(firstBooking.injury_cause_detail?"（"+firstBooking.injury_cause_detail+"）":"")},
+      {label:"いつから",value:firstBooking.pain_when},
+      {label:"痛みの強さ",value:firstBooking.pain_level?firstBooking.pain_level+"/10":null},
+      {label:"主な症状",value:firstBooking.symptoms},
+      {label:"他院受診",value:firstBooking.other_clinic},
+      {label:"既往歴",value:firstBooking.medical_history},
+      {label:"継続意思",value:firstBooking.want_continue},
+      {label:"来院経路",value:firstBooking.how_know},
+    ].filter(r=>r.value&&String(r.value).trim());
+
+    const w=window.open("","_blank");
+    if(!w) return;
+    const doc=w.document;
+    doc.title="問診票 - "+patientName+"様";
+
+    // すべて DOM API で組み立てる（innerHTML / document.write を使わない）
+    const mk=(tag,props,children)=>{
+      const el=doc.createElement(tag);
+      if(props) Object.keys(props).forEach(k=>{ el[k]=props[k]; });
+      (children||[]).forEach(c=>{ if(c!=null) el.appendChild(typeof c==="string"?doc.createTextNode(c):c); });
+      return el;
+    };
+
+    const cssRules=[
+      "@page{ size:A4; margin:14mm; }",
+      "*{ box-sizing:border-box; }",
+      'body{ font-family:"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif; color:#111; margin:0; padding:0; }',
+      ".sheet{ max-width:190mm; margin:0 auto; }",
+      ".title{ text-align:center; font-size:20px; font-weight:800; letter-spacing:4px; border-bottom:3px double #333; padding-bottom:10px; margin-bottom:16px; }",
+      ".clinic{ text-align:center; font-size:11px; color:#555; margin-bottom:18px; }",
+      "table.basic{ width:100%; border-collapse:collapse; margin-bottom:20px; }",
+      "table.basic td{ border:1px solid #999; padding:8px 10px; font-size:13px; }",
+      "table.basic td.label{ width:22%; background:#f2f2f2; font-weight:700; }",
+      "table.qa{ width:100%; border-collapse:collapse; }",
+      "table.qa td{ border:1px solid #999; padding:9px 10px; font-size:13px; vertical-align:top; }",
+      "table.qa td.qlabel{ width:26%; background:#f2f2f2; font-weight:700; white-space:nowrap; }",
+      "table.qa td.qvalue{ line-height:1.6; }",
+      ".meta{ font-size:11px; color:#666; margin:10px 0 6px; text-align:right; }",
+    ].join("\n");
+    const styleTag=doc.createElement("style");
+    styleTag.appendChild(doc.createTextNode(cssRules));
+    doc.head.appendChild(styleTag);
+
+    const basicTable=mk("table",{className:"basic"},[
+      mk("tr",null,[
+        mk("td",{className:"label"},["氏名"]),
+        mk("td",null,[patientName+" 様"]),
+        mk("td",{className:"label"},["年齢"]),
+        mk("td",null,[firstBooking.age?String(firstBooking.age)+"歳":""]),
+      ]),
+      mk("tr",null,[
+        mk("td",{className:"label"},["電話番号"]),
+        mk("td",{colSpan:3},[firstBooking.phone||""]),
+      ]),
+      mk("tr",null,[
+        mk("td",{className:"label"},["住所"]),
+        mk("td",{colSpan:3},[firstBooking.address||""]),
+      ]),
+    ]);
+
+    const qaTable=mk("table",{className:"qa"},
+      rows.length>0
+        ? rows.map(r=>mk("tr",null,[mk("td",{className:"qlabel"},[r.label]),mk("td",{className:"qvalue"},[String(r.value)])]))
+        : [mk("tr",null,[mk("td",{className:"qvalue",textAlign:"center"},["問診情報がありません"])])]
+    );
+
+    const sheet=mk("div",{className:"sheet"},[
+      mk("div",{className:"title"},["問 診 票"]),
+      mk("div",{className:"clinic"},["あんど整骨院 香里園駅前院"]),
+      basicTable,
+      mk("div",{className:"meta"},["初回来院日："+(firstBooking.date||"")+"（"+(firstBooking.menu||"")+"）"]),
+      qaTable,
+    ]);
+    doc.body.appendChild(sheet);
+
+    setTimeout(()=>{ w.focus(); w.print(); },150);
+  }
+
   return(
     <div className="modal-overlay">
       <div className="modal-box" style={{maxHeight:"85vh",display:"flex",flexDirection:"column"}}>
@@ -522,9 +605,18 @@ function PatientHistoryModal({patientName,bookings,onClose}){
             activeTab==="intake"?(
               firstBooking?(
                 <div>
-                  <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>初回来院日：{firstBooking.date}（{firstBooking.menu}）</div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                    <div style={{fontSize:12,color:"#64748b"}}>初回来院日：{firstBooking.date}（{firstBooking.menu}）</div>
+                    <button onClick={printIntakeSheet} style={{display:"flex",alignItems:"center",gap:5,padding:"6px 12px",background:"#1e3a5f",color:"white",border:"none",borderRadius:7,cursor:"pointer",fontWeight:700,fontSize:12,fontFamily:"inherit",flexShrink:0}}>
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+                      印刷
+                    </button>
+                  </div>
                   {[
-                    {label:"負傷部位",value:firstBooking.body_parts},
+                    {label:"住所",value:firstBooking.address},
+                    {label:"年齢",value:firstBooking.age?firstBooking.age+"歳":null},
+                    {label:"気になる症状",value:firstBooking.body_parts},
+                    {label:"その他気になること",value:firstBooking.other_concerns},
                     {label:"負傷原因",value:firstBooking.injury_cause},
                     {label:"いつから",value:firstBooking.pain_when},
                     {label:"痛みの強さ",value:firstBooking.pain_level?firstBooking.pain_level+"/10":null},
