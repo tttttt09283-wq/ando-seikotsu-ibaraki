@@ -4795,12 +4795,24 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
     setEditMode(true);
   }
 
+  // 編集で実際に上書きされる予約（今日以降・キャンセル済みを除く）
+  // 過去の来院記録・カルテは書き換えない＝別人の予約が同じ名前で紛れ込んでいても、過去分は保護される
+  const editableBks=selBks.filter(b=>!b.cancelled&&b.date>=todayStr);
+
   async function saveEdit(){
     if(!editForm.name.trim()) return;
+    if(editableBks.length===0){ alert("更新対象の今後の予約がありません（過去の予約は保護のため変更されません）"); return; }
+    const nameChanged=editForm.name.trim()!==selPatient;
+    const confirmMsg=
+      `以下の${editableBks.length}件の今後の予約に反映します（過去の予約・カルテは変更されません）。\n\n`+
+      editableBks.slice(0,10).map(b=>`・${b.date} ${b.time}`).join("\n")+
+      (editableBks.length>10?`\n…他${editableBks.length-10}件`:"")+
+      (nameChanged?`\n\n名前を「${selPatient}」→「${editForm.name.trim()}」に変更します。`:"")+
+      `\n\nよろしいですか？`;
+    if(!window.confirm(confirmMsg)) return;
     try{
-      const bkIds=selBks.map(b=>b.id);
-      for(const id of bkIds){
-        await sb.update("bookings",id,{patient_name:editForm.name,phone:editForm.phone,address:editForm.address});
+      for(const b of editableBks){
+        await sb.update("bookings",b.id,{patient_name:editForm.name,phone:editForm.phone,address:editForm.address});
       }
       setEditMode(false);
       selectPatient(editForm.name);
@@ -4981,6 +4993,9 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
                   <input value={editForm.address} onChange={e=>setEditForm(p=>({...p,address:e.target.value}))}
                     placeholder="例：大阪府寝屋川市○○町1-2-3"
                     style={{width:"100%",padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
+                </div>
+                <div style={{fontSize:11,color:"#92400e",background:"#fef3c7",border:"1px solid #fde68a",borderRadius:8,padding:"8px 10px",marginBottom:12,lineHeight:1.6}}>
+                  ⚠️ この内容は「{selPatient}」の<b>今後の予約（{editableBks.length}件）にのみ</b>反映されます。過去の来院記録・カルテは変更されません。
                 </div>
                 <div style={{display:"flex",gap:8}}>
                   <button onClick={()=>setEditMode(false)} style={{flex:1,padding:"8px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>キャンセル</button>
@@ -8102,6 +8117,20 @@ function Dashboard({user,onLogout}){
 
   async function save(){
     if(!form.patient_name.trim())return;
+    // 同姓同名だが電話番号が違う既存予約がある場合は、別人の可能性があるので保存前に一度確認する
+    // （名前の入力ミス・コピペミスで別人のデータに混ざるのを防ぐための安全策）
+    if(form.phone&&form.phone.trim()){
+      const sameName=bookings.filter(b=>b.id!==editId&&!b.cancelled&&b.patient_name===form.patient_name.trim()&&b.phone&&b.phone.replace(/-/g,"")!==form.phone.replace(/-/g,""));
+      if(sameName.length>0){
+        const otherPhones=[...new Set(sameName.map(b=>b.phone))].join("、");
+        const ok=window.confirm(
+          `「${form.patient_name.trim()}」という名前の予約が既にありますが、電話番号が異なります（既存：${otherPhones} / 今回：${form.phone}）。\n\n`+
+          `同姓同名の別の方の可能性があります。このまま保存してよろしいですか？\n`+
+          `（名前の入力間違いの場合は「キャンセル」を押して確認してください）`
+        );
+        if(!ok) return;
+      }
+    }
     const laneCapacity=getLaneCount(form.staff_id);
     const overlapCountLocal=bookings.filter(b=>b.id!==editId&&b.staff_id===form.staff_id&&b.date===form.date&&!b.cancelled&&overlaps(b,form)).length;
     if(overlapCountLocal>=laneCapacity){setConflict(true);return;}
