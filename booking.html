@@ -937,6 +937,7 @@ function App(){
       var msg = "🏥【あんど整骨院 新規予約】\n\n"+
         "👤 "+form.name+" 様\n"+
         "📞 "+form.phone+"\n"+
+        "🏠 "+(form.address||"未記入")+"\n"+
         "📅 "+fmtDateJP(selDate)+" "+selTime+"\n"+
         "💬 気になる症状："+formatBodyParts(form.bodyParts,form.bodyPartsOther,form.bodyPartsSides)+
         (formatOtherConcerns()?"\n🌿 その他気になること："+formatOtherConcerns():"")+
@@ -1047,7 +1048,7 @@ function App(){
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
           groupId:LINE_GROUP_ID,
-          message:"🏥【リピーター予約】\n👤 "+pastBooking.patient_name+" 様\n📅 "+fmtDateJP(selDate)+" "+selTime+(memo?"\n💬 "+memo:"")
+          message:"🏥【リピーター予約】\n👤 "+pastBooking.patient_name+" 様\n📞 "+(pastBooking.phone||"未記入")+"\n🏠 "+(pastBooking.address||"未記入")+"\n📅 "+fmtDateJP(selDate)+" "+selTime+(memo?"\n💬 "+memo:"")
         })
       }).catch(function(){});
       // QR・確認メッセージ送信
