@@ -860,9 +860,27 @@ function App(){
     });
   }
 
+  // 予約作成直後に、同じスタッフ・同じ日時に重なる有効な予約が複数できてしまっていないか再確認する。
+  // checkStaffAvailabilityNow()はinsert前のチェックのため、ほぼ同時に2人が予約すると
+  // どちらも「空きあり」と判定されてしまう「かぶり」が起こり得る（TOCTOUレース）。
+  // そのため、insert後にもう一度同じ条件で問い合わせ、重なっている予約が複数あれば
+  // 最もidが小さい（先に作られた）ものだけを正とし、後から作られた予約は自動的に取り消す。
+  function reconcileOverlapAfterInsert(newBookingId, staffId, dateStr, time){
+    return sb.select("bookings","?date=eq."+dateStr+"&staff_id=eq."+staffId).then(function(dayBookings){
+      if(!Array.isArray(dayBookings)) return true; // 判定不能時は成立扱い（フェイルセーフ）
+      var conflicting = dayBookings.filter(function(b){ return !b.cancelled && overlapsSlot(b,time); });
+      if(conflicting.length<=1) return true;
+      var winnerId = conflicting.reduce(function(min,b){ return b.id<min?b.id:min; }, conflicting[0].id);
+      if(winnerId===newBookingId) return true; // 自分が正（先勝ち）の予約
+      // 自分はちょうど同時に埋まってしまった側の予約なので取り消す
+      return sb.update("bookings",newBookingId,{cancelled:true}).catch(function(){}).then(function(){ return false; });
+    }).catch(function(){ return true; });
+  }
+
   function doSubmitBooking(staffId, dateStr){
     var howKnowText = form.howKnow==="その他" ? "その他："+form.howKnowOther : form.howKnow;
     var newBookingId = null;
+    var lostToOverlap = false;
     var patientTypeOpt=PATIENT_TYPE_OPTIONS.find(function(o){return o.label===form.patientType;});
     var finalMenu=isEventDate(selDate)?pageSettings.eventMenuName:(patientTypeOpt?patientTypeOpt.menu:pageSettings.eventMenuName);
     // 任意の問診票で選んだ症状チップ（気になる症状の自由記入は廃止し、負傷部位の選択に一本化）
@@ -905,8 +923,20 @@ function App(){
       how_know:howKnowText
     }).then(function(result){
       // 予約IDを取得
-      if(Array.isArray(result) && result.length > 0){
-        newBookingId = result[0].id;
+      if(!(Array.isArray(result) && result.length > 0)) return;
+      newBookingId = result[0].id;
+      return reconcileOverlapAfterInsert(newBookingId, staffId, dateStr, selTime).then(function(ok){
+        if(!ok){
+          // 同時に他の方の予約で枠が埋まってしまったため、この予約は取り消し済み。
+          // 通常の完了画面ではなく「満枠」案内を出し、日時選択からやり直してもらう。
+          lostToOverlap = true;
+          setSlotFullMsg("大変申し訳ございません、ちょうどこの日時が埋まってしまいました。お手数ですが別の日時をお選びください。");
+          setSelDate(null);
+          setSelTime(null);
+          setStep(0);
+          refreshWeekData();
+          return;
+        }
         setBookingId(newBookingId);
 
         // 紹介URL経由の予約であれば、紹介記録を作成する（特典は管理画面で来院確認後に確定）
@@ -934,56 +964,56 @@ function App(){
             reward_status: "pending"
           }).catch(function(){});
         }
-      }
 
-      // グループLINEへ通知（事前問診票が未記入の項目は省略する）
-      var msg = "🏥【あんど整骨院 新規予約】\n\n"+
-        "👤 "+form.name+" 様\n"+
-        "📞 "+form.phone+"\n"+
-        "🏠 "+(form.address||"未記入")+"\n"+
-        "📅 "+fmtDateJP(selDate)+" "+selTime+"\n"+
-        "💬 気になる症状："+formatBodyParts(form.bodyParts,form.bodyPartsOther,form.bodyPartsSides)+
-        (formatOtherConcerns()?"\n🌿 その他気になること："+formatOtherConcerns():"")+
-        (form.injuryCause?"\n⚡ 原因："+form.injuryCause:"")+
-        (form.painWhen?"\n📅 いつから："+form.painWhen:"")+
-        (form.wantContinue?"\n💭 継続意思："+formatWantContinue():"")+
-        "\n📣 経路："+(howKnowText||"未記入")+"\n"+
-        "🔔 LINE連携："+(form.lineNotify && lineUserId ? "あり" : "なし")+
-        (form.referrerName.trim()?"\n🎁 紹介者："+form.referrerName+" 様（体験会無料）":"")+
-        (validCodeReferral?"\n🎁 紹介URL経由："+referrerInfo.name+" 様のご紹介":"");
+        // グループLINEへ通知（事前問診票が未記入の項目は省略する）
+        var msg = "🏥【あんど整骨院 新規予約】\n\n"+
+          "👤 "+form.name+" 様\n"+
+          "📞 "+form.phone+"\n"+
+          "🏠 "+(form.address||"未記入")+"\n"+
+          "📅 "+fmtDateJP(selDate)+" "+selTime+"\n"+
+          "💬 気になる症状："+formatBodyParts(form.bodyParts,form.bodyPartsOther,form.bodyPartsSides)+
+          (formatOtherConcerns()?"\n🌿 その他気になること："+formatOtherConcerns():"")+
+          (form.injuryCause?"\n⚡ 原因："+form.injuryCause:"")+
+          (form.painWhen?"\n📅 いつから："+form.painWhen:"")+
+          (form.wantContinue?"\n💭 継続意思："+formatWantContinue():"")+
+          "\n📣 経路："+(howKnowText||"未記入")+"\n"+
+          "🔔 LINE連携："+(form.lineNotify && lineUserId ? "あり" : "なし")+
+          (form.referrerName.trim()?"\n🎁 紹介者："+form.referrerName+" 様（体験会無料）":"")+
+          (validCodeReferral?"\n🎁 紹介URL経由："+referrerInfo.name+" 様のご紹介":"");
 
-      fetch("/api/line-notify",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({groupId:LINE_GROUP_ID, message:msg})
-      }).catch(function(){});
-
-      // LINE連携済みの患者へ予約確認メッセージを送信
-      if(lineUserId && newBookingId){
-        console.log("send-confirmation呼び出し:", {userId: lineUserId, bookingId: newBookingId});
-        fetch("/api/send-confirmation",{
+        fetch("/api/line-notify",{
           method:"POST",
           headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({
-            userId: lineUserId,
-            bookingId: newBookingId,
-            patientName: form.name,
-            date: fmtDateJP(selDate),
-            time: selTime
-          })
-        }).then(function(r){
-          console.log("send-confirmation response:", r.status);
-          return r.json();
-        }).then(function(d){
-          console.log("send-confirmation result:", JSON.stringify(d));
-        }).catch(function(e){
-          console.error("send-confirmation error:", e);
-        });
-      } else {
-        console.log("QR送信スキップ:", {lineUserId: lineUserId, bookingId: newBookingId});
-      }
+          body:JSON.stringify({groupId:LINE_GROUP_ID, message:msg})
+        }).catch(function(){});
+
+        // LINE連携済みの患者へ予約確認メッセージを送信
+        if(lineUserId && newBookingId){
+          console.log("send-confirmation呼び出し:", {userId: lineUserId, bookingId: newBookingId});
+          fetch("/api/send-confirmation",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({
+              userId: lineUserId,
+              bookingId: newBookingId,
+              patientName: form.name,
+              date: fmtDateJP(selDate),
+              time: selTime
+            })
+          }).then(function(r){
+            console.log("send-confirmation response:", r.status);
+            return r.json();
+          }).then(function(d){
+            console.log("send-confirmation result:", JSON.stringify(d));
+          }).catch(function(e){
+            console.error("send-confirmation error:", e);
+          });
+        } else {
+          console.log("QR送信スキップ:", {lineUserId: lineUserId, bookingId: newBookingId});
+        }
+      });
     }).catch(function(){}).finally(function(){
-      setDone(true);
+      if(!lostToOverlap) setDone(true);
       setSubmitting(false);
     });
   }
@@ -1025,6 +1055,7 @@ function App(){
 
   function doSubmitRepeatBooking(staffId, dateStr){
     var newBookingId=null;
+    var lostToOverlap=false;
     sb.insert("bookings",{
       patient_name:pastBooking.patient_name,
       phone:pastBooking.phone||"",
@@ -1043,27 +1074,40 @@ function App(){
       symptoms:memo||null,
     }).then(function(result){
       var nb=Array.isArray(result)&&result.length>0?result[0]:null;
-      if(nb) newBookingId=nb.id;
-      setBookingId(newBookingId);
-      // グループLINE通知
-      fetch("/api/line-notify",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-          groupId:LINE_GROUP_ID,
-          message:"🏥【リピーター予約】\n👤 "+pastBooking.patient_name+" 様\n📞 "+(pastBooking.phone||"未記入")+"\n🏠 "+(pastBooking.address||"未記入")+"\n📅 "+fmtDateJP(selDate)+" "+selTime+(memo?"\n💬 "+memo:"")
-        })
-      }).catch(function(){});
-      // QR・確認メッセージ送信
-      if(lineUserId&&newBookingId){
-        fetch("/api/send-confirmation",{
+      if(!nb) return;
+      newBookingId=nb.id;
+      return reconcileOverlapAfterInsert(newBookingId, staffId, dateStr, selTime).then(function(ok){
+        if(!ok){
+          // 同時に他の方の予約で枠が埋まってしまったため、この予約は取り消し済み
+          lostToOverlap=true;
+          setSlotFullMsg("大変申し訳ございません、ちょうどこの日時が埋まってしまいました。お手数ですが別の日時をお選びください。");
+          setSelDate(null);
+          setSelTime(null);
+          refreshWeekData();
+          return;
+        }
+        setBookingId(newBookingId);
+        // グループLINE通知
+        fetch("/api/line-notify",{
           method:"POST",
           headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({userId:lineUserId,bookingId:newBookingId,patientName:pastBooking.patient_name,date:fmtDateJP(selDate),time:selTime})
+          body:JSON.stringify({
+            groupId:LINE_GROUP_ID,
+            message:"🏥【リピーター予約】\n👤 "+pastBooking.patient_name+" 様\n📞 "+(pastBooking.phone||"未記入")+"\n🏠 "+(pastBooking.address||"未記入")+"\n📅 "+fmtDateJP(selDate)+" "+selTime+(memo?"\n💬 "+memo:"")
+          })
         }).catch(function(){});
-      }
+        // QR・確認メッセージ送信
+        if(lineUserId&&newBookingId){
+          fetch("/api/send-confirmation",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({userId:lineUserId,bookingId:newBookingId,patientName:pastBooking.patient_name,date:fmtDateJP(selDate),time:selTime})
+          }).catch(function(){});
+        }
+      });
     }).catch(function(){}).finally(function(){
-      setDone(true); setSubmitting(false);
+      if(!lostToOverlap) setDone(true);
+      setSubmitting(false);
     });
   }
 
