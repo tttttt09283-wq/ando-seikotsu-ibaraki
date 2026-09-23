@@ -865,6 +865,7 @@ async function save(){
           expiry_date:expiryStr,
           staff_id:booking.staff_id,
           active:true,
+          is_training:!!booking.is_training,
         });
       }
       // FPの判定
@@ -884,6 +885,7 @@ async function save(){
           expiry_date:expiryStr,
           staff_id:booking.staff_id,
           active:true,
+          is_training:!!booking.is_training,
         });
       }
     }

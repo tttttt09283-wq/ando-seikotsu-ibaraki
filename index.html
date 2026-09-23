@@ -330,14 +330,15 @@ async function processReferralBonus(booking,allBookings){
     const allReferrals=await sb.select("referrals",`?referrer_name=eq.${encodeURIComponent(referrerName)}`);
     const count=Array.isArray(allReferrals)?allReferrals.length:1;
 
+    const issuedIsTraining=!!booking.is_training; // 紹介元の予約がトレーニングモードなら、発行する特典もトレーニング扱いにする
     const passesToIssue=[
-      {phone:referrerPhone,pass_type:"紹介特典：施術1回無料",total_count:1,remaining_count:1,expiry_date:addMonths(todayStr,3),purchased_at:todayStr,active:true},
+      {phone:referrerPhone,pass_type:"紹介特典：施術1回無料",total_count:1,remaining_count:1,expiry_date:addMonths(todayStr,3),purchased_at:todayStr,active:true,is_training:issuedIsTraining},
     ];
     if(count%3===0){
-      passesToIssue.push({phone:referrerPhone,pass_type:"紹介ボーナス：回数券1回分",total_count:1,remaining_count:1,expiry_date:addMonths(todayStr,3),purchased_at:todayStr,active:true});
+      passesToIssue.push({phone:referrerPhone,pass_type:"紹介ボーナス：回数券1回分",total_count:1,remaining_count:1,expiry_date:addMonths(todayStr,3),purchased_at:todayStr,active:true,is_training:issuedIsTraining});
     }
     if(count%5===0){
-      passesToIssue.push({phone:referrerPhone,pass_type:"紹介ボーナス：FP（フリーパス）1ヶ月",total_count:null,remaining_count:null,expiry_date:addMonths(todayStr,1),purchased_at:todayStr,active:true});
+      passesToIssue.push({phone:referrerPhone,pass_type:"紹介ボーナス：FP（フリーパス）1ヶ月",total_count:null,remaining_count:null,expiry_date:addMonths(todayStr,1),purchased_at:todayStr,active:true,is_training:issuedIsTraining});
     }
     for(const p of passesToIssue){
       await sb.insert("passes",p);
@@ -2486,7 +2487,7 @@ function StatsPanel({bookings,payments,todayStr,stores}){
 }
 
 
-function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,save,onClose,onDelete,onCancel,businessHours,closures,storeStaffList,isStaffWorkingOnDate,staffCanDoMenus,getLaneCount,customMenus}){
+function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,save,onClose,onDelete,onCancel,businessHours,closures,storeStaffList,isStaffWorkingOnDate,staffCanDoMenus,getLaneCount,customMenus,trainingMode}){
   const [searchQ,setSearchQ]=React.useState("");
   const [searchResults,setSearchResults]=React.useState([]);
   const [searching,setSearching]=React.useState(false);
@@ -2517,7 +2518,9 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
     if(!form.phone){ setPatientPasses([]); return; }
     let cancelled=false;
     sb.select("passes","?phone=eq."+encodeURIComponent(form.phone)+"&active=eq.true").then(rows=>{
-      if(!cancelled) setPatientPasses(Array.isArray(rows)?rows:[]);
+      // トレーニングモード中は練習用の回数券だけを、通常時は本番の回数券だけを消費候補として表示する
+      const filtered=(Array.isArray(rows)?rows:[]).filter(p=>!!p.is_training===!!trainingMode);
+      if(!cancelled) setPatientPasses(filtered);
     }).catch(()=>{ if(!cancelled) setPatientPasses([]); });
     return ()=>{cancelled=true;};
   },[form.phone]);
@@ -2601,11 +2604,27 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
     setSearchQ("");setSearchResults([]);setShowSearch(false);
   }
 
+  // トレーニングモード中、練習用の予約をすばやく1件作れるよう、適当なテスト情報を自動入力する
+  function fillTestData(){
+    const names=["テスト　一郎","テスト　花子","テスト　次郎","テスト　由美","テスト　健太","テスト　美咲"];
+    const name=names[Math.floor(Math.random()*names.length)]+"（テスト"+Math.floor(Math.random()*900+100)+"）";
+    const phone="090"+String(Math.floor(Math.random()*100000000)).padStart(8,"0");
+    setForm(f=>({...f,patient_name:name,phone,menu:f.menu||MENUS[0]}));
+    setShowSearch(false);
+  }
+
   return(
     <div className="card" style={{maxWidth:520,padding:22}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
         <div style={{fontSize:17,fontWeight:800,color:"#1e3a5f"}}>{editId!==null?"予約を編集":"新規予約"}</div>
-        <button onClick={onClose} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#94a3b8",lineHeight:1}}>x</button>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          {trainingMode&&editId===null&&(
+            <button onClick={fillTestData} style={{background:"#facc15",color:"#78350f",border:"none",borderRadius:8,padding:"6px 10px",fontSize:11,fontWeight:800,cursor:"pointer"}}>
+              🎓 テスト入力
+            </button>
+          )}
+          <button onClick={onClose} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#94a3b8",lineHeight:1}}>x</button>
+        </div>
       </div>
       {conflict&&<div style={{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#dc2626",fontSize:13,fontWeight:700}}>ダブルブッキングになります</div>}
       {showSearch?(
@@ -7064,10 +7083,10 @@ function BulkReceiptPanel({payments,bookings}){
     </div>
   );
 }
-function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr}){
+function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainingMode}){
   const [selMonth,setSelMonth]=React.useState(todayStr.slice(0,7));
   const [treatments,setTreatments]=React.useState([]);
-  const [passes,setPasses]=React.useState([]);
+  const [passesRaw,setPassesRaw]=React.useState([]);
   const [loading,setLoading]=React.useState(true);
 
   React.useEffect(()=>{
@@ -7076,10 +7095,12 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr}){
       sb.select("passes","?order=purchased_at.desc.nullslast"),
     ]).then(([t,p])=>{
       setTreatments(Array.isArray(t)?t:[]);
-      setPasses(Array.isArray(p)?p:[]);
+      setPassesRaw(Array.isArray(p)?p:[]);
       setLoading(false);
     }).catch(()=>setLoading(false));
   },[]);
+  // トレーニングモードの表示中は練習用の回数券・FPだけを、通常時は本番のものだけを集計対象にする
+  const passes=React.useMemo(()=>passesRaw.filter(p=>!!p.is_training===!!trainingMode),[passesRaw,trainingMode]);
 
   const [y,m]=selMonth.split("-").map(Number);
   const rangeStart=`${y}-${String(m).padStart(2,"0")}-01`;
@@ -7304,7 +7325,7 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr}){
     </div>
   );
 }
-function PassHoldersPanel({payments,bookings}){
+function PassHoldersPanel({payments,bookings,trainingMode}){
   const [passes,setPasses]=React.useState([]);
   const [loading,setLoading]=React.useState(true);
   const [selMonth,setSelMonth]=React.useState(()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
@@ -7313,7 +7334,8 @@ function PassHoldersPanel({payments,bookings}){
       setPasses(Array.isArray(rows)?rows:[]);setLoading(false);
     }).catch(()=>setLoading(false));
   },[]);
-  const activePasses=passes.filter(p=>p.active!==false);
+  // トレーニングモードの表示中は練習用の回数券・FPだけを、通常時は本番のものだけを表示する
+  const activePasses=passes.filter(p=>p.active!==false&&!!p.is_training===!!trainingMode);
   const ticketPasses=activePasses.filter(p=>!(p.pass_type||"").includes("フリーパス")).sort((a,b)=>(a.remaining_count||0)-(b.remaining_count||0));
   const fpPasses=activePasses.filter(p=>(p.pass_type||"").includes("フリーパス")).sort((a,b)=>(a.expiry_date||"").localeCompare(b.expiry_date||""));
   function daysUntil(dateStr){ if(!dateStr) return null; return Math.ceil((new Date(dateStr+"T00:00:00")-new Date())/86400000); }
@@ -8057,6 +8079,114 @@ function Dashboard({user,onLogout}){
 
   function showToast(msg,type="success"){setToast({msg,type});setTimeout(()=>setToast(null),3000);}
 
+  // ===== トレーニングモード用：テストデータをワンクリックで作成/削除 =====
+  const [showTrainingDataModal,setShowTrainingDataModal]=React.useState(false);
+  const [trainingDataBusy,setTrainingDataBusy]=React.useState(false);
+  const TRAINING_FAKE_PATIENTS=[
+    {name:"テスト　一郎",phone:"09000000001"},
+    {name:"テスト　花子",phone:"09000000002"},
+    {name:"テスト　次郎",phone:"09000000003"},
+    {name:"テスト　由美",phone:"09000000004"},
+    {name:"テスト　健太",phone:"09000000005"},
+    {name:"テスト　美咲",phone:"09000000006"},
+    {name:"テスト　大輔",phone:"09000000007"},
+    {name:"テスト　愛子",phone:"09000000008"},
+  ];
+  const TRAINING_MENUS=["初めての方（初診）","2回目以降の方","久しぶりの方（要確認）","再診（20分）"];
+  const TRAINING_TIME_SLOTS=["10:00","10:30","11:00","11:30","14:00","14:30","15:00","15:30","16:00","16:30","17:00","17:30"];
+  function pickRandom(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+  // トレーニングモード中に、練習用の予約・会計・回数券サンプルをまとめて自動作成する
+  async function generateTrainingData(count){
+    if(!trainingMode){ alert("先に画面右上の「トレーニングモード」をONにしてから作成してください。"); return; }
+    count=Math.max(1,Math.min(30,count||8));
+    const staffPool=storeStaff.filter(s=>!s.event_only);
+    if(staffPool.length===0){ alert("スタッフが見つかりませんでした。店舗の選択をご確認ください。"); return; }
+    setTrainingDataBusy(true);
+    try{
+      const createdBookings=[];
+      for(let i=0;i<count;i++){
+        const patient=pickRandom(TRAINING_FAKE_PATIENTS);
+        const staff=pickRandom(staffPool);
+        const dayOffset=Math.floor(Math.random()*10)-3; // 過去3日〜未来6日にばらけさせ、当日会計の練習もできるようにする
+        const d=new Date(today); d.setDate(d.getDate()+dayOffset);
+        const dateStr=fmtDate(d);
+        const payload={
+          patient_name:patient.name+"（テスト"+(i+1)+"）",
+          phone:patient.phone,
+          staff_id:staff.id,
+          date:dateStr,
+          time:pickRandom(TRAINING_TIME_SLOTS),
+          menu:pickRandom(TRAINING_MENUS),
+          store_id:selStoreId||firstStoreId,
+          line_notify:false,
+          reminded:false,
+          is_training:true,
+        };
+        try{
+          const result=await sb.insert("bookings",payload);
+          if(Array.isArray(result)&&result.length>0) createdBookings.push(result[0]);
+        }catch(e){ console.error("テスト予約の作成に失敗しました",e); }
+      }
+      if(createdBookings.length>0) setAllBookings(prev=>[...prev,...createdBookings]);
+
+      // 過去日・当日分の一部には会計データも作成し、会計・POS操作の練習もできるようにする
+      const pastOrToday=createdBookings.filter(b=>b.date<=todayStr);
+      for(const b of pastOrToday){
+        const amount=pickRandom([1000,1500,2000,3000]);
+        try{
+          await sb.insert("payments",{
+            booking_id:b.id,patient_name:b.patient_name,payment_date:b.date,
+            insurance_amount:amount,jifee_amount:0,total_amount:amount,
+            payment_method:"現金:"+amount,staff_id:b.staff_id,is_training:true,
+          });
+        }catch(e){ console.error("テスト会計の作成に失敗しました",e); }
+      }
+
+      // 回数券・FP関連の練習ができるよう、1名分だけサンプルの回数券も作成する
+      if(createdBookings.length>0){
+        const sample=createdBookings[0];
+        try{
+          await sb.insert("passes",{
+            patient_name:sample.patient_name,phone:sample.phone,pass_type:"テスト回数券5回券",
+            total_count:5,remaining_count:5,amount:15000,purchased_date:sample.date,
+            expiry_date:addMonths(sample.date,12),staff_id:sample.staff_id,active:true,is_training:true,
+          });
+        }catch(e){ console.error("テスト回数券の作成に失敗しました",e); }
+      }
+
+      showToast(`テストデータを${createdBookings.length}件作成しました🎓`);
+      setShowTrainingDataModal(false);
+    }catch(e){
+      alert("テストデータの作成中にエラーが発生しました："+(e.message||"不明なエラー"));
+    }
+    setTrainingDataBusy(false);
+  }
+
+  // トレーニングモードで作成した予約・会計・回数券のテストデータを一括削除する（本番データには影響しない）
+  async function clearTrainingData(){
+    if(!window.confirm("トレーニングモードで作成したテストの予約・会計・回数券データを全て削除します。\n（本番データには一切影響しません）\n\nよろしいですか？")) return;
+    setTrainingDataBusy(true);
+    try{
+      const trainingBookings=allBookings.filter(b=>b.is_training);
+      for(const b of trainingBookings){ await sb.delete("bookings",b.id).catch(()=>{}); }
+      setAllBookings(prev=>prev.filter(b=>!b.is_training));
+
+      const trainingPayments=allPayments.filter(p=>p.is_training);
+      for(const p of trainingPayments){ await sb.delete("payments",p.id).catch(()=>{}); }
+      setAllPayments(prev=>prev.filter(p=>!p.is_training));
+
+      const trainingPassesRows=await sb.select("passes","?is_training=eq.true").catch(()=>[]);
+      for(const p of (Array.isArray(trainingPassesRows)?trainingPassesRows:[])){ await sb.delete("passes",p.id).catch(()=>{}); }
+
+      showToast("テストデータを削除しました");
+      setShowTrainingDataModal(false);
+    }catch(e){
+      alert("削除中にエラーが発生しました："+(e.message||"不明なエラー"));
+    }
+    setTrainingDataBusy(false);
+  }
+
   // 選択中の店舗に紐づく予約のみに絞り込む（store_id未設定の古いデータは最初の店舗として扱う）
   const firstStoreId=stores.length>0?stores[0].id:1;
   const storeBookings=React.useMemo(()=>bookings.filter(b=>(b.store_id||firstStoreId)===selStoreId),[bookings,selStoreId,firstStoreId]);
@@ -8106,6 +8236,7 @@ function Dashboard({user,onLogout}){
         expiry_date:cfg.months?addMonths(baseDateStr,cfg.months):null,
         purchased_at:baseDateStr,
         active:true,
+        is_training:trainingMode, // トレーニングモード中に作った回数券・FPが本番データに混ざらないようにする
       };
       try{
         await sb.insert("passes",payload);
@@ -8646,8 +8777,40 @@ function Dashboard({user,onLogout}){
 
       {/* トレーニングモード中は、常に目立つバナーを出して間違い防止する */}
       {trainingMode&&(
-        <div style={{background:"#facc15",color:"#78350f",textAlign:"center",padding:"6px 10px",fontSize:12,fontWeight:800,letterSpacing:1}}>
-          🎓 トレーニングモード中：ここで作成した予約・会計は練習用として扱われ、分析・KPIには一切カウントされません
+        <div style={{background:"#facc15",color:"#78350f",textAlign:"center",padding:"6px 10px",fontSize:12,fontWeight:800,letterSpacing:1,display:"flex",alignItems:"center",justifyContent:"center",gap:10,flexWrap:"wrap"}}>
+          <span>🎓 トレーニングモード中：ここで作成した予約・会計は練習用として扱われ、分析・KPIには一切カウントされません</span>
+          <button onClick={()=>setShowTrainingDataModal(true)} style={{background:"#78350f",color:"#facc15",border:"none",borderRadius:14,padding:"3px 10px",fontSize:11,fontWeight:800,cursor:"pointer",letterSpacing:0}}>
+            テストデータを作成／削除
+          </button>
+        </div>
+      )}
+
+      {/* トレーニング用テストデータの作成・削除モーダル */}
+      {showTrainingDataModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.4)",zIndex:1000,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={()=>!trainingDataBusy&&setShowTrainingDataModal(false)}>
+          <div style={{background:"white",borderRadius:14,padding:22,width:360,maxWidth:"92vw",boxShadow:"0 12px 40px rgba(0,0,0,.25)"}} onClick={e=>e.stopPropagation()}>
+            <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:6}}>🎓 トレーニング用テストデータ</div>
+            <div style={{fontSize:12.5,color:"#64748b",marginBottom:16,lineHeight:1.6}}>
+              架空の患者名で予約・会計・回数券サンプルをまとめて自動作成します。カレンダー操作やPOSレジ、回数券管理の練習にご利用ください（本番データには一切影響しません）。
+            </div>
+            <div style={{marginBottom:14}}>
+              <label style={{display:"block",fontSize:12,fontWeight:700,color:"#444",marginBottom:6}}>作成する予約件数</label>
+              <div style={{display:"flex",gap:8}}>
+                {[5,8,15].map(n=>(
+                  <button key={n} disabled={trainingDataBusy} onClick={()=>generateTrainingData(n)} style={{flex:1,padding:"10px 0",borderRadius:10,border:"1.5px solid #1e3a5f",background:"white",color:"#1e3a5f",fontWeight:800,cursor:trainingDataBusy?"default":"pointer",opacity:trainingDataBusy?.5:1}}>
+                    {n}件作成
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button disabled={trainingDataBusy} onClick={clearTrainingData} style={{width:"100%",padding:"10px 0",borderRadius:10,border:"1.5px solid #dc2626",background:"white",color:"#dc2626",fontWeight:800,cursor:trainingDataBusy?"default":"pointer",opacity:trainingDataBusy?.5:1,marginBottom:10}}>
+              🗑 テストデータを全て削除
+            </button>
+            <button disabled={trainingDataBusy} onClick={()=>setShowTrainingDataModal(false)} style={{width:"100%",padding:"9px 0",borderRadius:10,border:"none",background:"#f1f5f9",color:"#475569",fontWeight:700,cursor:trainingDataBusy?"default":"pointer"}}>
+              閉じる
+            </button>
+            {trainingDataBusy&&<div style={{textAlign:"center",fontSize:12,color:"#94a3b8",marginTop:10}}>処理中...</div>}
+          </div>
         </div>
       )}
 
@@ -9053,8 +9216,8 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
           {/* 離反防止アラート */}
           {view==="churn_alert"&&<ChurnAlertPanel bookings={bookings} todayStr={todayStr}/>}
                     {view==="line_link_check"&&<LineLinkCheckPanel bookings={bookings}/>}
-                             {view==="staff_kpi"&&<StaffKPIPanel bookings={bookings} payments={payments} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr}/>}
-                             {view==="pass_holders"&&<PassHoldersPanel payments={payments} bookings={bookings}/>}
+                             {view==="staff_kpi"&&<StaffKPIPanel bookings={bookings} payments={payments} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr} trainingMode={trainingMode}/>}
+                             {view==="pass_holders"&&<PassHoldersPanel payments={payments} bookings={bookings} trainingMode={trainingMode}/>}
                              {view==="referral_mgmt"&&<ReferralMgmtPanel bookings={bookings} payments={payments}/>}
                     {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} todayStr={todayStr} onRestore={restoreBooking} onDelete={deleteCancelledBooking}/>}
                            {view==="staff_off_conflicts"&&<StaffOffConflictsPanel bookings={bookings} weeklyShifts={weeklyShifts} dateOverrides={dateOverrides} storeStaff={storeStaff} onReassign={reassignStaffForBooking} onReschedule={rescheduleBooking} todayStr={todayStr}/>}
@@ -9101,7 +9264,7 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
 
           {/* 予約フォーム */}
           {view==="form"&&form&&(
-            <FormPanel form={form} setForm={setForm} editId={editId} conflict={conflict} setConflict={setConflict} isAdmin={isAdmin} bookings={bookings} save={save} onClose={()=>setView("calendar")} onDelete={()=>setDelConfirm(bookings.find(b=>b.id===editId))} onCancel={()=>setCancelModalBooking(bookings.find(b=>b.id===editId))} businessHours={businessHours} closures={closures} storeStaffList={storeStaff} isStaffWorkingOnDate={isStaffWorkingOnDate} staffCanDoMenus={staffCanDoMenus} getLaneCount={getLaneCount} customMenus={customMenus}/>
+            <FormPanel form={form} setForm={setForm} editId={editId} conflict={conflict} setConflict={setConflict} isAdmin={isAdmin} bookings={bookings} save={save} onClose={()=>setView("calendar")} onDelete={()=>setDelConfirm(bookings.find(b=>b.id===editId))} onCancel={()=>setCancelModalBooking(bookings.find(b=>b.id===editId))} businessHours={businessHours} closures={closures} storeStaffList={storeStaff} isStaffWorkingOnDate={isStaffWorkingOnDate} staffCanDoMenus={staffCanDoMenus} getLaneCount={getLaneCount} customMenus={customMenus} trainingMode={trainingMode}/>
           )}
         </div>
       </div>
