@@ -1235,10 +1235,14 @@ function DeltaTag({text,positive,size=12}){
   );
 }
 function StoreSimCard({baselineKarte,baselineFreq,baselineUnit,fmt}){
-  const mk=(name)=>({name,karte:baselineKarte||10,freq:baselineFreq||2,unit:baselineUnit||3000});
+  // 入力欄は数値ではなく文字列で保持する（数値のまま持つと、入力し直す際に先頭へ「0」が
+  // 残ってしまい「0200」のような表示になってしまうため）
+  const mk=(name)=>({name,karte:String(baselineKarte||10),freq:String(baselineFreq||2),unit:String(baselineUnit||3000)});
   const [patterns,setPatterns]=React.useState([mk("パターンA"),mk("パターンB"),mk("パターンC")]);
   function update(i,key,val){
-    setPatterns(prev=>prev.map((p,idx)=>idx===i?{...p,[key]:Number(val)||0}:p));
+    // 数字以外を除去しつつ、先頭の余分な0も取り除く（"0200"→"200"、全部消せば空欄のまま）
+    const cleaned=val.replace(/[^\d]/g,"").replace(/^0+(?=\d)/,"");
+    setPatterns(prev=>prev.map((p,idx)=>idx===i?{...p,[key]:cleaned}:p));
   }
   const baselineSales=Math.round((baselineKarte||0)*(baselineFreq||0)*(baselineUnit||0));
   return(
@@ -1250,7 +1254,7 @@ function StoreSimCard({baselineKarte,baselineFreq,baselineUnit,fmt}){
       <div style={{fontSize:12,color:"#94a3b8",marginBottom:14,marginLeft:34}}>現状の実績：カルテ数{baselineKarte}／頻度{baselineFreq}回／単価{fmt(baselineUnit)}　→　売上目安 {fmt(baselineSales)}</div>
       <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12}}>
         {patterns.map((p,i)=>{
-          const sales=Math.round(p.karte*p.freq*p.unit);
+          const sales=Math.round((Number(p.karte)||0)*(Number(p.freq)||0)*(Number(p.unit)||0));
           const diff=sales-baselineSales;
           return(
             <div key={i} style={{background:"#f8fafc",borderRadius:12,padding:14,border:"1px solid #e2e8f0"}}>
@@ -1260,7 +1264,7 @@ function StoreSimCard({baselineKarte,baselineFreq,baselineUnit,fmt}){
                 <div key={f.key} style={{marginBottom:8}}>
                   <div style={{fontSize:11,color:"#64748b",fontWeight:700,marginBottom:3}}>{f.label}</div>
                   <div style={{display:"flex",alignItems:"center",gap:4}}>
-                    <input type="number" value={p[f.key]} onChange={e=>update(i,f.key,e.target.value)}
+                    <input type="text" inputMode="numeric" pattern="[0-9]*" value={p[f.key]} onChange={e=>update(i,f.key,e.target.value)}
                       style={{width:"100%",padding:"6px 8px",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:13,fontWeight:700}}/>
                     <span style={{fontSize:11,color:"#94a3b8"}}>{f.suffix}</span>
                   </div>
@@ -1279,22 +1283,28 @@ function StoreSimCard({baselineKarte,baselineFreq,baselineUnit,fmt}){
   );
 }
 function IndivSimCard({baselineTaiou,baselineHokenTanka,fmt}){
-  const [taiou,setTaiou]=React.useState(baselineTaiou||10);
-  const [hokenTanka,setHokenTanka]=React.useState(baselineHokenTanka||1000);
-  const [jihiCount,setJihiCount]=React.useState(0);
-  const [jihiTanka,setJihiTanka]=React.useState(3600);
-  const [kaisukenCount,setKaisukenCount]=React.useState(0);
-  const [kaisukenTanka,setKaisukenTanka]=React.useState(8800);
-  const [fpCount,setFpCount]=React.useState(0);
-  const [fpTanka,setFpTanka]=React.useState(13200);
-  const hokenSales=Math.round(taiou*hokenTanka);
-  const jihiSales=Math.round(jihiCount*jihiTanka);
-  const kaisukenSales=Math.round(kaisukenCount*kaisukenTanka);
-  const fpSales=Math.round(fpCount*fpTanka);
+  // 入力欄は数値ではなく文字列で保持する（数値のまま持つと、入力し直す際に先頭へ「0」が
+  // 残ってしまい「0200」のような表示になってしまうため）
+  const [taiou,setTaiou]=React.useState(String(baselineTaiou||10));
+  const [hokenTanka,setHokenTanka]=React.useState(String(baselineHokenTanka||1000));
+  const [jihiCount,setJihiCount]=React.useState("0");
+  const [jihiTanka,setJihiTanka]=React.useState("3600");
+  const [kaisukenCount,setKaisukenCount]=React.useState("0");
+  const [kaisukenTanka,setKaisukenTanka]=React.useState("8800");
+  const [fpCount,setFpCount]=React.useState("0");
+  const [fpTanka,setFpTanka]=React.useState("13200");
+  const hokenSales=Math.round((Number(taiou)||0)*(Number(hokenTanka)||0));
+  const jihiSales=Math.round((Number(jihiCount)||0)*(Number(jihiTanka)||0));
+  const kaisukenSales=Math.round((Number(kaisukenCount)||0)*(Number(kaisukenTanka)||0));
+  const fpSales=Math.round((Number(fpCount)||0)*(Number(fpTanka)||0));
   const madoguchiSales=jihiSales+kaisukenSales+fpSales;
   const totalSales=hokenSales+madoguchiSales;
   const numInput=(val,setter)=>(
-    <input type="number" value={val} onChange={e=>setter(Number(e.target.value)||0)}
+    <input type="text" inputMode="numeric" pattern="[0-9]*" value={val} onChange={e=>{
+      // 数字以外を除去しつつ、先頭の余分な0も取り除く（"0200"→"200"、全部消せば空欄のまま）
+      const cleaned=e.target.value.replace(/[^\d]/g,"").replace(/^0+(?=\d)/,"");
+      setter(cleaned);
+    }}
       style={{width:"100%",padding:"6px 8px",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:13,fontWeight:700}}/>
   );
   return(
