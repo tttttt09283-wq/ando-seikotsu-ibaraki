@@ -8209,6 +8209,7 @@ function Dashboard({user,onLogout}){
             line_user_id:original.line_user_id||null,
             reminded:false,
             karte_no:original.karte_no||null,
+            is_training:trainingMode, // トレーニングモード中に作った次回予約が本番データに混ざらないようにする
           };
           const rebookResult=await sb.insert("bookings",newBookingData);
           if(Array.isArray(rebookResult)&&rebookResult.length>0){
@@ -8534,9 +8535,20 @@ function Dashboard({user,onLogout}){
 
     const todayBreakCount=breaks.filter(b=>b.date===todayStr).length;
   const staffOffConflictsCount=React.useMemo(()=>{
+    // 「休みスタッフの予約」パネル本体の判定条件（localStorageの月別シフト上書きも含む）と必ず一致させる。
+    // ここが判定条件からズレると、サイドバーの件数バッジと実際の一覧件数が食い違ってしまう。
     function isWorkingLocal(staffId,dateStr){
       const dov=dateOverrides.find(o=>o.staff_id===staffId&&o.date===dateStr);
       if(dov) return dov.is_working!==false;
+      const monthKey=dateStr.slice(0,7);
+      try{
+        const raw=localStorage.getItem("shifts_"+monthKey);
+        if(raw){
+          const map=JSON.parse(raw);
+          const val=map[staffId+"_"+dateStr];
+          if(val) return val==="出勤";
+        }
+      }catch(e){}
       const dow=new Date(dateStr+"T00:00:00").getDay();
       const ws=weeklyShifts.find(w=>w.staff_id===staffId&&w.day_of_week===dow);
       if(ws) return ws.is_working!==false;
