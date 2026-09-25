@@ -319,6 +319,9 @@ async function sbPatch(t,id,d){
   return res.json();
 }
 function fmt(n){return"¥"+Number(n||0).toLocaleString();}
+// mPOPへの印刷（shift_jisコードページ）では「¥」記号が正しく変換されず「?」として印字されてしまうため、
+// レシート印刷専用に「円」で表記するフォーマット関数を用意する（画面表示はこれまで通り¥のまま）
+function fmtPrint(n){return Number(n||0).toLocaleString()+"円";}
 function todayStr(){
   const d=new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
@@ -527,19 +530,21 @@ function buildReceiptText(){
   lines.push({text:"-".repeat(W)});
   lines.push({text:"【ご利用メニュー】"});
   if(items.length>0){
-    items.forEach(i=>{ lines.push({text:padRow(i.label,fmt(i.amount),W)}); });
+    items.forEach(i=>{ lines.push({text:padRow(i.label,fmtPrint(i.amount),W)}); });
   }else{
     lines.push({text:padRow("－","－",W)});
   }
   lines.push({text:"-".repeat(W)});
-  lines.push({text:padRow("値引",fmt(0),W)});
-  lines.push({text:padRow("小計（税込）",fmt(total),W)});
-  lines.push({text:padRow("消費税（内8%対象）",fmt(taxIncluded),W)});
+  lines.push({text:padRow("値引",fmtPrint(0),W)});
+  lines.push({text:padRow("小計（税込）",fmtPrint(total),W)});
+  lines.push({text:padRow("消費税（内8%対象）",fmtPrint(taxIncluded),W)});
   lines.push({text:"=".repeat(W)});
-  lines.push({bold:true,width:2,text:padRow("合計",fmt(total),Math.ceil(W/2))});
+  // 合計行はdouble-width(width:2)にすると実際の印字幅が2倍になり32桁に収まらず折り返してしまうため、
+  // 太字のみ（幅は通常サイズ）にして他の行と同じ32桁の枠内に収める
+  lines.push({bold:true,text:padRow("合計",fmtPrint(total),W)});
   lines.push({text:"-".repeat(W)});
-  state.payments.forEach(p=>{ lines.push({text:padRow("お預かり（"+p.method+"）",fmt(p.amount),W)}); });
-  if(change>0) lines.push({bold:true,text:padRow("お釣り",fmt(change),W)});
+  state.payments.forEach(p=>{ lines.push({text:padRow("お預かり（"+p.method+"）",fmtPrint(p.amount),W)}); });
+  if(change>0) lines.push({bold:true,text:padRow("お釣り",fmtPrint(change),W)});
   lines.push({text:"-".repeat(W)});
   lines.push({center:true,small:true,text:`${dateLabel} ${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")} 発行`});
   lines.push({center:true,text:"ご来院ありがとうございました"});
@@ -585,11 +590,15 @@ function printReceiptViaWebPRNT(){
     showPrintToast("❌ 印刷処理でエラーが発生しました："+e.message);
   }
 }
-// ===== 会計確定後、mPOPのレシートプリンターに接続されたレジドロアを自動で開ける =====
-// （現金の受け渡しが発生する会計のときだけ開ける。カード・PayPayのみの会計では開けない）
-function openCashDrawer(){
+// ===== mPOPのレシートプリンターに接続されたレジドロアを開ける =====
+// 会計確定時（現金の受け渡しがある場合）に自動で呼ばれるほか、両替などレジ操作のためだけに
+// 会計を介さず手動で開けたい場合は、画面右上の「レジを開ける」ボタンからmanual=trueで呼ばれる
+function openCashDrawer(manual){
   const isInWebPRNTApp=navigator.userAgent.indexOf("webPRNTSupportMessageHandler")>=0;
-  if(!isInWebPRNTApp) return; // レシート印刷と同じく、Star webPRNT Browserアプリ内でなければ開けない
+  if(!isInWebPRNTApp){
+    if(manual) showPrintToast("❌ レシートプリンター（Star webPRNT Browser）アプリ内でのみ利用できます");
+    return; // レシート印刷と同じく、Star webPRNT Browserアプリ内でなければ開けない
+  }
   try{
     const builder=new StarWebPrintBuilder();
     let request="";
@@ -598,7 +607,9 @@ function openCashDrawer(){
 
     const trader=new StarWebPrintTrader({url:"https://localhost:8001/StarWebPRNT/SendMessage"});
     trader.onReceive=function(response){
-      if(response.traderSuccess!=="true"){
+      if(response.traderSuccess==="true"){
+        if(manual) showPrintToast("🗄️ レジを開けました");
+      }else{
         showPrintToast("❌ レジドロアを開けられませんでした（プリンターの状態をご確認ください）");
       }
     };
@@ -967,7 +978,10 @@ function render(){
   root.innerHTML=`
     <div class="container" style="padding:12px 0;">
       <div class="card">
-        <div class="card-header blue">👤 ${booking.patient_name} 様　${booking.date} ${booking.time}　${STAFF[booking.staff_id]||""}先生　${visitCount}回目来院</div>
+        <div class="card-header blue" style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+          <span>👤 ${booking.patient_name} 様　${booking.date} ${booking.time}　${STAFF[booking.staff_id]||""}先生　${visitCount}回目来院</span>
+          <button onclick="openCashDrawer(true)" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:white;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">🗄️ レジを開ける</button>
+        </div>
       </div>
       <div class="main-grid">
         <div class="left-col">
