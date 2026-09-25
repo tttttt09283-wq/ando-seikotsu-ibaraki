@@ -326,9 +326,26 @@ function todayStr(){
   const d=new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 }
+// ===== プレオープン期間（2026/10/1〜10/4）は、無料体験会・回数券/FPの10%OFFをメインの会計にする =====
+const PRE_OPEN_START="2026-10-01", PRE_OPEN_END="2026-10-04";
+function isPreOpenPeriod(){ const d=todayStr(); return d>=PRE_OPEN_START&&d<=PRE_OPEN_END; }
+// プレオープン期間中は回数券・フリーパスを10%OFFにし、表示順も「回数券→フリーパス→単発メニュー」に入れ替える
+// （プレオープン中は単発メニューはほぼ使わない想定のため、最後に回す）
+function getJifeeCategories(){
+  if(!isPreOpenPeriod()) return JIFEE_CATEGORIES;
+  const discount10=cat=>({
+    ...cat,
+    label:cat.label+"（10%OFF）",
+    items:cat.items.map(it=>({label:it.label,amount:Math.round(it.amount*0.9/10)*10})),
+  });
+  const kaisu=JIFEE_CATEGORIES.find(c=>c.id==="kaisu");
+  const fp=JIFEE_CATEGORIES.find(c=>c.id==="fp");
+  const spot=JIFEE_CATEGORIES.find(c=>c.id==="spot");
+  return [discount10(kaisu),discount10(fp),spot];
+}
 
 let booking=null,treatment=null,visitCount=1,storeInfo=null;
-let state={insuranceAmount:0,insuranceType:null,insuranceRate:null,insuranceTier:null,jifeeItems:[],payments:[],done:false,saving:false,nextBookings:[],savingBookings:false,bookingsSaved:false,jifeeTab:"spot",receiptFrequency:null,receiptFrequencyKnown:false,savingReceiptPref:false};
+let state={insuranceAmount:0,insuranceType:null,insuranceRate:null,insuranceTier:null,jifeeItems:[],payments:[],done:false,saving:false,nextBookings:[],savingBookings:false,bookingsSaved:false,jifeeTab:isPreOpenPeriod()?"kaisu":"spot",receiptFrequency:null,receiptFrequencyKnown:false,savingReceiptPref:false};
 const CLINIC_NAME_FALLBACK="あんど整骨院";
 
 function getMenuByVisit(visit){if(visit===1) return "初診（60分）";if(visit===2) return "初診（60分）";return "再診（30分）";}
@@ -432,6 +449,13 @@ function addPayment(method){if(state.payments.find(p=>p.method===method)) return
 function removePayment(i){state.payments.splice(i,1);render();}
 function updatePaymentAmount(i,val){state.payments[i].amount=parseInt(val)||0;renderSummary();}
 function addJifee(label,amount){state.jifeeItems.push({label,amount});render();}
+// プレオープン期間中の「無料体験会」ワンタップ確定：保険負担・自費項目をすべてクリアし、
+// 0円の項目だけをレシートに残す（金額入力や支払方法の追加はそのまま行える）
+function applyPreOpenFreeTrial(){
+  state.insuranceAmount=0;state.insuranceType=null;state.insuranceRate=null;state.insuranceTier=null;
+  state.jifeeItems=[{label:"無料体験会（プレオープン特典）",amount:0}];
+  render();
+}
 function removeJifee(i){state.jifeeItems.splice(i,1);render();}
 function updateJifee(i,val){state.jifeeItems[i].amount=parseInt(val)||0;renderSummary();}
 function setJifeeTab(id){state.jifeeTab=id;render();}
@@ -985,6 +1009,15 @@ function render(){
       </div>
       <div class="main-grid">
         <div class="left-col">
+          ${isPreOpenPeriod()?`
+          <div class="card" style="border:2px solid #f59e0b;">
+            <div class="card-header" style="background:#fef3c7;color:#92400e;">🎁 プレオープン特典（10/1〜10/4）</div>
+            <div class="card-body">
+              <div style="font-size:11px;color:#92400e;margin-bottom:10px;">この期間はこちらの3メニューがメインです。無料体験会は0円で確定できます。回数券・フリーパスは既に10%OFFの金額になっています。</div>
+              <button onclick="applyPreOpenFreeTrial()" style="width:100%;padding:12px;border-radius:10px;border:none;background:#f59e0b;color:white;font-size:14px;font-weight:800;cursor:pointer;">🎁 無料体験会（今回0円で確定）</button>
+            </div>
+          </div>
+          `:``}
           <div class="card">
             <div class="card-header blue">🏥 保険窓口負担</div>
             <div class="card-body">
@@ -1043,15 +1076,16 @@ function render(){
           <div class="card">
             <div class="card-header green">💴 自費項目</div>
             <div class="card-body">
-              <!-- カテゴリタブ -->
+              <!-- カテゴリタブ（プレオープン期間中は回数券・フリーパスを10%OFFにして先頭に表示） -->
               <div style="display:flex;gap:5px;margin-bottom:10px;">
-                ${JIFEE_CATEGORIES.map(cat=>`
+                ${getJifeeCategories().map(cat=>`
                   <button data-cat="${cat.id}" onclick="setJifeeTab(this.dataset.cat)" style="flex:1;padding:7px 4px;border-radius:8px;border:2px solid ${state.jifeeTab===cat.id?cat.color:'#e2e8f0'};background:${state.jifeeTab===cat.id?cat.color:'white'};color:${state.jifeeTab===cat.id?'white':'#374151'};font-size:11px;font-weight:700;cursor:pointer;">${cat.label}</button>
                 `).join("")}
               </div>
               <!-- 選択中カテゴリのメニュー -->
               ${(()=>{
-                const cat=JIFEE_CATEGORIES.find(c=>c.id===state.jifeeTab)||JIFEE_CATEGORIES[0];
+                const cats=getJifeeCategories();
+                const cat=cats.find(c=>c.id===state.jifeeTab)||cats[0];
                 return`<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px;">
                   ${cat.items.map((item,idx)=>`
                     <button class="jifee-btn" data-label="${item.label.replace(/"/g,'&quot;')}" data-amount="${item.amount}" onclick="addJifee(this.dataset.label,Number(this.dataset.amount))" style="border-color:${cat.color};color:${cat.color};text-align:left;padding:8px 10px;">
