@@ -585,6 +585,31 @@ function printReceiptViaWebPRNT(){
     showPrintToast("❌ 印刷処理でエラーが発生しました："+e.message);
   }
 }
+// ===== 会計確定後、mPOPのレシートプリンターに接続されたレジドロアを自動で開ける =====
+// （現金の受け渡しが発生する会計のときだけ開ける。カード・PayPayのみの会計では開けない）
+function openCashDrawer(){
+  const isInWebPRNTApp=navigator.userAgent.indexOf("webPRNTSupportMessageHandler")>=0;
+  if(!isInWebPRNTApp) return; // レシート印刷と同じく、Star webPRNT Browserアプリ内でなければ開けない
+  try{
+    const builder=new StarWebPrintBuilder();
+    let request="";
+    request+=builder.createInitializationElement();
+    request+=builder.createPeripheralElement({channel:1,on:200,off:200});
+
+    const trader=new StarWebPrintTrader({url:"https://localhost:8001/StarWebPRNT/SendMessage"});
+    trader.onReceive=function(response){
+      if(response.traderSuccess!=="true"){
+        showPrintToast("❌ レジドロアを開けられませんでした（プリンターの状態をご確認ください）");
+      }
+    };
+    trader.onError=function(response){
+      showPrintToast("❌ ドロア開放エラー："+(response.responseText||"接続できませんでした"));
+    };
+    trader.sendMessage({request:request});
+  }catch(e){
+    showPrintToast("❌ ドロア開放処理でエラーが発生しました："+e.message);
+  }
+}
 function showPrintToast(msg){
   const el=document.createElement("div");
   el.textContent=msg;
@@ -844,6 +869,11 @@ async function save(){
       is_training:!!booking.is_training,
     });
     if(result&&result.error){throw new Error(result.message||result.error||"保存に失敗しました");}
+
+    // 会計が確定したタイミングで、現金の受け渡しがある場合だけレジドロアを自動で開ける
+    if(state.payments.some(p=>p.method==="現金")){
+      openCashDrawer();
+    }
 
     // ===== 回数券・FP購入をpassesテーブルに自動登録 =====
     for(const item of state.jifeeItems){
