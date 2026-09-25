@@ -373,12 +373,21 @@ function selectInsuranceType(type){
 }
 function selectInsuranceRate(rate){
   state.insuranceRate=(state.insuranceRate===rate)?null:rate;
-  // 負担割合を選んだ時点で、この患者様の実際の来院回数に合う欄をデフォルト表示しておく
-  if(state.insuranceRate){
+  // 医療助成は来院回数による段階ではなく「500円／0円」の二択のため、履歴の自動選択は行わない
+  if(state.insuranceRate==="医療助成"){
+    state.insuranceTier=null;
+  }else if(state.insuranceRate){
+    // 負担割合を選んだ時点で、この患者様の実際の来院回数に合う欄をデフォルト表示しておく
     state.insuranceTier=getVisitTierForType(state.insuranceType,visitCount);
   }else{
     state.insuranceTier=null;
   }
+  render();
+}
+// 医療助成：500円／0円のワンタップ選択
+function selectMedicalAssistAmount(amount){
+  state.insuranceTier=null;
+  state.insuranceAmount=amount;
   render();
 }
 function stepInsuranceTier(dir){
@@ -1022,14 +1031,22 @@ function render(){
             <div class="card-header blue">🏥 保険窓口負担</div>
             <div class="card-body">
               <div class="ins-tab-row">
-                ${["鍼灸併用","鍼灸のみ","手技療法"].map(t=>`<button class="ins-tab-btn${state.insuranceType===t?" sel":""}" onclick="selectInsuranceType('${t}')">${t}</button>`).join("")}
+                ${[{value:"手技療法",label:"保険診療"},{value:"鍼灸併用",label:"鍼灸併用"},{value:"鍼灸のみ",label:"鍼灸のみ"}].map(t=>`<button class="ins-tab-btn${state.insuranceType===t.value?" sel":""}" onclick="selectInsuranceType('${t.value}')">${t.label}</button>`).join("")}
               </div>
               ${state.insuranceType?`
                 <div class="ins-rate-row">
-                  ${["3割","2割","1割"].map(r=>`<button class="ins-rate-pill${state.insuranceRate===r?" sel":""}" onclick="selectInsuranceRate('${r}')">${r}</button>`).join("")}
+                  ${["3割","2割","1割","医療助成"].map(r=>`<button class="ins-rate-pill${state.insuranceRate===r?" sel":""}" onclick="selectInsuranceRate('${r}')">${r}</button>`).join("")}
                 </div>
               `:`<div style="font-size:11px;color:#9ca3af;margin-bottom:10px;">↑施術区分を選ぶと、負担割合を選べます</div>`}
-              ${(state.insuranceType&&state.insuranceRate)?(()=>{
+              ${(state.insuranceType&&state.insuranceRate==="医療助成")?`
+                <div class="ins-history-box">
+                  <div class="ins-history-title">📋 医療助成</div>
+                  <div style="display:flex;gap:8px;">
+                    <button style="flex:1;padding:12px;font-size:15px;font-weight:800;border-radius:8px;cursor:pointer;border:2px solid #1e3a5f;background:${state.insuranceAmount==500?"#1e3a5f":"white"};color:${state.insuranceAmount==500?"white":"#1e3a5f"};" onclick="selectMedicalAssistAmount(500)">500円</button>
+                    <button style="flex:1;padding:12px;font-size:15px;font-weight:800;border-radius:8px;cursor:pointer;border:2px solid #1e3a5f;background:${state.insuranceAmount==0?"#1e3a5f":"white"};color:${state.insuranceAmount==0?"white":"#1e3a5f"};" onclick="selectMedicalAssistAmount(0)">0円</button>
+                  </div>
+                </div>
+              `:(state.insuranceType&&state.insuranceRate)?(()=>{
                 const tiers=state.insuranceType==="手技療法"?["初診","2回目","3回目","4回目以降"]:["初診","2回目以降"];
                 const curIdx=Math.max(0,tiers.indexOf(state.insuranceTier||tiers[0]));
                 const curTier=tiers[curIdx];
