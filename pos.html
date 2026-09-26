@@ -465,6 +465,14 @@ function applyPreOpenFreeTrial(){
   state.jifeeItems=[{label:"無料体験会（プレオープン特典）",amount:0}];
   render();
 }
+// 「無料施術」ワンタップ確定：無料体験会と同じ0円確定だが、体験会に限らず
+// プレオープン期間中の無料施術全般（既存患者への特典施術なども）に使えるよう、
+// ラベルを汎用の「無料施術」にしたもの
+function applyPreOpenFreeTreatment(){
+  state.insuranceAmount=0;state.insuranceType=null;state.insuranceRate=null;state.insuranceTier=null;
+  state.jifeeItems=[{label:"無料施術（プレオープン特典）",amount:0}];
+  render();
+}
 function removeJifee(i){state.jifeeItems.splice(i,1);render();}
 function updateJifee(i,val){state.jifeeItems[i].amount=parseInt(val)||0;renderSummary();}
 function setJifeeTab(id){state.jifeeTab=id;render();}
@@ -1022,8 +1030,9 @@ function render(){
           <div class="card" style="border:2px solid #f59e0b;">
             <div class="card-header" style="background:#fef3c7;color:#92400e;">🎁 プレオープン特典（10/1〜10/4）</div>
             <div class="card-body">
-              <div style="font-size:11px;color:#92400e;margin-bottom:10px;">この期間はこちらの3メニューがメインです。無料体験会は0円で確定できます。回数券・フリーパスは既に10%OFFの金額になっています。</div>
-              <button onclick="applyPreOpenFreeTrial()" style="width:100%;padding:12px;border-radius:10px;border:none;background:#f59e0b;color:white;font-size:14px;font-weight:800;cursor:pointer;">🎁 無料体験会（今回0円で確定）</button>
+              <div style="font-size:11px;color:#92400e;margin-bottom:10px;">この期間はこちらの3メニューがメインです。無料体験会・無料施術は0円で確定できます。回数券・フリーパスは既に10%OFFの金額になっています。</div>
+              <button onclick="applyPreOpenFreeTrial()" style="width:100%;padding:12px;border-radius:10px;border:none;background:#f59e0b;color:white;font-size:14px;font-weight:800;cursor:pointer;margin-bottom:8px;">🎁 無料体験会（今回0円で確定）</button>
+              <button onclick="applyPreOpenFreeTreatment()" style="width:100%;padding:12px;border-radius:10px;border:none;background:#059669;color:white;font-size:14px;font-weight:800;cursor:pointer;">🆓 無料施術（今回0円で確定）</button>
             </div>
           </div>
           `:``}
