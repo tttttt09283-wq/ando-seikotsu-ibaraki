@@ -1115,6 +1115,8 @@ function PreOpenStatsPanel({bookings,payments,stores}){
   const [rangeStart,setRangeStart]=React.useState("2026-10-01");
   const [rangeEnd,setRangeEnd]=React.useState("2026-10-04");
   const [passes,setPasses]=React.useState([]);
+  // forecast＝来院前に予約データだけで見る集計／actual＝来院後の会計実績ベースの集計（従来の内容）
+  const [mode,setMode]=React.useState("forecast");
 
   const firstStoreId=(stores&&stores.length>0)?stores[0].id:1;
 
@@ -1234,13 +1236,59 @@ function PreOpenStatsPanel({bookings,payments,stores}){
   totals.contractRate=totals.actualVisits>0?Math.round(totals.contractCount/totals.actualVisits*100):0;
   totals.salesPerVisit=totals.actualVisits>0?Math.round(totals.sales/totals.actualVisits):0;
 
+  // ===== 来院前に確認できる「予約ベース」の集計（会計・来院を待たず、予約データだけで集計する）=====
+  const forecastDayStats=dateList.map(dateStr=>{
+    const dayBookings=scopedBookings.filter(b=>b.date===dateStr);
+    const active=dayBookings.filter(b=>!b.cancelled);
+    const cancelledCount=dayBookings.length-active.length;
+    const newPatientCount=active.filter(b=>firstVisitByPatient[b.patient_name]===dateStr).length;
+    const trialCount=active.filter(b=>isTrialMenu(b.menu)).length;
+    const lineCount=active.filter(b=>b.line_user_id).length;
+    const referralCount=active.filter(b=>(b.referrer_name&&b.referrer_name.trim())||b.referral_code_used).length;
+    const staffCount=new Set(active.map(b=>b.staff_id)).size;
+    return {dateStr,total:dayBookings.length,active:active.length,cancelledCount,newPatientCount,trialCount,lineCount,referralCount,staffCount};
+  });
+  const forecastTotals=forecastDayStats.reduce((acc,d)=>{
+    acc.total+=d.total;acc.active+=d.active;acc.cancelledCount+=d.cancelledCount;
+    acc.newPatientCount+=d.newPatientCount;acc.trialCount+=d.trialCount;acc.lineCount+=d.lineCount;acc.referralCount+=d.referralCount;
+    return acc;
+  },{total:0,active:0,cancelledCount:0,newPatientCount:0,trialCount:0,lineCount:0,referralCount:0});
+
+  // 期間内（キャンセル除く）の予約を対象に、来院経路・メニューの内訳を集計する
+  const activeInRange=React.useMemo(()=>{
+    const dateSet=new Set(dateList);
+    return scopedBookings.filter(b=>!b.cancelled&&dateSet.has(b.date));
+  },[scopedBookings,dateList]);
+  function breakdown(getKey){
+    const map={};
+    activeInRange.forEach(b=>{
+      const key=getKey(b)||"未回答";
+      map[key]=(map[key]||0)+1;
+    });
+    const total=activeInRange.length;
+    return Object.entries(map).map(([label,count])=>({label,count,pct:total>0?Math.round(count/total*100):0})).sort((a,b)=>b.count-a.count);
+  }
+  const howKnowBreakdown=breakdown(b=>b.how_know&&b.how_know.trim());
+  const menuBreakdown=breakdown(b=>b.menu&&b.menu.trim());
+
   const DAYS_JP2=["日","月","火","水","木","金","土"];
   const fmtYen=n=>"¥"+Number(n||0).toLocaleString();
 
   return(
     <div style={{maxWidth:1300,margin:"0 auto"}}>
       <div className="card" style={{marginBottom:16,padding:"16px 18px"}}>
-        <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:12}}>📊 プレオープン集計</div>
+        <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:12}}>📊 イベント期間集計</div>
+        <div style={{display:"flex",gap:8,marginBottom:14}}>
+          <button onClick={()=>setMode("forecast")} style={{flex:1,padding:"9px 10px",borderRadius:8,border:"2px solid "+(mode==="forecast"?"#1e3a5f":"#e2e8f0"),background:mode==="forecast"?"#1e3a5f":"white",color:mode==="forecast"?"white":"#374151",fontSize:12,fontWeight:800,cursor:"pointer"}}>
+            📋 来院前（予約ベース）
+          </button>
+          <button onClick={()=>setMode("actual")} style={{flex:1,padding:"9px 10px",borderRadius:8,border:"2px solid "+(mode==="actual"?"#1e3a5f":"#e2e8f0"),background:mode==="actual"?"#1e3a5f":"white",color:mode==="actual"?"white":"#374151",fontSize:12,fontWeight:800,cursor:"pointer"}}>
+            ✅ 来院後（実績ベース）
+          </button>
+        </div>
+        <div style={{fontSize:11,color:"#94a3b8",marginBottom:12}}>
+          {mode==="forecast"?"来院・会計を待たず、今入っている予約データだけで集計します（イベント前の準備・見込み確認用）":"実際に会計が記録された来院実績で集計します（従来の集計内容）"}
+        </div>
         <div style={{display:"flex",gap:14,flexWrap:"wrap",alignItems:"flex-end"}}>
           <div>
             <label style={{fontSize:11,color:"#94a3b8",fontWeight:700,display:"block",marginBottom:4}}>集計期間（開始）</label>
@@ -1260,6 +1308,109 @@ function PreOpenStatsPanel({bookings,payments,stores}){
         </div>
       </div>
 
+      {mode==="forecast"&&(
+        <>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:10,marginBottom:16}}>
+            {[
+              {label:"総予約数",value:forecastTotals.total,color:"#1e3a5f"},
+              {label:"有効予約数",value:forecastTotals.active,color:"#059669"},
+              {label:"キャンセル数",value:forecastTotals.cancelledCount,color:"#dc2626"},
+              {label:"新患予約",value:forecastTotals.newPatientCount,color:"#0891b2"},
+              {label:"紹介予約",value:forecastTotals.referralCount,color:"#7c3aed"},
+              {label:"LINE連携",value:forecastTotals.lineCount,color:"#059669"},
+            ].map(c=>(
+              <div key={c.label} className="card" style={{padding:"14px 12px",textAlign:"center"}}>
+                <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:4}}>{c.label}</div>
+                <div style={{fontSize:22,fontWeight:800,color:c.color}}>{c.value}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="card" style={{overflowX:"auto",marginBottom:16}}>
+            <table style={{borderCollapse:"collapse",width:"100%",fontSize:13,minWidth:760}}>
+              <thead>
+                <tr style={{background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}>
+                  {["日付","予約数（全体）","有効予約","キャンセル","新患予約","無料体験","紹介予約","LINE連携","稼働予定スタッフ"].map(h=>(
+                    <th key={h} style={{padding:"10px 12px",textAlign:"left",fontWeight:800,color:"#64748b",whiteSpace:"nowrap"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {forecastDayStats.length===0?(
+                  <tr><td colSpan={9} style={{padding:24,textAlign:"center",color:"#94a3b8"}}>期間を選択してください</td></tr>
+                ):forecastDayStats.map(d=>{
+                  const dt=new Date(d.dateStr+"T00:00:00");
+                  return(
+                    <tr key={d.dateStr} style={{borderBottom:"1px solid #f1f5f9"}}>
+                      <td style={{padding:"10px 12px",fontWeight:700,color:"#1e293b",whiteSpace:"nowrap"}}>{d.dateStr.slice(5)}（{DAYS_JP2[dt.getDay()]}）</td>
+                      <td style={{padding:"10px 12px"}}>{d.total}</td>
+                      <td style={{padding:"10px 12px",fontWeight:700,color:"#059669"}}>{d.active}</td>
+                      <td style={{padding:"10px 12px",color:"#dc2626"}}>{d.cancelledCount}</td>
+                      <td style={{padding:"10px 12px"}}>{d.newPatientCount}</td>
+                      <td style={{padding:"10px 12px"}}>{d.trialCount}</td>
+                      <td style={{padding:"10px 12px"}}>{d.referralCount}</td>
+                      <td style={{padding:"10px 12px"}}>{d.lineCount}</td>
+                      <td style={{padding:"10px 12px"}}>{d.staffCount}名</td>
+                    </tr>
+                  );
+                })}
+                {forecastDayStats.length>0&&(
+                  <tr style={{background:"#f0fdf4",borderTop:"2px solid #86efac"}}>
+                    <td style={{padding:"12px",fontWeight:800,color:"#065f46",whiteSpace:"nowrap"}}>{dateList.length}日間合計</td>
+                    <td style={{padding:"12px",fontWeight:800}}>{forecastTotals.total}</td>
+                    <td style={{padding:"12px",fontWeight:800,color:"#059669"}}>{forecastTotals.active}</td>
+                    <td style={{padding:"12px",fontWeight:800,color:"#dc2626"}}>{forecastTotals.cancelledCount}</td>
+                    <td style={{padding:"12px",fontWeight:800}}>{forecastTotals.newPatientCount}</td>
+                    <td style={{padding:"12px",fontWeight:800}}>{forecastTotals.trialCount}</td>
+                    <td style={{padding:"12px",fontWeight:800}}>{forecastTotals.referralCount}</td>
+                    <td style={{padding:"12px",fontWeight:800}}>{forecastTotals.lineCount}</td>
+                    <td style={{padding:"12px"}}>—</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
+            <div className="card" style={{padding:"14px 16px"}}>
+              <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:10}}>📣 来院経路の内訳（期間合計・キャンセル除く）</div>
+              {howKnowBreakdown.length===0?(
+                <div style={{fontSize:12,color:"#94a3b8",textAlign:"center",padding:"10px 0"}}>予約がありません</div>
+              ):howKnowBreakdown.map(r=>(
+                <div key={r.label} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                  <div style={{width:110,fontSize:12,color:"#374151",fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.label}</div>
+                  <div style={{flex:1,background:"#f1f5f9",borderRadius:6,height:16,position:"relative"}}>
+                    <div style={{width:r.pct+"%",background:"#1e3a5f",height:"100%",borderRadius:6}}/>
+                  </div>
+                  <div style={{width:70,fontSize:12,fontWeight:800,color:"#1e3a5f",textAlign:"right",whiteSpace:"nowrap"}}>{r.count}件（{r.pct}%）</div>
+                </div>
+              ))}
+            </div>
+            <div className="card" style={{padding:"14px 16px"}}>
+              <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:10}}>🩺 メニュー・施術区分の内訳（期間合計・キャンセル除く）</div>
+              {menuBreakdown.length===0?(
+                <div style={{fontSize:12,color:"#94a3b8",textAlign:"center",padding:"10px 0"}}>予約がありません</div>
+              ):menuBreakdown.map(r=>(
+                <div key={r.label} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                  <div style={{width:110,fontSize:12,color:"#374151",fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{r.label}</div>
+                  <div style={{flex:1,background:"#f1f5f9",borderRadius:6,height:16,position:"relative"}}>
+                    <div style={{width:r.pct+"%",background:"#059669",height:"100%",borderRadius:6}}/>
+                  </div>
+                  <div style={{width:70,fontSize:12,fontWeight:800,color:"#059669",textAlign:"right",whiteSpace:"nowrap"}}>{r.count}件（{r.pct}%）</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{fontSize:11,color:"#94a3b8",marginBottom:16,lineHeight:1.8}}>
+            ・こちらは全て「予約データ」だけを集計したものです（会計・来院確認は不要）。実際の来院・売上実績を見たい場合は上の「来院後（実績ベース）」に切り替えてください<br/>
+            ・新患予約：初回来院日がその日付になる予約の件数です<br/>
+            ・紹介予約：紹介者名の入力、または紹介URL経由での予約の件数です
+          </div>
+        </>
+      )}
+
+      {mode==="actual"&&(
+      <>
       <div className="card" style={{overflowX:"auto"}}>
         <table style={{borderCollapse:"collapse",width:"100%",fontSize:13,minWidth:1180}}>
           <thead>
@@ -1321,6 +1472,8 @@ function PreOpenStatsPanel({bookings,payments,stores}){
         ・次回予約：来院した患者のうち、その日より後の日付で予約（キャンセル除く）を持っている人数です<br/>
         ・稼働スタッフ：その日に予約対応があったスタッフの人数（ユニーク人数）と、実来院数を割った「1人あたり対応件数」です
       </div>
+      </>
+      )}
     </div>
   );
 }
@@ -8837,7 +8990,7 @@ function Dashboard({user,onLogout}){
     ]},
     {id:"analysis",label:"分析",color:"#059669",items:[
       {id:"stats",label:"予約分析・サマリー",icon:"bar-chart",special:""},
-      {id:"preopen_stats",label:"プレオープン集計",icon:"bar-chart",special:""},
+      {id:"preopen_stats",label:"イベント期間集計",icon:"bar-chart",special:""},
       {id:"churn_alert",label:"離反防止アラート",icon:"bell",special:""},
       {id:"line_link_check",label:"LINE連携チェック",icon:"link",special:""},
       {id:"staff_kpi",label:"スタッフKPI管理",icon:"trending",special:""},
