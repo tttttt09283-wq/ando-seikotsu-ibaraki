@@ -8253,6 +8253,54 @@ function Dashboard({user,onLogout}){
     return staffLaneMap[staffId]||1;
   }
 
+  // ===== カレンダーの表示状態（見ている日付・店舗・スタッフ）をPCとスマホなど別端末間で連動させる =====
+  // 同じログインユーザーが別の端末で見ている表示を、Supabaseのadmin_view_stateテーブルに保存しておき、
+  // 30秒ごとの自動更新（fetchAll）のタイミングで他端末での変更を取り込む。予約データ本体には一切影響しない。
+  const viewStateSyncRef=React.useRef({loaded:false,applyingRemote:false,lastWritten:null});
+  // fetchAllはマウント時に一度だけ登録したsetIntervalから繰り返し呼ばれるため、
+  // その時点のbaseDate等を直接読むと古い値のままになってしまう。常に最新の値を読めるようrefで持っておく。
+  const currentViewRef=React.useRef({baseDate,selStoreId,selStaff});
+  React.useEffect(()=>{ currentViewRef.current={baseDate,selStoreId,selStaff}; },[baseDate,selStoreId,selStaff]);
+
+  async function writeViewState(values){
+    if(!user||!user.id) return;
+    const payload={user_id:user.id,base_date:values.base_date,sel_store_id:values.sel_store_id,sel_staff:values.sel_staff,updated_at:new Date().toISOString()};
+    viewStateSyncRef.current.lastWritten=payload;
+    try{
+      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      await fetch(`${SUPABASE_URL}/rest/v1/admin_view_state?on_conflict=user_id`,{
+        method:"POST",
+        headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates"},
+        body:JSON.stringify(payload),
+      });
+    }catch(e){ console.error("表示状態の保存に失敗しました",e); }
+  }
+
+  async function syncViewStateFromServer(){
+    if(!user||!user.id) return;
+    try{
+      const rows=await sb.select("admin_view_state",`?user_id=eq.${user.id}&limit=1`);
+      const row=Array.isArray(rows)&&rows.length>0?rows[0]:null;
+      if(row){
+        const last=viewStateSyncRef.current.lastWritten;
+        // 自分がこれまでに書き込んだ内容と同じ（＝他端末からの変更ではない）場合は何もしない
+        if(!last||last.updated_at!==row.updated_at){
+          viewStateSyncRef.current.applyingRemote=true;
+          if(row.base_date) setBaseDate(new Date(row.base_date+"T00:00:00"));
+          setSelStoreId(row.sel_store_id===undefined?null:row.sel_store_id);
+          setSelStaff(row.sel_staff===undefined?null:row.sel_staff);
+          viewStateSyncRef.current.lastWritten={base_date:row.base_date,sel_store_id:row.sel_store_id,sel_staff:row.sel_staff,updated_at:row.updated_at};
+          setTimeout(()=>{viewStateSyncRef.current.applyingRemote=false;},0);
+        }
+      }else if(!viewStateSyncRef.current.loaded){
+        // まだ誰の表示状態も保存されていない＝初回。今見ている内容をそのまま保存しておく
+        const v=currentViewRef.current;
+        writeViewState({base_date:fmtDate(v.baseDate),sel_store_id:v.selStoreId,sel_staff:v.selStaff});
+      }
+    }catch(e){ console.error("表示状態の取得に失敗しました",e); }
+    viewStateSyncRef.current.loaded=true;
+  }
+
   async function changeLaneCount(staffId,delta){
     const next=Math.max(1,Math.min(6,getLaneCount(staffId)+delta));
     setStaffLaneMap(prev=>({...prev,[staffId]:next})); // 即座に画面へ反映
@@ -8269,6 +8317,9 @@ function Dashboard({user,onLogout}){
   }
 
   async function fetchAll(){
+    // PC・スマホなど別端末で見ている表示（日付・店舗・スタッフ）との連動チェックも、
+    // このfetchAllの30秒ごとの自動更新に相乗りさせる（他の通信を止めないようawaitはしない）
+    syncViewStateFromServer();
     try{
       const [b,br,py,st,ws,cs,mn,dov]=await Promise.all([sb.select("bookings","?order=date.asc,time.asc"),sb.select("staff_breaks","?order=date.asc,time.asc"),sb.select("payments","?order=payment_date.desc"),sb.select("stores","?order=id.asc"),sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc"),sb.select("clinic_staff","?select=id,store_ids,allowed_menus,lane_count,name,email,password,role,color,initial,event_only"),sb.select("menus","?active=eq.true&order=display_order.asc,id.asc"),sb.select("staff_date_overrides","?order=date.asc")]);
       setAllBookings(Array.isArray(b)?b:[]);setBreaks(Array.isArray(br)?br:[]);setAllPayments(Array.isArray(py)?py:[]);
@@ -8362,6 +8413,16 @@ function Dashboard({user,onLogout}){
   },[selStoreId]);
 
   React.useEffect(()=>{fetchAll();const t=setInterval(fetchAll,30000);return()=>clearInterval(t);},[]);
+
+  // この端末で日付・店舗・スタッフの表示を切り替えたら、すぐにサーバーへ保存する
+  // （他端末からの変更を取り込んだ直後の場合は、書き戻して無限ループにならないようスキップする）
+  React.useEffect(()=>{
+    if(!viewStateSyncRef.current.loaded||viewStateSyncRef.current.applyingRemote) return;
+    const baseDateStr=fmtDate(baseDate);
+    const last=viewStateSyncRef.current.lastWritten;
+    if(last&&last.base_date===baseDateStr&&last.sel_store_id===selStoreId&&last.sel_staff===selStaff) return;
+    writeViewState({base_date:baseDateStr,sel_store_id:selStoreId,sel_staff:selStaff});
+  },[baseDate,selStoreId,selStaff]);
 
   function showToast(msg,type="success"){setToast({msg,type});setTimeout(()=>setToast(null),3000);}
 
