@@ -8162,7 +8162,12 @@ function Dashboard({user,onLogout}){
   }
   // 今の表示モードに応じて、実データと練習データを出し分ける
   // （以降のコード全体で使う"bookings"は、常にこのフィルタ後の値。生データはallBookings/allPaymentsとして残す）
+  // ※KPI・売上・患者一覧などの「集計系」画面は、本番・練習の数字が絶対に混ざらないよう、必ずこの"bookings"（同モードのみ）を使うこと。
   const bookings=React.useMemo(()=>allBookings.filter(b=>!!b.is_training===trainingMode),[allBookings,trainingMode]);
+  // カレンダー表示・ダブルブッキング判定・来院履歴の回数表示など「実際の予約状況を見ながら練習する」ための画面だけは、
+  // トレーニングモード中も本番予約（is_training:false）を一緒に表示する（背景として見えるだけで、編集・キャンセル・会計等の書き込みは別途ガードして本番データを一切変更させない）。
+  // トレーニングモードOFF時はbookingsと同じ（本番のみ）になる。
+  const calendarBookings=React.useMemo(()=>trainingMode?allBookings:bookings,[trainingMode,allBookings,bookings]);
   const [view,setViewRaw]=React.useState(()=>{
     try{
       const saved=localStorage.getItem("ando_admin_last_view");
@@ -8424,19 +8429,37 @@ function Dashboard({user,onLogout}){
         }catch(e){ console.error("テスト会計の作成に失敗しました",e); }
       }
 
-      // 回数券・FP関連の練習ができるよう、1名分だけサンプルの回数券も作成する
+      // 回数券・FP関連の練習ができるよう、1名分だけサンプルの回数券を作成し、
+      // さらに「会計へ進むと回数券の残数が減る」動きまで確認できるよう、
+      // まだ会計していない予約（できれば未来日）に、この回数券をあらかじめ紐づけておく
+      let passDemoInfo=null;
       if(createdBookings.length>0){
-        const sample=createdBookings[0];
+        const unpaidBookings=createdBookings.filter(b=>b.date>todayStr);
+        const sample=unpaidBookings[0]||createdBookings.find(b=>!pastOrToday.includes(b))||createdBookings[0];
         try{
-          await sb.insert("passes",{
+          const passResult=await sb.insert("passes",{
             patient_name:sample.patient_name,phone:sample.phone,pass_type:"テスト回数券5回券",
             total_count:5,remaining_count:5,amount:15000,purchased_date:sample.date,
             expiry_date:addMonths(sample.date,12),staff_id:sample.staff_id,active:true,is_training:true,
           });
+          const newPass=Array.isArray(passResult)&&passResult.length>0?passResult[0]:null;
+          // すでに会計済み（pastOrTodayで自動会計データを作った）予約には紐づけない
+          // （会計へ進んでも消費のタイミングが来ないため、練習用に紐づける意味がない）
+          if(newPass&&!pastOrToday.includes(sample)){
+            const updateResult=await sb.update("bookings",sample.id,{consumed_pass_id:newPass.id,consumed_pass_type:"回数券"});
+            if(Array.isArray(updateResult)&&updateResult.length>0){
+              setAllBookings(prev=>prev.map(b=>b.id===sample.id?updateResult[0]:b));
+              passDemoInfo={name:sample.patient_name,date:sample.date,time:sample.time};
+            }
+          }
         }catch(e){ console.error("テスト回数券の作成に失敗しました",e); }
       }
 
-      showToast(`テストデータを${createdBookings.length}件作成しました🎓`);
+      showToast(
+        passDemoInfo
+          ?`テストデータを${createdBookings.length}件作成しました🎓　${passDemoInfo.name}様（${passDemoInfo.date} ${passDemoInfo.time}）の予約には回数券（残り5回）が紐づいています。会計へ進むと本番同様に残数が減る様子を確認できます`
+          :`テストデータを${createdBookings.length}件作成しました🎓`
+      );
       setShowTrainingDataModal(false);
     }catch(e){
       alert("テストデータの作成中にエラーが発生しました："+(e.message||"不明なエラー"));
@@ -8470,7 +8493,7 @@ function Dashboard({user,onLogout}){
 
   // 選択中の店舗に紐づく予約のみに絞り込む（store_id未設定の古いデータは最初の店舗として扱う）
   const firstStoreId=stores.length>0?stores[0].id:1;
-  const storeBookings=React.useMemo(()=>bookings.filter(b=>(b.store_id||firstStoreId)===selStoreId),[bookings,selStoreId,firstStoreId]);
+  const storeBookings=React.useMemo(()=>calendarBookings.filter(b=>(b.store_id||firstStoreId)===selStoreId),[calendarBookings,selStoreId,firstStoreId]);
   // 選択中の店舗で勤務するスタッフのみ表示（DB上の勤務地設定を優先、未設定ならハードコードのstoreIds、それも無ければ全店舗扱い）
   const storeStaff=React.useMemo(()=>STAFF_ACCOUNTS.filter(s=>{
     const dbIds=staffStoreMap[s.id];
@@ -8483,7 +8506,7 @@ function Dashboard({user,onLogout}){
 
   const visitCounts=React.useMemo(()=>{
     const pb={};
-    bookings.forEach(b=>{if(!pb[b.patient_name])pb[b.patient_name]=[];pb[b.patient_name].push(b);});
+    calendarBookings.forEach(b=>{if(!pb[b.patient_name])pb[b.patient_name]=[];pb[b.patient_name].push(b);});
     const result={};
     Object.values(pb).forEach(list=>{const sorted=[...list].sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time));sorted.forEach((b,i)=>{result[b.id]=i+1;});});
     return result;
@@ -8498,6 +8521,9 @@ function Dashboard({user,onLogout}){
   }
   function openEdit(b){
     if(!isAdmin&&b.staff_id!==user.id)return;
+    // トレーニングモード中にカレンダー上で見えている本番予約（is_training:false）は、
+    // 練習の練習で本番データを書き換えてしまわないよう編集不可（閲覧のみ）にする
+    if(trainingMode&&!b.is_training){ showToast("本番の予約はトレーニングモードでは編集できません（閲覧のみ）","delete"); return; }
     setForm({...b});setEditId(b.id);setConflict(false);setView("form");
   }
 
@@ -8544,7 +8570,8 @@ function Dashboard({user,onLogout}){
       }
     }
     const laneCapacity=getLaneCount(form.staff_id);
-    const overlapCountLocal=bookings.filter(b=>b.id!==editId&&b.staff_id===form.staff_id&&b.date===form.date&&!b.cancelled&&overlaps(b,form)).length;
+    // トレーニングモード中の練習予約でも、本番予約と時間が被らないよう本番分も含めて判定する
+    const overlapCountLocal=calendarBookings.filter(b=>b.id!==editId&&b.staff_id===form.staff_id&&b.date===form.date&&!b.cancelled&&overlaps(b,form)).length;
     if(overlapCountLocal>=laneCapacity){setConflict(true);return;}
     // 保存直前にもう一度サーバーへ問い合わせて、ほぼ同時に他のスタッフが同じ枠を
     // 確保してしまっていないか最終確認する（画面上のデータには多少タイムラグがあるため）
@@ -8749,13 +8776,15 @@ function Dashboard({user,onLogout}){
     }
   }
   async function attemptMoveBooking(booking,newDate,newTime,newStaffId){
+    // トレーニングモード中にカレンダー上で見えている本番予約は、ドラッグ移動でも本番データを変更させない
+    if(trainingMode&&!booking.is_training){ showToast("本番の予約はトレーニングモードでは移動できません（閲覧のみ）","delete"); return; }
     const dateObj=new Date(newDate+"T00:00:00");
     if(!isStaffWorkingOnDate(newStaffId,dateObj)){
       showToast("移動先のスタッフはこの日休みのため移動できません","delete");
       return;
     }
     const laneCapacity=getLaneCount(newStaffId);
-    const overlapCountLocal=bookings.filter(b=>b.id!==booking.id&&b.staff_id===newStaffId&&b.date===newDate&&!b.cancelled&&overlaps(b,{time:newTime,duration:booking.duration||DURATION[booking.menu]||30})).length;
+    const overlapCountLocal=calendarBookings.filter(b=>b.id!==booking.id&&b.staff_id===newStaffId&&b.date===newDate&&!b.cancelled&&overlaps(b,{time:newTime,duration:booking.duration||DURATION[booking.menu]||30})).length;
     if(overlapCountLocal>=laneCapacity){
       showToast("その時間はすでに予約枠が埋まっています","delete");
       return;
@@ -8795,10 +8824,12 @@ function Dashboard({user,onLogout}){
   }
 
   async function attemptResizeBooking(booking,newDuration){
+    // トレーニングモード中にカレンダー上で見えている本番予約は、リサイズでも本番データを変更させない
+    if(trainingMode&&!booking.is_training){ showToast("本番の予約はトレーニングモードでは変更できません（閲覧のみ）","delete"); return; }
     const clamped=Math.max(10,Math.min(240,newDuration)); // 10分〜4時間の範囲に収める
     if(clamped===(booking.duration||DURATION[booking.menu]||30)) return; // 変化なし
     const laneCapacity=getLaneCount(booking.staff_id);
-    const overlapCountLocal=bookings.filter(b=>b.id!==booking.id&&b.staff_id===booking.staff_id&&b.date===booking.date&&!b.cancelled&&overlaps(b,{time:booking.time,duration:clamped})).length;
+    const overlapCountLocal=calendarBookings.filter(b=>b.id!==booking.id&&b.staff_id===booking.staff_id&&b.date===booking.date&&!b.cancelled&&overlaps(b,{time:booking.time,duration:clamped})).length;
     if(overlapCountLocal>=laneCapacity){
       showToast("その時間はすでに予約枠が埋まっています","delete");
       return;
@@ -9435,9 +9466,12 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
                                     const liveW=isBeingResized?Math.max(w+resizeDeltaPx,20):w;
                                     const lane=laneOf[b.id]||0;
                                     const sameDay=isSameDayBooking(b);
+                                    // トレーニングモード中、カレンダーの背景として見えている本番予約（練習対象ではない）は
+                                    // 見た目を少し薄くして区別し、ドラッグ移動・リサイズのハンドルも出さない（タップして閲覧はできる）
+                                    const isReadOnlyReal=trainingMode&&!b.is_training;
                                     return(
                                       <div key={b.id}
-                                        title={(sameDay?"⚡当日予約\n":"")+(b.memo?`📝 メモ：${b.memo}`:"")||undefined}
+                                        title={(isReadOnlyReal?"🔒本番の予約（閲覧のみ）\n":"")+(sameDay?"⚡当日予約\n":"")+(b.memo?`📝 メモ：${b.memo}`:"")||undefined}
                                         onPointerDown={e=>{
                                           e.stopPropagation();
                                           try{e.target.setPointerCapture(e.pointerId);}catch(err){}
@@ -9446,14 +9480,16 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
                                           setDragBooking(b);
                                         }}
                                         onClick={e=>{e.stopPropagation();}}
-                                        style={{position:"absolute",left:x,top:lane*laneH+3,height:laneH-6,width:Math.max(liveW-2,20),background:isPaid?"linear-gradient(135deg,#9ca3af,#6b7280)":isNewPatient?"linear-gradient(135deg,#f97316,#ea580c)":`linear-gradient(135deg,${staff.color},${staff.color}bb)`,borderRadius:6,padding:"2px 5px",cursor:"grab",touchAction:"none",boxShadow:isBeingResized?"0 0 0 2px #2563eb,0 2px 8px rgba(37,99,235,.5)":sameDay?"0 0 0 2px #eab308,0 2px 6px rgba(234,179,8,.5)":isCheckedIn?"0 0 0 2px #facc15,0 2px 6px rgba(0,0,0,.3)":isNewPatient?"0 2px 8px rgba(249,115,22,.6)":(isPaid?"0 1px 3px rgba(0,0,0,.2)":`0 2px 6px ${staff.color}44`),display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden",zIndex:isBeingResized?4:isNewPatient?3:2,opacity:isBeingDragged?.35:isPaid?.75:1}}>
-                                        {isNewPatient&&<div style={{position:"absolute",top:-1,right:-1,background:"#fff",color:"#ea580c",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"0 6px 0 4px",lineHeight:1,letterSpacing:0}}>NEW</div>}
+                                        style={{position:"absolute",left:x,top:lane*laneH+3,height:laneH-6,width:Math.max(liveW-2,20),background:isPaid?"linear-gradient(135deg,#9ca3af,#6b7280)":isNewPatient?"linear-gradient(135deg,#f97316,#ea580c)":`linear-gradient(135deg,${staff.color},${staff.color}bb)`,borderRadius:6,padding:"2px 5px",cursor:isReadOnlyReal?"pointer":"grab",touchAction:"none",boxShadow:isBeingResized?"0 0 0 2px #2563eb,0 2px 8px rgba(37,99,235,.5)":sameDay?"0 0 0 2px #eab308,0 2px 6px rgba(234,179,8,.5)":isCheckedIn?"0 0 0 2px #facc15,0 2px 6px rgba(0,0,0,.3)":isNewPatient?"0 2px 8px rgba(249,115,22,.6)":(isPaid?"0 1px 3px rgba(0,0,0,.2)":`0 2px 6px ${staff.color}44`),display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden",zIndex:isBeingResized?4:isNewPatient?3:2,opacity:isBeingDragged?.35:isReadOnlyReal?.6:isPaid?.75:1,filter:isReadOnlyReal?"grayscale(35%)":"none"}}>
+                                        {isReadOnlyReal&&<div style={{position:"absolute",top:-1,right:-1,background:"#fff",color:"#475569",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"0 6px 0 4px",lineHeight:1,letterSpacing:0}}>🔒本番</div>}
+                                        {!isReadOnlyReal&&isNewPatient&&<div style={{position:"absolute",top:-1,right:-1,background:"#fff",color:"#ea580c",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"0 6px 0 4px",lineHeight:1,letterSpacing:0}}>NEW</div>}
                                         {sameDay&&<div style={{position:"absolute",top:-1,left:-1,background:"#fff",color:"#a16207",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"6px 0 4px 0",lineHeight:1,letterSpacing:0}}>⚡当日</div>}
                                         {b.memo&&<div style={{position:"absolute",bottom:-1,left:-1,background:"#fff",color:"#1e3a5f",fontSize:8,fontWeight:900,padding:"0 3px",borderRadius:"6px 4px 0 0",lineHeight:1.4}}>📝</div>}
                                         {b.booked_via_line&&<div style={{position:"absolute",bottom:-1,right:-1,background:"#06C755",color:"white",fontSize:7,fontWeight:900,padding:"1px 3px",borderRadius:"4px 0 4px 0",lineHeight:1}}>LINE</div>}
                                         <div style={{fontWeight:800,fontSize:12,color:"white",textShadow:"0 1px 2px rgba(0,0,0,.55)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",letterSpacing:0.2}}>{isCheckedIn?"📷":""}{isPaid?"✓ ":""}{b.patient_name}</div>
                                         <div style={{fontSize:10,color:"rgba(255,255,255,.95)",textShadow:"0 1px 2px rgba(0,0,0,.45)",fontWeight:700}}>{b.time}{cnt>1&&<span style={{marginLeft:2,background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}{isBeingResized&&<span style={{marginLeft:2,fontWeight:800}}>{Math.max(10,(b.duration||DURATION[b.menu]||30)+Math.round(resizeDeltaPx/CELL_W)*10)}分</span>}</div>
-                                        {/* 右端のリサイズハンドル：ここをドラッグすると対応時間を伸縮できる */}
+                                        {/* 右端のリサイズハンドル：ここをドラッグすると対応時間を伸縮できる（本番予約は閲覧のみのため表示しない） */}
+                                        {!isReadOnlyReal&&(
                                         <div
                                           onPointerDown={e=>{
                                             e.stopPropagation();
@@ -9468,6 +9504,7 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
                                         >
                                           <div style={{position:"absolute",right:2,top:"50%",transform:"translateY(-50%)",width:2,height:"60%",background:"rgba(255,255,255,.7)",borderRadius:1}}/>
                                         </div>
+                                        )}
                                       </div>
                                     );
                                   })}
@@ -9545,7 +9582,7 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
 
           {/* 予約フォーム */}
           {view==="form"&&form&&(
-            <FormPanel form={form} setForm={setForm} editId={editId} conflict={conflict} setConflict={setConflict} isAdmin={isAdmin} bookings={bookings} save={save} onClose={()=>setView("calendar")} onDelete={()=>setDelConfirm(bookings.find(b=>b.id===editId))} onCancel={()=>setCancelModalBooking(bookings.find(b=>b.id===editId))} businessHours={businessHours} closures={closures} storeStaffList={storeStaff} isStaffWorkingOnDate={isStaffWorkingOnDate} staffCanDoMenus={staffCanDoMenus} getLaneCount={getLaneCount} customMenus={customMenus} trainingMode={trainingMode}/>
+            <FormPanel form={form} setForm={setForm} editId={editId} conflict={conflict} setConflict={setConflict} isAdmin={isAdmin} bookings={calendarBookings} save={save} onClose={()=>setView("calendar")} onDelete={()=>setDelConfirm(bookings.find(b=>b.id===editId))} onCancel={()=>setCancelModalBooking(bookings.find(b=>b.id===editId))} businessHours={businessHours} closures={closures} storeStaffList={storeStaff} isStaffWorkingOnDate={isStaffWorkingOnDate} staffCanDoMenus={staffCanDoMenus} getLaneCount={getLaneCount} customMenus={customMenus} trainingMode={trainingMode}/>
           )}
         </div>
       </div>
@@ -9597,6 +9634,9 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
         const b=bookingPopup.booking;
         const s=STAFF_ACCOUNTS.find(x=>x.id===b.staff_id)||{color:"#888",name:"不明"};
         const cnt=visitCounts[b.id]||1;
+        // トレーニングモード中に背景として見えている本番予約は、閲覧（来院履歴を見る）だけ許可し、
+        // メモ編集・会計・施術記録・編集・キャンセルなど本番データを書き換える操作は一切できないようにする
+        const isReadOnlyReal=trainingMode&&!b.is_training;
         const margin=8;
         // スマホブラウザはアドレスバー等の分だけ window.innerHeight と「実際に見えている高さ」がずれることがあるため、
         // visualViewport（実表示領域）が使える場合はそちらを優先して使う
@@ -9623,7 +9663,9 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
                 {b.booked_via_line&&<div style={{fontSize:10,fontWeight:800,color:"white",background:"#06C755",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>LINE予約</div>}
                 {b.referrer_name&&<div style={{fontSize:10,fontWeight:800,color:"#6d28d9",background:"#ede9fe",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>🎁 紹介：{b.referrer_name}</div>}
                 {b.memo&&<div style={{fontSize:11,color:"white",background:"rgba(255,255,255,.18)",borderRadius:6,padding:"5px 8px",marginTop:6,lineHeight:1.5}}>📝 {b.memo}</div>}
+                {isReadOnlyReal&&<div style={{fontSize:10,fontWeight:800,color:"#1e293b",background:"#fff",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4}}>🔒 本番の予約（閲覧のみ）</div>}
               </div>
+              {!isReadOnlyReal&&(
                            <QuickMemoEditor key={b.id} booking={b} onSave={async(val)=>{
                 try{
                   const result=await sb.update("bookings",b.id,{memo:val||null});
@@ -9636,9 +9678,13 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
                   showToast("メモの保存に失敗しました","delete");
                 }
               }}/>
+              )}
               {/* アクション */}
               <div style={{padding:8,display:"flex",flexDirection:"column",gap:4}}>
-                {cnt===1&&(
+                {isReadOnlyReal&&(
+                  <div style={{fontSize:11,color:"#64748b",padding:"4px 4px 8px",lineHeight:1.5}}>トレーニングモード中は本番の予約を編集・会計できません。来院履歴のみ確認できます。</div>
+                )}
+                {!isReadOnlyReal&&cnt===1&&(
                   <button onClick={()=>{
                     setIframeModal({url:`intake.html?id=${b.id}`,title:"問診票"});
                     setBookingPopup(null);
@@ -9647,6 +9693,7 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
                     問診票を確認
                   </button>
                 )}
+                {!isReadOnlyReal&&(
                 <button onClick={()=>{
                   setIframeModal({url:`pos.html?id=${b.id}`,title:"会計"});
                   setBookingPopup(null);
@@ -9654,6 +9701,8 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
                   会計へ進む
                 </button>
+                )}
+                {!isReadOnlyReal&&(
                 <button onClick={()=>{
                   window.open(`treatment.html?id=${b.id}`,"_blank");
                   setBookingPopup(null);
@@ -9661,6 +9710,8 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                   施術記録
                 </button>
+                )}
+                {!isReadOnlyReal&&(
                 <button onClick={()=>{
                   window.open(`posture-analysis.html?id=${b.id}`,"_blank");
                   setBookingPopup(null);
@@ -9668,17 +9719,18 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="5" r="2"/><path d="M12 7v5l-3 8M12 12l3 8M8 10l4-2 4 2"/></svg>
                   姿勢評価
                 </button>
+                )}
                 <button onClick={()=>{setHistoryPatient(b.patient_name);setBookingPopup(null);}} style={{width:"100%",padding:"9px 12px",background:"#f8fafc",color:"#374151",border:"1px solid #e2e8f0",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,textAlign:"left",display:"flex",alignItems:"center",gap:8}}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>
                   来院履歴
                 </button>
-                {(isAdmin||b.staff_id===user.id)&&(
+                {!isReadOnlyReal&&(isAdmin||b.staff_id===user.id)&&(
                   <button onClick={()=>{openEdit(b);setBookingPopup(null);}} style={{width:"100%",padding:"9px 12px",background:"#f8fafc",color:"#374151",border:"1px solid #e2e8f0",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,textAlign:"left",display:"flex",alignItems:"center",gap:8}}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                     予約を編集
                   </button>
                 )}
-                {(isAdmin||b.staff_id===user.id)&&(
+                {!isReadOnlyReal&&(isAdmin||b.staff_id===user.id)&&(
                   <button onClick={()=>{setCancelModalBooking(b);setBookingPopup(null);}} style={{width:"100%",padding:"9px 12px",background:"#fef2f2",color:"#dc2626",border:"1px solid #fecaca",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,textAlign:"left",display:"flex",alignItems:"center",gap:8}}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
                     キャンセルにする
