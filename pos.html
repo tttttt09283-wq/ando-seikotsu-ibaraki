@@ -669,6 +669,8 @@ function printReceiptViaWebPRNT(){
   const isInWebPRNTApp=isStarWebPRNTBrowserApp();
   if(!isInWebPRNTApp){
     // Star webPRNT Browserアプリの中でなければ、非表示iframeにレシートを書き込んで印刷する
+    // 万一アプリ内なのに正しく検出できていない場合の切り分け用に、UserAgentの中身も表示しておく
+    showPrintToast("ℹ️ アプリ未検出のためプレビュー印刷を使用："+navigator.userAgent.slice(0,60));
     openReceiptPrintWindow();
     return;
   }
@@ -689,8 +691,15 @@ function printReceiptViaWebPRNT(){
     request+=builder.createFeedElement({line:3});
     request+=builder.createCutPaperElement({feed:true});
 
+    showPrintToast("🖨️ プリンターへ送信中…");
+    // onReceive/onErrorのどちらも一定時間内に呼ばれなければ、通信自体が届いていない可能性を知らせる
+    let settled=false;
+    const stuckTimer=setTimeout(()=>{
+      if(!settled) showPrintToast("⏳ 応答待ちです（プリンターの電源・Bluetooth接続をご確認ください）");
+    },8000);
     const trader=new StarWebPrintTrader({url:"https://localhost:8001/StarWebPRNT/SendMessage"});
     trader.onReceive=function(response){
+      settled=true;clearTimeout(stuckTimer);
       if(response.traderSuccess==="true"){
         showPrintToast("🖨️ 印刷しました");
       }else{
@@ -698,6 +707,7 @@ function printReceiptViaWebPRNT(){
       }
     };
     trader.onError=function(response){
+      settled=true;clearTimeout(stuckTimer);
       showPrintToast("❌ 印刷エラー："+(response.responseText||"接続できませんでした"));
     };
     trader.sendMessage({request:request});
