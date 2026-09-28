@@ -8424,6 +8424,8 @@ function Dashboard({user,onLogout}){
   // 同じログインユーザーが別の端末で見ている表示を、Supabaseのadmin_view_stateテーブルに保存しておき、
   // 30秒ごとの自動更新（fetchAll）のタイミングで他端末での変更を取り込む。予約データ本体には一切影響しない。
   const viewStateSyncRef=React.useRef({loaded:false,applyingRemote:false,lastWritten:null});
+  // selStoreId===nullは「全店舗」表示を表す正当な値なので、初期デフォルト店舗の割り当ては一度だけ行う
+  const storeIdInitRef=React.useRef(false);
   // fetchAllはマウント時に一度だけ登録したsetIntervalから繰り返し呼ばれるため、
   // その時点のbaseDate等を直接読むと古い値のままになってしまう。常に最新の値を読めるようrefで持っておく。
   const currentViewRef=React.useRef({baseDate,selStoreId,selStaff});
@@ -8453,6 +8455,7 @@ function Dashboard({user,onLogout}){
         // 自分がこれまでに書き込んだ内容と同じ（＝他端末からの変更ではない）場合は何もしない
         if(!last||last.updated_at!==row.updated_at){
           viewStateSyncRef.current.applyingRemote=true;
+          storeIdInitRef.current=true; // 他端末の値を適用したので、以後デフォルト店舗の上書きは行わない
           if(row.base_date) setBaseDate(new Date(row.base_date+"T00:00:00"));
           setSelStoreId(row.sel_store_id===undefined?null:row.sel_store_id);
           setSelStaff(row.sel_staff===undefined?null:row.sel_staff);
@@ -8492,7 +8495,13 @@ function Dashboard({user,onLogout}){
       setAllBookings(Array.isArray(b)?b:[]);setBreaks(Array.isArray(br)?br:[]);setAllPayments(Array.isArray(py)?py:[]);
       const storeList=Array.isArray(st)?st:[];
       setStores(storeList);
-      setSelStoreId(prev=>prev!==null?prev:(storeList.length>0?storeList[0].id:1));
+      // selStoreId===nullは「全店舗」を意味する正当な値なので、初回（まだ一度もセットされていない時）だけ
+      // デフォルト店舗を入れる。ここを毎回のポーリングで行うと、ユーザーが意図的に選んだ「全店舗」表示が
+      // 30秒ごとに勝手に特定店舗へ戻ってしまい、他端末の表示との連動が壊れて見える原因になっていた。
+      if(!storeIdInitRef.current){
+        storeIdInitRef.current=true;
+        setSelStoreId(prev=>prev!==null?prev:(storeList.length>0?storeList[0].id:1));
+      }
       setWeeklyShifts(Array.isArray(ws)?ws:[]);
       setDateOverrides(Array.isArray(dov)?dov:[]);
       // イベント開催期間を取得（応援スタッフの表示判定用。店舗が複数ある場合は先頭店舗の設定を使う）
@@ -8580,6 +8589,21 @@ function Dashboard({user,onLogout}){
   },[selStoreId]);
 
   React.useEffect(()=>{fetchAll();const t=setInterval(fetchAll,30000);return()=>clearInterval(t);},[]);
+
+  // タブを離れて別端末を操作し、また戻ってきた時に最大30秒待たされないよう、
+  // 画面がアクティブになった瞬間にも表示状態の同期だけ即座に行う（予約データ等の全体再取得は待たない）
+  React.useEffect(()=>{
+    function onFocusOrVisible(){
+      if(document.visibilityState&&document.visibilityState!=="visible") return;
+      syncViewStateFromServer();
+    }
+    window.addEventListener("focus",onFocusOrVisible);
+    document.addEventListener("visibilitychange",onFocusOrVisible);
+    return()=>{
+      window.removeEventListener("focus",onFocusOrVisible);
+      document.removeEventListener("visibilitychange",onFocusOrVisible);
+    };
+  },[]);
 
   // この端末で日付・店舗・スタッフの表示を切り替えたら、すぐにサーバーへ保存する
   // （他端末からの変更を取り込んだ直後の場合は、書き戻して無限ループにならないようスキップする）

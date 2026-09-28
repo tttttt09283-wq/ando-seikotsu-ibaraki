@@ -605,7 +605,8 @@ function buildReceiptText(){
 }
 // 会計画面がカレンダー画面のiframe（モーダル）内で開かれている場合、iframeの中からwindow.print()を呼んでも
 // ブラウザによっては印刷ダイアログが出てこない（特にスマホや一部ブラウザで無反応になることがある）。
-// そのため、レシート内容だけを別ウィンドウ（タブ）に開いて、そちら側でprint()する方式に統一する。
+// 別ウィンドウを開く方式はポップアップブロックの影響を受けるため、ポップアップ許可が不要な
+// 「非表示iframeに領収書だけを書き込んでそのiframe自身にprint()させる」方式に変更する。
 function openReceiptPrintWindow(){
   const receiptCss=`
     body{margin:0;padding:16px;background:#fff;font-family:'MS Gothic','Osaka-Mono','Courier New',monospace;}
@@ -619,26 +620,46 @@ function openReceiptPrintWindow(){
     .pr-title{font-size:16px;font-weight:800;letter-spacing:6px;text-align:center;margin:8px 0;}
     .pr-section-label{margin-top:6px;margin-bottom:2px;}
     .pr-total-row{display:flex;justify-content:space-between;font-weight:800;font-size:15px;}
+    @media print{ body{padding:0;} }
   `;
-  const win=window.open("","_blank","width=380,height=640");
-  if(!win){
-    showPrintToast("❌ ポップアップがブロックされました。ブラウザの設定でこのサイトのポップアップを許可してください");
-    return;
-  }
-  win.document.open();
-  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>領収書</title><style>${receiptCss}</style></head><body>${renderReceipt()}</body></html>`);
-  win.document.close();
-  const doPrint=()=>{ try{ win.focus(); win.print(); }catch(e){} };
-  if(win.document.readyState==="complete"){
-    setTimeout(doPrint,150);
-  }else{
-    win.onload=()=>setTimeout(doPrint,150);
-  }
+  let frame=document.getElementById("__receiptPrintFrame");
+  if(frame) frame.parentNode.removeChild(frame);
+  frame=document.createElement("iframe");
+  frame.id="__receiptPrintFrame";
+  // 画面には表示しないが、display:noneにするとブラウザによっては印刷対象として認識されないため
+  // サイズ0かつ画面外に配置するだけにとどめる
+  frame.style.cssText="position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;";
+  document.body.appendChild(frame);
+  const cleanup=()=>{ if(frame&&frame.parentNode) frame.parentNode.removeChild(frame); };
+  const doPrint=()=>{
+    try{
+      const w=frame.contentWindow;
+      w.focus();
+      if(w.matchMedia){
+        const mql=w.matchMedia("print");
+        const onChange=(mq)=>{ if(!mq.matches) setTimeout(cleanup,300); };
+        try{ mql.addEventListener("change",onChange); }catch(e){ try{ mql.addListener(onChange); }catch(e2){} }
+      }
+      w.onafterprint=()=>setTimeout(cleanup,300);
+      w.print();
+    }catch(e){
+      showPrintToast("❌ 印刷処理でエラーが発生しました："+e.message);
+      cleanup();
+      return;
+    }
+    // afterprintが発火しない環境でも、しばらくしたら後片付けする
+    setTimeout(cleanup,8000);
+  };
+  frame.onload=()=>setTimeout(doPrint,120);
+  const doc=frame.contentWindow.document;
+  doc.open();
+  doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>領収書</title><style>${receiptCss}</style></head><body>${renderReceipt()}</body></html>`);
+  doc.close();
 }
 function printReceiptViaWebPRNT(){
   const isInWebPRNTApp=navigator.userAgent.indexOf("webPRNTSupportMessageHandler")>=0;
   if(!isInWebPRNTApp){
-    // Star webPRNT Browserアプリの中でなければ、レシートだけを別ウィンドウで開いて印刷する
+    // Star webPRNT Browserアプリの中でなければ、非表示iframeにレシートを書き込んで印刷する
     openReceiptPrintWindow();
     return;
   }
