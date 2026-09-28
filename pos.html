@@ -656,8 +656,17 @@ function openReceiptPrintWindow(){
   doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>領収書</title><style>${receiptCss}</style></head><body>${renderReceipt()}</body></html>`);
   doc.close();
 }
+// 「Star webPRNT Browser」アプリ（App Storeで配布されている専用ブラウザアプリ）は、
+// UserAgentに "StarWebPRNTBrowser/バージョン番号" という文字列を含めることで通常のブラウザと区別している
+// （Star公式マニュアルより）。以前ここでは別の文字列 "webPRNTSupportMessageHandler" を見ていたが、
+// これはStar公式SDK内部で使われる別目的の識別子で、実際の「Star webPRNT Browser」アプリのUserAgentには
+// 含まれないため、アプリ内で開いていても常にfalse＝印刷がブラウザの印刷プレビューにフォールバックしてしまい、
+// mPOPへ直接送信されていなかった（紙が出ない原因）。
+function isStarWebPRNTBrowserApp(){
+  return navigator.userAgent.indexOf("StarWebPRNTBrowser")>=0;
+}
 function printReceiptViaWebPRNT(){
-  const isInWebPRNTApp=navigator.userAgent.indexOf("webPRNTSupportMessageHandler")>=0;
+  const isInWebPRNTApp=isStarWebPRNTBrowserApp();
   if(!isInWebPRNTApp){
     // Star webPRNT Browserアプリの中でなければ、非表示iframeにレシートを書き込んで印刷する
     openReceiptPrintWindow();
@@ -700,7 +709,7 @@ function printReceiptViaWebPRNT(){
 // 会計確定時（現金の受け渡しがある場合）に自動で呼ばれるほか、両替などレジ操作のためだけに
 // 会計を介さず手動で開けたい場合は、画面右上の「レジを開ける」ボタンからmanual=trueで呼ばれる
 function openCashDrawer(manual){
-  const isInWebPRNTApp=navigator.userAgent.indexOf("webPRNTSupportMessageHandler")>=0;
+  const isInWebPRNTApp=isStarWebPRNTBrowserApp();
   if(!isInWebPRNTApp){
     if(manual) showPrintToast("❌ レシートプリンター（Star webPRNT Browser）アプリ内でのみ利用できます");
     return; // レシート印刷と同じく、Star webPRNT Browserアプリ内でなければ開けない
