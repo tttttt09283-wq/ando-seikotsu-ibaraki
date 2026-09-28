@@ -697,7 +697,10 @@ function printReceiptViaWebPRNT(){
     const stuckTimer=setTimeout(()=>{
       if(!settled) showPrintToast("⏳ 応答待ちです（プリンターの電源・Bluetooth接続をご確認ください）");
     },8000);
-    const trader=new StarWebPrintTrader({url:"https://localhost:8001/StarWebPRNT/SendMessage"});
+    // SDK内部では、UserAgentに"WebPRNTSupportHTTPS"が含まれない場合にhttps→httpへ自動変換される仕組みになっているが、
+    // 何らかの理由でこの自動変換が効かずhttpsのまま（自己署名証明書が信頼されておらず）通信が無応答のまま
+    // ハングしている可能性があるため、最初からhttpで明示的に指定して切り分ける
+    const trader=new StarWebPrintTrader({url:"http://localhost:8001/StarWebPRNT/SendMessage"});
     trader.onReceive=function(response){
       settled=true;clearTimeout(stuckTimer);
       if(response.traderSuccess==="true"){
@@ -730,7 +733,7 @@ function openCashDrawer(manual){
     request+=builder.createInitializationElement();
     request+=builder.createPeripheralElement({channel:1,on:200,off:200});
 
-    const trader=new StarWebPrintTrader({url:"https://localhost:8001/StarWebPRNT/SendMessage"});
+    const trader=new StarWebPrintTrader({url:"http://localhost:8001/StarWebPRNT/SendMessage"});
     trader.onReceive=function(response){
       if(response.traderSuccess==="true"){
         if(manual) showPrintToast("🗄️ レジを開けました");
