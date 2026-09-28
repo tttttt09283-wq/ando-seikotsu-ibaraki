@@ -603,11 +603,43 @@ function buildReceiptText(){
   lines.push({center:true,text:"ご来院ありがとうございました"});
   return lines;
 }
+// 会計画面がカレンダー画面のiframe（モーダル）内で開かれている場合、iframeの中からwindow.print()を呼んでも
+// ブラウザによっては印刷ダイアログが出てこない（特にスマホや一部ブラウザで無反応になることがある）。
+// そのため、レシート内容だけを別ウィンドウ（タブ）に開いて、そちら側でprint()する方式に統一する。
+function openReceiptPrintWindow(){
+  const receiptCss=`
+    body{margin:0;padding:16px;background:#fff;font-family:'MS Gothic','Osaka-Mono','Courier New',monospace;}
+    .pr-wrap{width:280px;margin:0 auto;padding:14px 10px;background:white;color:#111;font-size:12px;line-height:1.7;}
+    .pr-center{text-align:center;}
+    .pr-line{border-top:1px dashed #333;margin:6px 0;}
+    .pr-dline{border-top:3px double #333;margin:6px 0;}
+    .pr-row{display:flex;justify-content:space-between;}
+    .pr-row .l{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .pr-row .r{flex-shrink:0;text-align:right;margin-left:8px;}
+    .pr-title{font-size:16px;font-weight:800;letter-spacing:6px;text-align:center;margin:8px 0;}
+    .pr-section-label{margin-top:6px;margin-bottom:2px;}
+    .pr-total-row{display:flex;justify-content:space-between;font-weight:800;font-size:15px;}
+  `;
+  const win=window.open("","_blank","width=380,height=640");
+  if(!win){
+    showPrintToast("❌ ポップアップがブロックされました。ブラウザの設定でこのサイトのポップアップを許可してください");
+    return;
+  }
+  win.document.open();
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>領収書</title><style>${receiptCss}</style></head><body>${renderReceipt()}</body></html>`);
+  win.document.close();
+  const doPrint=()=>{ try{ win.focus(); win.print(); }catch(e){} };
+  if(win.document.readyState==="complete"){
+    setTimeout(doPrint,150);
+  }else{
+    win.onload=()=>setTimeout(doPrint,150);
+  }
+}
 function printReceiptViaWebPRNT(){
   const isInWebPRNTApp=navigator.userAgent.indexOf("webPRNTSupportMessageHandler")>=0;
   if(!isInWebPRNTApp){
-    // Star webPRNT Browserアプリの中でなければ従来の印刷（ブラウザの印刷機能）にフォールバックする
-    window.print();
+    // Star webPRNT Browserアプリの中でなければ、レシートだけを別ウィンドウで開いて印刷する
+    openReceiptPrintWindow();
     return;
   }
   try{
