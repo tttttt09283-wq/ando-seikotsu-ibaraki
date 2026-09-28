@@ -204,6 +204,18 @@ function goBackToCalendar(){
   }
 }
 
+// 次回予約の日付を選ぶ際、その日のカレンダー全体（他の予約状況）を見てから決められるようにする。
+// 管理画面にiframeで埋め込まれている場合はこの会計モーダルを閉じて指定日のカレンダーへ、
+// 単独タブの場合はindex.htmlへgotodateパラメータ付きで遷移する。
+function goToCalendarForDate(dateStr){
+  if(!dateStr) return;
+  if(window.self!==window.top){
+    window.parent.postMessage({type:"goToCalendarDate",date:dateStr},"*");
+  }else{
+    location.href="/index.html?gotodate="+dateStr;
+  }
+}
+
 const STAFF_LIST=[{id:1,name:"奥田",color:"#2563eb"},{id:2,name:"佐藤",color:"#059669"},{id:3,name:"細永",color:"#d97706"},{id:4,name:"田中",color:"#7c3aed"},{id:5,name:"岩永",color:"#dc2626"}];
 const STAFF={1:"奥田",2:"佐藤",3:"細永",4:"田中",5:"岩永"};
 const INSURANCE_PRICES={"無料施術体験会（60分）":0,"初診（60分）":0,"再診（30分）":0};
@@ -771,6 +783,7 @@ function renderNextBookings(){
                   </button>`;
                 }).join("")}
               </div>
+              <button type="button" onclick="goToCalendarForDate('${nb.date||todayStr()}')" style="margin-top:2px;padding:6px 10px;border-radius:8px;border:1.5px solid #bae6fd;background:#f0f9ff;color:#0369a1;font-size:11px;font-weight:700;cursor:pointer;">📅 カレンダーで予約状況を確認する</button>
             </div>
             <div style="margin-bottom:8px;">
               <span class="nb-label">🕐 時間</span>
@@ -788,9 +801,12 @@ function renderNextBookings(){
               </select>
             </div>
             <div style="margin-bottom:8px;">
-              <span class="nb-label">👤 担当スタッフ</span>
+              <span class="nb-label">👤 担当スタッフ（今回の担当：${STAFF[booking.staff_id]||"不明"}先生を自動で選択しています）</span>
               <div class="staff-btns">
-                ${STAFF_LIST.map(s=>`<button class="staff-btn" onclick="updateNB(${i},'staffId',${s.id})" style="border-color:${nb.staffId===s.id?s.color:"#ddd"};background:${nb.staffId===s.id?s.color:"white"};color:${nb.staffId===s.id?"white":"#444"};">${s.name}</button>`).join("")}
+                ${STAFF_LIST.map(s=>{
+                  const isThisTimeStaff=s.id===booking.staff_id;
+                  return`<button class="staff-btn" onclick="updateNB(${i},'staffId',${s.id})" style="position:relative;border-color:${nb.staffId===s.id?s.color:(isThisTimeStaff?"#7c3aed":"#ddd")};background:${nb.staffId===s.id?s.color:"white"};color:${nb.staffId===s.id?"white":"#444"};">${s.name}${isThisTimeStaff?'<span style="position:absolute;top:-8px;right:-4px;background:#7c3aed;color:white;font-size:8px;font-weight:900;border-radius:4px;padding:1px 4px;line-height:1.4;">今回</span>':""}</button>`;
+                }).join("")}
               </div>
             </div>
             <div style="margin-bottom:8px;">

@@ -2872,7 +2872,7 @@ function StatsPanel({bookings,payments,todayStr,stores}){
 }
 
 
-function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,save,onClose,onDelete,onCancel,businessHours,closures,storeStaffList,isStaffWorkingOnDate,staffCanDoMenus,getLaneCount,customMenus,trainingMode}){
+function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,save,onClose,onDelete,onCancel,businessHours,closures,storeStaffList,isStaffWorkingOnDate,staffCanDoMenus,getLaneCount,customMenus,trainingMode,onGoToCalendarDate}){
   const [searchQ,setSearchQ]=React.useState("");
   const [searchResults,setSearchResults]=React.useState([]);
   const [searching,setSearching]=React.useState(false);
@@ -2934,6 +2934,14 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
     const prev=bookings.filter(b=>b.patient_name===form.patient_name&&b.id!==editId);
     return prev.length+1;
   },[form.patient_name,bookings,editId]);
+
+  // 前回担当したスタッフ（同じ担当者で継続してもらえるよう、新規予約時に一目でわかるようにする）
+  const lastStaffBooking=React.useMemo(()=>{
+    if(!form.patient_name||editId!==null) return null;
+    const prev=bookings.filter(b=>b.patient_name===form.patient_name&&b.id!==editId&&!b.cancelled).sort((a,b)=>b.date.localeCompare(a.date)||(b.time||"").localeCompare(a.time||""));
+    return prev.length>0?prev[0]:null;
+  },[form.patient_name,bookings,editId]);
+  const lastStaff=lastStaffBooking?(storeStaffList||STAFF_ACCOUNTS).find(s=>s.id===lastStaffBooking.staff_id):null;
 
   // ===== 営業時間・臨時休業日ヘルパー =====
   const bh=businessHours||[];
@@ -3046,6 +3054,14 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
                 <div style={{fontWeight:800,fontSize:15,color:"#1e293b"}}>{form.patient_name}</div>
                 <div style={{fontSize:12,color:"#64748b"}}>{form.phone}</div>
                 {visitCount>0&&<div style={{fontSize:11,color:"#059669",fontWeight:700}}>来院{visitCount}回目</div>}
+                {lastStaffBooking&&(
+                  <div style={{fontSize:11,color:"#7c3aed",fontWeight:700,marginTop:2}}>
+                    👤 前回担当：{lastStaff?lastStaff.name:"不明"}先生（{lastStaffBooking.date}）
+                    {lastStaff&&(
+                      <button type="button" onClick={()=>setForm(f=>({...f,staff_id:lastStaff.id}))} style={{marginLeft:6,fontSize:10,fontWeight:700,color:"#7c3aed",background:"#ede9fe",border:"none",borderRadius:6,padding:"2px 6px",cursor:"pointer"}}>同じ担当者にする</button>
+                    )}
+                  </div>
+                )}
               </div>
               {editId===null&&<button onClick={()=>setShowSearch(true)} className="btn btn-outline btn-xs">変更</button>}
             </div>
@@ -3059,7 +3075,7 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
         </div>
       )}
       <div className="form-group"><label className="form-label">電話番号</label><input type="tel" className="form-input" value={form.phone||""} placeholder="090-0000-0000" onChange={e=>setForm(f=>({...f,phone:e.target.value}))}/></div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:6}}>
         <div><label className="form-label">日付</label><input type="date" className="form-input" value={form.date||""} onChange={e=>{setForm(f=>({...f,date:e.target.value,time:""}));setConflict(false);}}/></div>
         <div>
           <label className="form-label">時間</label>
@@ -3077,6 +3093,11 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
             onChange={e=>{const v=parseInt(e.target.value)||0;setForm(f=>({...f,duration:v}));setConflict(false);}}/>
         </div>
       </div>
+      {onGoToCalendarDate&&(
+        <button type="button" disabled={!form.date} onClick={()=>onGoToCalendarDate(form.date)} style={{width:"100%",marginBottom:14,padding:"8px 10px",borderRadius:8,border:"1.5px solid #bae6fd",background:form.date?"#f0f9ff":"#f8fafc",color:form.date?"#0369a1":"#cbd5e1",fontSize:12,fontWeight:700,cursor:form.date?"pointer":"not-allowed"}}>
+          📅 この日のカレンダーで予約状況を確認する
+        </button>
+      )}
       {isSelectedDateClosed&&(
         <div style={{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#dc2626",fontSize:13,fontWeight:700}}>
           ⚠ この日は{dateClosedByTemp?"臨時休業日":"定休日"}に設定されています。予約を入れる場合は営業時間・休憩時間設定をご確認ください。
@@ -3097,10 +3118,12 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
                 isBooked=overlapCount>=laneCapacity;
               }
               const selectable=working&&canDoMenu&&!isBooked;
+              const isLastStaff=lastStaffBooking&&lastStaffBooking.staff_id===s.id;
               return(
                 <button key={s.id} disabled={!selectable} onClick={()=>{if(!selectable)return;setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} className="btn"
-                  style={{background:!selectable?"#f3f4f6":form.staff_id===s.id?s.color:"white",color:!selectable?"#d1d5db":form.staff_id===s.id?"white":"#374151",border:"2px solid "+(!selectable?"#e2e8f0":s.color),borderRadius:20,padding:"5px 12px",fontSize:12,fontWeight:700,boxShadow:form.staff_id===s.id&&selectable?"0 2px 8px "+s.color+"55":"none",cursor:!selectable?"not-allowed":"pointer"}}>
+                  style={{position:"relative",background:!selectable?"#f3f4f6":form.staff_id===s.id?s.color:"white",color:!selectable?"#d1d5db":form.staff_id===s.id?"white":"#374151",border:"2px solid "+(!selectable?"#e2e8f0":(isLastStaff?"#7c3aed":s.color)),borderRadius:20,padding:"5px 12px",fontSize:12,fontWeight:700,boxShadow:form.staff_id===s.id&&selectable?"0 2px 8px "+s.color+"55":"none",cursor:!selectable?"not-allowed":"pointer"}}>
                   {s.name}{!working?"（休み）":!canDoMenu?"（非対応）":isBooked?"（予約済み）":""}
+                  {isLastStaff&&<span style={{position:"absolute",top:-9,right:-4,background:"#7c3aed",color:"white",fontSize:8,fontWeight:900,borderRadius:4,padding:"1px 4px",lineHeight:1.4,whiteSpace:"nowrap"}}>前回</span>}
                 </button>
               );
             })}
@@ -8333,14 +8356,37 @@ function Dashboard({user,onLogout}){
   const [iframeModal,setIframeModal]=React.useState(null); // {url, title} | null
 
   // intake.html / pos.html から「モーダルを閉じて」というメッセージを受け取る
+  // （pos.htmlの「次回予約」で日付を指定してカレンダーの空き状況を確認したい場合は、
+  //   モーダルを閉じたうえでその日付のカレンダー表示へ切り替える）
   React.useEffect(()=>{
     function onMessage(e){
       if(e.data&&e.data.type==="closeIframeModal"){
         setIframeModal(null);
       }
+      if(e.data&&e.data.type==="goToCalendarDate"&&e.data.date){
+        setIframeModal(null);
+        setBaseDate(new Date(e.data.date+"T00:00:00"));
+        setView("calendar");
+      }
     }
     window.addEventListener("message",onMessage);
     return ()=>window.removeEventListener("message",onMessage);
+  },[]);
+
+  // 単独タブでpos.htmlの「カレンダーで確認」から開かれた場合（index.html?gotodate=YYYY-MM-DD）、
+  // 起動時に一度だけその日付のカレンダーへ切り替える
+  React.useEffect(()=>{
+    try{
+      const params=new URLSearchParams(location.search);
+      const gotodate=params.get("gotodate");
+      if(gotodate){
+        setBaseDate(new Date(gotodate+"T00:00:00"));
+        setView("calendar");
+        params.delete("gotodate");
+        const newSearch=params.toString();
+        history.replaceState(null,"",location.pathname+(newSearch?`?${newSearch}`:""));
+      }
+    }catch(e){}
   },[]);
   const [timePickerPopup,setTimePickerPopup]=React.useState(null); // {date, staffId, x, y, centerTime}
   const [dragBooking,setDragBooking]=React.useState(null); // ドラッグ中の予約（開始〜終了までしか変化しない）
@@ -9764,7 +9810,7 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
 
           {/* 予約フォーム */}
           {view==="form"&&form&&(
-            <FormPanel form={form} setForm={setForm} editId={editId} conflict={conflict} setConflict={setConflict} isAdmin={isAdmin} bookings={calendarBookings} save={save} onClose={()=>setView("calendar")} onDelete={()=>setDelConfirm(bookings.find(b=>b.id===editId))} onCancel={()=>setCancelModalBooking(bookings.find(b=>b.id===editId))} businessHours={businessHours} closures={closures} storeStaffList={storeStaff} isStaffWorkingOnDate={isStaffWorkingOnDate} staffCanDoMenus={staffCanDoMenus} getLaneCount={getLaneCount} customMenus={customMenus} trainingMode={trainingMode}/>
+            <FormPanel form={form} setForm={setForm} editId={editId} conflict={conflict} setConflict={setConflict} isAdmin={isAdmin} bookings={calendarBookings} save={save} onClose={()=>setView("calendar")} onDelete={()=>setDelConfirm(bookings.find(b=>b.id===editId))} onCancel={()=>setCancelModalBooking(bookings.find(b=>b.id===editId))} businessHours={businessHours} closures={closures} storeStaffList={storeStaff} isStaffWorkingOnDate={isStaffWorkingOnDate} staffCanDoMenus={staffCanDoMenus} getLaneCount={getLaneCount} customMenus={customMenus} trainingMode={trainingMode} onGoToCalendarDate={(d)=>{if(!d)return;setBaseDate(new Date(d+"T00:00:00"));setView("calendar");}}/>
           )}
         </div>
       </div>
@@ -9955,6 +10001,13 @@ const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
       )}
 
       {toast&&(<div className="toast" style={{background:toast.type==="delete"?"#1e293b":"#059669",color:"white"}}>{toast.type==="delete"?"削除しました":"✓ "}{toast.msg}</div>)}
+
+      {/* 予約フォーム入力中に「カレンダーで確認」した場合、入力内容を保ったまま予約フォームへ戻れるようにする */}
+      {form&&view!=="form"&&(
+        <button onClick={()=>setView("form")} style={{position:"fixed",right:18,bottom:18,zIndex:500,background:"#1e3a5f",color:"white",border:"none",borderRadius:24,padding:"12px 18px",fontSize:13,fontWeight:800,boxShadow:"0 4px 16px rgba(0,0,0,.3)",cursor:"pointer",display:"flex",alignItems:"center",gap:8}}>
+          📝 入力中の予約フォームに戻る
+        </button>
+      )}
     </div>
   );
 }
