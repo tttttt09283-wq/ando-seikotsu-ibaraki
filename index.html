@@ -8805,6 +8805,25 @@ function Dashboard({user,onLogout}){
     }
   }
 
+  // スタッフがカレンダーから新規予約を手入力で作成した場合、その場ではline_user_idが分からず
+  // 空のまま保存されてしまい、既にLINE連携済みの患者でもマイページに予約が反映されない不具合があった。
+  // 同じ電話番号で過去にLINE連携済み（line_user_id有り）の予約があれば、それを引き継ぐ。
+  async function findLinkedLineUserId(phoneRaw){
+    if(!phoneRaw) return null;
+    const raw=String(phoneRaw).trim();
+    if(!raw) return null;
+    const digits=raw.replace(/[^0-9]/g,"");
+    try{
+      const results=await Promise.all([
+        sb.select("bookings",`?phone=eq.${encodeURIComponent(raw)}&line_user_id=not.is.null&order=date.desc&limit=1`),
+        digits&&digits!==raw?sb.select("bookings",`?phone=eq.${encodeURIComponent(digits)}&line_user_id=not.is.null&order=date.desc&limit=1`):Promise.resolve([])
+      ]);
+      for(const r of results){
+        if(Array.isArray(r)&&r.length>0&&r[0].line_user_id) return r[0].line_user_id;
+      }
+    }catch(e){}
+    return null;
+  }
   async function save(){
     if(!form.patient_name.trim())return;
     // 同姓同名だが電話番号が違う既存予約がある場合は、別人の可能性があるので保存前に一度確認する
@@ -8846,7 +8865,16 @@ function Dashboard({user,onLogout}){
         }
         setAllBookings(prev=>prev.map(b=>b.id===editId?result[0]:b));
       }else{
-        const result=await sb.insert("bookings",Object.assign({},form,{is_training:trainingMode}));
+        let lineUserId=form.line_user_id||null;
+        if(!lineUserId&&form.phone){
+          lineUserId=await findLinkedLineUserId(form.phone);
+        }
+        const insertPayload=Object.assign({},form,{is_training:trainingMode});
+        if(lineUserId){
+          insertPayload.line_user_id=lineUserId;
+          insertPayload.line_notify=true;
+        }
+        const result=await sb.insert("bookings",insertPayload);
         if(!Array.isArray(result)||result.length===0){
           throw new Error((result&&result.message)||"登録に失敗しました");
         }

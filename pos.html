@@ -440,6 +440,24 @@ function toggleNBJifee(i, label){
   if(nb.jifeeTypes.includes(label)){nb.jifeeTypes=nb.jifeeTypes.filter(j=>j!==label);}else{nb.jifeeTypes.push(label);}
   render();
 }
+// この会計の元になった予約（booking）にline_user_idが入っていない場合でも、
+// 同じ電話番号で過去にLINE連携済みの予約があれば、それを次回予約にも引き継ぐ
+// （そうしないと、次回予約がマイページに反映されない不具合になる）
+async function findLinkedLineUserId(phoneRaw){
+  if(!phoneRaw) return null;
+  const raw=String(phoneRaw).trim();
+  const digits=raw.replace(/[^0-9]/g,"");
+  try{
+    const results=await Promise.all([
+      sbGet("bookings",`?phone=eq.${encodeURIComponent(raw)}&line_user_id=not.is.null&order=date.desc&limit=1`),
+      digits&&digits!==raw?sbGet("bookings",`?phone=eq.${encodeURIComponent(digits)}&line_user_id=not.is.null&order=date.desc&limit=1`):Promise.resolve([])
+    ]);
+    for(const r of results){
+      if(Array.isArray(r)&&r.length>0&&r[0].line_user_id) return r[0].line_user_id;
+    }
+  }catch(e){}
+  return null;
+}
 async function saveNextBookings(){
   if(state.savingBookings) return;
   const valid = state.nextBookings.filter(nb=>nb.date&&nb.time);
@@ -448,8 +466,10 @@ async function saveNextBookings(){
   if(pastOnes.length>0){alert("過去の日付が含まれています。日付をご確認ください。");return;}
   state.savingBookings=true;render();
   try{
+    let lineUserId=booking.line_user_id||null;
+    if(!lineUserId) lineUserId=await findLinkedLineUserId(booking.phone);
     for(const nb of valid){
-      await sbPost("bookings",{patient_name: booking.patient_name,phone: booking.phone,staff_id: nb.staffId,date: nb.date,time: nb.time,menu: nb.menu,insurance_rate: nb.insRate,line_notify: !!booking.line_user_id,line_user_id: booking.line_user_id||null,reminded: false});
+      await sbPost("bookings",{patient_name: booking.patient_name,phone: booking.phone,staff_id: nb.staffId,date: nb.date,time: nb.time,menu: nb.menu,insurance_rate: nb.insRate,line_notify: !!lineUserId,line_user_id: lineUserId,reminded: false});
     }
     state.bookingsSaved=true;
   }catch(e){alert("予約保存エラー："+e.message);}
