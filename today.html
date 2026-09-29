@@ -91,14 +91,12 @@
   .toggle-cancelled button{background:none;border:none;color:#64748b;font-size:12px;font-weight:700;text-decoration:underline;}
 
   /* ===== ログイン画面 ===== */
-  .login-wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:linear-gradient(160deg,#059669,#047857);}
-  .login-card{background:#fff;border-radius:20px;padding:28px 22px;width:100%;max-width:340px;box-shadow:0 8px 30px rgba(0,0,0,.2);}
-  .login-logo{text-align:center;font-size:30px;margin-bottom:4px;}
-  .login-title{text-align:center;font-size:17px;font-weight:800;color:#0f172a;margin-bottom:2px;}
-  .login-sub{text-align:center;font-size:12px;color:#64748b;margin-bottom:18px;}
-  .stafflist{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;}
-  .staffbtn{padding:12px 6px;border-radius:12px;border:2px solid #e2e8f0;background:#f8fafc;font-size:13px;font-weight:700;color:#334155;}
-  .staffbtn.selected{border-color:#059669;background:#f0fdf4;color:#059669;}
+  .login-wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:#f1f5f9;}
+  .login-title{text-align:center;font-size:14px;font-weight:700;color:#64748b;margin-bottom:14px;}
+  .stafflist{width:100%;max-width:320px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .staffbtn{display:block;width:100%;padding:16px 20px;border:none;border-bottom:1px solid #f1f5f9;background:#fff;font-size:15px;font-weight:700;color:#0f172a;text-align:left;}
+  .staffbtn:last-child{border-bottom:none;}
+  .staffbtn:active{background:#f0fdf4;}
   .pwinput{width:100%;padding:12px;border-radius:11px;border:1.5px solid #e2e8f0;font-size:15px;margin-bottom:10px;}
   .loginbtn{width:100%;padding:13px;border-radius:11px;border:none;background:#059669;color:#fff;font-size:14px;font-weight:800;}
   .loginbtn:disabled{background:#cbd5e1;}
@@ -141,6 +139,14 @@ function mergeStaffAccounts(clinicRows){
   STAFF_ACCOUNTS=[...BASE_STAFF_ACCOUNTS,...extra];
 }
 const STORES=[{id:1,label:"香里園"},{id:2,label:"茨木"}];
+
+// ログイン画面に出す名前一覧（合計7枠）：いつもの5名＋応援①②。
+// スタッフ管理（clinic_staff）の応援①②と同じid/色にしておく。
+const LOGIN_STAFF_ACCOUNTS=[
+  ...BASE_STAFF_ACCOUNTS,
+  {id:101,name:"応援①",color:"#f59e0b",initial:"援"},
+  {id:102,name:"応援②",color:"#fb923c",initial:"援"},
+];
 
 async function sbGet(t,f){
   const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}${f||""}`,{headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`}});
@@ -198,16 +204,9 @@ function render(){
 function renderLogin(){
   return `
   <div class="login-wrap">
-    <div class="login-card">
-      <div class="login-logo">📅</div>
-      <div class="login-title">今日の予約</div>
-      <div class="login-sub">あんど整骨院 スタッフ用</div>
-      ${state.loginErr?`<div class="loginerr">${state.loginErr}</div>`:""}
-      <div class="stafflist">
-        ${STAFF_ACCOUNTS.map(s=>`
-          <button class="staffbtn" data-staff="${s.id}">${s.name}</button>
-        `).join("")}
-      </div>
+    <div class="login-title">お名前を選んでください</div>
+    <div class="stafflist">
+      ${LOGIN_STAFF_ACCOUNTS.map(s=>`<button class="staffbtn" data-staff="${s.id}">${s.name}</button>`).join("")}
     </div>
   </div>`;
 }
@@ -497,7 +496,7 @@ function attachHandlers(){
 }
 
 function doLogin(staffId){
-  const staff=STAFF_ACCOUNTS.find(s=>s.id===staffId);
+  const staff=LOGIN_STAFF_ACCOUNTS.find(s=>s.id===staffId);
   if(!staff) return;
   state.user={id:staff.id,name:staff.name};
   localStorage.setItem("ando_today_user",JSON.stringify(state.user));
