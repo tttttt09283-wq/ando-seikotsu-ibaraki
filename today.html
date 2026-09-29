@@ -524,7 +524,7 @@ function cardHtml(b,paidIds,todayStr,now){
 
 // ===== データ取得 =====
 async function loadData(showSpinner){
-  if(showSpinner){state.refreshing=true;render();}
+  if(showSpinner){state.refreshing=true; if(!state.bookingModal) render();}
   try{
     const [bk,pay,bh,tc]=await Promise.all([
       sbGet("bookings",`?store_id=eq.${state.storeId}&date=eq.${state.date}&order=time.asc`),
@@ -542,7 +542,8 @@ async function loadData(showSpinner){
   state.loading=false;
   state.refreshing=false;
   state.lastUpdated=new Date().toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"});
-  render();
+  // 予約追加フォームを開いている間は、自動更新で画面を作り直さない（入力中の内容が消えてしまうため）
+  if(!state.bookingModal) render();
 }
 
 let pollTimer=null;
