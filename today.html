@@ -91,12 +91,15 @@
   .toggle-cancelled button{background:none;border:none;color:#64748b;font-size:12px;font-weight:700;text-decoration:underline;}
 
   /* ===== ログイン画面 ===== */
-  .login-wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:#f1f5f9;}
-  .login-title{text-align:center;font-size:14px;font-weight:700;color:#64748b;margin-bottom:14px;}
-  .stafflist{width:100%;max-width:320px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06);}
-  .staffbtn{display:block;width:100%;padding:16px 20px;border:none;border-bottom:1px solid #f1f5f9;background:#fff;font-size:15px;font-weight:700;color:#0f172a;text-align:left;}
-  .staffbtn:last-child{border-bottom:none;}
-  .staffbtn:active{background:#f0fdf4;}
+  .login-wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:linear-gradient(165deg,#059669,#047857 55%,#0f172a);}
+  .login-hero{text-align:center;margin-bottom:26px;}
+  .login-hero .emoji{font-size:40px;line-height:1;margin-bottom:8px;}
+  .login-hero .headline{font-size:24px;font-weight:900;color:#fff;letter-spacing:.5px;text-shadow:0 2px 10px rgba(0,0,0,.15);}
+  .login-hero .sub{font-size:12.5px;font-weight:700;color:rgba(255,255,255,.85);margin-top:6px;}
+  .stafflist{width:100%;max-width:320px;display:flex;flex-direction:column;gap:10px;}
+  .staffbtn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:17px 20px;border:none;border-radius:14px;background:#fff;font-size:16px;font-weight:800;color:#0f172a;box-shadow:0 3px 10px rgba(0,0,0,.12);transition:transform .08s;}
+  .staffbtn:active{transform:scale(.96);background:#f0fdf4;}
+  .staffbtn .arrow{color:#059669;font-weight:900;}
   .pwinput{width:100%;padding:12px;border-radius:11px;border:1.5px solid #e2e8f0;font-size:15px;margin-bottom:10px;}
   .loginbtn{width:100%;padding:13px;border-radius:11px;border:none;background:#059669;color:#fff;font-size:14px;font-weight:800;}
   .loginbtn:disabled{background:#cbd5e1;}
@@ -115,38 +118,18 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
   auth: { storage: window.localStorage, persistSession: true, autoRefreshToken: true }
 });
 
-// index_live.html（管理画面）と同じスタッフ一覧・マージルール。
-// ここでは閲覧専用なのでログインはパスワードなし（名前タップのみ）。
-const BASE_STAFF_ACCOUNTS=[
+// 期間限定運用（10/1〜10/4）のスタッフ一覧（合計7枠：いつもの5名＋応援①②）。
+// ログイン・予約一覧の絞り込み・空き状況、すべてこの1つのリストで統一する。
+const STAFF_ACCOUNTS=[
   {id:1,name:"奥田 貴明",color:"#2563eb",initial:"奥"},
   {id:2,name:"佐藤 幸輝",color:"#059669",initial:"佐"},
   {id:3,name:"細永 育代",color:"#d97706",initial:"細"},
   {id:4,name:"田中 夕賀",color:"#7c3aed",initial:"田"},
   {id:5,name:"岩永 拓己",color:"#dc2626",initial:"岩"},
-];
-// 「スタッフ管理」画面から追加されたスタッフ（応援スタッフ等）をここにマージする。
-// index_live.htmlのupdateStaffAccounts()と同じルール：id・名前が重複するものは除外。
-let STAFF_ACCOUNTS=[...BASE_STAFF_ACCOUNTS];
-function mergeStaffAccounts(clinicRows){
-  const extra=(clinicRows||[])
-    .filter(r=>r.name&&!BASE_STAFF_ACCOUNTS.some(s=>s.id===r.id||s.name===r.name))
-    .map(r=>({
-      id:r.id,name:r.name,
-      color:r.color||"#64748b",initial:r.initial||(r.name?r.name.charAt(0):"?"),
-      storeIds:(r.store_ids||[]).map(x=>parseInt(x)),
-      laneCount:r.lane_count||1,
-    }));
-  STAFF_ACCOUNTS=[...BASE_STAFF_ACCOUNTS,...extra];
-}
-const STORES=[{id:1,label:"香里園"},{id:2,label:"茨木"}];
-
-// ログイン画面に出す名前一覧（合計7枠）：いつもの5名＋応援①②。
-// スタッフ管理（clinic_staff）の応援①②と同じid/色にしておく。
-const LOGIN_STAFF_ACCOUNTS=[
-  ...BASE_STAFF_ACCOUNTS,
   {id:101,name:"応援①",color:"#f59e0b",initial:"援"},
   {id:102,name:"応援②",color:"#fb923c",initial:"援"},
 ];
+const STORES=[{id:1,label:"香里園"},{id:2,label:"茨木"}];
 
 async function sbGet(t,f){
   const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}${f||""}`,{headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`}});
@@ -187,7 +170,6 @@ const state={
   payments: [],
   businessHours: [], // 選択中店舗の営業時間（曜日ごと）
   tempClosures: [], // 通常の営業時間を上書きする臨時休業・臨時営業（date単位）
-  staffLoaded: false,
   loading: true,
   refreshing: false,
   showCancelled: false,
@@ -204,9 +186,13 @@ function render(){
 function renderLogin(){
   return `
   <div class="login-wrap">
-    <div class="login-title">お名前を選んでください</div>
+    <div class="login-hero">
+      <div class="emoji">🔥</div>
+      <div class="headline">今日もやり切る！！</div>
+      <div class="sub">さぁ、名前をタップ！</div>
+    </div>
     <div class="stafflist">
-      ${LOGIN_STAFF_ACCOUNTS.map(s=>`<button class="staffbtn" data-staff="${s.id}">${s.name}</button>`).join("")}
+      ${STAFF_ACCOUNTS.map(s=>`<button class="staffbtn" data-staff="${s.id}">${s.name}<span class="arrow">→</span></button>`).join("")}
     </div>
   </div>`;
 }
@@ -338,7 +324,7 @@ function toMinutes(t){const[h,m]=(t||"0:0").split(":").map(Number);return h*60+m
 function minutesToHM(m){return `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;}
 
 function renderAvailBody(){
-  if(state.loading||!state.staffLoaded){
+  if(state.loading){
     return `<div class="avail-closed">読み込み中…</div>`;
   }
   const {closed,slots}=computeAvailSlots();
@@ -400,17 +386,6 @@ function cardHtml(b,paidIds,todayStr,now){
 }
 
 // ===== データ取得 =====
-async function loadStaffOnce(){
-  if(state.staffLoaded) return;
-  try{
-    const rows=await sbGet("clinic_staff","?select=id,name,store_ids,lane_count,color,initial,event_only");
-    mergeStaffAccounts(Array.isArray(rows)?rows:[]);
-  }catch(e){
-    console.error("スタッフ一覧の読み込みに失敗しました",e);
-  }
-  state.staffLoaded=true;
-}
-
 async function loadData(showSpinner){
   if(showSpinner){state.refreshing=true;render();}
   try{
@@ -419,7 +394,6 @@ async function loadData(showSpinner){
       sbGet("payments",`?payment_date=eq.${state.date}`),
       sbGet("business_hours",`?store_id=eq.${state.storeId}`),
       sbGet("temp_closures",`?store_id=eq.${state.storeId}&date=in.(${FIXED_DATES.join(",")})`),
-      loadStaffOnce(),
     ]);
     state.bookings=Array.isArray(bk)?bk:[];
     state.payments=Array.isArray(pay)?pay.filter(p=>!p.is_training):[];
@@ -496,7 +470,7 @@ function attachHandlers(){
 }
 
 function doLogin(staffId){
-  const staff=LOGIN_STAFF_ACCOUNTS.find(s=>s.id===staffId);
+  const staff=STAFF_ACCOUNTS.find(s=>s.id===staffId);
   if(!staff) return;
   state.user={id:staff.id,name:staff.name};
   localStorage.setItem("ando_today_user",JSON.stringify(state.user));
