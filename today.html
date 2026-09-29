@@ -106,6 +106,26 @@
   .loginerr{color:#dc2626;font-size:12px;text-align:center;margin-bottom:8px;}
   .logoutbar{text-align:center;padding:10px;}
   .logoutbar button{background:none;border:none;color:#94a3b8;font-size:11px;}
+
+  /* ===== 予約追加 ===== */
+  .fab{position:fixed;right:18px;bottom:calc(18px + env(safe-area-inset-bottom));width:56px;height:56px;border-radius:50%;background:#059669;color:#fff;border:none;font-size:26px;font-weight:800;box-shadow:0 4px 14px rgba(0,0,0,.25);z-index:30;display:flex;align-items:center;justify-content:center;line-height:1;}
+  .fab:active{transform:scale(.94);}
+  .avail-chip[data-staff]{cursor:pointer;}
+  .modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:50;display:flex;align-items:flex-end;justify-content:center;}
+  .modal{width:100%;max-width:480px;background:#fff;border-radius:20px 20px 0 0;padding:20px 18px calc(20px + env(safe-area-inset-bottom));max-height:88vh;overflow-y:auto;}
+  .modal-title{font-size:17px;font-weight:800;color:#0f172a;}
+  .modal-sub{font-size:12px;color:#64748b;margin-top:2px;margin-bottom:14px;}
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:11.5px;font-weight:700;color:#64748b;margin-bottom:5px;}
+  .field input,.field select{width:100%;padding:11px 12px;border-radius:10px;border:1.5px solid #e2e8f0;font-size:15px;background:#fff;-webkit-appearance:none;}
+  .field-row{display:flex;gap:10px;}
+  .field-row .field{flex:1;}
+  .modal-error{color:#dc2626;font-size:12.5px;margin-bottom:8px;}
+  .modal-actions{display:flex;gap:10px;margin-top:6px;}
+  .modal-btn{flex:1;padding:13px;border-radius:11px;border:none;font-size:14.5px;font-weight:800;}
+  .modal-btn.ghost{background:#f1f5f9;color:#64748b;}
+  .modal-btn.primary{background:#059669;color:#fff;}
+  .modal-btn.primary:disabled{background:#a7d8c4;}
 </style>
 </head>
 <body>
@@ -134,6 +154,23 @@ const STORES=[{id:1,label:"香里園"},{id:2,label:"茨木"}];
 async function sbGet(t,f){
   const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}${f||""}`,{headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`}});
   return res.json();
+}
+async function sbPost(t,payload){
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}`,{
+    method:"POST",
+    headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`,"Content-Type":"application/json",Prefer:"return=representation"},
+    body:JSON.stringify(payload),
+  });
+  if(!res.ok){ const t2=await res.text().catch(()=>""); throw new Error(`insert failed: ${res.status} ${t2}`); }
+  return res.json();
+}
+async function notifyStaffGroup(message){
+  try{
+    const groups=await sbGet("line_groups","?select=group_id&limit=1");
+    const groupId=Array.isArray(groups)&&groups[0]?groups[0].group_id:null;
+    if(!groupId) return;
+    await fetch("/api/notify-line-group",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({groupId,message})});
+  }catch(e){ console.error("スタッフLINEグループへの通知に失敗しました：",e); }
 }
 
 function fmtDate(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),dd=String(d.getDate()).padStart(2,"0");return `${y}-${m}-${dd}`;}
@@ -174,12 +211,111 @@ const state={
   refreshing: false,
   showCancelled: false,
   lastUpdated: null,
+  bookingModal: null, // null=閉じている / {date,time,staffId,name,phone,menu,duration,saving,error}
 };
 
 function render(){
   const root=document.getElementById("root");
-  root.innerHTML = state.user ? renderMain() : renderLogin();
+  root.innerHTML = (state.user ? renderMain() : renderLogin()) + renderModal();
   attachHandlers();
+}
+
+function openBookingModal(prefill){
+  const staffList=storeStaffList(state.storeId);
+  state.bookingModal={
+    date: state.date,
+    time: "",
+    staffId: staffList[0]?staffList[0].id:null,
+    name: "",
+    phone: "",
+    menu: "",
+    duration: 30,
+    saving: false,
+    error: null,
+    ...(prefill||{}),
+  };
+  render();
+}
+function closeBookingModal(){
+  state.bookingModal=null;
+  render();
+}
+
+function renderModal(){
+  const m=state.bookingModal;
+  if(!m) return "";
+  const lb=dateTabLabel(m.date);
+  const store=STORES.find(s=>s.id===state.storeId);
+  const staffList=storeStaffList(state.storeId);
+  return `
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal">
+      <div class="modal-title">予約を追加</div>
+      <div class="modal-sub">${lb.main}${lb.dow}${store?" ・ "+store.label:""}</div>
+      <div class="field"><label>お名前</label><input id="modal-name" type="text" placeholder="山田 太郎" value="${(m.name||"").replace(/"/g,"&quot;")}"></div>
+      <div class="field"><label>電話番号</label><input id="modal-phone" type="tel" placeholder="090-1234-5678" value="${(m.phone||"").replace(/"/g,"&quot;")}"></div>
+      <div class="field"><label>メニュー</label><input id="modal-menu" type="text" placeholder="施術内容" value="${(m.menu||"").replace(/"/g,"&quot;")}"></div>
+      <div class="field-row">
+        <div class="field"><label>時間</label><input id="modal-time" type="time" value="${m.time||""}"></div>
+        <div class="field"><label>担当</label>
+          <select id="modal-staff">
+            ${staffList.map(s=>`<option value="${s.id}" ${m.staffId===s.id?"selected":""}>${s.name}</option>`).join("")}
+          </select>
+        </div>
+      </div>
+      <div class="field"><label>時間の長さ</label>
+        <select id="modal-duration">
+          <option value="30" ${m.duration===30?"selected":""}>30分</option>
+          <option value="60" ${m.duration===60?"selected":""}>60分</option>
+          <option value="90" ${m.duration===90?"selected":""}>90分</option>
+        </select>
+      </div>
+      ${m.error?`<div class="modal-error">${m.error}</div>`:""}
+      <div class="modal-actions">
+        <button id="modal-cancel-btn" class="modal-btn ghost" ${m.saving?"disabled":""}>キャンセル</button>
+        <button id="modal-save-btn" class="modal-btn primary" ${m.saving?"disabled":""}>${m.saving?"保存中…":"予約を保存"}</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function saveBooking(){
+  const m=state.bookingModal;
+  if(!m) return;
+  const name=(document.getElementById("modal-name").value||"").trim();
+  const phone=(document.getElementById("modal-phone").value||"").trim();
+  const menu=(document.getElementById("modal-menu").value||"").trim();
+  const time=document.getElementById("modal-time").value;
+  const staffId=parseInt(document.getElementById("modal-staff").value);
+  const duration=parseInt(document.getElementById("modal-duration").value)||30;
+  if(!name){ state.bookingModal={...m,name,phone,menu,time,staffId,duration,error:"お名前を入力してください"}; render(); return; }
+  if(!time){ state.bookingModal={...m,name,phone,menu,time,staffId,duration,error:"時間を選択してください"}; render(); return; }
+  if(!staffId){ state.bookingModal={...m,name,phone,menu,time,staffId,duration,error:"担当を選択してください"}; render(); return; }
+  state.bookingModal={...m,name,phone,menu,time,staffId,duration,saving:true,error:null};
+  render();
+  try{
+    const payload={
+      store_id: state.storeId,
+      date: m.date||state.date,
+      time,
+      staff_id: staffId,
+      patient_name: name,
+      phone: phone||null,
+      menu: menu||null,
+      duration,
+      cancelled: false,
+    };
+    await sbPost("bookings",payload);
+    const staff=STAFF_ACCOUNTS.find(s=>s.id===staffId);
+    const dLb=dateTabLabel(payload.date);
+    notifyStaffGroup(`🆕 新規予約（今日の予約より）\n${dLb.main}${dLb.dow} ${time}\n${name} 様\n担当：${staff?staff.name:""}${menu?`\nメニュー：${menu}`:""}`);
+    state.bookingModal=null;
+    await loadData(true);
+  }catch(e){
+    console.error("予約の保存に失敗しました：",e);
+    state.bookingModal={...state.bookingModal,saving:false,error:"保存に失敗しました。もう一度お試しください。"};
+    render();
+  }
 }
 
 // ===== ログイン画面 =====
@@ -204,6 +340,7 @@ function renderMain(){
   ${renderTopbar()}
   ${body}
   <div class="logoutbar"><button id="logout-btn">ログアウト（${state.user.name}）</button></div>
+  <button class="fab" id="fab-add-btn">＋</button>
   `;
 }
 
@@ -334,7 +471,7 @@ function renderAvailBody(){
   const rows=slots.map(s=>{
     const ratio=s.total>0?s.availCount/s.total:0;
     const cls=s.availCount===0?"none":(ratio<0.34?"low":"ok");
-    const chips=s.staffStatus.map(x=>`<div class="avail-chip ${x.available?"":"booked"}" style="background:${x.available?x.staff.color:"#e2e8f0"};" title="${x.staff.name}">${x.staff.initial||x.staff.name.charAt(0)}</div>`).join("");
+    const chips=s.staffStatus.map(x=>`<div class="avail-chip ${x.available?"":"booked"}" ${x.available?`data-staff="${x.staff.id}" data-time="${s.time}"`:""} style="background:${x.available?x.staff.color:"#e2e8f0"};" title="${x.staff.name}${x.available?"（タップして予約追加）":""}">${x.staff.initial||x.staff.name.charAt(0)}</div>`).join("");
     return `
     <div class="avail-row ${s.availCount===0?"full":""}">
       <div class="avail-time">${s.time}</div>
@@ -467,6 +604,23 @@ function attachHandlers(){
     state.user=null;
     render();
   };
+  const fabBtn=document.getElementById("fab-add-btn");
+  if(fabBtn) fabBtn.onclick=()=>{
+    openBookingModal({staffId: state.staffFilter || undefined});
+  };
+  document.querySelectorAll(".avail-chip[data-staff]").forEach(chip=>{
+    chip.onclick=()=>{
+      openBookingModal({ time: chip.dataset.time, staffId: parseInt(chip.dataset.staff) });
+    };
+  });
+  if(state.bookingModal){
+    const overlay=document.getElementById("modal-overlay");
+    if(overlay) overlay.onclick=(e)=>{ if(e.target===overlay) closeBookingModal(); };
+    const cancelBtn=document.getElementById("modal-cancel-btn");
+    if(cancelBtn) cancelBtn.onclick=()=>closeBookingModal();
+    const saveBtn=document.getElementById("modal-save-btn");
+    if(saveBtn) saveBtn.onclick=()=>saveBooking();
+  }
 }
 
 function doLogin(staffId){
