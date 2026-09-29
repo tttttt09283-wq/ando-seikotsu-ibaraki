@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover"/>
+<title>今日の予約</title>
+<!-- ホーム画面に追加した際にアプリらしく全画面表示・アイコン表示されるようにする -->
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="今日の予約"/>
+<meta name="theme-color" content="#047857"/>
+<link rel="apple-touch-icon" href="today-icon-180.png"/>
+<link rel="icon" href="today-icon-32.png"/>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  body{margin:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;color:#0f172a;padding-bottom:env(safe-area-inset-bottom);}
+  .topbar{position:sticky;top:0;z-index:20;background:linear-gradient(160deg,#059669,#047857);color:#fff;padding:calc(10px + env(safe-area-inset-top)) 14px 10px;box-shadow:0 2px 8px rgba(0,0,0,.12);}
+  .topbar-row{display:flex;align-items:center;justify-content:space-between;}
+  .topbar-title{font-size:15px;font-weight:800;letter-spacing:.5px;}
+  .topbar-sub{font-size:11px;opacity:.85;margin-top:1px;}
+  .refresh-badge{display:flex;align-items:center;gap:5px;font-size:11px;background:rgba(255,255,255,.18);padding:5px 9px;border-radius:20px;border:none;color:#fff;}
+  .refresh-badge.spinning svg{animation:spin 0.8s linear infinite;}
+  @keyframes spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
+  .datebar{display:flex;align-items:center;gap:6px;margin-top:10px;}
+  .datetab{flex:1;text-align:center;padding:8px 4px;border-radius:9px;font-size:12.5px;font-weight:700;background:rgba(255,255,255,.12);color:rgba(255,255,255,.8);border:none;}
+  .datetab .dow{display:block;font-size:9px;font-weight:600;opacity:.85;margin-top:1px;}
+  .datetab.active{background:#fff;color:#047857;}
+  .storetabs{display:flex;gap:6px;margin-top:9px;}
+  .storetab{flex:1;text-align:center;padding:7px 4px;border-radius:9px;font-size:12px;font-weight:700;background:rgba(255,255,255,.12);color:rgba(255,255,255,.8);border:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .storetab.active{background:#fff;color:#047857;}
+  .stafftabs{display:flex;gap:6px;margin-top:8px;overflow-x:auto;padding-bottom:2px;}
+  .stafftabs::-webkit-scrollbar{display:none;}
+  .staffchip{flex-shrink:0;padding:6px 11px;border-radius:20px;font-size:12px;font-weight:700;border:1.5px solid rgba(255,255,255,.4);background:transparent;color:#fff;opacity:.75;}
+  .staffchip.active{opacity:1;background:rgba(255,255,255,.22);border-color:#fff;}
+
+  .modetabs{display:flex;gap:6px;margin-top:9px;background:rgba(255,255,255,.12);border-radius:10px;padding:3px;}
+  .modetab{flex:1;text-align:center;padding:7px 4px;border-radius:8px;font-size:12.5px;font-weight:800;background:transparent;color:rgba(255,255,255,.8);border:none;}
+  .modetab.active{background:#fff;color:#047857;}
+
+  /* ===== 空き状況 ===== */
+  .avail-closed{text-align:center;padding:50px 20px;color:#94a3b8;}
+  .avail-list{padding:10px 12px 30px;}
+  .avail-row{display:flex;align-items:center;gap:10px;background:#fff;border-radius:13px;margin-bottom:7px;padding:10px 12px;box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .avail-row.full{opacity:.6;}
+  .avail-time{width:52px;flex-shrink:0;font-size:14px;font-weight:800;color:#0f172a;}
+  .avail-count{width:46px;flex-shrink:0;text-align:center;font-size:11px;font-weight:800;border-radius:8px;padding:4px 2px;}
+  .avail-count.ok{background:#f0fdf4;color:#059669;}
+  .avail-count.low{background:#fffbeb;color:#b45309;}
+  .avail-count.none{background:#fef2f2;color:#dc2626;}
+  .avail-chips{flex:1;display:flex;flex-wrap:wrap;gap:4px;min-width:0;}
+  .avail-chip{flex-shrink:0;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#fff;}
+  .avail-chip.booked{background:#e2e8f0 !important;color:#94a3b8;position:relative;}
+  .avail-chip.booked::after{content:"";position:absolute;width:22px;height:2px;background:#94a3b8;transform:rotate(-45deg);}
+  .avail-legend{display:flex;align-items:center;gap:14px;padding:8px 14px 2px;font-size:11px;color:#64748b;}
+  .avail-legend span{display:flex;align-items:center;gap:5px;}
+  .avail-legend .dot{width:12px;height:12px;border-radius:50%;}
+
+  .summary{display:flex;gap:8px;padding:12px 14px 4px;}
+  .sumcard{flex:1;background:#fff;border-radius:12px;padding:10px 8px;text-align:center;box-shadow:0 1px 3px rgba(0,0,0,.06);}
+  .sumcard .n{font-size:19px;font-weight:800;color:#0f172a;}
+  .sumcard .l{font-size:10px;color:#64748b;margin-top:1px;font-weight:600;}
+
+  .list{padding:6px 12px 30px;}
+  .timegroup-label{font-size:12px;font-weight:800;color:#64748b;margin:14px 4px 6px;}
+  .card{display:flex;align-items:stretch;background:#fff;border-radius:13px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.07);overflow:hidden;}
+  .card.cancelled{opacity:.5;}
+  .card.past-unattended{box-shadow:0 0 0 2px #f59e0b;}
+  .stripe{width:5px;flex-shrink:0;}
+  .card-body{flex:1;padding:10px 12px;display:flex;align-items:center;gap:10px;min-width:0;}
+  .card-time{font-size:16px;font-weight:800;color:#0f172a;flex-shrink:0;width:48px;line-height:1.15;}
+  .card-time .ampm{font-size:9px;color:#94a3b8;font-weight:600;}
+  .card-main{flex:1;min-width:0;}
+  .card-name{font-size:14.5px;font-weight:800;color:#0f172a;display:flex;align-items:center;gap:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .card-menu{font-size:11.5px;color:#64748b;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .staffname{font-size:10.5px;font-weight:700;margin-top:3px;}
+  .badge{display:inline-block;font-size:9px;font-weight:800;padding:1px 5px;border-radius:4px;flex-shrink:0;}
+  .badge-line{background:#f0fdf4;color:#059669;}
+  .badge-training{background:#fef3c7;color:#b45309;}
+  .status{flex-shrink:0;text-align:center;font-size:10px;font-weight:800;padding:5px 8px;border-radius:8px;white-space:nowrap;}
+  .status-done{background:#f0fdf4;color:#059669;}
+  .status-checked{background:#eff6ff;color:#2563eb;}
+  .status-wait{background:#f8fafc;color:#94a3b8;}
+  .status-late{background:#fffbeb;color:#b45309;}
+  .status-cancelled{background:#f1f5f9;color:#94a3b8;}
+  .callbtn{flex-shrink:0;width:34px;height:34px;border-radius:50%;background:#f0fdf4;color:#059669;display:flex;align-items:center;justify-content:center;text-decoration:none;font-size:15px;}
+
+  .empty{text-align:center;padding:60px 20px;color:#94a3b8;}
+  .empty .icon{font-size:38px;margin-bottom:10px;}
+  .toggle-cancelled{text-align:center;padding:6px;}
+  .toggle-cancelled button{background:none;border:none;color:#64748b;font-size:12px;font-weight:700;text-decoration:underline;}
+
+  /* ===== ログイン画面 ===== */
+  .login-wrap{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;background:linear-gradient(160deg,#059669,#047857);}
+  .login-card{background:#fff;border-radius:20px;padding:28px 22px;width:100%;max-width:340px;box-shadow:0 8px 30px rgba(0,0,0,.2);}
+  .login-logo{text-align:center;font-size:30px;margin-bottom:4px;}
+  .login-title{text-align:center;font-size:17px;font-weight:800;color:#0f172a;margin-bottom:2px;}
+  .login-sub{text-align:center;font-size:12px;color:#64748b;margin-bottom:18px;}
+  .stafflist{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;}
+  .staffbtn{padding:12px 6px;border-radius:12px;border:2px solid #e2e8f0;background:#f8fafc;font-size:13px;font-weight:700;color:#334155;}
+  .staffbtn.selected{border-color:#059669;background:#f0fdf4;color:#059669;}
+  .pwinput{width:100%;padding:12px;border-radius:11px;border:1.5px solid #e2e8f0;font-size:15px;margin-bottom:10px;}
+  .loginbtn{width:100%;padding:13px;border-radius:11px;border:none;background:#059669;color:#fff;font-size:14px;font-weight:800;}
+  .loginbtn:disabled{background:#cbd5e1;}
+  .loginerr{color:#dc2626;font-size:12px;text-align:center;margin-bottom:8px;}
+  .logoutbar{text-align:center;padding:10px;}
+  .logoutbar button{background:none;border:none;color:#94a3b8;font-size:11px;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+const SUPABASE_URL="https://dctlirxcwitcupaewiyt.supabase.co";
+const SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { storage: window.localStorage, persistSession: true, autoRefreshToken: true }
+});
+
+// index_live.html（管理画面）と同じスタッフ一覧・マージルール。
+// ここでは閲覧専用なのでログインはパスワードなし（名前タップのみ）。
+const BASE_STAFF_ACCOUNTS=[
+  {id:1,name:"奥田 貴明",color:"#2563eb",initial:"奥"},
+  {id:2,name:"佐藤 幸輝",color:"#059669",initial:"佐"},
+  {id:3,name:"細永 育代",color:"#d97706",initial:"細"},
+  {id:4,name:"田中 夕賀",color:"#7c3aed",initial:"田"},
+  {id:5,name:"岩永 拓己",color:"#dc2626",initial:"岩"},
+];
+// 「スタッフ管理」画面から追加されたスタッフ（応援スタッフ等）をここにマージする。
+// index_live.htmlのupdateStaffAccounts()と同じルール：id・名前が重複するものは除外。
+let STAFF_ACCOUNTS=[...BASE_STAFF_ACCOUNTS];
+function mergeStaffAccounts(clinicRows){
+  const extra=(clinicRows||[])
+    .filter(r=>r.name&&!BASE_STAFF_ACCOUNTS.some(s=>s.id===r.id||s.name===r.name))
+    .map(r=>({
+      id:r.id,name:r.name,
+      color:r.color||"#64748b",initial:r.initial||(r.name?r.name.charAt(0):"?"),
+      storeIds:(r.store_ids||[]).map(x=>parseInt(x)),
+      laneCount:r.lane_count||1,
+    }));
+  STAFF_ACCOUNTS=[...BASE_STAFF_ACCOUNTS,...extra];
+}
+const STORES=[{id:1,label:"香里園"},{id:2,label:"茨木"}];
+
+async function sbGet(t,f){
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}${f||""}`,{headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`}});
+  return res.json();
+}
+
+function fmtDate(d){const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,"0"),dd=String(d.getDate()).padStart(2,"0");return `${y}-${m}-${dd}`;}
+function addDays(dateStr,n){const d=new Date(dateStr+"T00:00:00");d.setDate(d.getDate()+n);return fmtDate(d);}
+function dateLabel(dateStr){
+  const d=new Date(dateStr+"T00:00:00");
+  const todayStr=fmtDate(new Date());
+  const yStr=addDays(todayStr,-1),tStr=addDays(todayStr,1);
+  const wd=["日","月","火","水","木","金","土"][d.getDay()];
+  const base=`${d.getMonth()+1}/${d.getDate()}（${wd}）`;
+  if(dateStr===todayStr) return `今日 ${base}`;
+  if(dateStr===yStr) return `昨日 ${base}`;
+  if(dateStr===tStr) return `明日 ${base}`;
+  return base;
+}
+function nowHM(){const d=new Date();return String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");}
+
+// 期間限定運用（10/1〜10/4）のため、見られる日付をこの4日間だけに固定する
+const FIXED_DATES=["2026-10-01","2026-10-02","2026-10-03","2026-10-04"];
+function dateTabLabel(dateStr){
+  const d=new Date(dateStr+"T00:00:00");
+  const wd=["日","月","火","水","木","金","土"][d.getDay()];
+  return {main:`${d.getMonth()+1}/${d.getDate()}`,dow:`(${wd})`};
+}
+
+// ===== state =====
+const state={
+  user: null,
+  mode: "list", // "list"=予約一覧 / "avail"=空き状況
+  storeId: parseInt(localStorage.getItem("ando_today_store")||"1"),
+  date: FIXED_DATES.includes(fmtDate(new Date()))?fmtDate(new Date()):FIXED_DATES[0],
+  staffFilter: null, // null=全員
+  bookings: [],
+  payments: [],
+  businessHours: [], // 選択中店舗の営業時間（曜日ごと）
+  tempClosures: [], // 通常の営業時間を上書きする臨時休業・臨時営業（date単位）
+  staffLoaded: false,
+  loading: true,
+  refreshing: false,
+  showCancelled: false,
+  lastUpdated: null,
+};
+
+function render(){
+  const root=document.getElementById("root");
+  root.innerHTML = state.user ? renderMain() : renderLogin();
+  attachHandlers();
+}
+
+// ===== ログイン画面 =====
+function renderLogin(){
+  return `
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="login-logo">📅</div>
+      <div class="login-title">今日の予約</div>
+      <div class="login-sub">あんど整骨院 スタッフ用</div>
+      ${state.loginErr?`<div class="loginerr">${state.loginErr}</div>`:""}
+      <div class="stafflist">
+        ${STAFF_ACCOUNTS.map(s=>`
+          <button class="staffbtn" data-staff="${s.id}">${s.name}</button>
+        `).join("")}
+      </div>
+    </div>
+  </div>`;
+}
+
+// ===== メイン画面 =====
+function renderMain(){
+  const body = state.mode==="avail" ? renderAvailBody() : renderListBody();
+  return `
+  ${renderTopbar()}
+  ${body}
+  <div class="logoutbar"><button id="logout-btn">ログアウト（${state.user.name}）</button></div>
+  `;
+}
+
+function renderTopbar(){
+  return `
+  <div class="topbar">
+    <div class="topbar-row">
+      <div>
+        <div class="topbar-title">${state.mode==="avail"?"🟢 空き状況":"📅 今日の予約"}</div>
+        <div class="topbar-sub">${state.lastUpdated?`更新：${state.lastUpdated}`:"読み込み中…"}</div>
+      </div>
+      <button class="refresh-badge ${state.refreshing?"spinning":""}" id="refresh-btn">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg>
+        更新
+      </button>
+    </div>
+    <div class="modetabs">
+      <button class="modetab ${state.mode==="list"?"active":""}" data-mode="list">予約一覧</button>
+      <button class="modetab ${state.mode==="avail"?"active":""}" data-mode="avail">空き状況</button>
+    </div>
+    <div class="datebar">
+      ${FIXED_DATES.map(d=>{const lb=dateTabLabel(d);return `<button class="datetab ${state.date===d?"active":""}" data-date="${d}">${lb.main}<span class="dow">${lb.dow}</span></button>`;}).join("")}
+    </div>
+    <div class="storetabs">
+      ${STORES.map(s=>`<button class="storetab ${state.storeId===s.id?"active":""}" data-store="${s.id}">${s.label}</button>`).join("")}
+    </div>
+    ${state.mode==="list"?`
+    <div class="stafftabs">
+      <button class="staffchip ${state.staffFilter===null?"active":""}" data-staff="">全員</button>
+      ${STAFF_ACCOUNTS.map(s=>`<button class="staffchip ${state.staffFilter===s.id?"active":""}" data-staff="${s.id}" style="border-color:${state.staffFilter===s.id?"#fff":"rgba(255,255,255,.4)"}">${s.name.split(" ")[0]}</button>`).join("")}
+    </div>`:""}
+  </div>`;
+}
+
+function renderListBody(){
+  const todayStr=fmtDate(new Date());
+  const now=nowHM();
+  let list=state.bookings.filter(b=>!b.is_training);
+  if(state.staffFilter) list=list.filter(b=>b.staff_id===state.staffFilter);
+  const cancelledCount=list.filter(b=>b.cancelled).length;
+  if(!state.showCancelled) list=list.filter(b=>!b.cancelled);
+  list=[...list].sort((a,b)=>(a.time||"").localeCompare(b.time||""));
+
+  const paidIds=new Set(state.payments.map(p=>p.booking_id).filter(Boolean));
+  const activeList=list.filter(b=>!b.cancelled);
+  const doneCount=activeList.filter(b=>paidIds.has(b.id)).length;
+  const checkedCount=activeList.filter(b=>!paidIds.has(b.id)&&b.checked_in_at).length;
+  const waitCount=activeList.length-doneCount-checkedCount;
+
+  const rows=list.map(b=>cardHtml(b,paidIds,todayStr,now)).join("");
+
+  return `
+  <div class="summary">
+    <div class="sumcard"><div class="n">${activeList.length}</div><div class="l">本日の予約</div></div>
+    <div class="sumcard"><div class="n" style="color:#059669;">${doneCount}</div><div class="l">会計済み</div></div>
+    <div class="sumcard"><div class="n" style="color:#2563eb;">${checkedCount}</div><div class="l">来院中</div></div>
+    <div class="sumcard"><div class="n" style="color:#94a3b8;">${waitCount}</div><div class="l">未来院</div></div>
+  </div>
+
+  <div class="list">
+    ${state.loading?`<div class="empty">読み込み中…</div>`:(list.length===0?`<div class="empty"><div class="icon">🌿</div>この条件の予約はありません</div>`:rows)}
+    ${cancelledCount>0?`<div class="toggle-cancelled"><button id="toggle-cancelled-btn">${state.showCancelled?"キャンセルを隠す":`キャンセル${cancelledCount}件を表示`}</button></div>`:""}
+  </div>
+  `;
+}
+
+// ===== 空き状況ビュー =====
+const SLOT_MINUTES=30; // 空き状況の時間刻み
+
+function storeStaffList(storeId){
+  return STAFF_ACCOUNTS.filter(s=>{
+    if(s.storeIds&&s.storeIds.length>0) return s.storeIds.indexOf(storeId)>-1;
+    return true; // 店舗未設定は「全店舗」扱い
+  });
+}
+
+function computeAvailSlots(){
+  const d=new Date(state.date+"T00:00:00");
+  const dow=d.getDay();
+  const bh=state.businessHours.find(h=>h.day_of_week===dow);
+  // 臨時休業・臨時営業（temp_closures）が設定されている日は、通常の曜日別営業時間より優先する
+  const override=state.tempClosures.find(t=>t.date===state.date);
+  let isOpen, openTime, closeTime;
+  if(override){
+    isOpen=!override.is_closed;
+    openTime=override.open_time||(bh&&bh.open_time)||"10:00";
+    closeTime=override.close_time||(bh&&bh.close_time)||"20:00";
+  }else{
+    isOpen=!!(bh&&bh.is_open);
+    openTime=bh&&bh.open_time;
+    closeTime=bh&&bh.close_time;
+  }
+  if(!isOpen||!openTime||!closeTime) return {closed:true,slots:[]};
+
+  const staffList=storeStaffList(state.storeId);
+  const activeBookings=state.bookings.filter(b=>!b.cancelled&&!b.is_training);
+
+  const openMin=toMinutes(openTime), closeMin=toMinutes(closeTime);
+  const slots=[];
+  for(let t=openMin;t<closeMin;t+=SLOT_MINUTES){
+    const slotStart=t, slotEnd=t+SLOT_MINUTES;
+    const staffStatus=staffList.map(s=>{
+      const laneCount=s.laneCount||1;
+      const overlapCount=activeBookings.filter(b=>{
+        if(b.staff_id!==s.id) return false;
+        const bs=toMinutes(b.time||"00:00");
+        const be=bs+(b.duration||30);
+        return bs<slotEnd&&slotStart<be;
+      }).length;
+      return {staff:s,available:overlapCount<laneCount};
+    });
+    const availCount=staffStatus.filter(x=>x.available).length;
+    slots.push({time:minutesToHM(slotStart),staffStatus,availCount,total:staffList.length});
+  }
+  return {closed:false,slots};
+}
+function toMinutes(t){const[h,m]=(t||"0:0").split(":").map(Number);return h*60+m;}
+function minutesToHM(m){return `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;}
+
+function renderAvailBody(){
+  if(state.loading||!state.staffLoaded){
+    return `<div class="avail-closed">読み込み中…</div>`;
+  }
+  const {closed,slots}=computeAvailSlots();
+  if(closed){
+    return `<div class="avail-closed"><div style="font-size:32px;margin-bottom:8px;">🌙</div>この日は休診日です</div>`;
+  }
+  const rows=slots.map(s=>{
+    const ratio=s.total>0?s.availCount/s.total:0;
+    const cls=s.availCount===0?"none":(ratio<0.34?"low":"ok");
+    const chips=s.staffStatus.map(x=>`<div class="avail-chip ${x.available?"":"booked"}" style="background:${x.available?x.staff.color:"#e2e8f0"};" title="${x.staff.name}">${x.staff.initial||x.staff.name.charAt(0)}</div>`).join("");
+    return `
+    <div class="avail-row ${s.availCount===0?"full":""}">
+      <div class="avail-time">${s.time}</div>
+      <div class="avail-count ${cls}">空き${s.availCount}</div>
+      <div class="avail-chips">${chips}</div>
+    </div>`;
+  }).join("");
+  return `
+  <div class="avail-legend">
+    <span><div class="dot" style="background:#059669;"></div>空いている</span>
+    <span><div class="dot" style="background:#e2e8f0;"></div>予約あり</span>
+  </div>
+  <div class="avail-list">${rows}</div>
+  `;
+}
+
+function cardHtml(b,paidIds,todayStr,now){
+  const staff=STAFF_ACCOUNTS.find(s=>s.id===b.staff_id);
+  const color=staff?staff.color:"#94a3b8";
+  let statusHtml="", cardClass="card";
+  if(b.cancelled){
+    statusHtml=`<div class="status status-cancelled">キャンセル</div>`;
+    cardClass+=" cancelled";
+  }else if(paidIds.has(b.id)){
+    statusHtml=`<div class="status status-done">✓ 会計済み</div>`;
+  }else if(b.checked_in_at){
+    statusHtml=`<div class="status status-checked">● 来院中</div>`;
+  }else if(state.date===todayStr && b.time && b.time<now){
+    statusHtml=`<div class="status status-late">⚠ 未対応</div>`;
+    cardClass+=" past-unattended";
+  }else{
+    statusHtml=`<div class="status status-wait">予約</div>`;
+  }
+  const phone=(b.phone||"").replace(/[^0-9]/g,"");
+  return `
+  <div class="${cardClass}">
+    <div class="stripe" style="background:${color};"></div>
+    <div class="card-body">
+      <div class="card-time">${b.time||"--:--"}</div>
+      <div class="card-main">
+        <div class="card-name">${b.patient_name||"(名前なし)"}${b.line_user_id?`<span class="badge badge-line">LINE</span>`:""}</div>
+        <div class="card-menu">${(b.menu||(Array.isArray(b.menus)?b.menus.join("・"):"")||"")}</div>
+        <div class="staffname" style="color:${color};">${staff?staff.name:"担当未定"}</div>
+      </div>
+      ${statusHtml}
+      ${phone?`<a class="callbtn" href="tel:${phone}">📞</a>`:""}
+    </div>
+  </div>`;
+}
+
+// ===== データ取得 =====
+async function loadStaffOnce(){
+  if(state.staffLoaded) return;
+  try{
+    const rows=await sbGet("clinic_staff","?select=id,name,store_ids,lane_count,color,initial,event_only");
+    mergeStaffAccounts(Array.isArray(rows)?rows:[]);
+  }catch(e){
+    console.error("スタッフ一覧の読み込みに失敗しました",e);
+  }
+  state.staffLoaded=true;
+}
+
+async function loadData(showSpinner){
+  if(showSpinner){state.refreshing=true;render();}
+  try{
+    const [bk,pay,bh,tc]=await Promise.all([
+      sbGet("bookings",`?store_id=eq.${state.storeId}&date=eq.${state.date}&order=time.asc`),
+      sbGet("payments",`?payment_date=eq.${state.date}`),
+      sbGet("business_hours",`?store_id=eq.${state.storeId}`),
+      sbGet("temp_closures",`?store_id=eq.${state.storeId}&date=in.(${FIXED_DATES.join(",")})`),
+      loadStaffOnce(),
+    ]);
+    state.bookings=Array.isArray(bk)?bk:[];
+    state.payments=Array.isArray(pay)?pay.filter(p=>!p.is_training):[];
+    state.businessHours=Array.isArray(bh)?bh:[];
+    state.tempClosures=Array.isArray(tc)?tc:[];
+  }catch(e){
+    console.error("読み込みエラー",e);
+  }
+  state.loading=false;
+  state.refreshing=false;
+  state.lastUpdated=new Date().toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"});
+  render();
+}
+
+let pollTimer=null;
+function startPolling(){
+  if(pollTimer) clearInterval(pollTimer);
+  pollTimer=setInterval(()=>loadData(false),20000);
+}
+
+let realtimeChannel=null;
+function startRealtime(){
+  if(realtimeChannel) return;
+  try{
+    realtimeChannel=supabaseClient.channel("today-bookings-watch")
+      .on("postgres_changes",{event:"*",schema:"public",table:"bookings"},()=>loadData(false))
+      .on("postgres_changes",{event:"*",schema:"public",table:"payments"},()=>loadData(false))
+      .on("postgres_changes",{event:"*",schema:"public",table:"temp_closures"},()=>loadData(false))
+      .on("postgres_changes",{event:"*",schema:"public",table:"business_hours"},()=>loadData(false))
+      .subscribe();
+  }catch(e){console.error("realtime購読エラー",e);}
+}
+
+// フォーカスに戻った時・画面が再表示された時にも最新化する
+document.addEventListener("visibilitychange",()=>{
+  if(document.visibilityState==="visible" && state.user) loadData(false);
+});
+window.addEventListener("focus",()=>{ if(state.user) loadData(false); });
+
+// ===== イベントハンドラ =====
+function attachHandlers(){
+  if(!state.user){
+    document.querySelectorAll(".stafflist [data-staff]").forEach(btn=>{
+      btn.onclick=()=>{ doLogin(parseInt(btn.dataset.staff)); };
+    });
+    return;
+  }
+  const refreshBtn=document.getElementById("refresh-btn");
+  if(refreshBtn) refreshBtn.onclick=()=>loadData(true);
+  document.querySelectorAll("[data-mode]").forEach(btn=>{
+    btn.onclick=()=>{ state.mode=btn.dataset.mode; render(); };
+  });
+  document.querySelectorAll("[data-date]").forEach(btn=>{
+    btn.onclick=()=>{ state.date=btn.dataset.date; loadData(true); };
+  });
+  document.querySelectorAll("[data-store]").forEach(btn=>{
+    btn.onclick=()=>{
+      state.storeId=parseInt(btn.dataset.store);
+      localStorage.setItem("ando_today_store",String(state.storeId));
+      loadData(true);
+    };
+  });
+  document.querySelectorAll(".stafftabs [data-staff]").forEach(btn=>{
+    btn.onclick=()=>{ state.staffFilter=btn.dataset.staff?parseInt(btn.dataset.staff):null; render(); };
+  });
+  const toggleCancelBtn=document.getElementById("toggle-cancelled-btn");
+  if(toggleCancelBtn) toggleCancelBtn.onclick=()=>{ state.showCancelled=!state.showCancelled; render(); };
+  const logoutBtn=document.getElementById("logout-btn");
+  if(logoutBtn) logoutBtn.onclick=()=>{
+    localStorage.removeItem("ando_today_user");
+    state.user=null;
+    render();
+  };
+}
+
+function doLogin(staffId){
+  const staff=STAFF_ACCOUNTS.find(s=>s.id===staffId);
+  if(!staff) return;
+  state.user={id:staff.id,name:staff.name};
+  localStorage.setItem("ando_today_user",JSON.stringify(state.user));
+  render();
+  loadData(true);
+  startPolling();
+  startRealtime();
+}
+
+// ===== 初期化 =====
+(function init(){
+  try{
+    const saved=localStorage.getItem("ando_today_user");
+    if(saved) state.user=JSON.parse(saved);
+  }catch(e){}
+  render();
+  if(state.user){
+    loadData(true);
+    startPolling();
+    startRealtime();
+  }
+})();
+</script>
+</body>
+</html>
