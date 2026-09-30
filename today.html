@@ -285,6 +285,12 @@ async function saveBooking(){
   if(!name){ state.bookingModal={...m,name,phone,menu,time,staffId,duration,error:"お名前を入力してください"}; render(); return; }
   if(!time){ state.bookingModal={...m,name,phone,menu,time,staffId,duration,error:"時間を選択してください"}; render(); return; }
   if(!staffId){ state.bookingModal={...m,name,phone,menu,time,staffId,duration,error:"担当を選択してください"}; render(); return; }
+  if(hasBookingConflict(staffId,time,duration)){
+    const staff=STAFF_ACCOUNTS.find(s=>s.id===staffId);
+    state.bookingModal={...m,name,phone,menu,time,staffId,duration,error:`${staff?staff.name:"このスタッフ"}は${time}に既に予約が入っています。時間か担当を変更してください。`};
+    render();
+    return;
+  }
   state.bookingModal={...m,name,phone,menu,time,staffId,duration,saving:true,error:null};
   render();
   try{
@@ -453,6 +459,20 @@ function computeAvailSlots(){
 }
 function toMinutes(t){const[h,m]=(t||"0:0").split(":").map(Number);return h*60+m;}
 function minutesToHM(m){return `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;}
+
+// 指定したスタッフ・時間・対応時間で、既存の予約と時間が重ならないかチェックする
+// （空き状況で❌のスタッフ・時間でも、手入力フォームでは何もチェックせず保存できてしまっていたバグの修正）
+function hasBookingConflict(staffId,time,duration,excludeId){
+  const bs=toMinutes(time), be=bs+duration;
+  return state.bookings.some(b=>{
+    if(excludeId&&b.id===excludeId) return false;
+    if(b.cancelled||b.is_training) return false;
+    if(b.staff_id!==staffId) return false;
+    const s2=toMinutes(b.time||"00:00");
+    const e2=s2+(b.duration||40);
+    return bs<e2 && s2<be;
+  });
+}
 
 function renderAvailBody(){
   if(state.loading){
