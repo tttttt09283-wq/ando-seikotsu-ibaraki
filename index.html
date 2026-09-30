@@ -494,6 +494,24 @@ const sb = {
   },
 };
 
+// 予約の追加・変更・キャンセルをスタッフのLINEグループへ自動共有するためのヘルパー。
+// line_groupsテーブルに登録されているグループ（現状「スタッフグループ」）へ送信する。
+// 失敗しても予約自体の保存処理には影響させない（best-effort・非同期で投げっぱなし）。
+async function notifyStaffGroup(message){
+  try{
+    const groups=await sb.select("line_groups","?select=group_id&limit=1");
+    const groupId=Array.isArray(groups)&&groups[0]?groups[0].group_id:null;
+    if(!groupId) return;
+    await fetch("/api/notify-line-group",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({groupId,message}),
+    });
+  }catch(e){
+    console.error("スタッフLINEグループへの通知に失敗しました：",e);
+  }
+}
+
 const today=new Date();
 function fmtDate(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;}
 function getWeekDates(base){
@@ -8864,6 +8882,11 @@ function Dashboard({user,onLogout}){
           throw new Error((result&&result.message)||"更新に失敗しました（対象の予約が見つかりませんでした）");
         }
         setAllBookings(prev=>prev.map(b=>b.id===editId?result[0]:b));
+        // トレーニングモード中の練習予約はスタッフLINEグループへ通知しない（本番の予約情報と混ざらないように）
+        if(!trainingMode){
+          const staffNm=(STAFF_ACCOUNTS.find(s=>s.id===result[0].staff_id)||{}).name||"担当未定";
+          notifyStaffGroup(`✏️ 予約変更\n${result[0].patient_name||""} 様\n${result[0].date} ${result[0].time}\n担当：${staffNm}`);
+        }
       }else{
         let lineUserId=form.line_user_id||null;
         if(!lineUserId&&form.phone){
@@ -8879,6 +8902,10 @@ function Dashboard({user,onLogout}){
           throw new Error((result&&result.message)||"登録に失敗しました");
         }
         setAllBookings(prev=>[...prev,result[0]]);
+        if(!trainingMode){
+          const staffNm=(STAFF_ACCOUNTS.find(s=>s.id===result[0].staff_id)||{}).name||"担当未定";
+          notifyStaffGroup(`🆕 新規予約\n${result[0].patient_name||""} 様\n${result[0].date} ${result[0].time}\n担当：${staffNm}\nメニュー：${result[0].menu||""}`);
+        }
       }
       // 回数券・フリーパスが選択されていればpassesテーブルへ反映（マイページの残数・期限表示用）
       await syncPassesFromMenus(form);
@@ -8910,6 +8937,10 @@ function Dashboard({user,onLogout}){
         throw new Error("対象の予約が見つからず、キャンセルが保存されませんでした。");
       }
       setAllBookings(prev=>prev.map(b=>b.id===cancelModalBooking.id?updated[0]:b));
+      if(!cancelModalBooking.is_training){
+        const staffNm=(STAFF_ACCOUNTS.find(s=>s.id===cancelModalBooking.staff_id)||{}).name||"担当未定";
+        notifyStaffGroup(`❌ キャンセル\n${cancelModalBooking.patient_name||""} 様\n${cancelModalBooking.date} ${cancelModalBooking.time}\n担当：${staffNm}\n理由：${reason||"未記入"}`);
+      }
 
       // 「この場で次回予約も作成する」が選ばれていれば、続けて新しい予約を登録する
       let rebookOk=false;
@@ -8934,6 +8965,10 @@ function Dashboard({user,onLogout}){
           if(Array.isArray(rebookResult)&&rebookResult.length>0){
             setAllBookings(prev=>[...prev,rebookResult[0]]);
             rebookOk=true;
+            if(!trainingMode){
+              const staffNm=(STAFF_ACCOUNTS.find(s=>s.id===rebookResult[0].staff_id)||{}).name||"担当未定";
+              notifyStaffGroup(`🆕 新規予約（振替）\n${rebookResult[0].patient_name||""} 様\n${rebookResult[0].date} ${rebookResult[0].time}\n担当：${staffNm}`);
+            }
           }
         }catch(e){
           console.error(e);
@@ -9674,8 +9709,10 @@ function Dashboard({user,onLogout}){
                             const staffBookings=dayBookings.filter(b=>b.staff_id===staff.id);
                             const staffBreaks=breaks.filter(b=>b.date===wdStr&&b.staff_id===staff.id);
                             const configuredLanes=getLaneCount(staff.id);
-                           const minGapMinutes=Math.max(20,Math.ceil(60/CELL_W)*10); // 名前が読めるよう、最低でも約60px分の幅を確保してレーンを分ける
-const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,minGapMinutes);
+                            // レーン分け（段を分けるかどうか）は実際の予約時間の重なりだけで判定する。
+                            // 以前は「名前が読めるように」という表示上の余白（minGapMinutes）もここに混ぜていたため、
+                            // 実際には時間が重なっていない予約まで別の段に分かれてバラバラに見えてしまっていた。
+                            const {laneOf,laneCount:neededLanes}=assignLanes(staffBookings,0);
                             const totalLanes=Math.max(configuredLanes,neededLanes,1);
                             const rowH=Math.max(48,totalLanes*40);
                             const laneH=rowH/totalLanes;
