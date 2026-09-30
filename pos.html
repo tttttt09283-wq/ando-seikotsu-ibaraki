@@ -764,19 +764,26 @@ function printReceiptViaWebPRNT(){
 
     showPrintToast("🖨️ プリンターへ送信中…");
     receiptPrintInFlight=true;
-    // USB接続では完了通知（onReceive/onError）が返ってこないことがあるとわかっているため、
-    // 一定時間で「失敗した」と誤解させるメッセージは出さず、「送信済み・紙をご確認ください」という
-    // 案内にとどめる（実際には印字されている可能性が高いため）。
+    // Star公式マニュアルによると、Bluetooth/USB接続のプリンターは「印刷完了待ち」が常に有効固定になっており
+    // （checkedblockオプションは効かない）、印刷が完了するまで応答（onReceive）が返ってこない仕様。
+    // 応答のデフォルトタイムアウトは90秒とかなり長いため、これまで数秒で「応答なし」と判断していたのは
+    // 単純に待ち時間が短すぎた可能性がある。そのため、明示的にtimeoutを指定した上で、
+    // 早い段階では「失敗」と決めつけず、時間経過に応じて案内の強さを変える。
     let settled=false;
+    const soonTimer=setTimeout(()=>{
+      if(!settled) showPrintToast("🖨️ 送信中です…（USB接続では応答に時間がかかる場合があります。しばらくお待ちください）");
+    },10000);
     const stuckTimer=setTimeout(()=>{
-      if(!settled) showPrintToast("🖨️ 送信しました。USB接続では完了通知が届かないことがあります。レシートが出ているかご確認ください");
-    },5000);
+      if(!settled) showPrintToast("🖨️ まだ応答がありません。USB接続では完了通知が届かないことがあります。レシートが出ていれば印刷は成功しています");
+    },30000);
     // SDK内部では、UserAgentに"WebPRNTSupportHTTPS"が含まれない場合にhttps→httpへ自動変換される仕組みになっているが、
     // 何らかの理由でこの自動変換が効かずhttpsのまま（自己署名証明書が信頼されておらず）通信が無応答のまま
-    // ハングしている可能性があるため、最初からhttpで明示的に指定して切り分ける
-    const trader=new StarWebPrintTrader({url:"http://localhost:8001/StarWebPRNT/SendMessage"});
+    // ハングしている可能性があるため、最初からhttpで明示的に指定して切り分ける。
+    // timeoutはStar公式マニュアル記載のデフォルト値(90000ms)より少し短い60秒を明示指定し、
+    // ライブラリ側のonErrorタイムアウトを自分たちで把握できるようにする。
+    const trader=new StarWebPrintTrader({url:"http://localhost:8001/StarWebPRNT/SendMessage",timeout:60000});
     trader.onReceive=function(response){
-      settled=true;clearTimeout(stuckTimer);
+      settled=true;clearTimeout(soonTimer);clearTimeout(stuckTimer);
       receiptPrintInFlight=false;
       if(response.traderSuccess==="true"){
         showPrintToast("🖨️ 印刷しました");
@@ -785,13 +792,13 @@ function printReceiptViaWebPRNT(){
       }
     };
     trader.onError=function(response){
-      settled=true;clearTimeout(stuckTimer);
+      settled=true;clearTimeout(soonTimer);clearTimeout(stuckTimer);
       receiptPrintInFlight=false;
       showPrintToast("❌ 印刷エラー："+(response.responseText||"接続できませんでした"));
     };
     // 万一onReceive/onErrorが一切来ない場合でも、いつまでも連打をブロックし続けないよう
-    // 一定時間後には強制的にロックを解除する
-    setTimeout(()=>{ receiptPrintInFlight=false; },15000);
+    // trader自身のtimeout(60秒)より少し後に強制的にロックを解除する
+    setTimeout(()=>{ receiptPrintInFlight=false; },65000);
     trader.sendMessage({request:request});
   }catch(e){
     receiptPrintInFlight=false;
@@ -848,22 +855,25 @@ function printMinimalTest(){
     // ここでcut/feedを入れず、まず本当にテキストが1行でも印字されるかだけを見る
     request+=builder.createFeedElement({line:2});
 
-    showPrintToast("🧪 テスト印刷を送信中…");
+    showPrintToast("🧪 テスト印刷を送信中…（USB接続では60秒ほど待つと応答が来ることがあります）");
     let settled=false;
+    const soonTimer=setTimeout(()=>{
+      if(!settled) showPrintToast("🧪 まだ送信中です…もう少しお待ちください");
+    },10000);
     const stuckTimer=setTimeout(()=>{
-      if(!settled) showPrintToast("⏳ テスト印刷も応答待ちです（電源・USB接続をご確認ください）");
-    },8000);
-    const trader=new StarWebPrintTrader({url:"http://localhost:8001/StarWebPRNT/SendMessage"});
+      if(!settled) showPrintToast("⏳ まだ応答がありません。TEST1が印字されていれば実際には成功しています");
+    },30000);
+    const trader=new StarWebPrintTrader({url:"http://localhost:8001/StarWebPRNT/SendMessage",timeout:60000});
     trader.onReceive=function(response){
-      settled=true;clearTimeout(stuckTimer);
+      settled=true;clearTimeout(soonTimer);clearTimeout(stuckTimer);
       if(response.traderSuccess==="true"){
-        showPrintToast("🧪 テスト印刷 成功（TEST1が印字されたか確認してください）");
+        showPrintToast("🧪 テスト印刷 成功（応答あり）");
       }else{
         showPrintToast("❌ テスト印刷 失敗（プリンターの状態をご確認ください）");
       }
     };
     trader.onError=function(response){
-      settled=true;clearTimeout(stuckTimer);
+      settled=true;clearTimeout(soonTimer);clearTimeout(stuckTimer);
       showPrintToast("❌ テスト印刷エラー："+(response.responseText||"接続できませんでした"));
     };
     trader.sendMessage({request:request});
