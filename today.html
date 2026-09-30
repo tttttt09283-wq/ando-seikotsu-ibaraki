@@ -419,20 +419,27 @@ function storeStaffList(storeId){
 }
 
 function computeAvailSlots(){
-  const d=new Date(state.date+"T00:00:00");
-  const dow=d.getDay();
-  const bh=state.businessHours.find(h=>h.day_of_week===dow);
-  // 臨時休業・臨時営業（temp_closures）が設定されている日は、通常の曜日別営業時間より優先する
-  const override=state.tempClosures.find(t=>t.date===state.date);
   let isOpen, openTime, closeTime;
-  if(override){
-    isOpen=!override.is_closed;
-    openTime=override.open_time||(bh&&bh.open_time)||"10:00";
-    closeTime=override.close_time||(bh&&bh.close_time)||"20:00";
+  if(FIXED_DATES.includes(state.date)){
+    // プレイベント期間（10/1〜10/4）は、通常の営業時間・臨時休業データに関わらず必ず10:00〜20:00固定。
+    // （曜日別の営業時間や臨時休業レコードがこの4日分すべて正しく揃っているとは限らないため、
+    //   ここで確実に上書きして「空き状況」が営業時間データの有無に左右されないようにする）
+    isOpen=true; openTime="10:00"; closeTime="20:00";
   }else{
-    isOpen=!!(bh&&bh.is_open);
-    openTime=bh&&bh.open_time;
-    closeTime=bh&&bh.close_time;
+    const d=new Date(state.date+"T00:00:00");
+    const dow=d.getDay();
+    const bh=state.businessHours.find(h=>h.day_of_week===dow);
+    // 臨時休業・臨時営業（temp_closures）が設定されている日は、通常の曜日別営業時間より優先する
+    const override=state.tempClosures.find(t=>t.date===state.date);
+    if(override){
+      isOpen=!override.is_closed;
+      openTime=override.open_time||(bh&&bh.open_time)||"10:00";
+      closeTime=override.close_time||(bh&&bh.close_time)||"20:00";
+    }else{
+      isOpen=!!(bh&&bh.is_open);
+      openTime=bh&&bh.open_time;
+      closeTime=bh&&bh.close_time;
+    }
   }
   if(!isOpen||!openTime||!closeTime) return {closed:true,slots:[]};
 
