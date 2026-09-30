@@ -73,14 +73,15 @@ const DATE_CAPACITY_OVERRIDES = {
 const DAYS_JP = ["日","月","火","水","木","金","土"];
 const STEPS = ["日時","お客様情報","症状・問診","確認"];
 const HOW_KNOW_OPTIONS = [
-  {label:"チラシ①", icon:"📰", image:"/pure1.png"},
-  {label:"チラシ②", icon:"📰", image:"/pure2.png"},
-  {label:"看板", icon:"🪧", image:null},
-  {label:"Instagram", icon:"📷", image:"data:image/svg+xml;utf8,"+encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48' width='48' height='48'><defs><radialGradient id='ig' cx='30%' cy='107%' r='150%'><stop offset='0%' stop-color='#fdf497'/><stop offset='5%' stop-color='#fdf497'/><stop offset='45%' stop-color='#fd5949'/><stop offset='60%' stop-color='#d6249f'/><stop offset='90%' stop-color='#285AEB'/></radialGradient></defs><rect width='48' height='48' rx='12' fill='url(#ig)'/><rect x='12' y='12' width='24' height='24' rx='7' fill='none' stroke='white' stroke-width='2.5'/><circle cx='24' cy='24' r='6' fill='none' stroke='white' stroke-width='2.5'/><circle cx='33' cy='15' r='1.7' fill='white'/></svg>")},
-  {label:"Google検索", icon:"🔍", image:"data:image/svg+xml;utf8,"+encodeURIComponent("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48' width='48' height='48'><path fill='#FFC107' d='M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.5 29.5 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.7-.4-3.5z'/><path fill='#FF3D00' d='M6.3 14.7l6.6 4.8C14.6 15.1 18.9 12 24 12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.5 29.5 4 24 4 16.3 4 9.7 8.3 6.3 14.7z'/><path fill='#4CAF50' d='M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.5 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.6 39.6 16.3 44 24 44z'/><path fill='#1976D2' d='M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.3 4.3-4.1 5.6l6.2 5.2C39.9 36.9 44 31 44 24c0-1.3-.1-2.7-.4-3.5z'/></svg>")},
-  {label:"通りがかり", icon:"🚶", image:null},
-  {label:"紹介", icon:"👥", image:null},
-  {label:"その他", icon:"📋", image:null},
+  {label:"チラシ①", image:"/pure1.png"},
+  {label:"チラシ②", image:"/pure2.png"},
+  {label:"看板"},
+  {label:"Instagram"},
+  {label:"Google検索"},
+  {label:"Threads"},
+  {label:"通りがかり"},
+  {label:"紹介"},
+  {label:"その他"},
 ];
 const HOW_KNOW = HOW_KNOW_OPTIONS.map(o=>o.label);
 const BODY_PARTS = [
@@ -629,10 +630,13 @@ function App(){
     {label:"久しぶりの方",menu:"久しぶりの方（要確認）",desc:"しばらく期間が空いている方（最終来院から30日以上など）"},
     {label:"2回目以降の方",menu:"2回目以降の方",desc:"継続して通院されている方"},
   ];
-  // 予約の施術時間が、患者ページの1枠（20分）と時間的に重なっているかどうか
-  function overlapsSlot(b,t){
+  // 予約の施術時間が、その枠から実際に必要な対応時間ぶん（durationMinutes。省略時は表示上の20分刻み）と
+  // 時間的に重なっているかどうか。
+  // ※以前はここが常に20分固定だったため、次の20分に既に予約が入っていても「空きあり」と表示されてしまい、
+  //   today.html（管理画面側の空き状況）の40分ベースの判定とズレていた。
+  function overlapsSlot(b,t,durationMinutes){
     var bs=toMin(b.time), be=bs+getBookingDuration(b);
-    var ss=toMin(t), se=ss+20;
+    var ss=toMin(t), se=ss+(durationMinutes||20);
     return bs<se && ss<be;
   }
   // 指定したスタッフが指定日に出勤しているか（staff_weekly_shiftsに設定が無いスタッフはフェイルセーフで出勤扱い）
@@ -645,17 +649,20 @@ function App(){
     if(!found) return true;
     return found.is_working!==false;
   }
-  // 指定した日に既に入っている予約数（キャンセル除く・施術時間の重なりも考慮）
+  // 指定した日に既に入っている予約数（キャンセル除く・その枠で実際に必要な対応時間ぶんの重なりも考慮）
   function getBookedCountAt(d,t){
     var ds = fmtDate(d);
-    return weekData.booked.filter(function(b){return b.date===ds && overlapsSlot(b,t);}).length;
+    var duration = getCurrentDuration(d);
+    return weekData.booked.filter(function(b){return b.date===ds && overlapsSlot(b,t,duration);}).length;
   }
-  // 指定した日時に対応可能なスタッフ一覧（その日休みのスタッフ・休憩中/既存予約が入っている人を除く。施術時間の重なりも考慮。
+  // 指定した日時に対応可能なスタッフ一覧（その日休みのスタッフ・休憩中/既存予約が入っている人を除く。
+  // その枠で実際に必要な対応時間ぶんの重なりも考慮。
   // 応援スタッフ（event_only）は、オープニングイベント期間の日付でのみ対象に含める）
   function getFreeStaffListFor(d,t){
     var ds = fmtDate(d);
+    var duration = getCurrentDuration(d);
     var unavail = {};
-    weekData.booked.forEach(function(b){if(b.date===ds&&overlapsSlot(b,t)) unavail[b.staff_id]=true;});
+    weekData.booked.forEach(function(b){if(b.date===ds&&overlapsSlot(b,t,duration)) unavail[b.staff_id]=true;});
     weekData.breaks.forEach(function(b){if(b.date===ds&&b.time===t) unavail[b.staff_id]=true;});
     var isEvent=isEventDate(d);
     return STAFF.filter(function(s){
@@ -815,6 +822,8 @@ function App(){
     if(!form.name.trim()) e.name = "お名前を入力してください";
     if(!form.phone.trim()) e.phone = "電話番号を入力してください";
     if(!form.address.trim()) e.address = "ご住所を入力してください";
+    if(!form.howKnow) e.howKnow = "当院を何でお知りになったか選択してください";
+    else if(form.howKnow==="その他"&&!form.howKnowOther.trim()) e.howKnow = "具体的な内容を入力してください";
     setErrors(e);
     return Object.keys(e).length===0;
   }
@@ -857,9 +866,27 @@ function App(){
     });
   }
 
+  // 予約作成直後に、同じスタッフ・同じ日時に重なる有効な予約が複数できてしまっていないか再確認する。
+  // checkStaffAvailabilityNow()はinsert前のチェックのため、ほぼ同時に2人が予約すると
+  // どちらも「空きあり」と判定されてしまう「かぶり」が起こり得る（TOCTOUレース）。
+  // そのため、insert後にもう一度同じ条件で問い合わせ、重なっている予約が複数あれば
+  // 最もidが小さい（先に作られた）ものだけを正とし、後から作られた予約は自動的に取り消す。
+  function reconcileOverlapAfterInsert(newBookingId, staffId, dateStr, time){
+    return sb.select("bookings","?date=eq."+dateStr+"&staff_id=eq."+staffId).then(function(dayBookings){
+      if(!Array.isArray(dayBookings)) return true; // 判定不能時は成立扱い（フェイルセーフ）
+      var conflicting = dayBookings.filter(function(b){ return !b.cancelled && overlapsSlot(b,time); });
+      if(conflicting.length<=1) return true;
+      var winnerId = conflicting.reduce(function(min,b){ return b.id<min?b.id:min; }, conflicting[0].id);
+      if(winnerId===newBookingId) return true; // 自分が正（先勝ち）の予約
+      // 自分はちょうど同時に埋まってしまった側の予約なので取り消す
+      return sb.update("bookings",newBookingId,{cancelled:true}).catch(function(){}).then(function(){ return false; });
+    }).catch(function(){ return true; });
+  }
+
   function doSubmitBooking(staffId, dateStr){
     var howKnowText = form.howKnow==="その他" ? "その他："+form.howKnowOther : form.howKnow;
     var newBookingId = null;
+    var lostToOverlap = false;
     var patientTypeOpt=PATIENT_TYPE_OPTIONS.find(function(o){return o.label===form.patientType;});
     var finalMenu=isEventDate(selDate)?pageSettings.eventMenuName:(patientTypeOpt?patientTypeOpt.menu:pageSettings.eventMenuName);
     // 任意の問診票で選んだ症状チップ（気になる症状の自由記入は廃止し、負傷部位の選択に一本化）
@@ -902,8 +929,20 @@ function App(){
       how_know:howKnowText
     }).then(function(result){
       // 予約IDを取得
-      if(Array.isArray(result) && result.length > 0){
-        newBookingId = result[0].id;
+      if(!(Array.isArray(result) && result.length > 0)) return;
+      newBookingId = result[0].id;
+      return reconcileOverlapAfterInsert(newBookingId, staffId, dateStr, selTime).then(function(ok){
+        if(!ok){
+          // 同時に他の方の予約で枠が埋まってしまったため、この予約は取り消し済み。
+          // 通常の完了画面ではなく「満枠」案内を出し、日時選択からやり直してもらう。
+          lostToOverlap = true;
+          setSlotFullMsg("大変申し訳ございません、ちょうどこの日時が埋まってしまいました。お手数ですが別の日時をお選びください。");
+          setSelDate(null);
+          setSelTime(null);
+          setStep(0);
+          refreshWeekData();
+          return;
+        }
         setBookingId(newBookingId);
 
         // 紹介URL経由の予約であれば、紹介記録を作成する（特典は管理画面で来院確認後に確定）
@@ -931,55 +970,56 @@ function App(){
             reward_status: "pending"
           }).catch(function(){});
         }
-      }
 
-      // グループLINEへ通知（事前問診票が未記入の項目は省略する）
-      var msg = "🏥【あんど整骨院 新規予約】\n\n"+
-        "👤 "+form.name+" 様\n"+
-        "📞 "+form.phone+"\n"+
-        "📅 "+fmtDateJP(selDate)+" "+selTime+"\n"+
-        "💬 気になる症状："+formatBodyParts(form.bodyParts,form.bodyPartsOther,form.bodyPartsSides)+
-        (formatOtherConcerns()?"\n🌿 その他気になること："+formatOtherConcerns():"")+
-        (form.injuryCause?"\n⚡ 原因："+form.injuryCause:"")+
-        (form.painWhen?"\n📅 いつから："+form.painWhen:"")+
-        (form.wantContinue?"\n💭 継続意思："+formatWantContinue():"")+
-        "\n📣 経路："+(howKnowText||"未記入")+"\n"+
-        "🔔 LINE連携："+(form.lineNotify && lineUserId ? "あり" : "なし")+
-        (form.referrerName.trim()?"\n🎁 紹介者："+form.referrerName+" 様（体験会無料）":"")+
-        (validCodeReferral?"\n🎁 紹介URL経由："+referrerInfo.name+" 様のご紹介":"");
+        // グループLINEへ通知（事前問診票が未記入の項目は省略する）
+        var msg = "🏥【あんど整骨院 新規予約】\n\n"+
+          "👤 "+form.name+" 様\n"+
+          "📞 "+form.phone+"\n"+
+          "🏠 "+(form.address||"未記入")+"\n"+
+          "📅 "+fmtDateJP(selDate)+" "+selTime+"\n"+
+          "💬 気になる症状："+formatBodyParts(form.bodyParts,form.bodyPartsOther,form.bodyPartsSides)+
+          (formatOtherConcerns()?"\n🌿 その他気になること："+formatOtherConcerns():"")+
+          (form.injuryCause?"\n⚡ 原因："+form.injuryCause:"")+
+          (form.painWhen?"\n📅 いつから："+form.painWhen:"")+
+          (form.wantContinue?"\n💭 継続意思："+formatWantContinue():"")+
+          "\n📣 経路："+(howKnowText||"未記入")+"\n"+
+          "🔔 LINE連携："+(form.lineNotify && lineUserId ? "あり" : "なし")+
+          (form.referrerName.trim()?"\n🎁 紹介者："+form.referrerName+" 様（体験会無料）":"")+
+          (validCodeReferral?"\n🎁 紹介URL経由："+referrerInfo.name+" 様のご紹介":"");
 
-      fetch("/api/line-notify",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({groupId:LINE_GROUP_ID, message:msg})
-      }).catch(function(){});
-
-      // LINE連携済みの患者へ予約確認メッセージを送信
-      if(lineUserId && newBookingId){
-        console.log("send-confirmation呼び出し:", {userId: lineUserId, bookingId: newBookingId});
-        fetch("/api/send-confirmation",{
+        fetch("/api/line-notify",{
           method:"POST",
           headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({
-            userId: lineUserId,
-            bookingId: newBookingId,
-            patientName: form.name,
-            date: fmtDateJP(selDate),
-            time: selTime
-          })
-        }).then(function(r){
-          console.log("send-confirmation response:", r.status);
-          return r.json();
-        }).then(function(d){
-          console.log("send-confirmation result:", JSON.stringify(d));
-        }).catch(function(e){
-          console.error("send-confirmation error:", e);
-        });
-      } else {
-        console.log("QR送信スキップ:", {lineUserId: lineUserId, bookingId: newBookingId});
-      }
+          body:JSON.stringify({groupId:LINE_GROUP_ID, message:msg})
+        }).catch(function(){});
+
+        // LINE連携済みの患者へ予約確認メッセージを送信
+        if(lineUserId && newBookingId){
+          console.log("send-confirmation呼び出し:", {userId: lineUserId, bookingId: newBookingId});
+          fetch("/api/send-confirmation",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({
+              userId: lineUserId,
+              bookingId: newBookingId,
+              patientName: form.name,
+              date: fmtDateJP(selDate),
+              time: selTime
+            })
+          }).then(function(r){
+            console.log("send-confirmation response:", r.status);
+            return r.json();
+          }).then(function(d){
+            console.log("send-confirmation result:", JSON.stringify(d));
+          }).catch(function(e){
+            console.error("send-confirmation error:", e);
+          });
+        } else {
+          console.log("QR送信スキップ:", {lineUserId: lineUserId, bookingId: newBookingId});
+        }
+      });
     }).catch(function(){}).finally(function(){
-      setDone(true);
+      if(!lostToOverlap) setDone(true);
       setSubmitting(false);
     });
   }
@@ -1021,6 +1061,7 @@ function App(){
 
   function doSubmitRepeatBooking(staffId, dateStr){
     var newBookingId=null;
+    var lostToOverlap=false;
     sb.insert("bookings",{
       patient_name:pastBooking.patient_name,
       phone:pastBooking.phone||"",
@@ -1031,7 +1072,7 @@ function App(){
       time:selTime,
       menu:"再診（20分）",
       store_id:resolvedStoreId,
-      line_notify:true,
+      line_notify:!!lineUserId, // LINEのuserIdが実際に取得できている時だけ「連携あり」とする（そうでないと送り先が無いのに送信予定扱いになってしまう）
       line_user_id:lineUserId||null,
       booked_via_line: !!lineUserId,
       reminded:false,
@@ -1039,27 +1080,40 @@ function App(){
       symptoms:memo||null,
     }).then(function(result){
       var nb=Array.isArray(result)&&result.length>0?result[0]:null;
-      if(nb) newBookingId=nb.id;
-      setBookingId(newBookingId);
-      // グループLINE通知
-      fetch("/api/line-notify",{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-          groupId:LINE_GROUP_ID,
-          message:"🏥【リピーター予約】\n👤 "+pastBooking.patient_name+" 様\n📅 "+fmtDateJP(selDate)+" "+selTime+(memo?"\n💬 "+memo:"")
-        })
-      }).catch(function(){});
-      // QR・確認メッセージ送信
-      if(lineUserId&&newBookingId){
-        fetch("/api/send-confirmation",{
+      if(!nb) return;
+      newBookingId=nb.id;
+      return reconcileOverlapAfterInsert(newBookingId, staffId, dateStr, selTime).then(function(ok){
+        if(!ok){
+          // 同時に他の方の予約で枠が埋まってしまったため、この予約は取り消し済み
+          lostToOverlap=true;
+          setSlotFullMsg("大変申し訳ございません、ちょうどこの日時が埋まってしまいました。お手数ですが別の日時をお選びください。");
+          setSelDate(null);
+          setSelTime(null);
+          refreshWeekData();
+          return;
+        }
+        setBookingId(newBookingId);
+        // グループLINE通知
+        fetch("/api/line-notify",{
           method:"POST",
           headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({userId:lineUserId,bookingId:newBookingId,patientName:pastBooking.patient_name,date:fmtDateJP(selDate),time:selTime})
+          body:JSON.stringify({
+            groupId:LINE_GROUP_ID,
+            message:"🏥【リピーター予約】\n👤 "+pastBooking.patient_name+" 様\n📞 "+(pastBooking.phone||"未記入")+"\n🏠 "+(pastBooking.address||"未記入")+"\n📅 "+fmtDateJP(selDate)+" "+selTime+(memo?"\n💬 "+memo:"")
+          })
         }).catch(function(){});
-      }
+        // QR・確認メッセージ送信
+        if(lineUserId&&newBookingId){
+          fetch("/api/send-confirmation",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({userId:lineUserId,bookingId:newBookingId,patientName:pastBooking.patient_name,date:fmtDateJP(selDate),time:selTime})
+          }).catch(function(){});
+        }
+      });
     }).catch(function(){}).finally(function(){
-      setDone(true); setSubmitting(false);
+      if(!lostToOverlap) setDone(true);
+      setSubmitting(false);
     });
   }
 
@@ -1515,6 +1569,34 @@ function App(){
           )
         ),
 
+        // ===== 来院経路（必須） =====
+        React.createElement("div",{style:H.sec},
+          React.createElement("div",{style:H.secT},"📣 当院を何でお知りになりましたか？ *"),
+          // チラシの写真だけは画像付きカードで表示
+          React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8,marginBottom:8}},
+            HOW_KNOW_OPTIONS.filter(function(o){return o.image;}).map(function(o){
+              var sel=form.howKnow===o.label;
+              return React.createElement("button",{key:o.label,onClick:function(){setF("howKnow",o.label);},
+                style:{padding:0,borderRadius:10,border:"1.5px solid "+(sel?"#1e3a5f":"#ddd"),background:sel?"#1e3a5f":"white",color:sel?"white":"#444",cursor:"pointer",fontSize:13,fontWeight:sel?700:400,overflow:"hidden",display:"flex",flexDirection:"column",alignItems:"center",gap:6}},
+                React.createElement("img",{src:o.image,alt:o.label,style:{width:"100%",height:110,objectFit:"contain",background:"#f8fafc",padding:4,boxSizing:"border-box"}}),
+                React.createElement("div",{style:{paddingBottom:8}},o.label)
+              );
+            })
+          ),
+          // それ以外はシンプルな文字だけのボタンで表示（見やすさ優先）
+          React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:8}},
+            HOW_KNOW_OPTIONS.filter(function(o){return !o.image;}).map(function(o){
+              var sel=form.howKnow===o.label;
+              return React.createElement("button",{key:o.label,onClick:function(){setF("howKnow",o.label);},
+                style:{padding:"10px 16px",borderRadius:20,border:"1.5px solid "+(sel?"#1e3a5f":"#ddd"),background:sel?"#1e3a5f":"white",color:sel?"white":"#444",cursor:"pointer",fontSize:13,fontWeight:sel?700:400,fontFamily:"inherit"}},
+                o.label
+              );
+            })
+          ),
+          form.howKnow==="その他"?React.createElement("input",{type:"text",value:form.howKnowOther,placeholder:"具体的に教えてください",onChange:function(e){setF("howKnowOther",e.target.value);},style:Object.assign({},H.input,{marginTop:10})}):null,
+          errors.howKnow?React.createElement("div",{style:{color:"#ef4444",fontSize:12,marginTop:8}},"⚠ "+errors.howKnow):null
+        ),
+
         // ===== 紹介者のお名前（任意） =====
         React.createElement("div",{style:H.sec},
           React.createElement("div",{style:H.secT},"🎁 紹介者のお名前（任意）"),
@@ -1691,21 +1773,6 @@ function App(){
               onChange:function(e){setF("wantContinueOther",e.target.value);},
               style:Object.assign({},H.input,{marginTop:10})
             }):null
-          ),
-
-          React.createElement("div",{style:H.sec},
-            React.createElement("div",{style:H.secT},"📣 当院を何でお知りになりましたか？"),
-            React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8}},
-              HOW_KNOW_OPTIONS.map(function(o){
-                var sel=form.howKnow===o.label;
-                return React.createElement("button",{key:o.label,onClick:function(){setF("howKnow",o.label);},
-                  style:{padding:o.image?0:"14px 8px",borderRadius:10,border:"1.5px solid "+(sel?"#1e3a5f":"#ddd"),background:sel?"#1e3a5f":"white",color:sel?"white":"#444",cursor:"pointer",fontSize:13,fontWeight:sel?700:400,overflow:"hidden",display:"flex",flexDirection:"column",alignItems:"center",gap:6}},
-                  o.image?React.createElement("img",{src:o.image,alt:o.label,style:{width:"100%",height:110,objectFit:"contain",background:"#f8fafc",padding:4,boxSizing:"border-box"}}):React.createElement("div",{style:{fontSize:22,marginTop:6}},o.icon),
-                  React.createElement("div",{style:{paddingBottom:o.image?8:0}},o.label)
-                );
-              })
-            ),
-            form.howKnow==="その他"?React.createElement("input",{type:"text",value:form.howKnowOther,placeholder:"具体的に教えてください",onChange:function(e){setF("howKnowOther",e.target.value);},style:Object.assign({},H.input,{marginTop:10})}):null
           ),
 
           React.createElement("div",{style:H.sec},
