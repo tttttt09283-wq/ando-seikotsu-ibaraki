@@ -408,7 +408,8 @@ function renderListBody(){
 }
 
 // ===== 空き状況ビュー =====
-const SLOT_MINUTES=20; // 空き状況の時間刻み
+const SLOT_MINUTES=20; // 空き状況の表示刻み（一覧の時間の並び方）
+const APPOINTMENT_DURATION=40; // 対応時間（この分数をまるまる確保できる場合のみ「空き」とする）
 
 function storeStaffList(storeId){
   return STAFF_ACCOUNTS.filter(s=>{
@@ -441,14 +442,17 @@ function computeAvailSlots(){
   const openMin=toMinutes(openTime), closeMin=toMinutes(closeTime);
   const slots=[];
   for(let t=openMin;t<closeMin;t+=SLOT_MINUTES){
-    const slotStart=t, slotEnd=t+SLOT_MINUTES;
+    // 表示の刻みは20分だが、「空いている」と言えるのは対応時間40分をまるまる確保できる場合のみ。
+    // 20分だけ空いていても実際には対応できないため、判定は常に40分ぶんの枠で行う。
+    const slotStart=t, apptEnd=t+APPOINTMENT_DURATION;
     const staffStatus=staffList.map(s=>{
+      if(apptEnd>closeMin) return {staff:s,available:false}; // 閉店までに40分確保できない
       const laneCount=s.laneCount||1;
       const overlapCount=activeBookings.filter(b=>{
         if(b.staff_id!==s.id) return false;
         const bs=toMinutes(b.time||"00:00");
         const be=bs+(b.duration||40); // 対応時間は40分で統一（duration未設定の既存データのみ40分と仮定）
-        return bs<slotEnd&&slotStart<be;
+        return bs<apptEnd&&slotStart<be;
       }).length;
       return {staff:s,available:overlapCount<laneCount};
     });
