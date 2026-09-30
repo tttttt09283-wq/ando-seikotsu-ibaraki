@@ -458,6 +458,22 @@ async function findLinkedLineUserId(phoneRaw){
   }catch(e){}
   return null;
 }
+// 予約の追加・変更・キャンセルをスタッフのLINEグループへ自動共有するためのヘルパー。
+// index_live.html（管理画面）と同じ仕組み。失敗しても会計・予約保存自体には影響させない。
+async function notifyStaffGroup(message){
+  try{
+    const groups=await sbGet("line_groups","?select=group_id&limit=1");
+    const groupId=Array.isArray(groups)&&groups[0]?groups[0].group_id:null;
+    if(!groupId) return;
+    await fetch("/api/notify-line-group",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({groupId,message}),
+    });
+  }catch(e){
+    console.error("スタッフLINEグループへの通知に失敗しました：",e);
+  }
+}
 async function saveNextBookings(){
   if(state.savingBookings) return;
   const valid = state.nextBookings.filter(nb=>nb.date&&nb.time);
@@ -470,6 +486,9 @@ async function saveNextBookings(){
     if(!lineUserId) lineUserId=await findLinkedLineUserId(booking.phone);
     for(const nb of valid){
       await sbPost("bookings",{patient_name: booking.patient_name,phone: booking.phone,staff_id: nb.staffId,date: nb.date,time: nb.time,menu: nb.menu,insurance_rate: nb.insRate,line_notify: !!lineUserId,line_user_id: lineUserId,reminded: false});
+      if(!booking.is_training){
+        notifyStaffGroup(`🆕 新規予約（次回予約）\n${booking.patient_name||""} 様\n${nb.date} ${nb.time}\n担当：${STAFF[nb.staffId]||"担当未定"}`);
+      }
     }
     state.bookingsSaved=true;
   }catch(e){alert("予約保存エラー："+e.message);}
@@ -698,16 +717,39 @@ function printReceiptViaWebPRNT(){
     const builder=new StarWebPrintBuilder();
     let request="";
     request+=builder.createInitializationElement();
-    buildReceiptText().forEach(l=>{
-      request+=builder.createAlignmentElement({position:l.center?"center":"left"});
+    // 1行ごとに配置指定＋テキスト要素を別々に作ると、20行以上のレシートでは
+    // XML要素数がかなり多くなる（USB経由だとドロア開放のような小さい命令は通るのに、
+    // 要素数・データ量の多いレシート印刷だけ応答なしになる場合の原因になり得るため）、
+    // 同じ書式（配置・太字・サイズ）が連続する行はまとめて1つのテキスト要素に統合し、
+    // 送信するXML要素の数をできるだけ減らす。
+    const receiptLines=buildReceiptText();
+    let li=0;
+    while(li<receiptLines.length){
+      const l=receiptLines[li];
+      const align=l.center?"center":"left";
+      const emphasis=l.bold?"true":"false";
+      const width=l.width||1;
+      let buf=l.text;
+      let lj=li+1;
+      while(lj<receiptLines.length){
+        const nl=receiptLines[lj];
+        const nAlign=nl.center?"center":"left";
+        const nEmphasis=nl.bold?"true":"false";
+        const nWidth=nl.width||1;
+        if(nAlign!==align||nEmphasis!==emphasis||nWidth!==width) break;
+        buf+="\n"+nl.text;
+        lj++;
+      }
+      request+=builder.createAlignmentElement({position:align});
       request+=builder.createTextElement({
-        data:l.text+"\n",
-        emphasis:l.bold?"true":"false",
-        width:l.width||1,
-        height:l.width||1,
+        data:buf+"\n",
+        emphasis:emphasis,
+        width:width,
+        height:width,
         codepage:"shift_jis",
       });
-    });
+      li=lj;
+    }
     request+=builder.createFeedElement({line:3});
     request+=builder.createCutPaperElement({feed:true});
 
@@ -715,7 +757,7 @@ function printReceiptViaWebPRNT(){
     // onReceive/onErrorのどちらも一定時間内に呼ばれなければ、通信自体が届いていない可能性を知らせる
     let settled=false;
     const stuckTimer=setTimeout(()=>{
-      if(!settled) showPrintToast("⏳ 応答待ちです（プリンターの電源・Bluetooth接続をご確認ください）");
+      if(!settled) showPrintToast("⏳ 応答待ちです（プリンターの電源・USB接続をご確認ください）");
     },8000);
     // SDK内部では、UserAgentに"WebPRNTSupportHTTPS"が含まれない場合にhttps→httpへ自動変換される仕組みになっているが、
     // 何らかの理由でこの自動変換が効かずhttpsのまま（自己署名証明書が信頼されておらず）通信が無応答のまま
