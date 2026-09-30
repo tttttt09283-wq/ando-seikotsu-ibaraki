@@ -50,8 +50,7 @@
   .avail-count.none{background:#fef2f2;color:#dc2626;}
   .avail-chips{flex:1;display:flex;flex-wrap:wrap;gap:4px;min-width:0;}
   .avail-chip{flex-shrink:0;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#fff;}
-  .avail-chip.booked{background:#e2e8f0 !important;color:#94a3b8;position:relative;}
-  .avail-chip.booked::after{content:"";position:absolute;width:22px;height:2px;background:#94a3b8;transform:rotate(-45deg);}
+  .avail-chip.booked{background:#f1f5f9 !important;color:#dc2626;font-size:12px;}
   .avail-legend{display:flex;align-items:center;gap:14px;padding:8px 14px 2px;font-size:11px;color:#64748b;}
   .avail-legend span{display:flex;align-items:center;gap:5px;}
   .avail-legend .dot{width:12px;height:12px;border-radius:50%;}
@@ -117,6 +116,7 @@
   .modal-sub{font-size:12px;color:#64748b;margin-top:2px;margin-bottom:14px;}
   .field{margin-bottom:12px;}
   .field label{display:block;font-size:11.5px;font-weight:700;color:#64748b;margin-bottom:5px;}
+  .field-note{font-size:12px;color:#64748b;background:#f1f5f9;border-radius:9px;padding:9px 11px;margin-bottom:14px;}
   .field input,.field select{width:100%;padding:11px 12px;border-radius:10px;border:1.5px solid #e2e8f0;font-size:15px;background:#fff;-webkit-appearance:none;}
   .field-row{display:flex;gap:10px;}
   .field-row .field{flex:1;}
@@ -229,7 +229,7 @@ function openBookingModal(prefill){
     name: "",
     phone: "",
     menu: "",
-    duration: 30,
+    duration: 40,
     saving: false,
     error: null,
     ...(prefill||{}),
@@ -263,13 +263,7 @@ function renderModal(){
           </select>
         </div>
       </div>
-      <div class="field"><label>時間の長さ</label>
-        <select id="modal-duration">
-          <option value="30" ${m.duration===30?"selected":""}>30分</option>
-          <option value="60" ${m.duration===60?"selected":""}>60分</option>
-          <option value="90" ${m.duration===90?"selected":""}>90分</option>
-        </select>
-      </div>
+      <div class="field-note">対応時間は40分で統一しています</div>
       ${m.error?`<div class="modal-error">${m.error}</div>`:""}
       <div class="modal-actions">
         <button id="modal-cancel-btn" class="modal-btn ghost" ${m.saving?"disabled":""}>キャンセル</button>
@@ -287,7 +281,7 @@ async function saveBooking(){
   const menu=(document.getElementById("modal-menu").value||"").trim();
   const time=document.getElementById("modal-time").value;
   const staffId=parseInt(document.getElementById("modal-staff").value);
-  const duration=parseInt(document.getElementById("modal-duration").value)||30;
+  const duration=40; // 対応時間は40分で統一
   if(!name){ state.bookingModal={...m,name,phone,menu,time,staffId,duration,error:"お名前を入力してください"}; render(); return; }
   if(!time){ state.bookingModal={...m,name,phone,menu,time,staffId,duration,error:"時間を選択してください"}; render(); return; }
   if(!staffId){ state.bookingModal={...m,name,phone,menu,time,staffId,duration,error:"担当を選択してください"}; render(); return; }
@@ -447,7 +441,7 @@ function computeAvailSlots(){
       const overlapCount=activeBookings.filter(b=>{
         if(b.staff_id!==s.id) return false;
         const bs=toMinutes(b.time||"00:00");
-        const be=bs+(b.duration||30);
+        const be=bs+(b.duration||40); // 対応時間は40分で統一（duration未設定の既存データのみ40分と仮定）
         return bs<slotEnd&&slotStart<be;
       }).length;
       return {staff:s,available:overlapCount<laneCount};
@@ -471,7 +465,7 @@ function renderAvailBody(){
   const rows=slots.map(s=>{
     const ratio=s.total>0?s.availCount/s.total:0;
     const cls=s.availCount===0?"none":(ratio<0.34?"low":"ok");
-    const chips=s.staffStatus.map(x=>`<div class="avail-chip ${x.available?"":"booked"}" ${x.available?`data-staff="${x.staff.id}" data-time="${s.time}"`:""} style="background:${x.available?x.staff.color:"#e2e8f0"};" title="${x.staff.name}${x.available?"（タップして予約追加）":""}">${x.staff.initial||x.staff.name.charAt(0)}</div>`).join("");
+    const chips=s.staffStatus.map(x=>`<div class="avail-chip ${x.available?"":"booked"}" ${x.available?`data-staff="${x.staff.id}" data-time="${s.time}"`:""} style="background:${x.available?x.staff.color:"#f1f5f9"};" title="${x.staff.name}${x.available?"（タップして予約追加）":"（対応不可）"}">${x.available?(x.staff.initial||x.staff.name.charAt(0)):"❌"}</div>`).join("");
     return `
     <div class="avail-row ${s.availCount===0?"full":""}">
       <div class="avail-time">${s.time}</div>
