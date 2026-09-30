@@ -811,6 +811,48 @@ function openCashDrawer(manual){
     showPrintToast("❌ ドロア開放処理でエラーが発生しました："+e.message);
   }
 }
+// ===== USB印刷の切り分け用：最小限のテキストだけを印刷してみる =====
+// ドロア開放（小さい命令）は通るのに領収書（長い・日本語・shift_jis）が応答なしになる場合、
+// どの要素が原因かを絞り込むための一時的な診断ボタン。
+// TEST1〜4を順番に試し、どこで止まるかで原因を切り分ける。
+function printMinimalTest(){
+  const isInWebPRNTApp=isStarWebPRNTBrowserApp();
+  if(!isInWebPRNTApp){
+    showPrintToast("❌ Star webPRNT Browserアプリ内でのみ利用できます");
+    return;
+  }
+  try{
+    const builder=new StarWebPrintBuilder();
+    let request="";
+    request+=builder.createInitializationElement();
+    // TEST1：英数字だけ・改行なし・書式指定なしの最小テキスト（shift_jisコードページも指定しない）
+    request+=builder.createTextElement({data:"TEST1 HELLO\n"});
+    // ここでcut/feedを入れず、まず本当にテキストが1行でも印字されるかだけを見る
+    request+=builder.createFeedElement({line:2});
+
+    showPrintToast("🧪 テスト印刷を送信中…");
+    let settled=false;
+    const stuckTimer=setTimeout(()=>{
+      if(!settled) showPrintToast("⏳ テスト印刷も応答待ちです（電源・USB接続をご確認ください）");
+    },8000);
+    const trader=new StarWebPrintTrader({url:"http://localhost:8001/StarWebPRNT/SendMessage"});
+    trader.onReceive=function(response){
+      settled=true;clearTimeout(stuckTimer);
+      if(response.traderSuccess==="true"){
+        showPrintToast("🧪 テスト印刷 成功（TEST1が印字されたか確認してください）");
+      }else{
+        showPrintToast("❌ テスト印刷 失敗（プリンターの状態をご確認ください）");
+      }
+    };
+    trader.onError=function(response){
+      settled=true;clearTimeout(stuckTimer);
+      showPrintToast("❌ テスト印刷エラー："+(response.responseText||"接続できませんでした"));
+    };
+    trader.sendMessage({request:request});
+  }catch(e){
+    showPrintToast("❌ テスト印刷処理でエラーが発生しました："+e.message);
+  }
+}
 function showPrintToast(msg){
   const el=document.createElement("div");
   el.textContent=msg;
@@ -1175,6 +1217,7 @@ function render(){
         <div class="card-header blue" style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
           <span>👤 ${booking.patient_name} 様　${booking.date} ${booking.time}　${STAFF[booking.staff_id]||""}先生　${visitCount}回目来院</span>
           <button onclick="openCashDrawer(true)" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:white;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">🗄️ レジを開ける</button>
+          <button onclick="printMinimalTest()" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:white;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">🧪 テスト印刷</button>
         </div>
       </div>
       <div class="main-grid">
