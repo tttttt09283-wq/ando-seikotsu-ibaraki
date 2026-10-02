@@ -5179,7 +5179,7 @@ function StoreMgmtPanel(){
 }
 
 // ===== 患者管理パネル =====
-function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,selStoreId}){
+function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,selStoreId,setAllBookings,allPayments,setAllPayments}){
   const [patientQ,setPatientQ]=React.useState("");
   const [selPatient,setSelPatient]=React.useState(null);
   const [activeTab,setActiveTab]=React.useState("intake");
@@ -5187,6 +5187,7 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
   const [loadingDetail,setLoadingDetail]=React.useState(false);
   const [editMode,setEditMode]=React.useState(false);
   const [editForm,setEditForm]=React.useState({name:"",phone:"",address:""});
+  const [deleting,setDeleting]=React.useState(false);
 
   const GOJUON=[
     {label:"あ行",chars:["あ","い","う","え","お","ア","イ","ウ","エ","オ"]},
@@ -5279,6 +5280,37 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
       setEditMode(false);
       selectPatient(editForm.name);
     }catch(e){alert("更新に失敗しました");}
+  }
+
+  // ===== 誤って二重登録してしまった患者を削除する =====
+  // 「その名前の予約」をすべて（過去・未来を問わず）削除する。元に戻せないため、
+  // 対象の予約を確認画面で全件リストしてから実行する。紐づく会計（payments）も一緒に削除する。
+  async function deleteSelPatient(){
+    if(!selPatient||selBks.length===0) return;
+    const confirmMsg=
+      `「${selPatient}」の予約を全件削除します（過去・未来とも、合計${selBks.length}件）。\n`+
+      `この操作は元に戻せません。\n\n`+
+      selBks.slice(0,10).map(b=>`・${b.date} ${b.time}`).join("\n")+
+      (selBks.length>10?`\n…他${selBks.length-10}件`:"")+
+      `\n\n本当に削除しますか？`;
+    if(!window.confirm(confirmMsg)) return;
+    if(!window.confirm(`最終確認：「${selPatient}」の${selBks.length}件を完全に削除します。よろしいですか？`)) return;
+    setDeleting(true);
+    try{
+      const ids=selBks.map(b=>b.id);
+      const idSet=new Set(ids);
+      const relatedPayments=(allPayments||[]).filter(p=>idSet.has(p.booking_id));
+      for(const p of relatedPayments){ await sb.delete("payments",p.id).catch(()=>{}); }
+      for(const id of ids){ await sb.delete("bookings",id).catch(()=>{}); }
+      if(typeof setAllBookings==="function") setAllBookings(prev=>prev.filter(b=>!idSet.has(b.id)));
+      if(typeof setAllPayments==="function") setAllPayments(prev=>prev.filter(p=>!idSet.has(p.booking_id)));
+      alert(`「${selPatient}」を削除しました`);
+      setSelPatient(null);
+      setEditMode(false);
+    }catch(e){
+      alert("削除中にエラーが発生しました："+(e.message||"不明なエラー"));
+    }
+    setDeleting(false);
   }
 
   function resultBadge(r){
@@ -5406,6 +5438,11 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
                   <button onClick={openEdit}
                     style={{padding:"7px 12px",background:"rgba(255,255,255,.2)",color:"white",border:"1.5px solid rgba(255,255,255,.4)",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
                     ✏️ 情報編集
+                  </button>
+                  <button onClick={deleteSelPatient} disabled={deleting}
+                    title="誤って二重登録してしまった場合など、この名前の予約を全件削除します"
+                    style={{padding:"7px 12px",background:"rgba(220,38,38,.25)",color:"white",border:"1.5px solid rgba(248,113,113,.6)",borderRadius:8,fontSize:12,fontWeight:700,cursor:deleting?"default":"pointer",fontFamily:"inherit",whiteSpace:"nowrap",opacity:deleting?.6:1}}>
+                    {deleting?"削除中…":"🗑️ この患者を削除"}
                   </button>
                   <button onClick={()=>window.open(`karte.html?patient=${encodeURIComponent(selPatient)}`,"_blank")}
                     style={{padding:"7px 12px",background:"rgba(255,255,255,.2)",color:"white",border:"1.5px solid rgba(255,255,255,.4)",borderRadius:8,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
@@ -9798,14 +9835,22 @@ function Dashboard({user,onLogout}){
                                           setDragBooking(b);
                                         }}
                                         onClick={e=>{e.stopPropagation();}}
-                                        style={{position:"absolute",left:x,top:lane*laneH+3,height:laneH-6,width:Math.max(liveW-2,46),background:isPaid?"linear-gradient(135deg,#9ca3af,#6b7280)":isNewPatient?"linear-gradient(135deg,#f97316,#ea580c)":`linear-gradient(135deg,${staff.color},${staff.color}bb)`,borderRadius:6,padding:"2px 5px",cursor:isReadOnlyReal?"pointer":"grab",touchAction:"none",boxShadow:isBeingResized?"0 0 0 2px #2563eb,0 2px 8px rgba(37,99,235,.5)":sameDay?"0 0 0 2px #eab308,0 2px 6px rgba(234,179,8,.5)":isCheckedIn?"0 0 0 2px #facc15,0 2px 6px rgba(0,0,0,.3)":isNewPatient?"0 2px 8px rgba(249,115,22,.6)":(isPaid?"0 1px 3px rgba(0,0,0,.2)":`0 2px 6px ${staff.color}44`),display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden",zIndex:isBeingResized?4:isNewPatient?3:2,opacity:isBeingDragged?.35:isReadOnlyReal?.6:isPaid?.75:1,filter:isReadOnlyReal?"grayscale(35%)":"none"}}>
+                                        style={{position:"absolute",left:x,top:lane*laneH+3,height:laneH-6,width:Math.max(liveW-2,64),background:isPaid?"linear-gradient(135deg,#9ca3af,#6b7280)":isNewPatient?"linear-gradient(135deg,#f97316,#ea580c)":`linear-gradient(135deg,${staff.color},${staff.color}bb)`,borderRadius:6,padding:"2px 5px",cursor:isReadOnlyReal?"pointer":"grab",touchAction:"none",boxShadow:isBeingResized?"0 0 0 2px #2563eb,0 2px 8px rgba(37,99,235,.5)":sameDay?"0 0 0 2px #eab308,0 2px 6px rgba(234,179,8,.5)":isCheckedIn?"0 0 0 2px #facc15,0 2px 6px rgba(0,0,0,.3)":isNewPatient?"0 2px 8px rgba(249,115,22,.6)":(isPaid?"0 1px 3px rgba(0,0,0,.2)":`0 2px 6px ${staff.color}44`),display:"flex",flexDirection:"row",alignItems:"center",gap:4,overflow:"hidden",zIndex:isBeingResized?4:isNewPatient?3:2,opacity:isBeingDragged?.35:isReadOnlyReal?.6:isPaid?.75:1,filter:isReadOnlyReal?"grayscale(35%)":"none"}}>
                                         {isReadOnlyReal&&<div style={{position:"absolute",top:-1,right:-1,background:"#fff",color:"#475569",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"0 6px 0 4px",lineHeight:1,letterSpacing:0}}>🔒本番</div>}
                                         {!isReadOnlyReal&&isNewPatient&&<div style={{position:"absolute",top:-1,right:-1,background:"#fff",color:"#ea580c",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"0 6px 0 4px",lineHeight:1,letterSpacing:0}}>NEW</div>}
                                         {sameDay&&<div style={{position:"absolute",top:-1,left:-1,background:"#fff",color:"#a16207",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"6px 0 4px 0",lineHeight:1,letterSpacing:0}}>⚡当日</div>}
                                         {b.memo&&<div style={{position:"absolute",bottom:-1,left:-1,background:"#fff",color:"#1e3a5f",fontSize:8,fontWeight:900,padding:"0 3px",borderRadius:"6px 4px 0 0",lineHeight:1.4}}>📝</div>}
                                         {b.booked_via_line&&<div style={{position:"absolute",bottom:-1,right:-1,background:"#06C755",color:"white",fontSize:7,fontWeight:900,padding:"1px 3px",borderRadius:"4px 0 4px 0",lineHeight:1}}>LINE</div>}
-                                        <div style={{fontWeight:800,fontSize:11,lineHeight:1.15,color:"white",textShadow:"0 1px 2px rgba(0,0,0,.55)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"normal",wordBreak:"break-all",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",letterSpacing:0.2}}>{isCheckedIn?"📷":""}{isPaid?"✓ ":""}{b.patient_name}</div>
-                                        <div style={{fontSize:10,color:"rgba(255,255,255,.95)",textShadow:"0 1px 2px rgba(0,0,0,.45)",fontWeight:700}}>{b.time}{cnt>1&&<span style={{marginLeft:2,background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}{isBeingResized&&<span style={{marginLeft:2,fontWeight:800}}>{Math.max(10,(b.duration||DURATION[b.menu]||30)+Math.round(resizeDeltaPx/CELL_W)*10)}分</span>}</div>
+                                        {/* 時間の列：名前と重ねず、左側に縦のラインで区切って独立表示する */}
+                                        <div style={{flex:"0 0 auto",display:"flex",flexDirection:"column",alignItems:"flex-start",justifyContent:"center",paddingRight:4,borderRight:"1px solid rgba(255,255,255,.4)",alignSelf:"stretch"}}>
+                                          <div style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,.98)",textShadow:"0 1px 2px rgba(0,0,0,.5)",whiteSpace:"nowrap",lineHeight:1.1}}>{b.time}</div>
+                                          {(cnt>1||isBeingResized)&&<div style={{fontSize:8,fontWeight:700,color:"rgba(255,255,255,.9)",whiteSpace:"nowrap",lineHeight:1.1}}>
+                                            {cnt>1&&<span style={{background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}
+                                            {isBeingResized&&<span style={{marginLeft:2}}>{Math.max(10,(b.duration||DURATION[b.menu]||30)+Math.round(resizeDeltaPx/CELL_W)*10)}分</span>}
+                                          </div>}
+                                        </div>
+                                        {/* 名前：時間の列とは別の領域に、最大2行で表示する */}
+                                        <div style={{flex:"1 1 auto",minWidth:0,fontWeight:800,fontSize:11,lineHeight:1.15,color:"white",textShadow:"0 1px 2px rgba(0,0,0,.55)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"normal",wordBreak:"break-all",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",letterSpacing:0.2}}>{isCheckedIn?"📷":""}{isPaid?"✓ ":""}{b.patient_name}</div>
                                         {/* 右端のリサイズハンドル：ここをドラッグすると対応時間を伸縮できる（本番予約は閲覧のみのため表示しない） */}
                                         {!isReadOnlyReal&&(
                                         <div
@@ -9843,7 +9888,7 @@ function Dashboard({user,onLogout}){
                          {view==="checkin"&&<CheckInPanel bookings={bookings} onOpenPatient={(patientName)=>{setView("patients");}} onCheckedIn={fetchAll} onGoToCalendar={()=>setView("calendar")} weeklyShifts={weeklyShifts} dateOverrides={dateOverrides} storeStaff={storeStaff} getLaneCount={getLaneCount}/>}
 
           {/* 患者管理 */}
-          {view==="patients"&&<PatientsPanel bookings={bookings} setView={setView} setForm={setForm} setEditId={setEditId} setConflict={setConflict} todayStr={todayStr} selStoreId={selStoreId}/>}
+          {view==="patients"&&<PatientsPanel bookings={bookings} setView={setView} setForm={setForm} setEditId={setEditId} setConflict={setConflict} todayStr={todayStr} selStoreId={selStoreId} setAllBookings={setAllBookings} allPayments={allPayments} setAllPayments={setAllPayments}/>}
 
           {/* サマリー */}
           {view==="stats"&&<StatsPanel bookings={bookings} payments={payments} todayStr={todayStr} stores={stores}/>}
