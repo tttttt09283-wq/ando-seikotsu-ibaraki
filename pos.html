@@ -249,7 +249,7 @@ const BOOKING_JIFEE_MENU_PRICE={
   "アジャスト・超音波":1100,"鍼治療・ハイボルテージ":1650,"手技療法（施術料）":3600,"カルテ管理料":500,"検査料":1500,
   "アジャスト・超音波 5回券":4400,"アジャスト・超音波 11回券":8800,"アジャスト・超音波 23回券":17600,
   "鍼治療・ハイボルテージ 5回券":6000,"鍼治療・ハイボルテージ 11回券":12000,"鍼治療・ハイボルテージ 23回券":24000,
-  "姿勢矯正・骨盤矯正・ストレッチ・鍼治療 8回券":28200,"姿勢矯正・骨盤矯正・ストレッチ・鍼治療 16回券":54600,"姿勢矯正・骨盤矯正・ストレッチ・鍼治療 24回券":79200,
+  "姿勢矯正・骨盤矯正・ストレッチ・鍼治療 8回券":26400,"姿勢矯正・骨盤矯正・ストレッチ・鍼治療 16回券":50400,"姿勢矯正・骨盤矯正・ストレッチ・鍼治療 24回券":72000,
   "フリーパス 1ヶ月":13200,"フリーパス 3ヶ月":38000,"フリーパス 6ヶ月":72600,"フリーパス 12ヶ月":132000,
 };
 
@@ -276,9 +276,9 @@ const JIFEE_CATEGORIES=[
       {label:"鍼治療・ハイボルテージ 5回券",amount:6000},
       {label:"鍼治療・ハイボルテージ 11回券",amount:12000},
       {label:"鍼治療・ハイボルテージ 23回券",amount:24000},
-      {label:"姿勢矯正等 8回券",amount:28200},
-      {label:"姿勢矯正等 16回券",amount:54600},
-      {label:"姿勢矯正等 24回券",amount:79200},
+      {label:"姿勢矯正等 8回券",amount:26400},
+      {label:"姿勢矯正等 16回券",amount:50400},
+      {label:"姿勢矯正等 24回券",amount:72000},
     ]
   },
   {
@@ -345,10 +345,13 @@ function isPreOpenPeriod(){ const d=todayStr(); return d>=PRE_OPEN_START&&d<=PRE
 // （プレオープン中は単発メニューはほぼ使わない想定のため、最後に回す）
 function getJifeeCategories(){
   if(!isPreOpenPeriod()) return JIFEE_CATEGORIES;
+  // 10%OFF後の端数は、実際にチラシに掲載している金額（100円単位・切り上げ）に合わせる。
+  // 例：フリーパス6ヶ月 72,600円 → 10%OFFの計算上は65,340円だが、チラシ上は65,400円。
+  // 10円単位で四捨五入していたため、これまでこのズレが生じていた。
   const discount10=cat=>({
     ...cat,
     label:cat.label+"（10%OFF）",
-    items:cat.items.map(it=>({label:it.label,amount:Math.round(it.amount*0.9/10)*10})),
+    items:cat.items.map(it=>({label:it.label,amount:Math.ceil(it.amount*0.9/100)*100})),
   });
   const kaisu=JIFEE_CATEGORIES.find(c=>c.id==="kaisu");
   const fp=JIFEE_CATEGORIES.find(c=>c.id==="fp");
