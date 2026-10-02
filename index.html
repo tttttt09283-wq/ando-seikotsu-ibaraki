@@ -5188,6 +5188,9 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
   const [editMode,setEditMode]=React.useState(false);
   const [editForm,setEditForm]=React.useState({name:"",phone:"",address:""});
   const [deleting,setDeleting]=React.useState(false);
+  const [editingPaymentId,setEditingPaymentId]=React.useState(null);
+  const [editingPaymentAmount,setEditingPaymentAmount]=React.useState("");
+  const [savingPayment,setSavingPayment]=React.useState(false);
 
   const GOJUON=[
     {label:"あ行",chars:["あ","い","う","え","お","ア","イ","ウ","エ","オ"]},
@@ -5311,6 +5314,31 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
       alert("削除中にエラーが発生しました："+(e.message||"不明なエラー"));
     }
     setDeleting(false);
+  }
+
+  // ===== 購入済みの会計金額を修正する（金額の入力間違いなどを後から訂正） =====
+  function startEditPayment(p){
+    setEditingPaymentId(p.id);
+    setEditingPaymentAmount(String(p.total_amount||0));
+  }
+  function cancelEditPayment(){
+    setEditingPaymentId(null);
+    setEditingPaymentAmount("");
+  }
+  async function saveEditPayment(p){
+    const newAmount=parseInt(editingPaymentAmount,10);
+    if(isNaN(newAmount)||newAmount<0){ alert("正しい金額を入力してください"); return; }
+    if(newAmount===p.total_amount){ cancelEditPayment(); return; }
+    if(!window.confirm(`${p.patient_name}様　${p.payment_date}の会計金額を\n${(p.total_amount||0).toLocaleString()}円 → ${newAmount.toLocaleString()}円\nに変更します。よろしいですか？`)) return;
+    setSavingPayment(true);
+    try{
+      await sb.update("payments",p.id,{total_amount:newAmount});
+      if(typeof setAllPayments==="function") setAllPayments(prev=>prev.map(x=>x.id===p.id?{...x,total_amount:newAmount}:x));
+      cancelEditPayment();
+    }catch(e){
+      alert("金額の変更に失敗しました："+(e.message||"不明なエラー"));
+    }
+    setSavingPayment(false);
   }
 
   function resultBadge(r){
@@ -5594,6 +5622,8 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
                     const staff=STAFF_ACCOUNTS.find(s=>s.id===b.staff_id)||{name:"不明",color:"#888",initial:"？"};
                     const treat=treatments.find(t=>t.booking_id===b.id);
                     const isFirst=i===selBks.length-1;
+                    const pay=(allPayments||[]).find(p=>p.booking_id===b.id);
+                    const isEditingThis=editingPaymentId===(pay&&pay.id);
                     return(
                       <div key={b.id} style={{display:"flex",gap:10,padding:"10px 0",borderBottom:"1px solid #f1f5f9",opacity:b.cancelled?0.7:1}}>
                         <div style={{width:8,height:8,borderRadius:"50%",background:b.cancelled?"#ef4444":(treat?"#059669":"#e2e8f0"),flexShrink:0,marginTop:5}}/>
@@ -5614,6 +5644,35 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
                               {treat&&<div style={{display:"flex",gap:4,marginTop:3,flexWrap:"wrap"}}>{resultBadge(treat.result)}</div>}
                               {!treat&&<div style={{fontSize:11,color:"#d1d5db",marginTop:2}}>施術記録なし</div>}
                             </>
+                          )}
+                          {pay&&(
+                            <div style={{display:"flex",alignItems:"center",gap:6,marginTop:4,background:"#f8fafc",borderRadius:6,padding:"4px 7px"}}>
+                              <span style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>💰 会計</span>
+                              {isEditingThis?(
+                                <>
+                                  <input type="number" value={editingPaymentAmount} onChange={e=>setEditingPaymentAmount(e.target.value)}
+                                    style={{width:80,fontSize:12,fontWeight:700,padding:"2px 5px",borderRadius:5,border:"1.5px solid #7c3aed"}}/>
+                                  <span style={{fontSize:11,color:"#64748b"}}>円</span>
+                                  <button onClick={()=>saveEditPayment(pay)} disabled={savingPayment}
+                                    style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:5,border:"none",background:"#059669",color:"white",cursor:savingPayment?"default":"pointer"}}>
+                                    {savingPayment?"保存中…":"保存"}
+                                  </button>
+                                  <button onClick={cancelEditPayment} disabled={savingPayment}
+                                    style={{fontSize:10,fontWeight:700,padding:"3px 8px",borderRadius:5,border:"1px solid #e2e8f0",background:"white",color:"#64748b",cursor:"pointer"}}>
+                                    取消
+                                  </button>
+                                </>
+                              ):(
+                                <>
+                                  <span style={{fontSize:12,fontWeight:800,color:"#1e293b"}}>{(pay.total_amount||0).toLocaleString()}円</span>
+                                  <span style={{fontSize:10,color:"#9ca3af"}}>（{pay.payment_method||""}）</span>
+                                  <button onClick={()=>startEditPayment(pay)} title="金額の入力間違いなどをあとから修正します"
+                                    style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:5,border:"1px solid #ddd6fe",background:"#f5f3ff",color:"#7c3aed",cursor:"pointer",marginLeft:2}}>
+                                    ✏️ 金額修正
+                                  </button>
+                                </>
+                              )}
+                            </div>
                           )}
                         </div>
                       </div>
