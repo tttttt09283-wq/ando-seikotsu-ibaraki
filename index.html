@@ -9923,7 +9923,15 @@ function Dashboard({user,onLogout}){
                                         {sameDay&&<div style={{position:"absolute",top:-1,left:-1,background:"#fff",color:"#a16207",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"6px 0 4px 0",lineHeight:1,letterSpacing:0}}>⚡当日</div>}
                                         {b.memo&&<div style={{position:"absolute",bottom:-1,left:-1,background:"#fff",color:"#1e3a5f",fontSize:8,fontWeight:900,padding:"0 3px",borderRadius:"6px 4px 0 0",lineHeight:1.4}}>📝</div>}
                                         {b.booked_via_line&&<div style={{position:"absolute",bottom:-1,right:-1,background:"#06C755",color:"white",fontSize:7,fontWeight:900,padding:"1px 3px",borderRadius:"4px 0 4px 0",lineHeight:1}}>LINE</div>}
-                                        <div style={{fontWeight:800,fontSize:12,color:"white",textShadow:"0 1px 2px rgba(0,0,0,.55)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",letterSpacing:0.2}}>{isCheckedIn?"📷":""}{isPaid?"✓ ":""}{b.patient_name}</div>
+                                        <div
+                                          onPointerDown={e=>{e.stopPropagation();}}
+                                          onClick={e=>{
+                                            e.stopPropagation();
+                                            setHistoryPatient(b.patient_name);
+                                            setView("patients");
+                                          }}
+                                          title="タップして患者情報を見る"
+                                          style={{fontWeight:800,fontSize:12,color:"white",textShadow:"0 1px 2px rgba(0,0,0,.55)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",letterSpacing:0.2,textDecoration:"underline",textDecorationColor:"rgba(255,255,255,.35)",textUnderlineOffset:2,cursor:"pointer"}}>{isCheckedIn?"📷":""}{isPaid?"✓ ":""}{b.patient_name}</div>
                                         <div style={{fontSize:10,color:"rgba(255,255,255,.95)",textShadow:"0 1px 2px rgba(0,0,0,.45)",fontWeight:700}}>{b.time}{cnt>1&&<span style={{marginLeft:2,background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}{isBeingResized&&<span style={{marginLeft:2,fontWeight:800}}>{Math.max(10,(b.duration||DURATION[b.menu]||30)+Math.round(resizeDeltaPx/CELL_W)*10)}分</span>}</div>
                                         {/* 右端のリサイズハンドル：ここをドラッグすると対応時間を伸縮できる（本番予約は閲覧のみのため表示しない） */}
                                         {!isReadOnlyReal&&(
