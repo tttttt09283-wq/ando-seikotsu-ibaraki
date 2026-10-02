@@ -9151,9 +9151,13 @@ function Dashboard({user,onLogout}){
   const DRAG_TOTAL_SLOTS=66; // 09:00〜20:00を10分刻みにした数（土日祝9-18・平日10-20の両方をカバー。カレンダー表示の時間軸と一致）
   function computeTimeFromRowX(relX,rowWidth){
     const cellW=rowWidth/DRAG_TOTAL_SLOTS;
-    const totalMin=Math.max(0,Math.round(relX/cellW))*10;
+    // 行の端まで（09:00〜20:00の最終枠19:50まで）クランプする。
+    // 以前はここが誤って17時までしか許可しておらず、18時以降に予約を動かそうとすると
+    // 判定上「範囲外」としてnullを返し、見た目は動いた後に元の位置へ戻る（＝全く動かせない）
+    // バグになっていた。
+    const maxMin=DRAG_TOTAL_SLOTS*10-10; // 19:50
+    const totalMin=Math.min(maxMin,Math.max(0,Math.round(relX/cellW)*10));
     const h=9+Math.floor(totalMin/60),m=totalMin%60;
-    if(h<9||h>17) return null;
     return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}`;
   }
     async function rescheduleBooking(booking,newDate,newTime){
@@ -9354,10 +9358,10 @@ function Dashboard({user,onLogout}){
       suppressNextClick();
       const b=resizeBooking;
       const currentDuration=b.duration||DURATION[b.menu]||30;
-      // カレンダー本体のCELL_W計算と同じ式（10分刻み・54枠分）をここでも再現する
+      // カレンダー本体のCELL_W計算と同じ式（10分刻み・DRAG_TOTAL_SLOTS=66枠分＝09:00〜20:00）をここでも再現する
       const headerW=100;
       const screenW=Math.max(window.innerWidth-130-48,600);
-      const cellW=Math.max(Math.floor((screenW-headerW)/54),12);
+      const cellW=Math.max(Math.floor((screenW-headerW)/DRAG_TOTAL_SLOTS),12);
       const deltaMin=Math.round(resizeRef.current.deltaPx/cellW)*10;
       attemptResizeBooking(b,currentDuration+deltaMin);
       setResizeBooking(null);
@@ -9390,7 +9394,7 @@ function Dashboard({user,onLogout}){
       const currentDuration=br.duration||10;
       const headerW=100;
       const screenW=Math.max(window.innerWidth-130-48,600);
-      const cellW=Math.max(Math.floor((screenW-headerW)/54),12);
+      const cellW=Math.max(Math.floor((screenW-headerW)/DRAG_TOTAL_SLOTS),12);
       const deltaMin=Math.round(resizeRef.current.deltaPx/cellW)*10;
       attemptResizeBreak(br,currentDuration+deltaMin);
       setResizeBreak(null);
