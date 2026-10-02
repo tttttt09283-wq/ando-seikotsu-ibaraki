@@ -1176,8 +1176,8 @@ async function save(){
           is_training:!!booking.is_training,
         });
       }
-      // FPの判定
-      const fpMatch=item.label.match(/FP\s*(\d+)ヶ月/);
+      // FPの判定（自費項目ボタンのラベルは「フリーパス 3ヶ月」のような表記のため、FP表記とフリーパス表記の両方に対応する）
+      const fpMatch=item.label.match(/(?:FP|フリーパス)\s*(\d+)\s*ヶ月/);
       if(fpMatch){
         const months=parseInt(fpMatch[1]);
         const expiry=new Date(booking.date);expiry.setMonth(expiry.getMonth()+months);
