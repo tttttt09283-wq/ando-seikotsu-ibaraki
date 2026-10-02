@@ -5186,7 +5186,7 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
   const [treatments,setTreatments]=React.useState([]);
   const [loadingDetail,setLoadingDetail]=React.useState(false);
   const [editMode,setEditMode]=React.useState(false);
-  const [editForm,setEditForm]=React.useState({name:"",phone:"",address:""});
+  const [editForm,setEditForm]=React.useState({name:"",phone:"",address:"",karte_no:""});
   const [deleting,setDeleting]=React.useState(false);
   const [editingPaymentId,setEditingPaymentId]=React.useState(null);
   const [editingPaymentAmount,setEditingPaymentAmount]=React.useState("");
@@ -5264,7 +5264,7 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
 
   function openEdit(){
     if(!firstBk) return;
-    setEditForm({name:firstBk.patient_name||"",phone:firstBk.phone||"",address:firstBk.address||""});
+    setEditForm({name:firstBk.patient_name||"",phone:firstBk.phone||"",address:firstBk.address||"",karte_no:firstBk.karte_no||""});
     setEditMode(true);
   }
 
@@ -5276,16 +5276,18 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
     if(!editForm.name.trim()) return;
     if(editableBks.length===0){ alert("更新対象の今後の予約がありません（過去の予約は保護のため変更されません）"); return; }
     const nameChanged=editForm.name.trim()!==selPatient;
+    const karteChanged=(editForm.karte_no||"").trim()!==(firstBk.karte_no||"");
     const confirmMsg=
       `以下の${editableBks.length}件の今後の予約に反映します（過去の予約・カルテは変更されません）。\n\n`+
       editableBks.slice(0,10).map(b=>`・${b.date} ${b.time}`).join("\n")+
       (editableBks.length>10?`\n…他${editableBks.length-10}件`:"")+
       (nameChanged?`\n\n名前を「${selPatient}」→「${editForm.name.trim()}」に変更します。`:"")+
+      (karteChanged?`\n\nカルテ番号を「${firstBk.karte_no||"（未設定）"}」→「${editForm.karte_no.trim()||"（未設定）"}」に変更します。`:"")+
       `\n\nよろしいですか？`;
     if(!window.confirm(confirmMsg)) return;
     try{
       for(const b of editableBks){
-        await sb.update("bookings",b.id,{patient_name:editForm.name,phone:editForm.phone,address:editForm.address});
+        await sb.update("bookings",b.id,{patient_name:editForm.name,phone:editForm.phone,address:editForm.address,karte_no:editForm.karte_no.trim()||null});
       }
       setEditMode(false);
       selectPatient(editForm.name);
@@ -5458,7 +5460,8 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
                 <div>
                   <div style={{fontWeight:800,fontSize:17,color:"white"}}>{selPatient} 様</div>
                   <div style={{fontSize:12,color:"rgba(255,255,255,.7)",marginTop:2}}>
-                    {firstBk?.phone&&<span>📞 {firstBk.phone}</span>}
+                    {firstBk?.karte_no&&<span>🗂 カルテNo.{firstBk.karte_no}</span>}
+                    {firstBk?.phone&&<span style={{marginLeft:firstBk?.karte_no?10:0}}>📞 {firstBk.phone}</span>}
                     {firstBk?.address&&<span style={{marginLeft:10}}>📍 {firstBk.address}</span>}
                     {firstBk?.line_user_id&&<span style={{marginLeft:8,background:"rgba(6,199,85,.3)",borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>LINE連携</span>}
                   </div>
@@ -5522,11 +5525,19 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
                       style={{width:"100%",padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
                   </div>
                 </div>
-                <div style={{marginBottom:12}}>
-                  <label style={{display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4}}>住所</label>
-                  <input value={editForm.address} onChange={e=>setEditForm(p=>({...p,address:e.target.value}))}
-                    placeholder="例：大阪府寝屋川市○○町1-2-3"
-                    style={{width:"100%",padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+                  <div>
+                    <label style={{display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4}}>住所</label>
+                    <input value={editForm.address} onChange={e=>setEditForm(p=>({...p,address:e.target.value}))}
+                      placeholder="例：大阪府寝屋川市○○町1-2-3"
+                      style={{width:"100%",padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
+                  </div>
+                  <div>
+                    <label style={{display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4}}>カルテ番号</label>
+                    <input value={editForm.karte_no} onChange={e=>setEditForm(p=>({...p,karte_no:e.target.value}))}
+                      placeholder="例：K-001"
+                      style={{width:"100%",padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
+                  </div>
                 </div>
                 <div style={{fontSize:11,color:"#92400e",background:"#fef3c7",border:"1px solid #fde68a",borderRadius:8,padding:"8px 10px",marginBottom:12,lineHeight:1.6}}>
                   ⚠️ この内容は「{selPatient}」の<b>今後の予約（{editableBks.length}件）にのみ</b>反映されます。過去の来院記録・カルテは変更されません。
