@@ -9925,12 +9925,12 @@ function Dashboard({user,onLogout}){
                                         {b.booked_via_line&&<div style={{position:"absolute",bottom:-1,right:-1,background:"#06C755",color:"white",fontSize:7,fontWeight:900,padding:"1px 3px",borderRadius:"4px 0 4px 0",lineHeight:1}}>LINE</div>}
                                         <div
                                           onPointerDown={e=>{e.stopPropagation();}}
-                                          onClick={e=>{
+                                          onDoubleClick={e=>{
                                             e.stopPropagation();
                                             setHistoryPatient(b.patient_name);
                                             setView("patients");
                                           }}
-                                          title="タップして患者情報を見る"
+                                          title="ダブルクリックで患者情報を見る"
                                           style={{fontWeight:800,fontSize:12,color:"white",textShadow:"0 1px 2px rgba(0,0,0,.55)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",letterSpacing:0.2,textDecoration:"underline",textDecorationColor:"rgba(255,255,255,.35)",textUnderlineOffset:2,cursor:"pointer"}}>{isCheckedIn?"📷":""}{isPaid?"✓ ":""}{b.patient_name}</div>
                                         {/* 時間などの詳細は、普段は隠して名前だけのすっきり表示にし、バーをタップ（予約ポップアップ表示中）または対応時間をリサイズ中だけ表示する */}
                                         {(isBeingResized||(bookingPopup&&bookingPopup.booking&&bookingPopup.booking.id===b.id))&&(
