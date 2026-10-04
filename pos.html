@@ -737,8 +737,11 @@ function buildEposCommandsFromLines(lines){
   });
   return cmds;
 }
+// レジ画面自体がhttps配信のため、ブラウザ（特にiPad Safari）はhttpのプリンターへの通信を
+// 「安全でない混在コンテンツ」としてブロックしてしまう。これを避けるため、プリンター側でSSL証明書を
+// 発行・信頼設定した上で、httpsで通信する。
 function eposEndpoint(ip){
-  return `http://${ip}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`;
+  return `https://${ip}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`;
 }
 function eposEnvelope(innerCommands){
   return `<?xml version="1.0" encoding="utf-8"?>\n`+
