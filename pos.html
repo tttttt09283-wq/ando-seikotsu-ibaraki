@@ -698,191 +698,120 @@ function openReceiptPrintWindow(){
   doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>領収書</title><style>${receiptCss}</style></head><body>${renderReceipt()}</body></html>`);
   doc.close();
 }
-// 「Star webPRNT Browser」アプリ（App Storeで配布されている専用ブラウザアプリ）は、
-// UserAgentに "StarWebPRNTBrowser/バージョン番号" という文字列を含めることで通常のブラウザと区別している
-// （Star公式マニュアルより）。以前ここでは別の文字列 "webPRNTSupportMessageHandler" を見ていたが、
-// これはStar公式SDK内部で使われる別目的の識別子で、実際の「Star webPRNT Browser」アプリのUserAgentには
-// 含まれないため、アプリ内で開いていても常にfalse＝印刷がブラウザの印刷プレビューにフォールバックしてしまい、
-// mPOPへ直接送信されていなかった（紙が出ない原因）。
-function isStarWebPRNTBrowserApp(){
-  return navigator.userAgent.indexOf("StarWebPRNTBrowser")>=0;
+// ===== EPSON ePOS-Print（TM-m30III-H、LAN接続）での印刷処理 =====
+// プリンターのIPアドレスは店舗のネットワーク環境によって変わるため、コードには書かず
+// このレジ端末のブラウザだけに保存する（🖨️設定ボタンから入力・変更できる）。
+// DEFAULT_EPSON_IPは香里園駅前院のレジプリンター（TM-m30III-H）の初期値。
+// ルーターの再起動等でIPが変わった場合は🖨️設定ボタンから新しいIPに上書きしてください。
+const DEFAULT_EPSON_IP="192.168.0.146";
+function getEpsonPrinterIP(){
+  const saved=(localStorage.getItem("epsonPrinterIP")||"").trim();
+  return saved||DEFAULT_EPSON_IP;
 }
-// USB接続では、印刷コマンド自体はプリンターに届いて実際に印字されるのに、
-// 「印刷完了しました」という完了通知だけがアプリに返ってこないことがあるとわかった（応答が片道のみ）。
-// そのため、完了通知が来ないまま連打すると紙が何枚も出てしまう危険があるので、
-// 送信中は次の送信をブロックする簡易ロックを設ける。
+function setEpsonPrinterIP(){
+  const current=getEpsonPrinterIP();
+  const ip=prompt("EPSONプリンター（TM-m30III-H）のIPアドレスを入力してください（例：192.168.1.50）\n\nプリンター本体のメニューボタン長押しで印字されるステータスシート、またはルーターの接続機器一覧で確認できます。",current);
+  if(ip===null) return;
+  const trimmed=ip.trim();
+  if(trimmed){
+    localStorage.setItem("epsonPrinterIP",trimmed);
+    showPrintToast("🖨️ プリンターのIPアドレスを保存しました："+trimmed);
+  }else{
+    localStorage.removeItem("epsonPrinterIP");
+    showPrintToast("🖨️ プリンターのIPアドレス設定を削除しました");
+  }
+}
+function escapeXml(s){
+  return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+// buildReceiptText()の行データ（align/bold指定つきテキスト）をePOS-Print XMLのcommand列に変換する
+function buildEposCommandsFromLines(lines){
+  let cmds="";
+  let curAlign=null,curBold=null;
+  lines.forEach(l=>{
+    const align=l.center?"center":"left";
+    const bold=!!l.bold;
+    if(align!==curAlign){ cmds+=`<text align="${align}"/>`; curAlign=align; }
+    if(bold!==curBold){ cmds+=`<text em="${bold}"/>`; curBold=bold; }
+    cmds+=`<text>${escapeXml(l.text)}\n</text>`;
+  });
+  return cmds;
+}
+function eposEndpoint(ip){
+  return `http://${ip}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`;
+}
+function eposEnvelope(innerCommands){
+  return `<?xml version="1.0" encoding="utf-8"?>\n`+
+    `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">\n`+
+    `<soap:Body><epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">\n`+
+    innerCommands+
+    `\n</epos-print></soap:Body></soap:Envelope>`;
+}
+// プリンターへePOS-Print XMLを送信する共通処理。成功/失敗をPromiseで返す
+function sendEposRequest(ip,innerCommands){
+  return fetch(eposEndpoint(ip),{
+    method:"POST",
+    headers:{"Content-Type":"text/xml; charset=utf-8","If-Modified-Since":"Thu, 01 Jan 1970 00:00:00 GMT"},
+    body:eposEnvelope(innerCommands)
+  }).then(res=>res.text()).then(text=>{
+    if(text.indexOf('success="true"')>=0) return true;
+    throw new Error("プリンターからエラー応答がありました（用紙切れ・カバー開き等をご確認ください）");
+  });
+}
+// USB接続では、印刷コマンド自体はプリンターに届いて実際に印字されるのに完了通知だけが遅れることがあるため、
+// 連打で紙が何枚も出てしまわないよう、送信中は次の送信をブロックする簡易ロックを設ける。
 let receiptPrintInFlight=false;
 function printReceiptViaWebPRNT(){
   if(receiptPrintInFlight){
     showPrintToast("⏳ 送信中です。連打せずお待ちください（紙が二重に出る可能性があります）");
     return;
   }
-  const isInWebPRNTApp=isStarWebPRNTBrowserApp();
-  if(!isInWebPRNTApp){
-    // Star webPRNT Browserアプリの中でなければ、非表示iframeにレシートを書き込んで印刷する
-    // 万一アプリ内なのに正しく検出できていない場合の切り分け用に、UserAgentの中身も表示しておく
-    showPrintToast("ℹ️ アプリ未検出のためプレビュー印刷を使用："+navigator.userAgent.slice(0,60));
+  const ip=getEpsonPrinterIP();
+  if(!ip){
+    showPrintToast("ℹ️ プリンターのIP未設定のためプレビュー印刷を使用します（🖨️設定ボタンからIPを登録できます）");
     openReceiptPrintWindow();
     return;
   }
-  try{
-    const builder=new StarWebPrintBuilder();
-    let request="";
-    request+=builder.createInitializationElement();
-    // 1行ごとに配置指定＋テキスト要素を別々に作ると、20行以上のレシートでは
-    // XML要素数がかなり多くなる（USB経由だとドロア開放のような小さい命令は通るのに、
-    // 要素数・データ量の多いレシート印刷だけ応答なしになる場合の原因になり得るため）、
-    // 同じ書式（配置・太字・サイズ）が連続する行はまとめて1つのテキスト要素に統合し、
-    // 送信するXML要素の数をできるだけ減らす。
-    const receiptLines=buildReceiptText();
-    let li=0;
-    while(li<receiptLines.length){
-      const l=receiptLines[li];
-      const align=l.center?"center":"left";
-      const emphasis=l.bold?"true":"false";
-      const width=l.width||1;
-      let buf=l.text;
-      let lj=li+1;
-      while(lj<receiptLines.length){
-        const nl=receiptLines[lj];
-        const nAlign=nl.center?"center":"left";
-        const nEmphasis=nl.bold?"true":"false";
-        const nWidth=nl.width||1;
-        if(nAlign!==align||nEmphasis!==emphasis||nWidth!==width) break;
-        buf+="\n"+nl.text;
-        lj++;
-      }
-      request+=builder.createAlignmentElement({position:align});
-      request+=builder.createTextElement({
-        data:buf+"\n",
-        emphasis:emphasis,
-        width:width,
-        height:width,
-        codepage:"shift_jis",
-      });
-      li=lj;
-    }
-    request+=builder.createFeedElement({line:3});
-    request+=builder.createCutPaperElement({feed:true});
-
-    showPrintToast("🖨️ プリンターへ送信中…");
-    receiptPrintInFlight=true;
-    // Star公式マニュアルによると、Bluetooth/USB接続のプリンターは「印刷完了待ち」が常に有効固定になっており
-    // （checkedblockオプションは効かない）、印刷が完了するまで応答（onReceive）が返ってこない仕様。
-    // 応答のデフォルトタイムアウトは90秒とかなり長いため、これまで数秒で「応答なし」と判断していたのは
-    // 単純に待ち時間が短すぎた可能性がある。そのため、明示的にtimeoutを指定した上で、
-    // 早い段階では「失敗」と決めつけず、時間経過に応じて案内の強さを変える。
-    let settled=false;
-    const soonTimer=setTimeout(()=>{
-      if(!settled) showPrintToast("🖨️ 送信中です…（USB接続では応答に時間がかかる場合があります。しばらくお待ちください）");
-    },10000);
-    const stuckTimer=setTimeout(()=>{
-      if(!settled) showPrintToast("🖨️ まだ応答がありません。USB接続では完了通知が届かないことがあります。レシートが出ていれば印刷は成功しています");
-    },30000);
-    // SDK内部では、UserAgentに"WebPRNTSupportHTTPS"が含まれない場合にhttps→httpへ自動変換される仕組みになっているが、
-    // 何らかの理由でこの自動変換が効かずhttpsのまま（自己署名証明書が信頼されておらず）通信が無応答のまま
-    // ハングしている可能性があるため、最初からhttpで明示的に指定して切り分ける。
-    // timeoutはStar公式マニュアル記載のデフォルト値(90000ms)より少し短い60秒を明示指定し、
-    // ライブラリ側のonErrorタイムアウトを自分たちで把握できるようにする。
-    const trader=new StarWebPrintTrader({url:"http://localhost:8001/StarWebPRNT/SendMessage",timeout:60000});
-    trader.onReceive=function(response){
-      settled=true;clearTimeout(soonTimer);clearTimeout(stuckTimer);
-      receiptPrintInFlight=false;
-      if(response.traderSuccess==="true"){
-        showPrintToast("🖨️ 印刷しました");
-      }else{
-        showPrintToast("❌ 印刷に失敗しました（プリンターの状態をご確認ください）");
-      }
-    };
-    trader.onError=function(response){
-      settled=true;clearTimeout(soonTimer);clearTimeout(stuckTimer);
-      receiptPrintInFlight=false;
-      showPrintToast("❌ 印刷エラー："+(response.responseText||"接続できませんでした"));
-    };
-    // 万一onReceive/onErrorが一切来ない場合でも、いつまでも連打をブロックし続けないよう
-    // trader自身のtimeout(60秒)より少し後に強制的にロックを解除する
-    setTimeout(()=>{ receiptPrintInFlight=false; },65000);
-    trader.sendMessage({request:request});
-  }catch(e){
+  const receiptLines=buildReceiptText();
+  const cmds=buildEposCommandsFromLines(receiptLines)+`<feed line="3"/><cut type="feed"/>`;
+  showPrintToast("🖨️ プリンターへ送信中…");
+  receiptPrintInFlight=true;
+  sendEposRequest(ip,cmds).then(()=>{
     receiptPrintInFlight=false;
-    showPrintToast("❌ 印刷処理でエラーが発生しました："+e.message);
-  }
+    showPrintToast("🖨️ 印刷しました");
+  }).catch(e=>{
+    receiptPrintInFlight=false;
+    showPrintToast("❌ 印刷に失敗しました："+e.message+"（IPアドレス・電源・LAN接続をご確認ください）");
+  });
 }
-// ===== mPOPのレシートプリンターに接続されたレジドロアを開ける =====
+// ===== EPSONプリンターに接続されたレジドロアを開ける =====
 // 会計確定時（現金の受け渡しがある場合）に自動で呼ばれるほか、両替などレジ操作のためだけに
 // 会計を介さず手動で開けたい場合は、画面右上の「レジを開ける」ボタンからmanual=trueで呼ばれる
 function openCashDrawer(manual){
-  const isInWebPRNTApp=isStarWebPRNTBrowserApp();
-  if(!isInWebPRNTApp){
-    if(manual) showPrintToast("❌ レシートプリンター（Star webPRNT Browser）アプリ内でのみ利用できます");
-    return; // レシート印刷と同じく、Star webPRNT Browserアプリ内でなければ開けない
-  }
-  try{
-    const builder=new StarWebPrintBuilder();
-    let request="";
-    request+=builder.createInitializationElement();
-    request+=builder.createPeripheralElement({channel:1,on:200,off:200});
-
-    const trader=new StarWebPrintTrader({url:"http://localhost:8001/StarWebPRNT/SendMessage"});
-    trader.onReceive=function(response){
-      if(response.traderSuccess==="true"){
-        if(manual) showPrintToast("🗄️ レジを開けました");
-      }else{
-        showPrintToast("❌ レジドロアを開けられませんでした（プリンターの状態をご確認ください）");
-      }
-    };
-    trader.onError=function(response){
-      showPrintToast("❌ ドロア開放エラー："+(response.responseText||"接続できませんでした"));
-    };
-    trader.sendMessage({request:request});
-  }catch(e){
-    showPrintToast("❌ ドロア開放処理でエラーが発生しました："+e.message);
-  }
-}
-// ===== USB印刷の切り分け用：最小限のテキストだけを印刷してみる =====
-// ドロア開放（小さい命令）は通るのに領収書（長い・日本語・shift_jis）が応答なしになる場合、
-// どの要素が原因かを絞り込むための一時的な診断ボタン。
-// TEST1〜4を順番に試し、どこで止まるかで原因を切り分ける。
-function printMinimalTest(){
-  const isInWebPRNTApp=isStarWebPRNTBrowserApp();
-  if(!isInWebPRNTApp){
-    showPrintToast("❌ Star webPRNT Browserアプリ内でのみ利用できます");
+  const ip=getEpsonPrinterIP();
+  if(!ip){
+    if(manual) showPrintToast("❌ プリンターのIP未設定のためレジドロアを開けられません（🖨️設定ボタンからIPを登録してください）");
     return;
   }
-  try{
-    const builder=new StarWebPrintBuilder();
-    let request="";
-    request+=builder.createInitializationElement();
-    // TEST1：英数字だけ・改行なし・書式指定なしの最小テキスト（shift_jisコードページも指定しない）
-    request+=builder.createTextElement({data:"TEST1 HELLO\n"});
-    // ここでcut/feedを入れず、まず本当にテキストが1行でも印字されるかだけを見る
-    request+=builder.createFeedElement({line:2});
-
-    showPrintToast("🧪 テスト印刷を送信中…（USB接続では60秒ほど待つと応答が来ることがあります）");
-    let settled=false;
-    const soonTimer=setTimeout(()=>{
-      if(!settled) showPrintToast("🧪 まだ送信中です…もう少しお待ちください");
-    },10000);
-    const stuckTimer=setTimeout(()=>{
-      if(!settled) showPrintToast("⏳ まだ応答がありません。TEST1が印字されていれば実際には成功しています");
-    },30000);
-    const trader=new StarWebPrintTrader({url:"http://localhost:8001/StarWebPRNT/SendMessage",timeout:60000});
-    trader.onReceive=function(response){
-      settled=true;clearTimeout(soonTimer);clearTimeout(stuckTimer);
-      if(response.traderSuccess==="true"){
-        showPrintToast("🧪 テスト印刷 成功（応答あり）");
-      }else{
-        showPrintToast("❌ テスト印刷 失敗（プリンターの状態をご確認ください）");
-      }
-    };
-    trader.onError=function(response){
-      settled=true;clearTimeout(soonTimer);clearTimeout(stuckTimer);
-      showPrintToast("❌ テスト印刷エラー："+(response.responseText||"接続できませんでした"));
-    };
-    trader.sendMessage({request:request});
-  }catch(e){
-    showPrintToast("❌ テスト印刷処理でエラーが発生しました："+e.message);
+  sendEposRequest(ip,`<pulse drawer="drawer_1" time="pulse_100"/>`).then(()=>{
+    if(manual) showPrintToast("🗄️ レジを開けました");
+  }).catch(e=>{
+    showPrintToast("❌ レジドロアを開けられませんでした："+e.message);
+  });
+}
+// ===== 接続確認用：短いテスト印刷 =====
+function printMinimalTest(){
+  const ip=getEpsonPrinterIP();
+  if(!ip){
+    showPrintToast("❌ プリンターのIPが未設定です（🖨️設定ボタンから入力してください）");
+    return;
   }
+  showPrintToast("🧪 テスト印刷を送信中…（"+ip+"）");
+  sendEposRequest(ip,`<text align="center"/><text>TEST OK\n接続確認\n</text><feed line="2"/><cut type="feed"/>`).then(()=>{
+    showPrintToast("🧪 テスト印刷 成功");
+  }).catch(e=>{
+    showPrintToast("❌ テスト印刷エラー："+e.message+"\n\n※https配信のページからhttpのプリンターへ接続できない場合は、Chromeの設定→プライバシーとセキュリティ→サイトの設定→「安全性の低いコンテンツ」で、このサイトのURLを追加して許可してください。");
+  });
 }
 function showPrintToast(msg){
   const el=document.createElement("div");
@@ -1249,6 +1178,7 @@ function render(){
           <span>👤 ${booking.patient_name} 様　${booking.date} ${booking.time}　${STAFF[booking.staff_id]||""}先生　${visitCount}回目来院</span>
           <button onclick="openCashDrawer(true)" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:white;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">🗄️ レジを開ける</button>
           <button onclick="printMinimalTest()" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:white;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">🧪 テスト印刷</button>
+          <button onclick="setEpsonPrinterIP()" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:white;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">🖨️ プリンター設定</button>
         </div>
       </div>
       <div class="main-grid">
