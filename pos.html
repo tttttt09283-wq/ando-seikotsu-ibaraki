@@ -726,7 +726,8 @@ function escapeXml(s){
 }
 // buildReceiptText()の行データ（align/bold指定つきテキスト）をePOS-Print XMLのcommand列に変換する
 function buildEposCommandsFromLines(lines){
-  let cmds="";
+  // lang="ja"を指定しないと、プリンターが英数字用コードページのままになり日本語が文字化けする
+  let cmds=`<text lang="ja"/>`;
   let curAlign=null,curBold=null;
   lines.forEach(l=>{
     const align=l.center?"center":"left";
@@ -810,7 +811,7 @@ function printMinimalTest(){
     return;
   }
   showPrintToast("🧪 テスト印刷を送信中…（"+ip+"）");
-  sendEposRequest(ip,`<text align="center"/><text>TEST OK\n接続確認\n</text><feed line="2"/><cut type="feed"/>`).then(()=>{
+  sendEposRequest(ip,`<text lang="ja"/><text align="center"/><text>TEST OK\n接続確認\n</text><feed line="2"/><cut type="feed"/>`).then(()=>{
     showPrintToast("🧪 テスト印刷 成功");
   }).catch(e=>{
     showPrintToast("❌ テスト印刷エラー："+e.message+"\n\n※https配信のページからhttpのプリンターへ接続できない場合は、Chromeの設定→プライバシーとセキュリティ→サイトの設定→「安全性の低いコンテンツ」で、このサイトのURLを追加して許可してください。");
