@@ -901,6 +901,7 @@ function App(){
 
     sb.insert("bookings",{
       patient_name:form.name,
+      patient_kana:form.nameKana.trim()||null,
       phone:form.phone,
       address:form.address||null,
       gender:form.gender||null,

@@ -8718,6 +8718,15 @@ function Dashboard({user,onLogout}){
     return true; // シフトデータが無い場合はフェイルセーフで出勤扱い
   }
 
+  // その日の出勤時間帯（開始・終了）を返す。特定日の時間変更は現状保存していないため、
+  // 週固定シフト（staff_weekly_shifts）の時間をそのまま使う。設定が無ければnull（終日扱い＝グレー表示なし）
+  function getShiftTimeRange(staffId,dateObj){
+    const dow=dateObj.getDay();
+    const ws=weeklyShifts.find(w=>w.staff_id===staffId&&w.day_of_week===dow);
+    if(ws&&ws.start_time&&ws.end_time) return{start:ws.start_time,end:ws.end_time};
+    return null;
+  }
+
   // 選択中の店舗の営業時間・臨時休業日を取得
   React.useEffect(()=>{
     if(selStoreId===null) return;
@@ -9844,6 +9853,10 @@ function Dashboard({user,onLogout}){
                             const totalLanes=Math.max(configuredLanes,neededLanes,1);
                             const rowH=Math.max(48,totalLanes*40);
                             const laneH=rowH/totalLanes;
+                            const shiftRange=getShiftTimeRange(staff.id,wd);
+                            const rowFullW=TOTAL_MINS*CELL_W;
+                            const shiftStartX=shiftRange?Math.max(0,Math.min(rowFullW,timeToX(shiftRange.start))):0;
+                            const shiftEndX=shiftRange?Math.max(0,Math.min(rowFullW,timeToX(shiftRange.end))):rowFullW;
                             return(
                               <div key={staff.id} style={{display:"flex",borderBottom:"1px solid #f1f5f9",minHeight:rowH}}>
                                 <div style={{width:HEADER_W,flexShrink:0,padding:"4px 8px",borderRight:"1px solid #e2e8f0",background:"#fafbfc",display:"flex",alignItems:"center",gap:5}}>
@@ -9874,6 +9887,13 @@ function Dashboard({user,onLogout}){
                                       setTimePickerPopup({date:wdStr,staffId:staff.id,x:e.clientX,y:e.clientY,centerTime});
                                     }
                                   }}>
+                                  {/* 出勤時間外はグレー表示にして、受付できない時間帯だと分かるようにする */}
+                                  {shiftRange&&shiftStartX>0&&(
+                                    <div style={{position:"absolute",left:0,top:0,bottom:0,width:shiftStartX,background:"repeating-linear-gradient(45deg,#f1f5f9,#f1f5f9 6px,#e9edf1 6px,#e9edf1 12px)",pointerEvents:"none",zIndex:0}}/>
+                                  )}
+                                  {shiftRange&&shiftEndX<rowFullW&&(
+                                    <div style={{position:"absolute",left:shiftEndX,top:0,bottom:0,width:rowFullW-shiftEndX,background:"repeating-linear-gradient(45deg,#f1f5f9,#f1f5f9 6px,#e9edf1 6px,#e9edf1 12px)",pointerEvents:"none",zIndex:0}}/>
+                                  )}
                                   {MINS.map(({h,m,label})=>(
                                     <div key={label} style={{position:"absolute",left:(h-9)*60/10*CELL_W+m/10*CELL_W,top:0,bottom:0,borderLeft:`1px solid ${m%30===0?"#e2e8f0":"#f6f7f9"}`,pointerEvents:"none"}}/>
                                   ))}
