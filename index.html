@@ -5264,7 +5264,7 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
 
   function openEdit(){
     if(!firstBk) return;
-    setEditForm({name:firstBk.patient_name||"",phone:firstBk.phone||"",address:firstBk.address||"",karte_no:firstBk.karte_no||""});
+    setEditForm({name:firstBk.patient_name||"",kana:firstBk.patient_kana||"",phone:firstBk.phone||"",address:firstBk.address||"",karte_no:firstBk.karte_no||""});
     setEditMode(true);
   }
 
@@ -5277,17 +5277,19 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
     if(editableBks.length===0){ alert("更新対象の今後の予約がありません（過去の予約は保護のため変更されません）"); return; }
     const nameChanged=editForm.name.trim()!==selPatient;
     const karteChanged=(editForm.karte_no||"").trim()!==(firstBk.karte_no||"");
+    const kanaChanged=(editForm.kana||"").trim()!==(firstBk.patient_kana||"");
     const confirmMsg=
       `以下の${editableBks.length}件の今後の予約に反映します（過去の予約・カルテは変更されません）。\n\n`+
       editableBks.slice(0,10).map(b=>`・${b.date} ${b.time}`).join("\n")+
       (editableBks.length>10?`\n…他${editableBks.length-10}件`:"")+
       (nameChanged?`\n\n名前を「${selPatient}」→「${editForm.name.trim()}」に変更します。`:"")+
+      (kanaChanged?`\n\nフリガナを「${firstBk.patient_kana||"（未設定）"}」→「${editForm.kana.trim()||"（未設定）"}」に変更します。`:"")+
       (karteChanged?`\n\nカルテ番号を「${firstBk.karte_no||"（未設定）"}」→「${editForm.karte_no.trim()||"（未設定）"}」に変更します。`:"")+
       `\n\nよろしいですか？`;
     if(!window.confirm(confirmMsg)) return;
     try{
       for(const b of editableBks){
-        await sb.update("bookings",b.id,{patient_name:editForm.name,phone:editForm.phone,address:editForm.address,karte_no:editForm.karte_no.trim()||null});
+        await sb.update("bookings",b.id,{patient_name:editForm.name,patient_kana:editForm.kana.trim()||null,phone:editForm.phone,address:editForm.address,karte_no:editForm.karte_no.trim()||null});
       }
       setEditMode(false);
       selectPatient(editForm.name);
@@ -5458,7 +5460,7 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
             <div style={{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",padding:"14px 18px",flexShrink:0}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
                 <div>
-                  <div style={{fontWeight:800,fontSize:17,color:"white"}}>{selPatient} 様</div>
+                  <div style={{fontWeight:800,fontSize:17,color:"white"}}>{selPatient} 様{firstBk?.patient_kana&&<span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.75)",marginLeft:8}}>（{firstBk.patient_kana}）</span>}</div>
                   <div style={{fontSize:12,color:"rgba(255,255,255,.7)",marginTop:2}}>
                     {firstBk?.karte_no&&<span>🗂 カルテNo.{firstBk.karte_no}</span>}
                     {firstBk?.phone&&<span style={{marginLeft:firstBk?.karte_no?10:0}}>📞 {firstBk.phone}</span>}
@@ -5513,10 +5515,16 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
             {editMode&&(
               <div style={{padding:"16px 18px",background:"#fffbeb",borderBottom:"1px solid #fde68a",flexShrink:0}}>
                 <div style={{fontWeight:800,fontSize:13,color:"#92400e",marginBottom:12}}>✏️ 患者情報の編集</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:10}}>
                   <div>
                     <label style={{display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4}}>患者名</label>
                     <input value={editForm.name} onChange={e=>setEditForm(p=>({...p,name:e.target.value}))}
+                      style={{width:"100%",padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
+                  </div>
+                  <div>
+                    <label style={{display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4}}>フリガナ</label>
+                    <input value={editForm.kana} onChange={e=>setEditForm(p=>({...p,kana:e.target.value}))}
+                      placeholder="ヤマモト ハナコ"
                       style={{width:"100%",padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
                   </div>
                   <div>
