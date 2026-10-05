@@ -593,6 +593,11 @@ function padRow(left,right,width){
   const space=Math.max(1,width-left.length-right.length);
   return left+" ".repeat(space)+right;
 }
+// booking.menuは予約時に患者様が選んだ表示名（「2回目以降の方」等）がそのまま入っているが、
+// 保険請求用のレシートでは項目名を「保険診療」で統一したいため、ここで変換する
+function getReceiptMenuLabel(){
+  return booking.menu==="2回目以降の方"?"保険診療":booking.menu;
+}
 function buildReceiptText(){
   const total=calcTotal();const ins=parseInt(state.insuranceAmount)||0;const change=calcChange();
   const DAYS_JP=["日","月","火","水","木","金","土"];
@@ -605,7 +610,7 @@ function buildReceiptText(){
   const clinicTel=storeInfo&&storeInfo.tel?storeInfo.tel:"";
   const taxIncluded=Math.round(total*8/108);
   const items=[
-    ...(ins>0?[{label:booking.menu||"保険窓口負担",amount:ins}]:[]),
+    ...(ins>0?[{label:getReceiptMenuLabel()||"保険窓口負担",amount:ins}]:[]),
     ...state.jifeeItems.map(i=>({label:i.label,amount:i.amount})),
   ];
   const W=32; // mPOPは58mm幅（半角32文字目安）
@@ -837,7 +842,7 @@ function renderReceipt(){
   // 内税8%を前提に、合計額から税額を逆算して表示（現状の合計は税込金額として扱っています）
   const taxIncluded=Math.round(total*8/108);
   const items=[
-    ...(ins>0?[{label:booking.menu||"保険窓口負担",amount:ins}]:[]),
+    ...(ins>0?[{label:getReceiptMenuLabel()||"保険窓口負担",amount:ins}]:[]),
     ...state.jifeeItems.map(i=>({label:i.label,amount:i.amount})),
   ];
 
