@@ -588,9 +588,24 @@ function renderReceiptSection(){
   return `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:#1e40af;text-align:center;">この患者様のレシートは「${freq}」まとめて発行する設定です。管理画面の「まとめレシート発行」から発行してください。<br><button onclick="state.receiptFrequency='毎回';render();" style="margin-top:8px;background:none;border:none;color:#2563eb;font-size:11px;font-weight:700;cursor:pointer;text-decoration:underline;font-family:inherit;">今回だけ発行する</button></div>`;
 }
 // ===== StarWebPRNTでmPOPに直接印刷する処理 =====
+// 全角文字（ひらがな・カタカナ・漢字・全角記号など）は半角文字の約2倍の幅でプリンターに印字されるため、
+// 単純な文字数（.length）で余白を計算すると、全角文字を含む行ほど実際の幅とズレて右寄せの数字が折り返されてしまう。
+// そのため、文字ごとに半角=1／全角=2として実際の表示幅を計算する。
+function displayWidth(s){
+  let w=0;
+  for(const ch of String(s)){
+    const c=ch.codePointAt(0);
+    // 半角カナ・英数・記号（U+FF61〜U+FFDC, U+FFE8〜）以外のおおよその全角範囲を2文字分として扱う
+    const isFullWidth=(c>=0x1100&&c<=0x115F)||(c>=0x2E80&&c<=0xA4CF)||(c>=0xAC00&&c<=0xD7A3)||
+      (c>=0xF900&&c<=0xFAFF)||(c>=0xFF00&&c<=0xFF60)||(c>=0xFFE0&&c<=0xFFE6)||
+      (c>=0x20000&&c<=0x3FFFD);
+    w+=isFullWidth?2:1;
+  }
+  return w;
+}
 function padRow(left,right,width){
   left=String(left);right=String(right);
-  const space=Math.max(1,width-left.length-right.length);
+  const space=Math.max(1,width-displayWidth(left)-displayWidth(right));
   return left+" ".repeat(space)+right;
 }
 // booking.menuは予約時に患者様が選んだ表示名（「2回目以降の方」等）がそのまま入っているが、
