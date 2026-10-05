@@ -1816,6 +1816,111 @@ function StaffSalesRow({row,maxStaffSales,fmt,isExpanded,onToggle,selStatsStoreI
     </div>
   );
 }
+// ===== 保険請求用：当日のカルテ番号一覧 =====
+// 指定した日に来院（予約）した保険対応の患者様のカルテ番号を、番号順に一覧で確認・コピーできる。
+// カルテ番号は患者様ごとに1つで、その患者様のどの予約に登録されていても拾う（編集画面で全予約に反映される仕様のため）。
+function KarteListPanel({bookings,payments,stores,todayStr}){
+  const fmt=n=>"¥"+Number(n||0).toLocaleString();
+  const firstStoreId=(stores&&stores[0]&&stores[0].id)||1;
+  const [storeId,setStoreId]=React.useState(firstStoreId);
+  const [date,setDate]=React.useState(todayStr);
+  const [onlyInsured,setOnlyInsured]=React.useState(true);
+  const [copied,setCopied]=React.useState(false);
+
+  const patientKey=b=>(b.phone||"")+"|"+(b.patient_name||"");
+  const result=React.useMemo(()=>{
+    // 患者様ごとのカルテ番号（どれかの予約に入っていれば採用）
+    const karteByPatient={};
+    bookings.forEach(b=>{
+      const k=(b.karte_no||"").trim();
+      if(k) karteByPatient[patientKey(b)]=k;
+    });
+    const payByBooking={};
+    payments.forEach(p=>{ if(p.booking_id!=null) payByBooking[p.booking_id]=p; });
+    const list=bookings
+      .filter(b=>b.date===date&&!b.cancelled&&(b.store_id||firstStoreId)===storeId)
+      .map(b=>{
+        const pay=payByBooking[b.id];
+        const insAmount=pay?(pay.insurance_amount||0):0;
+        // 会計前でも、保険メニュー（◯割）で予約している方は保険対応とみなす
+        const insured=insAmount>0||/[1-3１-３]割/.test(b.menu||"");
+        return{b,karte:karteByPatient[patientKey(b)]||"",insAmount,paid:!!pay,insured};
+      })
+      .filter(r=>!onlyInsured||r.insured);
+    // 同じ患者様が同日に複数枠ある場合は1行にまとめる
+    const seen=new Set();
+    const uniq=list.filter(r=>{const k=patientKey(r.b);if(seen.has(k))return false;seen.add(k);return true;});
+    uniq.sort((a,c)=>{
+      if(!a.karte&&c.karte) return 1;
+      if(a.karte&&!c.karte) return -1;
+      return a.karte.localeCompare(c.karte,"ja",{numeric:true})||(a.b.time||"").localeCompare(c.b.time||"");
+    });
+    return uniq;
+  },[bookings,payments,date,storeId,onlyInsured,firstStoreId]);
+
+  const missing=result.filter(r=>!r.karte).length;
+
+  function copyNumbers(){
+    const text=result.filter(r=>r.karte).map(r=>r.karte).join("\n");
+    try{ navigator.clipboard.writeText(text).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);}); }
+    catch(e){ alert("コピーできませんでした"); }
+  }
+
+  const th={padding:"8px 10px",fontSize:11,fontWeight:800,color:"#475569",background:"#f1f5f9",textAlign:"left",whiteSpace:"nowrap",borderBottom:"1px solid #e2e8f0"};
+  const td={padding:"8px 10px",fontSize:13,color:"#1e293b",borderBottom:"1px solid #f1f5f9"};
+  const staffName=id=>{const s=(typeof STAFF_ACCOUNTS!=="undefined"?STAFF_ACCOUNTS:[]).find(x=>x.id===id);return s?s.name:"";};
+
+  return(
+    <div className="card" style={{padding:16}}>
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:12}}>
+        <span style={{fontWeight:800,fontSize:16,color:"#1e3a5f"}}>🗂 カルテ番号一覧（保険請求用）</span>
+        <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13}}/>
+        <button onClick={()=>setDate(todayStr)} style={{padding:"6px 12px",borderRadius:8,border:"1.5px solid #e2e8f0",background:"white",fontSize:12,fontWeight:700,cursor:"pointer"}}>今日</button>
+        <select value={storeId} onChange={e=>setStoreId(Number(e.target.value))} style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13}}>
+          {(stores||[]).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <label style={{display:"flex",alignItems:"center",gap:5,fontSize:12,fontWeight:700,color:"#374151",cursor:"pointer"}}>
+          <input type="checkbox" checked={onlyInsured} onChange={e=>setOnlyInsured(e.target.checked)}/>保険対応のみ
+        </label>
+        <button onClick={copyNumbers} style={{marginLeft:"auto",padding:"6px 14px",borderRadius:8,border:"none",background:copied?"#059669":"#1e3a5f",color:"white",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+          {copied?"✓ コピーしました":"カルテ番号をコピー（改行区切り）"}
+        </button>
+      </div>
+      <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:10,fontSize:12,fontWeight:700}}>
+        <span style={{background:"#eff6ff",color:"#1d4ed8",padding:"3px 12px",borderRadius:20}}>{result.length}名</span>
+        {missing>0&&<span style={{background:"#fef2f2",color:"#dc2626",padding:"3px 12px",borderRadius:20}}>⚠ カルテ番号が未登録：{missing}名</span>}
+      </div>
+      {result.length===0?(
+        <div style={{textAlign:"center",color:"#94a3b8",padding:"28px 0",fontSize:13}}>この日の{onlyInsured?"保険対応の":""}来院はありません</div>
+      ):(
+        <div style={{overflowX:"auto",border:"1px solid #e2e8f0",borderRadius:10}}>
+          <table style={{borderCollapse:"collapse",width:"100%"}}>
+            <thead><tr>
+              <th style={th}>カルテNo.</th><th style={th}>患者名</th><th style={th}>時間</th><th style={th}>メニュー</th><th style={th}>担当</th><th style={{...th,textAlign:"right"}}>保険窓口</th><th style={th}>会計</th>
+            </tr></thead>
+            <tbody>
+              {result.map(r=>(
+                <tr key={r.b.id}>
+                  <td style={{...td,fontWeight:800,fontSize:15,color:r.karte?"#0f172a":"#dc2626"}}>{r.karte||"未登録"}</td>
+                  <td style={td}>{r.b.patient_name}</td>
+                  <td style={td}>{r.b.time}</td>
+                  <td style={{...td,fontSize:12,color:"#64748b"}}>{r.b.menu}</td>
+                  <td style={td}>{staffName(r.b.staff_id)}</td>
+                  <td style={{...td,textAlign:"right"}}>{r.paid?fmt(r.insAmount):"-"}</td>
+                  <td style={td}>{r.paid?<span style={{color:"#059669",fontWeight:700}}>済</span>:<span style={{color:"#94a3b8"}}>未</span>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div style={{fontSize:11,color:"#94a3b8",marginTop:10,lineHeight:1.6}}>
+        カルテ番号は「患者管理」の患者情報編集で登録できます（その患者様の全予約に反映されます）。
+      </div>
+    </div>
+  );
+}
+
 // ===== 日計表（スプレッドシートの日計表と同じ項目を、会計データから自動集計して日別に表示） =====
 // 巻き爪・自賠は、POS会計の「巻き爪・自賠」ボタンで追加した自費項目（payments.jifee_items）から集計する。
 function DailyReportPanel({bookings,payments,stores,todayStr}){
@@ -9632,6 +9737,7 @@ function Dashboard({user,onLogout}){
       {id:"cancelled_list",label:"キャンセル一覧",icon:"x-circle",special:""},
       {id:"staff_off_conflicts",label:"休みスタッフの予約",icon:"alert",special:""},
       {id:"bulk_receipt",label:"まとめレシート発行",icon:"receipt",special:""},
+      {id:"karte_list",label:"カルテ番号一覧（保険請求）",icon:"clipboard-list",special:""},
     ]},
     {id:"analysis",label:"分析",color:"#059669",items:[
       {id:"stats",label:"予約分析・サマリー",icon:"bar-chart",special:""},
@@ -10210,6 +10316,7 @@ function Dashboard({user,onLogout}){
 
           {/* サマリー */}
           {view==="stats"&&<StatsPanel bookings={bookings} payments={payments} todayStr={todayStr} stores={stores}/>}
+          {view==="karte_list"&&<KarteListPanel bookings={bookings} payments={payments} stores={stores} todayStr={todayStr}/>}
           {view==="daily_report"&&<DailyReportPanel bookings={bookings} payments={payments} stores={stores} todayStr={todayStr}/>}
           {view==="preopen_stats"&&<PreOpenStatsPanel bookings={bookings} payments={payments} stores={stores} user={user}/>}
 
