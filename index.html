@@ -9729,8 +9729,39 @@ function Dashboard({user,onLogout}){
               timeSlots30.push({label,booked,available,x:(h-9)*60/10*CELL_W+m/10*CELL_W,w:30/10*CELL_W});
             }}
 
+            // 選択中の日の売上：現金／現金以外の内訳
+            // payment_methodは「現金:¥5,000・カード:¥3,000」形式。現金はお預かり額で記録されている場合があるため、
+            // 現金＝合計−現金以外 で算出（お釣り分は売上に含めない）。
+            const dayStoreIds=new Set(storeBookings.map(b=>b.id));
+            const dayPays=payments.filter(p=>p.payment_date===ds&&dayStoreIds.has(p.booking_id)&&(!selStaff||p.staff_id===selStaff));
+            let dayCash=0,dayOther=0;
+            const dayOtherBy={};
+            dayPays.forEach(p=>{
+              const tot=parseInt(p.total_amount)||0;
+              let nonCash=0;
+              String(p.payment_method||"").split("・").forEach(part=>{
+                const i=part.indexOf(":");
+                if(i<0) return;
+                const nm=part.slice(0,i).trim();
+                const amt=parseInt(part.slice(i+1).replace(/[^\d]/g,""))||0;
+                if(nm&&nm!=="現金"){nonCash+=amt;dayOtherBy[nm]=(dayOtherBy[nm]||0)+amt;}
+              });
+              dayOther+=nonCash;
+              dayCash+=Math.max(0,tot-nonCash);
+            });
+            const dayOtherDetail=Object.keys(dayOtherBy).map(k=>`${k} ¥${dayOtherBy[k].toLocaleString()}`).join("／");
+
             return(
               <div className="card">
+                {/* 選択日の売上（現金／現金以外） */}
+                {(!selStaff||weekViewMode==="calendar")&&(
+                  <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"8px 12px",background:"#fffbeb",borderBottom:"1px solid #fde68a"}}>
+                    <span style={{fontSize:12,fontWeight:800,color:"#92400e"}}>💰 {baseDate.getMonth()+1}/{baseDate.getDate()}({DAYS_JP[baseDate.getDay()]})の売上</span>
+                    <span style={{fontSize:15,fontWeight:800,color:"#d97706"}}>¥{(dayCash+dayOther).toLocaleString()}</span>
+                    <span style={{fontSize:12,fontWeight:700,color:"#059669",background:"#ecfdf5",padding:"3px 10px",borderRadius:20}}>💴 現金 ¥{dayCash.toLocaleString()}</span>
+                    <span style={{fontSize:12,fontWeight:700,color:"#2563eb",background:"#eff6ff",padding:"3px 10px",borderRadius:20}}>💳 現金以外 ¥{dayOther.toLocaleString()}{dayOtherDetail?`（${dayOtherDetail}）`:""}</span>
+                  </div>
+                )}
                 {/* 個人絞り込み時：週間リスト切り替えボタン */}
                 {selStaff&&(
                   <div style={{padding:"8px 12px",background:"#f8fafc",borderBottom:"1px solid #e2e8f0",display:"flex",gap:8}}>
