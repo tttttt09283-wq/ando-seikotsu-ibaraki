@@ -7909,8 +7909,10 @@ function BulkReceiptPanel({payments,bookings}){
     </div>
   );
 }
+// スタッフKPIの集計開始日（これより前＝プレオープン／イベント期間の予約・来院は集計に含めない）
+const STAFF_KPI_START="2026-10-05";
 function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainingMode}){
-  const [selMonth,setSelMonth]=React.useState(todayStr.slice(0,7));
+  const [selMonth,setSelMonth]=React.useState(todayStr.slice(0,7)<STAFF_KPI_START.slice(0,7)?STAFF_KPI_START.slice(0,7):todayStr.slice(0,7));
   const [treatments,setTreatments]=React.useState([]);
   const [passesRaw,setPassesRaw]=React.useState([]);
   const [loading,setLoading]=React.useState(true);
@@ -7929,13 +7931,16 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
   const passes=React.useMemo(()=>passesRaw.filter(p=>!!p.is_training===!!trainingMode),[passesRaw,trainingMode]);
 
   const [y,m]=selMonth.split("-").map(Number);
-  const rangeStart=`${y}-${String(m).padStart(2,"0")}-01`;
+  const monthStart=`${y}-${String(m).padStart(2,"0")}-01`;
+  // 集計開始日（10/5）より前は含めない：選んだ月の開始日と集計開始日の遅いほうから数える
+  const rangeStart=monthStart<STAFF_KPI_START?STAFF_KPI_START:monthStart;
   const lastDay=new Date(y,m,0).getDate();
   const rangeEnd=`${y}-${String(m).padStart(2,"0")}-${String(lastDay).padStart(2,"0")}`;
   const inRange=d=>d>=rangeStart&&d<=rangeEnd;
 
   const firstStoreId=1;
-  const scopedBookings=React.useMemo(()=>bookings.filter(b=>(b.store_id||firstStoreId)===selStoreId&&!b.cancelled),[bookings,selStoreId]);
+  // 集計開始日より前の予約は、新患／再診の判定（初回来院日）にも使わない＝10/5以降の最初の来院を新患として数える
+  const scopedBookings=React.useMemo(()=>bookings.filter(b=>(b.store_id||firstStoreId)===selStoreId&&!b.cancelled&&b.date>=STAFF_KPI_START),[bookings,selStoreId]);
 
   // 患者ごとの全来院日（キャンセル除く・店舗内）を古い順に並べる
   const historyByPatient=React.useMemo(()=>{
@@ -8106,8 +8111,14 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
     <div style={{maxWidth:1400,margin:"0 auto"}}>
       <div className="card" style={{marginBottom:14,padding:"14px 16px"}}>
         <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:10}}>📊 スタッフKPI管理</div>
-        <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)}
-          style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700}}/>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <input type="month" value={selMonth} min={STAFF_KPI_START.slice(0,7)} onChange={e=>setSelMonth(e.target.value<STAFF_KPI_START.slice(0,7)?STAFF_KPI_START.slice(0,7):e.target.value)}
+            style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700}}/>
+          <span style={{fontSize:12,fontWeight:700,color:"#1d4ed8",background:"#eff6ff",padding:"4px 12px",borderRadius:20}}>
+            集計期間：{Number(rangeStart.slice(5,7))}/{Number(rangeStart.slice(8,10))}〜{Number(rangeEnd.slice(5,7))}/{Number(rangeEnd.slice(8,10))}
+          </span>
+        </div>
+        <div style={{fontSize:11,color:"#94a3b8",marginTop:8}}>※10/5以降の来院から集計しています（それ以前のプレオープン期間は含みません）</div>
       </div>
       {loading?(
         <div style={{textAlign:"center",padding:40,color:"#94a3b8"}}>読み込み中...</div>
