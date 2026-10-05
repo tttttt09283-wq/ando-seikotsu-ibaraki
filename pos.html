@@ -290,6 +290,17 @@ const JIFEE_CATEGORIES=[
       {label:"フリーパス 12ヶ月",amount:132000},
     ]
   },
+  {
+    // 日計表の「巻き爪（新規／継続）」「自賠（新規／継続）」に自動集計される。金額は追加後に入力する。
+    // ※ラベルの先頭が「巻き爪」「自賠」で始まることで集計側が判別するため、名前を変えないこと
+    id:"special",label:"巻き爪・自賠",color:"#db2777",
+    items:[
+      {label:"巻き爪（新規）",amount:0},
+      {label:"巻き爪（継続）",amount:0},
+      {label:"自賠（新規）",amount:0},
+      {label:"自賠（継続）",amount:0},
+    ]
+  },
 ];
 
 const TIME_OPTS = (()=>{
@@ -356,7 +367,8 @@ function getJifeeCategories(){
   const kaisu=JIFEE_CATEGORIES.find(c=>c.id==="kaisu");
   const fp=JIFEE_CATEGORIES.find(c=>c.id==="fp");
   const spot=JIFEE_CATEGORIES.find(c=>c.id==="spot");
-  return [discount10(kaisu),discount10(fp),spot];
+  const special=JIFEE_CATEGORIES.find(c=>c.id==="special");
+  return [discount10(kaisu),discount10(fp),spot,special];
 }
 
 let booking=null,treatment=null,visitCount=1,storeInfo=null;
@@ -1097,6 +1109,8 @@ async function save(){
       payment_date:booking.date,insurance_amount:parseInt(state.insuranceAmount)||0,jifee_amount:jifeeTotal,
       total_amount:total,payment_method:methodStr,staff_id:booking.staff_id,
       memo:state.jifeeItems.map(i=>i.label).join("・")||null,
+      // 日計表（巻き爪・自賠の件数／売上）を自動集計するため、項目ごとの金額も保存しておく
+      jifee_items:state.jifeeItems.map(i=>({label:i.label,amount:parseInt(i.amount)||0})),
       is_training:!!booking.is_training,
     });
     if(result&&result.error){throw new Error(result.message||result.error||"保存に失敗しました");}
