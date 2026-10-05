@@ -622,7 +622,17 @@ function padRow(left,right,width){
 }
 // booking.menuは予約時に患者様が選んだ表示名（「2回目以降の方」等）がそのまま入っているが、
 // 保険請求用のレシートでは項目名を「保険診療」で統一したいため、ここで変換する
+// 会計画面で選んだ保険の種類を優先する（予約時のメニューが初期値の「鍼灸併用」のまま残っていても、
+// 実際に会計した内容＝「保険診療（柔整）」か「鍼灸保険」かをレシートに正しく表記するため）
+function getInsuranceKindLabel(type){
+  if(type==="手技療法") return "保険診療";
+  if(type==="鍼灸併用") return "鍼灸保険（併用）";
+  if(type==="鍼灸のみ") return "鍼灸保険（のみ）";
+  return null;
+}
 function getReceiptMenuLabel(){
+  const byType=getInsuranceKindLabel(state.insuranceType);
+  if(byType) return byType;
   return booking.menu==="2回目以降の方"?"保険診療":booking.menu;
 }
 function buildReceiptText(){
@@ -1180,6 +1190,23 @@ async function save(){
       }catch(e){
         console.error("回数券の残数更新に失敗しました",e);
       }
+    }
+
+    // 会計で選んだ保険の種類・負担割合・回数に合わせて、予約のメニュー表記も実態に揃える
+    // （予約時の初期値「鍼灸併用 3割 初診」のまま残り、保険診療で会計したのに一覧が鍼灸併用になる問題の対策）
+    try{
+      const rate=state.insuranceRate;
+      if(state.insuranceType&&(rate==="3割"||rate==="2割"||rate==="1割")){
+        const tiers=state.insuranceType==="手技療法"?["初診","2回目","3回目","4回目以降"]:["初診","2回目以降"];
+        const tier=state.insuranceTier||tiers[0];
+        const newMenu=`${state.insuranceType} ${rate} ${tier}`;
+        if(newMenu!==booking.menu){
+          await sbPatch("bookings",booking.id,{menu:newMenu});
+          booking.menu=newMenu;
+        }
+      }
+    }catch(e){
+      console.error("予約メニュー表記の更新に失敗しました",e);
     }
 
     state.done=true;
