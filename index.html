@@ -1950,7 +1950,7 @@ function DailyReportPanel({bookings,payments,stores,todayStr}){
       const k=patientKey(b);
       if(!firstDate[k]||b.date<firstDate[k]) firstDate[k]=b.date;
     });
-    const blank=()=>({sales:0,ins:0,jifee:0,insCount:0,visits:0,newPt:0,returnPt:0,
+    const blank=()=>({sales:0,ins:0,jifee:0,insCount:0,juCount:0,hariCount:0,visits:0,newPt:0,returnPt:0,
       makiNew:0,makiCont:0,makiSales:0,jibaiNew:0,jibaiCont:0,jibaiSales:0,cancel:0,booked:0});
     const out=[];
     for(let d=1;d<=days;d++){
@@ -1963,7 +1963,13 @@ function DailyReportPanel({bookings,payments,stores,todayStr}){
         r.sales+=p.total_amount||0;
         r.ins+=p.insurance_amount||0;
         r.jifee+=p.jifee_amount||0;
-        if((p.insurance_amount||0)>0) r.insCount++;
+        if((p.insurance_amount||0)>0){
+          r.insCount++;
+          // 保険の種類：会計時に保存した種類を優先し、無い場合は予約メニュー名の頭で判定（手技療法＝柔整保険／鍼灸＝鍼灸保険）
+          const bk=bookingById[p.booking_id];
+          const kind=p.insurance_type||((bk&&String(bk.menu||"").startsWith("鍼灸"))?"鍼灸":"手技療法");
+          if(String(kind).startsWith("鍼灸")) r.hariCount++; else r.juCount++;
+        }
         paidIds.add(p.booking_id);
         (Array.isArray(p.jifee_items)?p.jifee_items:[]).forEach(it=>{
           const label=String(it.label||""),amt=parseInt(it.amount)||0;
@@ -1989,7 +1995,7 @@ function DailyReportPanel({bookings,payments,stores,todayStr}){
     return out;
   },[bookings,payments,storeId,ym,firstStoreId]);
 
-  const sumKeys=["sales","ins","jifee","insCount","visits","newPt","returnPt","makiNew","makiCont","makiSales","jibaiNew","jibaiCont","jibaiSales","cancel","booked"];
+  const sumKeys=["sales","ins","jifee","insCount","juCount","hariCount","visits","newPt","returnPt","makiNew","makiCont","makiSales","jibaiNew","jibaiCont","jibaiSales","cancel","booked"];
   const total={};
   sumKeys.forEach(k=>{total[k]=rows.reduce((s,r)=>s+(r[k]||0),0);});
   const cancelRate=r=>r.booked>0?(r.cancel/r.booked*100).toFixed(1)+"%":"-";
@@ -1999,6 +2005,8 @@ function DailyReportPanel({bookings,payments,stores,todayStr}){
     {h:"保険窓口",f:r=>fmt(r.ins)},
     {h:"自費合計",f:r=>fmt(r.jifee)},
     {h:"保険対応件数",f:r=>r.insCount},
+    {h:"保険施術（柔整）件数",f:r=>r.juCount},
+    {h:"鍼灸保険件数",f:r=>r.hariCount},
     {h:"新患数",f:r=>r.newPt},
     {h:"再診数",f:r=>r.returnPt},
     {h:"総来院数",f:r=>r.visits},
@@ -7940,7 +7948,12 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
 
   const firstStoreId=1;
   // 集計開始日より前の予約は、新患／再診の判定（初回来院日）にも使わない＝10/5以降の最初の来院を新患として数える
-  const scopedBookings=React.useMemo(()=>bookings.filter(b=>(b.store_id||firstStoreId)===selStoreId&&!b.cancelled&&b.date>=STAFF_KPI_START),[bookings,selStoreId]);
+  // さらに、集計開始日より前（10/1〜10/4のプレオープン期間）に来院履歴がある患者様は、KPIの対象から丸ごと除外する
+  const scopedBookings=React.useMemo(()=>{
+    const storeBookings=bookings.filter(b=>(b.store_id||firstStoreId)===selStoreId&&!b.cancelled);
+    const preStartNames=new Set(storeBookings.filter(b=>b.date<STAFF_KPI_START).map(b=>b.patient_name));
+    return storeBookings.filter(b=>b.date>=STAFF_KPI_START&&!preStartNames.has(b.patient_name));
+  },[bookings,selStoreId]);
 
   // 患者ごとの全来院日（キャンセル除く・店舗内）を古い順に並べる
   const historyByPatient=React.useMemo(()=>{
@@ -8118,7 +8131,7 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
             集計期間：{Number(rangeStart.slice(5,7))}/{Number(rangeStart.slice(8,10))}〜{Number(rangeEnd.slice(5,7))}/{Number(rangeEnd.slice(8,10))}
           </span>
         </div>
-        <div style={{fontSize:11,color:"#94a3b8",marginTop:8}}>※10/5以降の来院から集計しています（それ以前のプレオープン期間は含みません）</div>
+        <div style={{fontSize:11,color:"#94a3b8",marginTop:8}}>※10/5以降の来院から集計しています（10/1〜10/4に来院履歴のある患者様は集計に含みません）</div>
       </div>
       {loading?(
         <div style={{textAlign:"center",padding:40,color:"#94a3b8"}}>読み込み中...</div>

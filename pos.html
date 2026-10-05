@@ -1121,6 +1121,7 @@ async function save(){
       memo:state.jifeeItems.map(i=>i.label).join("・")||null,
       // 日計表（巻き爪・自賠の件数／売上）を自動集計するため、項目ごとの金額も保存しておく
       jifee_items:state.jifeeItems.map(i=>({label:i.label,amount:parseInt(i.amount)||0})),
+      insurance_type:state.insuranceType||null,
       is_training:!!booking.is_training,
     });
     if(result&&result.error){throw new Error(result.message||result.error||"保存に失敗しました");}
