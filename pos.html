@@ -608,7 +608,7 @@ function buildReceiptText(){
   const clinicName=(storeInfo&&storeInfo.name)?storeInfo.name:CLINIC_NAME_FALLBACK;
   const clinicAddr=storeInfo&&storeInfo.address?storeInfo.address:"";
   const clinicTel=storeInfo&&storeInfo.tel?storeInfo.tel:"";
-  const taxIncluded=Math.round(total*8/108);
+  const taxIncluded=Math.round(total*10/110);
   const items=[
     ...(ins>0?[{label:getReceiptMenuLabel()||"保険窓口負担",amount:ins}]:[]),
     ...state.jifeeItems.map(i=>({label:i.label,amount:i.amount})),
@@ -637,7 +637,7 @@ function buildReceiptText(){
   lines.push({text:"-".repeat(W)});
   lines.push({text:padRow("値引",fmtPrint(0),W)});
   lines.push({text:padRow("小計（税込）",fmtPrint(total),W)});
-  lines.push({text:padRow("消費税（内8%対象）",fmtPrint(taxIncluded),W)});
+  lines.push({text:padRow("消費税（内10%対象）",fmtPrint(taxIncluded),W)});
   lines.push({text:"=".repeat(W)});
   // 合計行はdouble-width(width:2)にすると実際の印字幅が2倍になり32桁に収まらず折り返してしまうため、
   // 太字のみ（幅は通常サイズ）にして他の行と同じ32桁の枠内に収める
@@ -839,8 +839,8 @@ function renderReceipt(){
   const clinicName=(storeInfo&&storeInfo.name)?storeInfo.name:CLINIC_NAME_FALLBACK;
   const clinicAddr=storeInfo&&storeInfo.address?storeInfo.address:"";
   const clinicTel=storeInfo&&storeInfo.tel?storeInfo.tel:"";
-  // 内税8%を前提に、合計額から税額を逆算して表示（現状の合計は税込金額として扱っています）
-  const taxIncluded=Math.round(total*8/108);
+  // 内税10%を前提に、合計額から税額を逆算して表示（現状の合計は税込金額として扱っています）
+  const taxIncluded=Math.round(total*10/110);
   const items=[
     ...(ins>0?[{label:getReceiptMenuLabel()||"保険窓口負担",amount:ins}]:[]),
     ...state.jifeeItems.map(i=>({label:i.label,amount:i.amount})),
@@ -870,7 +870,7 @@ function renderReceipt(){
 
       <div class="pr-row"><span class="l">値引</span><span class="r">${fmt(0)}</span></div>
       <div class="pr-row"><span class="l">小計（税込）</span><span class="r">${fmt(total)}</span></div>
-      <div class="pr-row"><span class="l">消費税（内8%対象）</span><span class="r">${fmt(taxIncluded)}</span></div>
+      <div class="pr-row"><span class="l">消費税（内10%対象）</span><span class="r">${fmt(taxIncluded)}</span></div>
       <div class="pr-dline"></div>
       <div class="pr-total-row"><span>合　計</span><span>${fmt(total)}</span></div>
       <div class="pr-line"></div>
