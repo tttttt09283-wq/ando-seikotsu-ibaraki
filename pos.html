@@ -372,7 +372,7 @@ function getJifeeCategories(){
 }
 
 let booking=null,treatment=null,visitCount=1,storeInfo=null;
-let state={insuranceAmount:0,insuranceType:null,insuranceRate:null,insuranceTier:null,jifeeItems:[],payments:[],done:false,saving:false,nextBookings:[],savingBookings:false,bookingsSaved:false,jifeeTab:isPreOpenPeriod()?"kaisu":"spot",receiptFrequency:null,receiptFrequencyKnown:false,savingReceiptPref:false};
+let state={passes:[],usePassId:null,passUsedInfo:null,insuranceAmount:0,insuranceType:null,insuranceRate:null,insuranceTier:null,jifeeItems:[],payments:[],done:false,saving:false,nextBookings:[],savingBookings:false,bookingsSaved:false,jifeeTab:isPreOpenPeriod()?"kaisu":"spot",receiptFrequency:null,receiptFrequencyKnown:false,savingReceiptPref:false};
 const CLINIC_NAME_FALLBACK="あんど整骨院";
 
 function getMenuByVisit(visit){if(visit===1) return "初診（60分）";if(visit===2) return "初診（60分）";return "再診（30分）";}
@@ -622,6 +622,26 @@ function padRow(left,right,width){
 }
 // booking.menuは予約時に患者様が選んだ表示名（「2回目以降の方」等）がそのまま入っているが、
 // 保険請求用のレシートでは項目名を「保険診療」で統一したいため、ここで変換する
+// ===== 回数券・フリーパスの消費表示 =====
+function isTicketPass(p){ return !String(p.pass_type||"").includes("フリーパス"); }
+function fmtMD(d){ if(!d) return ""; const x=new Date(String(d).slice(0,10)+"T00:00:00"); return (x.getMonth()+1)+"/"+x.getDate(); }
+// 今回の会計で使用する回数券／フリーパス（会計確定後は確定時の内容を返す）
+function getPassUsage(){
+  if(state.passUsedInfo) return state.passUsedInfo;
+  const p=state.passes.find(x=>x.id===state.usePassId);
+  if(!p) return null;
+  const ticket=isTicketPass(p);
+  return {kind:ticket?"回数券":"フリーパス",label:p.pass_type,
+    remainingAfter:ticket?Math.max(0,(p.remaining_count||0)-1):null,
+    total:p.total_count||null,expiry:p.expiry_date||null};
+}
+function passUsageRight(u){
+  return u.kind==="回数券"?`残${u.remainingAfter}回`:(u.expiry?`〜${fmtMD(u.expiry)}`:"利用");
+}
+function togglePass(id){
+  state.usePassId=(state.usePassId===id)?null:id;
+  render();
+}
 // 会計画面で選んだ保険の種類を優先する（予約時のメニューが初期値の「鍼灸併用」のまま残っていても、
 // 実際に会計した内容＝「保険診療（柔整）」か「鍼灸保険」かをレシートに正しく表記するため）
 function getInsuranceKindLabel(type){
@@ -670,6 +690,11 @@ function buildReceiptText(){
     items.forEach(i=>{ lines.push({text:padRow(i.label,fmtPrint(i.amount),W)}); });
   }else{
     lines.push({text:padRow("－","－",W)});
+  }
+  const passUse=getPassUsage();
+  if(passUse){
+    lines.push({text:padRow(passUse.kind==="回数券"?"回数券消費":"フリーパス利用",passUsageRight(passUse),W)});
+    lines.push({small:true,text:"  ("+passUse.label+")"});
   }
   lines.push({text:"-".repeat(W)});
   lines.push({text:padRow("値引",fmtPrint(0),W)});
@@ -903,6 +928,7 @@ function renderReceipt(){
 
       <div class="pr-section-label">【ご利用メニュー】</div>
       ${items.length>0?items.map(i=>`<div class="pr-row"><span class="l">${i.label}</span><span class="r">${fmt(i.amount)}</span></div>`).join(""):`<div class="pr-row"><span class="l">－</span><span class="r">－</span></div>`}
+      ${(()=>{const u=getPassUsage();return u?`<div class="pr-row"><span class="l">${u.kind==="回数券"?"回数券消費":"フリーパス利用"}</span><span class="r">${passUsageRight(u)}</span></div><div style="font-size:10px;color:#555;">　(${u.label})</div>`:"";})()}
       <div class="pr-line"></div>
 
       <div class="pr-row"><span class="l">値引</span><span class="r">${fmt(0)}</span></div>
@@ -1177,9 +1203,11 @@ async function save(){
     }
 
     // ===== 回数券消費：会計完了のタイミングで、選択されていた回数券の残数を1減らす =====
-    if(booking.consumed_pass_id&&booking.consumed_pass_type==="回数券"){
+    // 会計画面の「回数券・フリーパス」カードで選ばれたもの（予約時に選択済みの場合は最初から選択状態）を対象にする
+    const usedPass=state.passes.find(x=>x.id===state.usePassId);
+    if(usedPass&&isTicketPass(usedPass)){
       try{
-        const passRows=await sbGet("passes",`?id=eq.${booking.consumed_pass_id}`);
+        const passRows=await sbGet("passes",`?id=eq.${usedPass.id}`);
         const pass=Array.isArray(passRows)&&passRows.length>0?passRows[0]:null;
         if(pass){
           const newRemaining=Math.max(0,(pass.remaining_count||0)-1);
@@ -1210,6 +1238,8 @@ async function save(){
       console.error("予約メニュー表記の更新に失敗しました",e);
     }
 
+    // レシート表示用に、確定時点の利用内容（消費後の残回数）を固定しておく
+    state.passUsedInfo=getPassUsage();
     state.done=true;
   }catch(e){
     alert("保存エラー："+e.message+"\n\nログイン状態が切れている可能性があります。お手数ですが管理画面に戻って再ログインしてから、もう一度お試しください。");
@@ -1256,6 +1286,25 @@ function render(){
               <div style="font-size:11px;color:#92400e;margin-bottom:10px;">この期間はこちらの3メニューがメインです。無料体験会・無料施術は0円で確定できます。回数券・フリーパスは既に10%OFFの金額になっています。</div>
               <button onclick="applyPreOpenFreeTrial()" style="width:100%;padding:12px;border-radius:10px;border:none;background:#f59e0b;color:white;font-size:14px;font-weight:800;cursor:pointer;margin-bottom:8px;">🎁 無料体験会（今回0円で確定）</button>
               <button onclick="applyPreOpenFreeTreatment()" style="width:100%;padding:12px;border-radius:10px;border:none;background:#059669;color:white;font-size:14px;font-weight:800;cursor:pointer;">🆓 無料施術（今回0円で確定）</button>
+            </div>
+          </div>
+          `:``}
+          ${state.passes.length>0?`
+          <div class="card" style="border:2px solid #7c3aed;">
+            <div class="card-header" style="background:#f5f3ff;color:#6d28d9;">🎫 回数券・フリーパス（お持ちの分）</div>
+            <div class="card-body">
+              ${state.passes.map(p=>{
+                const ticket=isTicketPass(p);
+                const sel=state.usePassId===p.id;
+                return `<button onclick="togglePass(${p.id})" style="width:100%;text-align:left;padding:10px 12px;margin-bottom:6px;border-radius:10px;cursor:pointer;border:2px solid ${sel?"#7c3aed":"#e2e8f0"};background:${sel?"#f5f3ff":"white"};">
+                  <div style="font-size:13px;font-weight:800;color:#1e293b;">${sel?"✅ ":""}${p.pass_type}</div>
+                  <div style="font-size:11px;color:#64748b;margin-top:3px;">
+                    ${ticket?`残り <b style="color:#7c3aed;font-size:13px;">${p.remaining_count}</b> / ${p.total_count}回`:`フリーパス（回数制限なし）`}
+                    　期限 ${p.expiry_date?fmtMD(p.expiry_date):"-"}
+                  </div>
+                  ${sel?`<div style="font-size:11px;font-weight:700;color:#6d28d9;margin-top:4px;">${ticket?`今回の会計で1回消費します（${p.remaining_count}回 → ${Math.max(0,p.remaining_count-1)}回）`:`今回はフリーパスを利用します（残数は減りません）`}</div>`:`<div style="font-size:10px;color:#94a3b8;margin-top:4px;">タップすると今回の会計で${ticket?"消費":"利用"}します</div>`}
+                </button>`;
+              }).join("")}
             </div>
           </div>
           `:``}
@@ -1407,6 +1456,18 @@ async function init(){
     treatment=treatments[0]||null;
     const samePatient=await sbGet("bookings",`?patient_name=eq.${encodeURIComponent(booking.patient_name)}&order=date.asc`);
     visitCount=Array.isArray(samePatient)?samePatient.length:1;
+    // この患者様の有効な回数券・フリーパスを取得（会計画面に残数・期限を表示し、消費を選べるようにする）
+    try{
+      const rows=await sbGet("passes",`?patient_name=eq.${encodeURIComponent(booking.patient_name)}&active=eq.true&order=expiry_date.asc`);
+      state.passes=(Array.isArray(rows)?rows:[]).filter(p=>{
+        if(!!p.is_training!==!!booking.is_training) return false;
+        if(p.expiry_date&&String(p.expiry_date).slice(0,10)<booking.date) return false; // 期限切れ
+        if(isTicketPass(p)&&(p.remaining_count||0)<=0) return false; // 残数なし
+        return true;
+      });
+      // 予約時にパス消費を選んでいた場合は、最初から選択状態にしておく
+      if(booking.consumed_pass_id&&state.passes.some(p=>p.id===booking.consumed_pass_id)) state.usePassId=booking.consumed_pass_id;
+    }catch(e){ console.error("回数券・FPの取得に失敗しました",e); }
     document.getElementById("patientBadge").textContent=booking.patient_name+" 様";
     if(booking.is_training){ document.getElementById("trainingBanner").style.display="block"; }
     // レシート発行頻度の希望（問診票または過去の会計時の設定）を読み込む
