@@ -1946,11 +1946,15 @@ function DailyReportPanel({bookings,payments,stores,todayStr}){
     // 患者ごとの初回来院日（キャンセルを除く予約のうち一番古い日）→ 新患／再診の判定に使う
     const patientKey=b=>(b.phone||"")+"|"+(b.patient_name||"");
     const firstDate={};
+    const datesByPatient={}; // 患者ごとの来院日（キャンセル除く）
     storeBookings.filter(b=>!b.cancelled).forEach(b=>{
       const k=patientKey(b);
       if(!firstDate[k]||b.date<firstDate[k]) firstDate[k]=b.date;
+      (datesByPatient[k]=datesByPatient[k]||[]).push(b.date);
     });
-    const blank=()=>({sales:0,ins:0,jifee:0,insCount:0,juCount:0,hariCount:0,visits:0,newPt:0,returnPt:0,
+    // 再診＝前回の来院から1ヶ月以上空いた方（前回来院日の1ヶ月後の日付以降に来院）
+    const addMonth=ds=>{const d=new Date(ds+"T00:00:00");d.setMonth(d.getMonth()+1);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
+    const blank=()=>({sales:0,ins:0,jifee:0,insCount:0,juCount:0,hariCount:0,visits:0,newPt:0,returnPt:0,monthFirst:0,keepPt:0,
       makiNew:0,makiCont:0,makiSales:0,jibaiNew:0,jibaiCont:0,jibaiSales:0,cancel:0,booked:0});
     const out=[];
     for(let d=1;d<=days;d++){
@@ -1985,7 +1989,14 @@ function DailyReportPanel({bookings,payments,stores,todayStr}){
       r.visits=paidIds.size;
       paidIds.forEach(id=>{
         const b=bookingById[id];
-        if(b&&firstDate[patientKey(b)]===ds) r.newPt++; else r.returnPt++;
+        if(!b) return;
+        const k=patientKey(b);
+        if(firstDate[k]===ds){ r.newPt++; return; }
+        const prevDates=(datesByPatient[k]||[]).filter(x=>x<ds).sort();
+        const prev=prevDates[prevDates.length-1];
+        if(prev&&addMonth(prev)<=ds) r.returnPt++;                       // 再診：前回から1ヶ月以上空いた
+        else if(!prev||prev.slice(0,7)!==ds.slice(0,7)) r.monthFirst++;   // 今月初：その月に初めて来院（新患・再診以外）
+        else r.keepPt++;                                                  // 月内2回目以降
       });
       const dayBookings=storeBookings.filter(b=>b.date===ds);
       r.booked=dayBookings.length;
@@ -1995,7 +2006,7 @@ function DailyReportPanel({bookings,payments,stores,todayStr}){
     return out;
   },[bookings,payments,storeId,ym,firstStoreId]);
 
-  const sumKeys=["sales","ins","jifee","insCount","juCount","hariCount","visits","newPt","returnPt","makiNew","makiCont","makiSales","jibaiNew","jibaiCont","jibaiSales","cancel","booked"];
+  const sumKeys=["sales","ins","jifee","insCount","juCount","hariCount","visits","newPt","returnPt","monthFirst","keepPt","makiNew","makiCont","makiSales","jibaiNew","jibaiCont","jibaiSales","cancel","booked"];
   const total={};
   sumKeys.forEach(k=>{total[k]=rows.reduce((s,r)=>s+(r[k]||0),0);});
   const cancelRate=r=>r.booked>0?(r.cancel/r.booked*100).toFixed(1)+"%":"-";
@@ -2009,6 +2020,8 @@ function DailyReportPanel({bookings,payments,stores,todayStr}){
     {h:"鍼灸保険件数",f:r=>r.hariCount},
     {h:"新患数",f:r=>r.newPt},
     {h:"再診数",f:r=>r.returnPt},
+    {h:"今月初",f:r=>r.monthFirst},
+    {h:"月内2回目以降",f:r=>r.keepPt},
     {h:"総来院数",f:r=>r.visits},
     {h:"巻き爪（新規）",f:r=>r.makiNew},
     {h:"巻き爪（継続）",f:r=>r.makiCont},
@@ -2051,7 +2064,7 @@ function DailyReportPanel({bookings,payments,stores,todayStr}){
       </div>
       <div style={{fontSize:11,color:"#94a3b8",marginBottom:10,lineHeight:1.6}}>
         会計（POS）のデータから自動で集計しています。巻き爪・自賠は、会計画面の「巻き爪・自賠」ボタンで追加した分から数えます（導入前の会計は0件になります）。
-        保険対応件数＝保険窓口の金額がある会計の件数／新患＝その院で初めて予約した患者様。
+        保険対応件数＝保険窓口の金額がある会計の件数／新患＝その院で初めて予約した患者様／再診＝前回の来院から1ヶ月以上空いて来院した患者様／今月初＝その月に初めて来院した患者様（新患・再診を除く）／月内2回目以降＝同じ月に2回目以降の来院。
       </div>
       <div style={{overflowX:"auto",border:"1px solid #e2e8f0",borderRadius:10}}>
         <table style={{borderCollapse:"collapse",width:"100%"}}>
@@ -7982,13 +7995,21 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
     return scopedBookings.filter(b=>inRange(b.date)).map(b=>{
       const hist=historyByPatient[b.patient_name]||[];
       const isFirstVisitEver=hist.length>0&&hist[0].id===b.id;
+      // 再診＝前回の来院から1ヶ月以上空いた方（前回来院日の1ヶ月後の日付以降に来院）／それ以外の通院中は「継続」
+      const prevVisit=[...hist].reverse().find(h=>h.date<b.date);
+      let isReturnAfterGap=false;
+      if(prevVisit){
+        const lim=new Date(prevVisit.date+"T00:00:00");lim.setMonth(lim.getMonth()+1);
+        const limStr=lim.getFullYear()+"-"+String(lim.getMonth()+1).padStart(2,"0")+"-"+String(lim.getDate()).padStart(2,"0");
+        isReturnAfterGap=limStr<=b.date;
+      }
       const hasNext=hist.some(h=>h.date>b.date);
       const pay=paymentByBookingId[b.id];
       const treat=treatByBookingId[b.id];
       const jifeeAmount=pay?(pay.jifee_amount||0):0;
       const didJifee=jifeeAmount>0;
       const isContracted=treat&&treat.result==="成約";
-      return {booking:b,isFirstVisitEver,hasNext,didJifee,isContracted};
+      return {booking:b,isFirstVisitEver,isReturnAfterGap,hasNext,didJifee,isContracted};
     });
   },[scopedBookings,rangeStart,rangeEnd,historyByPatient,paymentByBookingId,treatByBookingId]);
 
@@ -7998,8 +8019,9 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
     return hist.filter(h=>h.date<beforeDate&&(paymentByBookingId[h.id]?.jifee_amount||0)>0).length;
   }
 
-  function calcCategory(isNewPatient){
-    const list=visitsInMonth.filter(v=>v.isFirstVisitEver===isNewPatient);
+  // kind: "new"（新患）／"return"（再診＝1ヶ月以上空いて来院）／"keep"（継続＝それ以外の通院中）
+  function calcCategory(kind){
+    const list=visitsInMonth.filter(v=>kind==="new"?v.isFirstVisitEver:kind==="return"?(!v.isFirstVisitEver&&v.isReturnAfterGap):(!v.isFirstVisitEver&&!v.isReturnAfterGap));
     const byStaff={};
     storeStaff.forEach(s=>{ byStaff[s.id]={staff:s,taiou:0,nextYes:0,jifeeCount:0,contractCount:0,fpLongCount:0,fpMonthCount:0,ticketCount:0,jifeeContinueCount:0}; });
     list.forEach(v=>{
@@ -8116,8 +8138,9 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
     return Object.values(byStaff);
   }
 
-  const newRows=calcCategory(true);
-  const repeatRows=calcCategory(false);
+  const newRows=calcCategory("new");
+  const repeatRows=calcCategory("return");
+  const keepRows=calcCategory("keep");
   const churnRows=calcChurn();
 
   return(
@@ -8138,7 +8161,8 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
       ):(
         <>
           {renderTable("新患（"+selMonth+"）",newRows)}
-          {renderTable("再診（"+selMonth+"）",repeatRows)}
+          {renderTable("再診＝前回から1ヶ月以上空いた方（"+selMonth+"）",repeatRows)}
+          {renderTable("継続＝通院中の方（"+selMonth+"）",keepRows)}
           <div className="card">
             <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>離反（前月来院者のうち今月未来院）</div>
             <div style={{overflowX:"auto"}}>
