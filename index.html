@@ -8446,6 +8446,12 @@ function Dashboard({user,onLogout}){
       return next;
     });
   }
+  // カレンダーに「現在時刻」の縦線を表示するための時計。30秒ごとに更新してバーを動かす。
+  const [nowTick,setNowTick]=React.useState(()=>new Date());
+  React.useEffect(()=>{
+    const timer=setInterval(()=>setNowTick(new Date()),30000);
+    return ()=>clearInterval(timer);
+  },[]);
   // 今の表示モードに応じて、実データと練習データを出し分ける
   // （以降のコード全体で使う"bookings"は、常にこのフィルタ後の値。生データはallBookings/allPaymentsとして残す）
   // ※KPI・売上・患者一覧などの「集計系」画面は、本番・練習の数字が絶対に混ざらないよう、必ずこの"bookings"（同モードのみ）を使うこと。
@@ -9707,6 +9713,11 @@ function Dashboard({user,onLogout}){
             function timeToX(timeStr){const[h,m]=timeStr.split(":").map(Number);return((h-9)*60+m)/10*CELL_W;}
             function durationToW(b){return(b.duration||DURATION[b.menu]||30)/10*CELL_W;}
 
+            // 現在時刻バー：9:00〜20:00の表示範囲内の時だけ、今日の列にXを計算する
+            const nowMinOfDay=nowTick.getHours()*60+nowTick.getMinutes();
+            const nowInRange=nowMinOfDay>=9*60&&nowMinOfDay<=20*60;
+            const nowX=nowInRange?((nowTick.getHours()-9)*60+nowTick.getMinutes())/10*CELL_W:null;
+
             // 30分スロット集計
             const timeSlots30=[];
             for(let h=9;h<=20;h++){for(let m=0;m<60;m+=30){
@@ -9893,6 +9904,12 @@ function Dashboard({user,onLogout}){
                                   )}
                                   {shiftRange&&shiftEndX<rowFullW&&(
                                     <div style={{position:"absolute",left:shiftEndX,top:0,bottom:0,width:rowFullW-shiftEndX,background:"repeating-linear-gradient(45deg,#f1f5f9,#f1f5f9 6px,#e9edf1 6px,#e9edf1 12px)",pointerEvents:"none",zIndex:0}}/>
+                                  )}
+                                  {/* 現在時刻バー：今日の列にだけ、今の時間の位置に赤い縦線を表示する */}
+                                  {isToday&&nowInRange&&(
+                                    <div style={{position:"absolute",left:nowX,top:0,bottom:0,width:2,background:"#ef4444",pointerEvents:"none",zIndex:5,boxShadow:"0 0 4px rgba(239,68,68,.6)"}}>
+                                      <div style={{position:"absolute",top:-5,left:-4,width:10,height:10,borderRadius:"50%",background:"#ef4444"}}/>
+                                    </div>
                                   )}
                                   {MINS.map(({h,m,label})=>(
                                     <div key={label} style={{position:"absolute",left:(h-9)*60/10*CELL_W+m/10*CELL_W,top:0,bottom:0,borderLeft:`1px solid ${m%30===0?"#e2e8f0":"#f6f7f9"}`,pointerEvents:"none"}}/>
