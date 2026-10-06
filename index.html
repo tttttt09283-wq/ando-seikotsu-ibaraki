@@ -433,13 +433,13 @@ async function processReferralBonus(booking,allBookings){
 
     const issuedIsTraining=!!booking.is_training; // 紹介元の予約がトレーニングモードなら、発行する特典もトレーニング扱いにする
     const passesToIssue=[
-      {phone:referrerPhone,pass_type:"紹介特典：施術1回無料",total_count:1,remaining_count:1,expiry_date:addMonths(todayStr,3),purchased_at:todayStr,active:true,is_training:issuedIsTraining},
+      {phone:referrerPhone,pass_type:"紹介特典：施術1回無料",total_count:1,remaining_count:1,expiry_date:addMonths(todayStr,3),purchased_date:todayStr,active:true,is_training:issuedIsTraining},
     ];
     if(count%3===0){
-      passesToIssue.push({phone:referrerPhone,pass_type:"紹介ボーナス：回数券1回分",total_count:1,remaining_count:1,expiry_date:addMonths(todayStr,3),purchased_at:todayStr,active:true,is_training:issuedIsTraining});
+      passesToIssue.push({phone:referrerPhone,pass_type:"紹介ボーナス：回数券1回分",total_count:1,remaining_count:1,expiry_date:addMonths(todayStr,3),purchased_date:todayStr,active:true,is_training:issuedIsTraining});
     }
     if(count%5===0){
-      passesToIssue.push({phone:referrerPhone,pass_type:"紹介ボーナス：FP（フリーパス）1ヶ月",total_count:null,remaining_count:null,expiry_date:addMonths(todayStr,1),purchased_at:todayStr,active:true,is_training:issuedIsTraining});
+      passesToIssue.push({phone:referrerPhone,pass_type:"紹介ボーナス：FP（フリーパス）1ヶ月",total_count:null,remaining_count:null,expiry_date:addMonths(todayStr,1),purchased_date:todayStr,active:true,is_training:issuedIsTraining});
     }
     for(const p of passesToIssue){
       await sb.insert("passes",p);
@@ -7941,7 +7941,7 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
   React.useEffect(()=>{
     Promise.all([
       sb.select("treatments","?order=treated_at.desc"),
-      sb.select("passes","?order=purchased_at.desc.nullslast"),
+      sb.select("passes","?order=purchased_date.desc.nullslast"),
     ]).then(([t,p])=>{
       setTreatments(Array.isArray(t)?t:[]);
       setPassesRaw(Array.isArray(p)?p:[]);
@@ -8033,7 +8033,7 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
       if(v.didJifee) row.jifeeCount++;
       if(v.isContracted) row.contractCount++;
       // このタイミングで購入されたパス（回数券・FP）を集計
-      const boughtPasses=passes.filter(p=>p.patient_name===v.booking.patient_name&&p.purchased_at&&p.purchased_at.slice(0,10)===v.booking.date);
+      const boughtPasses=passes.filter(p=>p.patient_name===v.booking.patient_name&&p.purchased_date&&p.purchased_date.slice(0,10)===v.booking.date);
       boughtPasses.forEach(p=>{
         const isFP=(p.pass_type||"").includes("フリーパス");
         if(isFP){
@@ -8245,8 +8245,8 @@ function PassHoldersPanel({payments,bookings,trainingMode}){
   function exportPassesCSV(){
     const headers=["区分","患者名","電話番号","種類","金額","残数","残日数","有効期限","購入日"];
     const rows=[
-      ...ticketPasses.map(p=>["回数券",p.patient_name,p.phone||"",p.pass_type,p.amount||0,(p.remaining_count||0)+"/"+(p.total_count||0),"",p.expiry_date||"",p.purchased_date||p.purchased_at||""]),
-      ...fpPasses.map(p=>["フリーパス",p.patient_name,p.phone||"",p.pass_type,p.amount||0,"",daysUntil(p.expiry_date)!=null?daysUntil(p.expiry_date):"",p.expiry_date||"",p.purchased_date||p.purchased_at||""]),
+      ...ticketPasses.map(p=>["回数券",p.patient_name,p.phone||"",p.pass_type,p.amount||0,(p.remaining_count||0)+"/"+(p.total_count||0),"",p.expiry_date||"",p.purchased_date||""]),
+      ...fpPasses.map(p=>["フリーパス",p.patient_name,p.phone||"",p.pass_type,p.amount||0,"",daysUntil(p.expiry_date)!=null?daysUntil(p.expiry_date):"",p.expiry_date||"",p.purchased_date||""]),
     ];
     downloadCSV("回数券・フリーパス対象者一覧.csv",toCSV(rows,headers));
   }
@@ -9695,7 +9695,7 @@ function Dashboard({user,onLogout}){
         total_count:cfg.total_count,
         remaining_count:cfg.total_count,
         expiry_date:cfg.months?addMonths(baseDateStr,cfg.months):null,
-        purchased_at:baseDateStr,
+        purchased_date:baseDateStr,
         active:true,
         is_training:trainingMode, // トレーニングモード中に作った回数券・FPが本番データに混ざらないようにする
       };
