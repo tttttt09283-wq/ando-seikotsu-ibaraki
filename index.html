@@ -9,6 +9,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script>
 //
@@ -6883,9 +6884,27 @@ function PostureRecordAddForm({patient,onSaved}){
   const [saving,setSaving]=React.useState(false);
   const [err,setErr]=React.useState("");
 
-  function onFileChange(e){
+  const [converting,setConverting]=React.useState(false);
+  // iPhoneのHEIC形式はChromeなどで表示できないため、JPEGに変換してから扱う
+  async function onFileChange(e){
     const f=e.target.files&&e.target.files[0];
     if(!f) return;
+    setErr("");
+    const isHeic=/\.(heic|heif)$/i.test(f.name)||/image\/hei[cf]/i.test(f.type||"");
+    if(isHeic){
+      if(typeof window.heic2any!=="function"){ setErr("HEIC形式の写真を変換できませんでした。写真をJPEGで書き出すか、スマホで直接撮影してください。"); e.target.value=""; return; }
+      setConverting(true);
+      try{
+        const out=await window.heic2any({blob:f,toType:"image/jpeg",quality:0.85});
+        const blob=Array.isArray(out)?out[0]:out;
+        const jf=new File([blob],f.name.replace(/\.(heic|heif)$/i,"")+".jpg",{type:"image/jpeg"});
+        setFile(jf); setPreview(URL.createObjectURL(jf));
+      }catch(ex){
+        setErr("HEIC形式の写真の変換に失敗しました。写真をJPEGで書き出すか、別の写真でお試しください。"); e.target.value="";
+      }
+      setConverting(false);
+      return;
+    }
     setFile(f);
     setPreview(URL.createObjectURL(f));
   }
@@ -6896,9 +6915,11 @@ function PostureRecordAddForm({patient,onSaved}){
     try{
       let photoUrl=null;
       if(file){
-        const ext=(file.name.split(".").pop()||"jpg").toLowerCase();
-        const path=`${patient.name}_${Date.now()}.${ext}`;
-        const{error:uploadError}=await supabaseClient.storage.from("posture-photos").upload(path,file,{upsert:false});
+        // 保存先のファイル名は英数字のみにする（患者様名など日本語を含むと、Supabase Storageが「Invalid key」で拒否するため）
+        const rawExt=(file.name.split(".").pop()||"jpg").toLowerCase().replace(/[^a-z0-9]/g,"");
+        const ext=(rawExt&&rawExt.length<=5)?rawExt:"jpg";
+        const path=`${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+        const{error:uploadError}=await supabaseClient.storage.from("posture-photos").upload(path,file,{upsert:false,contentType:file.type||"image/jpeg"});
         if(uploadError) throw new Error("写真のアップロードに失敗しました："+uploadError.message);
         const{data:pub}=supabaseClient.storage.from("posture-photos").getPublicUrl(path);
         photoUrl=pub&&pub.publicUrl?pub.publicUrl:null;
@@ -6940,7 +6961,8 @@ function PostureRecordAddForm({patient,onSaved}){
       </div>
       <div style={{marginBottom:14}}>
         <label className="form-label">姿勢写真</label>
-        <input type="file" accept="image/*" onChange={onFileChange} style={{fontSize:13}}/>
+        <input type="file" accept="image/*,.heic,.heif" onChange={onFileChange} style={{fontSize:13}}/>
+        {converting&&<div style={{marginTop:6,fontSize:12,color:"#d97706",fontWeight:700}}>HEIC写真をJPEGに変換中...</div>}
         {preview&&<img src={preview} alt="プレビュー" style={{marginTop:8,width:120,height:120,objectFit:"cover",borderRadius:8,border:"1px solid #e2e8f0"}}/>}
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:14,marginBottom:14}}>
@@ -6957,8 +6979,8 @@ function PostureRecordAddForm({patient,onSaved}){
         <label className="form-label">スタッフのコメント・所見</label>
         <textarea className="form-input" rows={3} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="改善点・気になる点など"/>
       </div>
-      <button onClick={save} disabled={saving} className="btn"
-        style={{width:"100%",justifyContent:"center",padding:11,fontSize:14,borderRadius:9,background:"#1e3a5f",color:"white",fontWeight:800,opacity:saving?0.6:1}}>
+      <button onClick={save} disabled={saving||converting} className="btn"
+        style={{width:"100%",justifyContent:"center",padding:11,fontSize:14,borderRadius:9,background:"#1e3a5f",color:"white",fontWeight:800,opacity:(saving||converting)?0.6:1}}>
         {saving?"保存中...":"この記録を保存する"}
       </button>
     </div>
