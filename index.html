@@ -372,7 +372,13 @@ function allCatItems(cat){ return cat.subs.flatMap(s=>s.items); }
 
 // 後方互換：全メニュー名一覧・時間マップ（下でカスタムメニューとマージされる）
 const BASE_MENUS = MENU_CATEGORIES.flatMap(c=>allCatItems(c).map(i=>i.name));
-const BASE_DURATION = Object.fromEntries(MENU_CATEGORIES.flatMap(c=>allCatItems(c).map(i=>[i.name,i.duration])));
+// 10/5以降の予約枠：新規＝60分／2回目以降＝20分
+const SLOT_RULE_START="2026-10-05";
+const BASE_DURATION = {
+  ...Object.fromEntries(MENU_CATEGORIES.flatMap(c=>allCatItems(c).map(i=>[i.name,i.duration]))),
+  // 患者様の予約ページで選ばれるメニュー名（10/5以降：新規60分／2回目以降20分）
+  "初めての方（初診）":60,"久しぶりの方（要確認）":20,"2回目以降の方":20,"再診（20分）":20,
+};
 const BASE_MENU_PRICE = Object.fromEntries(MENU_CATEGORIES.flatMap(c=>allCatItems(c).map(i=>[i.name,i.price])));
 // これらはDashboardが「menus」テーブル（メニュー・コース管理で追加されたもの）を
 // 読み込み次第、実際の値に上書きされる（下のuseEffectを参照）
@@ -3270,9 +3276,19 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
     return true;
   }
 
+  // 10/5以降の枠の長さ：新規の患者様は60分、2回目以降の患者様は20分（これより長いメニュー＝30分の自費などは、そのメニューの時間を優先）
+  function baseSlotMinutes(){
+    if(!form.date||form.date<SLOT_RULE_START) return null; // 10/5より前は従来どおりメニューの時間
+    const name=(form.name||"").trim(), phone=(form.phone||"").trim();
+    if(!name) return null;
+    const hasPast=(bookings||[]).some(b=>!b.cancelled&&b.id!==editId&&b.patient_name===name&&(!phone||!b.phone||b.phone===phone)&&b.date<=form.date);
+    return hasPast?20:60;
+  }
   function toggleMenu(name,dur){
     const next=selectedMenus.includes(name)?selectedMenus.filter(m=>m!==name):[...selectedMenus,name];
-    const maxDur=next.length>0?Math.max(...next.map(m=>DURATION[m]||30)):dur;
+    const base=baseSlotMinutes();
+    let maxDur=next.length>0?Math.max(...next.map(m=>DURATION[m]||30)):dur;
+    if(base!=null) maxDur=Math.max(base,next.length>0?Math.max(...next.map(m=>DURATION[m]||0)):0);
     setForm(f=>({...f,menus:next,menu:next[0]||"",duration:maxDur}));
   }
 
