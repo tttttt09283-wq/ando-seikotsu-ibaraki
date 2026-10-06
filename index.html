@@ -8957,16 +8957,24 @@ function AttendanceMonthly({currentUser,isAdmin}){
   const sameRow=(a,b)=>a.inT===b.inT&&a.outT===b.outT&&a.bs===b.bs&&a.be===b.be;
   const changedDates=dates.filter(ds=>!locked(ds)&&draft[ds]&&!sameRow(draft[ds],origOf(ds)));
 
+  // 2回目以降の休憩（打刻で記録されたもの）の合計時間。表では編集できないが、実働・休憩の計算には含める
+  function extraBreakHours(ds){
+    const ex=(recsByDate[ds]||[])[0];
+    if(!ex) return 0;
+    return breaksOf(ex).slice(1).reduce((s,x)=>(x.start&&x.end)?s+(new Date(x.end)-new Date(x.start))/3600000:s,0);
+  }
   function workedHours(row,ds){
     if(!row.inT||!row.outT) return null;
     const a=new Date(`${ds}T${row.inT}:00`),b=new Date(`${ds}T${row.outT}:00`);
     let h=(b-a)/3600000;
     if(row.bs&&row.be){ h-=(new Date(`${ds}T${row.be}:00`)-new Date(`${ds}T${row.bs}:00`))/3600000; }
+    h-=extraBreakHours(ds);
     return Math.max(0,h);
   }
   function breakHours(row,ds){
-    if(!row.bs||!row.be) return 0;
-    return Math.max(0,(new Date(`${ds}T${row.be}:00`)-new Date(`${ds}T${row.bs}:00`))/3600000);
+    let h=extraBreakHours(ds);
+    if(row.bs&&row.be) h+=Math.max(0,(new Date(`${ds}T${row.be}:00`)-new Date(`${ds}T${row.bs}:00`))/3600000);
+    return h;
   }
   const fmtHM=h=>{ const mm=Math.round(h*60); return `${Math.floor(mm/60)}:${String(mm%60).padStart(2,"0")}`; };
 
@@ -9134,7 +9142,7 @@ function AttendanceMonthly({currentUser,isAdmin}){
                     <td style={td}><input type="time" value={row.outT} onChange={e=>setCell(ds,"outT",e.target.value)} style={inp}/></td>
                     <td style={td}><input type="time" value={row.bs} onChange={e=>setCell(ds,"bs",e.target.value)} style={inp}/></td>
                     <td style={td}><input type="time" value={row.be} onChange={e=>setCell(ds,"be",e.target.value)} style={inp}/></td>
-                    <td style={{...td,fontWeight:700}}>{h!=null?fmtHM(h):(row.inT&&!row.outT?<span style={{color:"#d97706"}}>退勤未入力</span>:"—")}</td>
+                    <td style={{...td,fontWeight:700}}>{h!=null?fmtHM(h):(row.inT&&!row.outT?<span style={{color:"#d97706"}}>退勤未入力</span>:"—")}{extraBreakHours(ds)>0&&<span style={{marginLeft:6,fontSize:10,color:"#92400e",fontWeight:700}}>（打刻の休憩+{fmtHM(extraBreakHours(ds))}含む）</span>}</td>
                   </tr>
                 );
               })}
