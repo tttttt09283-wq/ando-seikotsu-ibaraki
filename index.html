@@ -8569,7 +8569,7 @@ function ReferralMgmtPanel({bookings,payments}){
     </div>
   );
 }
-function AttendancePanel({currentUser,isAdmin}){
+function AttendancePunchPanel({currentUser,isAdmin}){
   const [records,setRecords]=React.useState([]);
   const [loading,setLoading]=React.useState(true);
   const [selMonth,setSelMonth]=React.useState(()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
@@ -8897,6 +8897,274 @@ function AttendancePanel({currentUser,isAdmin}){
           </div>
         </div>
       )}
+    </div>
+  );
+}
+// ===== 勤怠：個人別の月一括管理（1か月分を一覧で確認・まとめて入力／修正） =====
+function AttendanceMonthly({currentUser,isAdmin}){
+  const [records,setRecords]=React.useState([]);
+  const [loading,setLoading]=React.useState(true);
+  const [staffId,setStaffId]=React.useState(currentUser.id);
+  const [ym,setYm]=React.useState(()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
+  const [draft,setDraft]=React.useState({}); // {日付: {inT,outT,bs,be}}
+  const [saving,setSaving]=React.useState(false);
+  const [fill,setFill]=React.useState({inT:"09:00",outT:"18:00",bs:"12:00",be:"13:00",days:[1,2,3,4,5,6]}); // 一括入力の標準時間・対象曜日（0=日）
+  const todayStr=fmtDate(new Date());
+  const staff=STAFF_ACCOUNTS.find(s=>s.id===staffId)||currentUser;
+
+  function load(){
+    setLoading(true);
+    sb.select("attendance_records","?order=date.asc,clock_in.asc").then(rows=>{
+      setRecords(Array.isArray(rows)?rows:[]);
+      setLoading(false);
+    }).catch(()=>setLoading(false));
+  }
+  React.useEffect(()=>{ load(); },[]);
+
+  const isoToHM=iso=>{ if(!iso) return""; const d=new Date(iso); return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; };
+  const hmToIso=(date,hm)=>hm?new Date(`${date}T${hm}:00`).toISOString():null;
+  const breaksOf=r=>Array.isArray(r.breaks)?r.breaks:[];
+
+  const [y,m]=ym.split("-").map(Number);
+  const daysInMonth=new Date(y,m,0).getDate();
+  const dates=Array.from({length:daysInMonth},(_,i)=>`${ym}-${String(i+1).padStart(2,"0")}`);
+  const DOW=["日","月","火","水","木","金","土"];
+
+  // その人の、その月の記録を日付ごとに
+  const recsByDate=React.useMemo(()=>{
+    const map={};
+    records.filter(r=>r.staff_id===staffId&&r.date&&r.date.slice(0,7)===ym).forEach(r=>{ (map[r.date]=map[r.date]||[]).push(r); });
+    return map;
+  },[records,staffId,ym]);
+
+  // 記録が読み込まれた/人・月が変わったら、入力欄の初期値を作り直す
+  const origOf=ds=>{
+    const rs=recsByDate[ds]||[];
+    if(rs.length!==1) return {inT:"",outT:"",bs:"",be:""};
+    const r=rs[0], b=breaksOf(r)[0]||{};
+    return {inT:isoToHM(r.clock_in),outT:isoToHM(r.clock_out),bs:isoToHM(b.start),be:isoToHM(b.end)};
+  };
+  React.useEffect(()=>{
+    const d={};
+    dates.forEach(ds=>{ d[ds]=origOf(ds); });
+    setDraft(d);
+  },[recsByDate]);
+
+  const rowOf=ds=>draft[ds]||origOf(ds);
+  const setCell=(ds,key,val)=>setDraft(p=>({...p,[ds]:{...(p[ds]||origOf(ds)),[key]:val}}));
+  // 同じ日に複数の記録がある日は、ここでは編集せず（「打刻・履歴」の編集から修正）表示だけにする
+  const locked=ds=>(recsByDate[ds]||[]).length>1;
+  const sameRow=(a,b)=>a.inT===b.inT&&a.outT===b.outT&&a.bs===b.bs&&a.be===b.be;
+  const changedDates=dates.filter(ds=>!locked(ds)&&draft[ds]&&!sameRow(draft[ds],origOf(ds)));
+
+  function workedHours(row,ds){
+    if(!row.inT||!row.outT) return null;
+    const a=new Date(`${ds}T${row.inT}:00`),b=new Date(`${ds}T${row.outT}:00`);
+    let h=(b-a)/3600000;
+    if(row.bs&&row.be){ h-=(new Date(`${ds}T${row.be}:00`)-new Date(`${ds}T${row.bs}:00`))/3600000; }
+    return Math.max(0,h);
+  }
+  function breakHours(row,ds){
+    if(!row.bs||!row.be) return 0;
+    return Math.max(0,(new Date(`${ds}T${row.be}:00`)-new Date(`${ds}T${row.bs}:00`))/3600000);
+  }
+  const fmtHM=h=>{ const mm=Math.round(h*60); return `${Math.floor(mm/60)}:${String(mm%60).padStart(2,"0")}`; };
+
+  // 月間合計（画面上の入力内容ベース＝保存前でも見える）
+  let workDays=0,totalH=0,totalBreakH=0;
+  dates.forEach(ds=>{
+    const rs=recsByDate[ds]||[];
+    if(locked(ds)){
+      rs.forEach(r=>{
+        if(r.clock_in&&r.clock_out){
+          const bh=breaksOf(r).reduce((s,b)=>(b.start&&b.end)?s+(new Date(b.end)-new Date(b.start))/3600000:s,0);
+          totalH+=Math.max(0,(new Date(r.clock_out)-new Date(r.clock_in))/3600000-bh); totalBreakH+=bh;
+        }
+      });
+      workDays++;
+      return;
+    }
+    const row=rowOf(ds);
+    if(row.inT) workDays++;
+    const h=workedHours(row,ds);
+    if(h!=null){ totalH+=h; totalBreakH+=breakHours(row,ds); }
+  });
+
+  // 標準時間を、空欄の日（今日まで）にまとめて入力（保存はまだしない）
+  function applyFill(){
+    setDraft(p=>{
+      const next={...p};
+      dates.forEach(ds=>{
+        if(ds>todayStr||locked(ds)) return;
+        const dow=new Date(ds+"T00:00:00").getDay();
+        if(!fill.days.includes(dow)) return;
+        const cur=next[ds]||origOf(ds);
+        if(cur.inT||cur.outT) return; // すでに入力がある日は上書きしない
+        next[ds]={inT:fill.inT,outT:fill.outT,bs:fill.bs,be:fill.be};
+      });
+      return next;
+    });
+  }
+
+  async function saveAll(){
+    // 入力チェック
+    for(const ds of changedDates){
+      const r=draft[ds];
+      if(r.outT&&!r.inT){ alert(`${ds}：出勤時刻が空欄です`); return; }
+      if(r.inT&&r.outT&&r.outT<=r.inT){ alert(`${ds}：退勤は出勤より後の時刻にしてください`); return; }
+      if((r.bs&&!r.be)||(!r.bs&&r.be)){ alert(`${ds}：休憩は開始と終了の両方を入力してください`); return; }
+      if(r.bs&&r.be&&r.be<=r.bs){ alert(`${ds}：休憩の終了は開始より後の時刻にしてください`); return; }
+    }
+    if(changedDates.length===0) return;
+    const delCount=changedDates.filter(ds=>!draft[ds].inT&&!draft[ds].outT).length;
+    if(!confirm(`${staff.name}さんの ${changedDates.length}日分を保存します。`+(delCount>0?`\n（うち${delCount}日分は空欄なので記録を削除します）`:"")+"\nよろしいですか？")) return;
+    setSaving(true);
+    try{
+      for(const ds of changedDates){
+        const r=draft[ds];
+        const rs=recsByDate[ds]||[];
+        const existing=rs[0];
+        if(!r.inT&&!r.outT){
+          if(existing) await sb.delete("attendance_records",existing.id);
+          continue;
+        }
+        // 2つ目以降の休憩（打刻で記録されたもの）は残し、1つ目だけを入力内容に置き換える
+        const restBreaks=existing?breaksOf(existing).slice(1):[];
+        const firstBreak=(r.bs&&r.be)?[{start:hmToIso(ds,r.bs),end:hmToIso(ds,r.be)}]:[];
+        const payload={
+          staff_id:staffId,date:ds,
+          clock_in:hmToIso(ds,r.inT),clock_out:hmToIso(ds,r.outT),
+          breaks:[...firstBreak,...restBreaks],
+        };
+        if(existing) await sb.update("attendance_records",existing.id,payload);
+        else await sb.insert("attendance_records",payload);
+      }
+      load();
+    }catch(e){ alert("保存に失敗しました。もう一度お試しください。"); }
+    setSaving(false);
+  }
+
+  function shiftMonth(delta){
+    if(changedDates.length>0&&!confirm("保存していない変更があります。月を移動すると破棄されます。よろしいですか？")) return;
+    const d=new Date(y,m-1+delta,1);
+    setYm(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
+  }
+  function pickStaff(id){
+    if(changedDates.length>0&&!confirm("保存していない変更があります。スタッフを切り替えると破棄されます。よろしいですか？")) return;
+    setStaffId(id);
+  }
+
+  const inp={padding:"5px 6px",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:13,fontFamily:"inherit",width:98};
+  const th={padding:"8px 8px",textAlign:"left",fontWeight:800,color:"#64748b",fontSize:12,whiteSpace:"nowrap"};
+  const td={padding:"5px 8px",borderBottom:"1px solid #f1f5f9",fontSize:13,whiteSpace:"nowrap"};
+
+  return(
+    <div style={{maxWidth:1100,margin:"0 auto"}}>
+      <div className="card" style={{marginBottom:14,padding:"14px 16px"}}>
+        <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:10}}>🗓 個人別 月一括管理</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+          {STAFF_ACCOUNTS.map(s=>(
+            <button key={s.id} onClick={()=>pickStaff(s.id)} style={{padding:"6px 14px",borderRadius:20,border:"2px solid "+s.color,background:staffId===s.id?s.color:"white",color:staffId===s.id?"white":s.color,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{s.name}</button>
+          ))}
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <button onClick={()=>shiftMonth(-1)} style={{padding:"5px 12px",borderRadius:8,border:"1.5px solid #e2e8f0",background:"white",cursor:"pointer"}}>◀</button>
+          <span style={{fontWeight:800,fontSize:15}}>{y}年{m}月</span>
+          <button onClick={()=>shiftMonth(1)} style={{padding:"5px 12px",borderRadius:8,border:"1.5px solid #e2e8f0",background:"white",cursor:"pointer"}}>▶</button>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap",marginLeft:"auto"}}>
+            <span style={{background:"#eff6ff",color:"#1d4ed8",padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:800}}>出勤 {workDays}日</span>
+            <span style={{background:"#ecfdf5",color:"#047857",padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:800}}>実働 {fmtHM(totalH)}（{totalH.toFixed(1)}時間）</span>
+            <span style={{background:"#fef3c7",color:"#92400e",padding:"4px 12px",borderRadius:20,fontSize:12,fontWeight:800}}>休憩 {fmtHM(totalBreakH)}</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="card" style={{marginBottom:14,padding:"12px 16px"}}>
+        <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:8}}>⚡ 標準の勤務時間を空欄の日にまとめて入力（今日まで）</div>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <span style={{fontSize:12,color:"#64748b"}}>出勤</span><input type="time" value={fill.inT} onChange={e=>setFill(p=>({...p,inT:e.target.value}))} style={inp}/>
+          <span style={{fontSize:12,color:"#64748b"}}>退勤</span><input type="time" value={fill.outT} onChange={e=>setFill(p=>({...p,outT:e.target.value}))} style={inp}/>
+          <span style={{fontSize:12,color:"#64748b"}}>休憩</span><input type="time" value={fill.bs} onChange={e=>setFill(p=>({...p,bs:e.target.value}))} style={inp}/>
+          <span>〜</span><input type="time" value={fill.be} onChange={e=>setFill(p=>({...p,be:e.target.value}))} style={inp}/>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:8}}>
+          <span style={{fontSize:12,color:"#64748b"}}>対象の曜日</span>
+          {DOW.map((n,i)=>(
+            <label key={i} style={{display:"flex",alignItems:"center",gap:3,fontSize:12,fontWeight:700,color:i===0?"#dc2626":i===6?"#7c3aed":"#334155",cursor:"pointer"}}>
+              <input type="checkbox" checked={fill.days.includes(i)} onChange={e=>setFill(p=>({...p,days:e.target.checked?[...p.days,i]:p.days.filter(x=>x!==i)}))}/>{n}
+            </label>
+          ))}
+          <button onClick={applyFill} style={{marginLeft:"auto",padding:"7px 16px",borderRadius:8,border:"none",background:"#0891b2",color:"white",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>空欄の日に入力する</button>
+        </div>
+        <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>※入力済みの日は上書きしません。入力後、下の「保存」を押すまで記録には反映されません。</div>
+      </div>
+
+      <div className="card">
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",minWidth:760}}>
+            <thead>
+              <tr style={{background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}>
+                {["日付","出勤","退勤","休憩開始","休憩終了","実働"].map(h=><th key={h} style={th}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {loading?(
+                <tr><td colSpan={6} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>読み込み中...</td></tr>
+              ):dates.map(ds=>{
+                const dow=new Date(ds+"T00:00:00").getDay();
+                const isLocked=locked(ds);
+                const row=rowOf(ds);
+                const h=isLocked?null:workedHours(row,ds);
+                const changed=changedDates.includes(ds);
+                const future=ds>todayStr;
+                const dc=dow===0?"#dc2626":dow===6?"#7c3aed":"#1e293b";
+                if(isLocked){
+                  const rs=recsByDate[ds];
+                  return(
+                    <tr key={ds} style={{background:"#f8fafc"}}>
+                      <td style={{...td,fontWeight:700,color:dc}}>{Number(ds.slice(8))}（{DOW[dow]}）</td>
+                      <td colSpan={5} style={{...td,color:"#64748b",fontSize:12}}>この日は打刻が{rs.length}件あります：{rs.map(r=>`${isoToHM(r.clock_in)}〜${r.clock_out?isoToHM(r.clock_out):"勤務中"}`).join(" / ")}（「打刻・履歴」の編集から修正できます）</td>
+                    </tr>
+                  );
+                }
+                return(
+                  <tr key={ds} style={{background:changed?"#fffbeb":(dow===0?"#fff7f7":"white"),opacity:future&&!row.inT?0.55:1}}>
+                    <td style={{...td,fontWeight:700,color:dc}}>{Number(ds.slice(8))}（{DOW[dow]}）{ds===todayStr&&<span style={{marginLeft:6,fontSize:10,background:"#d97706",color:"white",borderRadius:8,padding:"1px 6px"}}>今日</span>}</td>
+                    <td style={td}><input type="time" value={row.inT} onChange={e=>setCell(ds,"inT",e.target.value)} style={inp}/></td>
+                    <td style={td}><input type="time" value={row.outT} onChange={e=>setCell(ds,"outT",e.target.value)} style={inp}/></td>
+                    <td style={td}><input type="time" value={row.bs} onChange={e=>setCell(ds,"bs",e.target.value)} style={inp}/></td>
+                    <td style={td}><input type="time" value={row.be} onChange={e=>setCell(ds,"be",e.target.value)} style={inp}/></td>
+                    <td style={{...td,fontWeight:700}}>{h!=null?fmtHM(h):(row.inT&&!row.outT?<span style={{color:"#d97706"}}>退勤未入力</span>:"—")}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style={{position:"sticky",bottom:0,background:"white",borderTop:"1px solid #e2e8f0",padding:"12px 16px",marginTop:14,display:"flex",alignItems:"center",gap:12,borderRadius:"0 0 12px 12px"}}>
+        <span style={{fontSize:13,fontWeight:700,color:changedDates.length>0?"#92400e":"#94a3b8"}}>{changedDates.length>0?`${changedDates.length}日分の変更が未保存です`:"変更はありません"}</span>
+        {changedDates.length>0&&<button onClick={()=>setDraft(Object.fromEntries(dates.map(ds=>[ds,origOf(ds)])))} disabled={saving} style={{padding:"9px 16px",borderRadius:10,border:"1.5px solid #e2e8f0",background:"white",color:"#334155",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>元に戻す</button>}
+        <button onClick={saveAll} disabled={saving||changedDates.length===0} style={{marginLeft:"auto",padding:"11px 28px",borderRadius:10,border:"none",background:changedDates.length>0?"#1e3a5f":"#cbd5e1",color:"white",fontSize:14,fontWeight:800,cursor:changedDates.length>0?"pointer":"default",fontFamily:"inherit"}}>{saving?"保存中...":"まとめて保存"}</button>
+      </div>
+    </div>
+  );
+}
+
+// 勤怠管理：「打刻・履歴」と「個人別 月一括管理」の切り替え
+function AttendancePanel({currentUser,isAdmin}){
+  const [tab,setTab]=React.useState("punch");
+  const tabBtn=(id,label)=>(
+    <button onClick={()=>setTab(id)} style={{padding:"9px 20px",borderRadius:10,border:"2px solid "+(tab===id?"#1e3a5f":"#e2e8f0"),background:tab===id?"#1e3a5f":"white",color:tab===id?"white":"#334155",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>{label}</button>
+  );
+  return(
+    <div>
+      <div style={{maxWidth:1100,margin:"0 auto 14px",display:"flex",gap:8}}>
+        {tabBtn("punch","⏰ 打刻・履歴")}
+        {tabBtn("monthly","🗓 個人別 月一括管理")}
+      </div>
+      {tab==="punch"?<AttendancePunchPanel currentUser={currentUser} isAdmin={isAdmin}/>:<AttendanceMonthly currentUser={currentUser} isAdmin={isAdmin}/>}
     </div>
   );
 }
