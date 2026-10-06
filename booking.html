@@ -641,14 +641,21 @@ function App(){
     return bs<se && ss<be;
   }
   // 指定したスタッフが指定日に出勤しているか（staff_weekly_shiftsに設定が無いスタッフはフェイルセーフで出勤扱い）
-  function isStaffWorkingOnDate(staffId,d){
+  // t・durationMinutes を渡すと、その施術時間ぶん（t〜t+施術時間）がスタッフの勤務時間（開始〜終了）に収まっているかも見る。
+  // ※以前は「その日に出勤か」しか見ておらず、勤務終了後（例：18:00上がりのスタッフの19:00）にも空きが出てしまっていた。
+  function isStaffWorkingOnDate(staffId,d,t,durationMinutes){
     var dow = d.getDay();
     var found = null;
     for(var i=0;i<weeklyShifts.length;i++){
       if(weeklyShifts[i].staff_id===staffId && weeklyShifts[i].day_of_week===dow){ found=weeklyShifts[i]; break; }
     }
     if(!found) return true;
-    return found.is_working!==false;
+    if(found.is_working===false) return false;
+    if(t && found.start_time && found.end_time){
+      var tm=toMin(t);
+      if(tm<toMin(found.start_time) || tm+(durationMinutes||20)>toMin(found.end_time)) return false;
+    }
+    return true;
   }
   // 指定した日に既に入っている予約数（キャンセル除く・その枠で実際に必要な対応時間ぶんの重なりも考慮）
   function getBookedCountAt(d,t){
@@ -659,16 +666,21 @@ function App(){
   // 指定した日時に対応可能なスタッフ一覧（その日休みのスタッフ・休憩中/既存予約が入っている人を除く。
   // その枠で実際に必要な対応時間ぶんの重なりも考慮。
   // 応援スタッフ（event_only）は、オープニングイベント期間の日付でのみ対象に含める）
+  function breakOverlaps(b,t,durationMinutes){
+    var bs=toMin(b.time), be=bs+(b.duration||10);
+    var ss=toMin(t), se=ss+(durationMinutes||20);
+    return bs<se && ss<be;
+  }
   function getFreeStaffListFor(d,t){
     var ds = fmtDate(d);
     var duration = getCurrentDuration(d);
     var unavail = {};
     weekData.booked.forEach(function(b){if(b.date===ds&&overlapsSlot(b,t,duration)) unavail[b.staff_id]=true;});
-    weekData.breaks.forEach(function(b){if(b.date===ds&&b.time===t) unavail[b.staff_id]=true;});
+    weekData.breaks.forEach(function(b){if(b.date===ds&&breakOverlaps(b,t,duration)) unavail[b.staff_id]=true;}); // 施術時間のあいだに休憩が重なるスタッフも対象外
     var isEvent=isEventDate(d);
     return STAFF.filter(function(s){
       if(s.event_only&&!isEvent) return false; // 応援スタッフはイベント期間以外は対象外
-      return !unavail[s.id] && isStaffWorkingOnDate(s.id,d);
+      return !unavail[s.id] && isStaffWorkingOnDate(s.id,d,t,duration);
     });
   }
   // 指定した日時の残り受付可能数（「1枠あたりの上限」と「対応できるスタッフの人数」のうち小さい方）
@@ -696,11 +708,13 @@ function App(){
   function checkStaffAvailabilityNow(dateStr,time){
     return Promise.all([
       sb.select("bookings","?date=eq."+dateStr),
-      sb.select("staff_breaks","?date=eq."+dateStr+"&time=eq."+time)
+      sb.select("staff_breaks","?date=eq."+dateStr)
     ]).then(function(results){
       var dayBookings = Array.isArray(results[0]) ? results[0] : [];
       var dayBreaks = Array.isArray(results[1]) ? results[1] : [];
-      var activeOverlapping = dayBookings.filter(function(b){return !b.cancelled && overlapsSlot(b,time);});
+      var dateObj = new Date(dateStr+"T00:00:00");
+      var duration = getCurrentDuration(dateObj);
+      var activeOverlapping = dayBookings.filter(function(b){return !b.cancelled && overlapsSlot(b,time,duration);});
 
       // 1枠あたりの上限に達していないか確認（施術時間の重なりも考慮）
       var capacity = getSlotCapacity(dateStr);
@@ -708,12 +722,11 @@ function App(){
 
       var unavail = {};
       activeOverlapping.forEach(function(b){ unavail[b.staff_id]=true; });
-      dayBreaks.forEach(function(b){ unavail[b.staff_id]=true; });
-      var dateObj = new Date(dateStr+"T00:00:00");
+      dayBreaks.forEach(function(b){ if(breakOverlaps(b,time,duration)) unavail[b.staff_id]=true; });
       var isEvent = isEventDate(dateObj);
       var found = STAFF.find(function(s){
         if(s.event_only&&!isEvent) return false;
-        return !unavail[s.id] && isStaffWorkingOnDate(s.id,dateObj);
+        return !unavail[s.id] && isStaffWorkingOnDate(s.id,dateObj,time,duration);
       });
       return found ? found.id : null;
     }).catch(function(){
