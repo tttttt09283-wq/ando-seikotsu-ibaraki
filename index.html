@@ -8575,6 +8575,7 @@ function AttendancePanel({currentUser,isAdmin}){
   const [selMonth,setSelMonth]=React.useState(()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
   const [saving,setSaving]=React.useState(false);
   const [selectedStaffId,setSelectedStaffId]=React.useState(currentUser.id); // 打刻する対象スタッフ（誰でも選べる）
+  const [editing,setEditing]=React.useState(null); // 編集中の記録（新規追加の場合は id:null）
   const todayStrLocal=fmtDate(new Date());
   const selectedStaff=STAFF_ACCOUNTS.find(s=>s.id===selectedStaffId)||currentUser;
 
@@ -8587,13 +8588,18 @@ function AttendancePanel({currentUser,isAdmin}){
   }
   React.useEffect(()=>{ fetchRecords(); },[]);
 
+  const breaksOf=r=>Array.isArray(r.breaks)?r.breaks:[];
+  // 今日の打刻中の記録（退勤前）
   const myOpenRecord=records.find(r=>r.staff_id===selectedStaffId&&r.date===todayStrLocal&&r.clock_in&&!r.clock_out);
+  const onBreak=!!(myOpenRecord&&breaksOf(myOpenRecord).some(b=>b.start&&!b.end));
   const myTodayRecords=records.filter(r=>r.staff_id===selectedStaffId&&r.date===todayStrLocal);
+  // 前日以前で退勤が未入力のまま残っている記録（退勤の押し忘れ）
+  const forgotten=records.filter(r=>r.clock_in&&!r.clock_out&&r.date<todayStrLocal);
 
   async function clockIn(){
     setSaving(true);
     try{
-      await sb.insert("attendance_records",{staff_id:selectedStaffId,date:todayStrLocal,clock_in:new Date().toISOString()});
+      await sb.insert("attendance_records",{staff_id:selectedStaffId,date:todayStrLocal,clock_in:new Date().toISOString(),breaks:[]});
       fetchRecords();
     }catch(e){}
     setSaving(false);
@@ -8602,7 +8608,30 @@ function AttendancePanel({currentUser,isAdmin}){
     if(!myOpenRecord) return;
     setSaving(true);
     try{
-      await sb.update("attendance_records",myOpenRecord.id,{clock_out:new Date().toISOString()});
+      // 休憩中のまま退勤した場合は、休憩を自動で終了させる
+      const nowIso=new Date().toISOString();
+      const bs=breaksOf(myOpenRecord).map(b=>(b.start&&!b.end)?{...b,end:nowIso}:b);
+      await sb.update("attendance_records",myOpenRecord.id,{clock_out:nowIso,breaks:bs});
+      fetchRecords();
+    }catch(e){}
+    setSaving(false);
+  }
+  async function startBreak(){
+    if(!myOpenRecord) return;
+    setSaving(true);
+    try{
+      await sb.update("attendance_records",myOpenRecord.id,{breaks:[...breaksOf(myOpenRecord),{start:new Date().toISOString(),end:null}]});
+      fetchRecords();
+    }catch(e){}
+    setSaving(false);
+  }
+  async function endBreak(){
+    if(!myOpenRecord) return;
+    setSaving(true);
+    try{
+      const nowIso=new Date().toISOString();
+      const bs=breaksOf(myOpenRecord).map(b=>(b.start&&!b.end)?{...b,end:nowIso}:b);
+      await sb.update("attendance_records",myOpenRecord.id,{breaks:bs});
       fetchRecords();
     }catch(e){}
     setSaving(false);
@@ -8613,10 +8642,16 @@ function AttendancePanel({currentUser,isAdmin}){
     const d=new Date(iso);
     return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
   }
+  // 休憩の合計時間（時間）。終了していない休憩は数えない
+  function breakHoursOf(r){
+    return breaksOf(r).reduce((s,b)=>(b.start&&b.end)?s+(new Date(b.end)-new Date(b.start))/3600000:s,0);
+  }
+  // 実働時間＝出勤〜退勤−休憩
   function hoursOf(r){
     if(!r.clock_in||!r.clock_out) return null;
-    return (new Date(r.clock_out)-new Date(r.clock_in))/3600000;
+    return Math.max(0,(new Date(r.clock_out)-new Date(r.clock_in))/3600000-breakHoursOf(r));
   }
+  function fmtHM(h){ const m=Math.round(h*60); return `${Math.floor(m/60)}:${String(m%60).padStart(2,"0")}`; }
 
   const monthRecords=records.filter(r=>r.date&&r.date.slice(0,7)===selMonth);
 
@@ -8629,32 +8664,81 @@ function AttendancePanel({currentUser,isAdmin}){
     totalsByStaff[r.staff_id]+=h;
   });
 
+  // ===== 編集（入力漏れの修正・追加） =====
+  // ISO(UTC) → 画面の「HH:MM」(端末のローカル時刻)、およびその逆
+  const isoToHM=iso=>{ if(!iso) return""; const d=new Date(iso); return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; };
+  const hmToIso=(date,hm)=>hm?new Date(`${date}T${hm}:00`).toISOString():null;
+  function openEdit(r){
+    setEditing({
+      id:r.id,staff_id:r.staff_id,date:r.date,
+      clockIn:isoToHM(r.clock_in),clockOut:isoToHM(r.clock_out),
+      breaks:breaksOf(r).map(b=>({start:isoToHM(b.start),end:isoToHM(b.end)})),
+    });
+  }
+  function openAdd(){
+    setEditing({id:null,staff_id:selectedStaffId,date:todayStrLocal,clockIn:"09:00",clockOut:"18:00",breaks:[]});
+  }
+  async function saveEdit(){
+    const e=editing;
+    if(!e.date||!e.clockIn){ alert("日付と出勤時刻を入力してください"); return; }
+    if(e.clockOut&&e.clockOut<=e.clockIn){ alert("退勤時刻は出勤時刻より後にしてください"); return; }
+    for(const b of e.breaks){
+      if(!b.start){ alert("休憩の開始時刻を入力してください"); return; }
+      if(b.end&&b.end<=b.start){ alert("休憩の終了時刻は開始時刻より後にしてください"); return; }
+    }
+    setSaving(true);
+    try{
+      const payload={
+        staff_id:e.staff_id,date:e.date,
+        clock_in:hmToIso(e.date,e.clockIn),
+        clock_out:hmToIso(e.date,e.clockOut),
+        breaks:e.breaks.map(b=>({start:hmToIso(e.date,b.start),end:hmToIso(e.date,b.end)})),
+      };
+      if(e.id==null) await sb.insert("attendance_records",payload);
+      else await sb.update("attendance_records",e.id,payload);
+      setEditing(null);
+      fetchRecords();
+    }catch(err){ alert("保存に失敗しました"); }
+    setSaving(false);
+  }
+  async function deleteRecord(){
+    if(!editing||editing.id==null) return;
+    if(!confirm("この打刻記録を削除します。よろしいですか？")) return;
+    setSaving(true);
+    try{ await sb.delete("attendance_records",editing.id); setEditing(null); fetchRecords(); }
+    catch(err){ alert("削除に失敗しました"); }
+    setSaving(false);
+  }
+
   function toCSV(rows,headers){
     const esc=v=>{ const s=(v==null?"":String(v)); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
     return[headers.map(esc).join(","),...rows.map(r=>r.map(esc).join(","))].join("\r\n");
   }
   function downloadCSV(filename,csv){
-    const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"});
+    const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});
     const url=URL.createObjectURL(blob);
     const a=document.createElement("a");
     a.href=url;a.download=filename;document.body.appendChild(a);a.click();
     document.body.removeChild(a);URL.revokeObjectURL(url);
   }
   function exportCSV(){
-    const headers=["スタッフ","日付","出勤","退勤","勤務時間"];
+    const headers=["スタッフ","日付","出勤","退勤","休憩(時間)","実働(時間)"];
     const sorted=[...monthRecords].sort((a,b)=>a.date.localeCompare(b.date)||(a.staff_id-b.staff_id));
     const rows=sorted.map(r=>{
       const s=STAFF_ACCOUNTS.find(x=>x.id===r.staff_id)||{name:"不明"};
       const h=hoursOf(r);
-      return[s.name,r.date,fmtTime(r.clock_in),fmtTime(r.clock_out),h!=null?h.toFixed(2):""];
+      return[s.name,r.date,fmtTime(r.clock_in),fmtTime(r.clock_out),breakHoursOf(r).toFixed(2),h!=null?h.toFixed(2):""];
     });
     downloadCSV("勤怠記録_"+selMonth+".csv",toCSV(rows,headers));
   }
 
+  const bigBtn=(bg,shadow)=>({padding:"16px 10px",flex:1,minWidth:120,background:bg,color:"white",border:"none",borderRadius:14,fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:`0 4px 14px ${shadow}`});
+  const inp={padding:"7px 8px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontFamily:"inherit"};
+
   return(
     <div style={{maxWidth:1100,margin:"0 auto"}}>
       <div className="card" style={{marginBottom:14,padding:"18px 20px",textAlign:"center"}}>
-        <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:10}}>⏰ 出退勤の打刻</div>
+        <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:10}}>⏰ 出退勤・休憩の打刻</div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"center",marginBottom:16}}>
           {STAFF_ACCOUNTS.map(s=>(
             <button key={s.id} onClick={()=>setSelectedStaffId(s.id)} style={{padding:"6px 14px",borderRadius:20,border:"2px solid "+s.color,background:selectedStaffId===s.id?s.color:"white",color:selectedStaffId===s.id?"white":s.color,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",boxShadow:selectedStaffId===s.id?`0 2px 8px ${s.color}66`:"none"}}>
@@ -8663,32 +8747,67 @@ function AttendancePanel({currentUser,isAdmin}){
           ))}
         </div>
         <div style={{fontWeight:800,fontSize:14,color:"#1e293b",marginBottom:2}}>{selectedStaff.name} さんの本日の打刻</div>
-        <div style={{fontSize:13,color:"#94a3b8",marginBottom:14}}>{todayStrLocal}</div>
+        <div style={{fontSize:13,color:"#94a3b8",marginBottom:10}}>{todayStrLocal}</div>
+        <div style={{display:"inline-block",padding:"5px 16px",borderRadius:20,fontSize:13,fontWeight:800,marginBottom:14,
+          background:!myOpenRecord?(myTodayRecords.length>0?"#f1f5f9":"#f1f5f9"):onBreak?"#fef3c7":"#dcfce7",
+          color:!myOpenRecord?"#64748b":onBreak?"#92400e":"#166534"}}>
+          {!myOpenRecord?(myTodayRecords.length>0?"退勤済み":"未出勤"):onBreak?"☕ 休憩中":"🟢 勤務中"}
+        </div>
         {myTodayRecords.length>0&&(
-          <div style={{marginBottom:14,display:"flex",flexDirection:"column",gap:6,maxWidth:320,marginLeft:"auto",marginRight:"auto"}}>
+          <div style={{marginBottom:14,display:"flex",flexDirection:"column",gap:6,maxWidth:360,marginLeft:"auto",marginRight:"auto"}}>
             {myTodayRecords.map(r=>(
-              <div key={r.id} style={{display:"flex",justifyContent:"space-between",background:"#f8fafc",borderRadius:8,padding:"8px 14px",fontSize:13}}>
-                <span style={{fontWeight:700,color:"#1e293b"}}>出勤 {fmtTime(r.clock_in)}</span>
-                <span style={{fontWeight:700,color:r.clock_out?"#1e293b":"#d97706"}}>{r.clock_out?"退勤 "+fmtTime(r.clock_out):"勤務中"}</span>
+              <div key={r.id} style={{background:"#f8fafc",borderRadius:8,padding:"8px 14px",fontSize:13}}>
+                <div style={{display:"flex",justifyContent:"space-between"}}>
+                  <span style={{fontWeight:700,color:"#1e293b"}}>出勤 {fmtTime(r.clock_in)}</span>
+                  <span style={{fontWeight:700,color:r.clock_out?"#1e293b":"#d97706"}}>{r.clock_out?"退勤 "+fmtTime(r.clock_out):"勤務中"}</span>
+                </div>
+                {breaksOf(r).map((b,i)=>(
+                  <div key={i} style={{fontSize:12,color:"#92400e",textAlign:"left",marginTop:3}}>☕ 休憩 {fmtTime(b.start)} 〜 {b.end?fmtTime(b.end):"休憩中"}</div>
+                ))}
               </div>
             ))}
           </div>
         )}
-        {myOpenRecord?(
-          <button onClick={clockOut} disabled={saving} style={{padding:"16px 40px",background:"linear-gradient(135deg,#dc2626,#991b1b)",color:"white",border:"none",borderRadius:14,fontSize:16,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px rgba(220,38,38,.3)"}}>
-            {saving?"処理中...":"🔴 退勤する"}
-          </button>
-        ):(
-          <button onClick={clockIn} disabled={saving} style={{padding:"16px 40px",background:"linear-gradient(135deg,#059669,#047857)",color:"white",border:"none",borderRadius:14,fontSize:16,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px rgba(5,150,105,.3)"}}>
-            {saving?"処理中...":"🟢 出勤する"}
-          </button>
-        )}
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",justifyContent:"center"}}>
+          {!myOpenRecord&&(
+            <button onClick={clockIn} disabled={saving} style={bigBtn("linear-gradient(135deg,#059669,#047857)","rgba(5,150,105,.3)")}>{saving?"処理中...":"🟢 出勤する"}</button>
+          )}
+          {myOpenRecord&&!onBreak&&(
+            <button onClick={startBreak} disabled={saving} style={bigBtn("linear-gradient(135deg,#d97706,#b45309)","rgba(217,119,6,.3)")}>{saving?"処理中...":"☕ 休憩に入る"}</button>
+          )}
+          {myOpenRecord&&onBreak&&(
+            <button onClick={endBreak} disabled={saving} style={bigBtn("linear-gradient(135deg,#2563eb,#1d4ed8)","rgba(37,99,235,.3)")}>{saving?"処理中...":"▶ 休憩を終える"}</button>
+          )}
+          {myOpenRecord&&(
+            <button onClick={clockOut} disabled={saving} style={bigBtn("linear-gradient(135deg,#dc2626,#991b1b)","rgba(220,38,38,.3)")}>{saving?"処理中...":"🔴 退勤する"}</button>
+          )}
+        </div>
+        <div style={{marginTop:14}}>
+          <button onClick={openAdd} style={{padding:"8px 18px",borderRadius:8,border:"1.5px solid #cbd5e1",background:"white",color:"#334155",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>✏️ 入力漏れの記録を追加</button>
+        </div>
       </div>
+
+      {forgotten.length>0&&(
+        <div className="card" style={{marginBottom:14,padding:"12px 16px",border:"2px solid #f59e0b",background:"#fffbeb"}}>
+          <div style={{fontWeight:800,fontSize:13,color:"#92400e",marginBottom:8}}>⚠ 退勤が未入力の記録があります（{forgotten.length}件）</div>
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            {forgotten.map(r=>{
+              const s=STAFF_ACCOUNTS.find(x=>x.id===r.staff_id)||{name:"不明"};
+              return(
+                <div key={r.id} style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:"white",borderRadius:8,padding:"8px 12px",fontSize:13}}>
+                  <span style={{fontWeight:700}}>{s.name}</span><span>{r.date}</span><span>出勤 {fmtTime(r.clock_in)}</span>
+                  <button onClick={()=>openEdit(r)} style={{marginLeft:"auto",padding:"5px 14px",borderRadius:8,border:"none",background:"#f59e0b",color:"white",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>退勤時刻を入力</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       <div className="card" style={{marginBottom:14,padding:"14px 16px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
           <div>
-            <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:8}}>📊 月間勤務時間集計（全スタッフ）</div>
+            <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:8}}>📊 月間勤務時間集計（全スタッフ・休憩を除く実働）</div>
             <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)}
               style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700}}/>
           </div>
@@ -8707,29 +8826,34 @@ function AttendancePanel({currentUser,isAdmin}){
       <div className="card">
         <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:13,color:"#1e3a5f"}}>打刻履歴（{monthRecords.length}件）</div>
         <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:600}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:700}}>
             <thead>
               <tr style={{background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}>
-                {["スタッフ","日付","出勤","退勤","勤務時間"].map(h=>(
-                  <th key={h} style={{padding:"8px 10px",textAlign:"left",fontWeight:800,color:"#64748b"}}>{h}</th>
+                {["スタッフ","日付","出勤","退勤","休憩","実働",""].map((h,i)=>(
+                  <th key={i} style={{padding:"8px 10px",textAlign:"left",fontWeight:800,color:"#64748b"}}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading?(
-                <tr><td colSpan={5} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>読み込み中...</td></tr>
+                <tr><td colSpan={7} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>読み込み中...</td></tr>
               ):monthRecords.length===0?(
-                <tr><td colSpan={5} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>対象データがありません</td></tr>
-              ):[...monthRecords].sort((a,b)=>b.date.localeCompare(a.date)).map(r=>{
+                <tr><td colSpan={7} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>対象データがありません</td></tr>
+              ):[...monthRecords].sort((a,b)=>b.date.localeCompare(a.date)||(b.clock_in||"").localeCompare(a.clock_in||"")).map(r=>{
                 const s=STAFF_ACCOUNTS.find(x=>x.id===r.staff_id)||{name:"不明",color:"#888"};
                 const h=hoursOf(r);
+                const bh=breakHoursOf(r);
                 return(
                   <tr key={r.id} style={{borderBottom:"1px solid #f1f5f9"}}>
                     <td style={{padding:"8px 10px",fontWeight:700,color:s.color}}>{s.name}</td>
                     <td style={{padding:"8px 10px"}}>{r.date}</td>
                     <td style={{padding:"8px 10px"}}>{fmtTime(r.clock_in)}</td>
                     <td style={{padding:"8px 10px"}}>{r.clock_out?fmtTime(r.clock_out):<span style={{color:"#d97706",fontWeight:700}}>勤務中</span>}</td>
+                    <td style={{padding:"8px 10px",color:"#92400e"}}>{breaksOf(r).length>0?fmtHM(bh):"—"}</td>
                     <td style={{padding:"8px 10px",fontWeight:700}}>{h!=null?h.toFixed(2)+"時間":"—"}</td>
+                    <td style={{padding:"8px 10px"}}>
+                      <button onClick={()=>openEdit(r)} style={{padding:"4px 12px",borderRadius:6,border:"1.5px solid #cbd5e1",background:"white",color:"#334155",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>編集</button>
+                    </td>
                   </tr>
                 );
               })}
@@ -8737,6 +8861,42 @@ function AttendancePanel({currentUser,isAdmin}){
           </table>
         </div>
       </div>
+
+      {editing&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.5)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>!saving&&setEditing(null)}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"white",borderRadius:16,padding:"20px 22px",width:"100%",maxWidth:420,maxHeight:"90vh",overflowY:"auto"}}>
+            <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f",marginBottom:14}}>{editing.id==null?"入力漏れの記録を追加":"打刻の編集"}</div>
+            <div style={{display:"grid",gridTemplateColumns:"90px 1fr",gap:10,alignItems:"center",marginBottom:10}}>
+              <label style={{fontSize:12,fontWeight:700,color:"#64748b"}}>スタッフ</label>
+              <select value={editing.staff_id} onChange={e=>setEditing(p=>({...p,staff_id:Number(e.target.value)}))} style={inp}>
+                {STAFF_ACCOUNTS.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+              <label style={{fontSize:12,fontWeight:700,color:"#64748b"}}>日付</label>
+              <input type="date" value={editing.date} onChange={e=>setEditing(p=>({...p,date:e.target.value}))} style={inp}/>
+              <label style={{fontSize:12,fontWeight:700,color:"#64748b"}}>出勤</label>
+              <input type="time" value={editing.clockIn} onChange={e=>setEditing(p=>({...p,clockIn:e.target.value}))} style={inp}/>
+              <label style={{fontSize:12,fontWeight:700,color:"#64748b"}}>退勤</label>
+              <input type="time" value={editing.clockOut} onChange={e=>setEditing(p=>({...p,clockOut:e.target.value}))} style={inp}/>
+            </div>
+            <div style={{fontSize:12,fontWeight:800,color:"#92400e",margin:"14px 0 6px"}}>☕ 休憩</div>
+            {editing.breaks.length===0&&<div style={{fontSize:12,color:"#94a3b8",marginBottom:6}}>休憩の記録はありません</div>}
+            {editing.breaks.map((b,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+                <input type="time" value={b.start} onChange={e=>setEditing(p=>({...p,breaks:p.breaks.map((x,j)=>j===i?{...x,start:e.target.value}:x)}))} style={{...inp,flex:1}}/>
+                <span>〜</span>
+                <input type="time" value={b.end} onChange={e=>setEditing(p=>({...p,breaks:p.breaks.map((x,j)=>j===i?{...x,end:e.target.value}:x)}))} style={{...inp,flex:1}}/>
+                <button onClick={()=>setEditing(p=>({...p,breaks:p.breaks.filter((_,j)=>j!==i)}))} style={{border:"none",background:"#fee2e2",color:"#dc2626",borderRadius:6,padding:"6px 10px",cursor:"pointer",fontWeight:800}}>✕</button>
+              </div>
+            ))}
+            <button onClick={()=>setEditing(p=>({...p,breaks:[...p.breaks,{start:"12:00",end:"13:00"}]}))} style={{padding:"6px 14px",borderRadius:8,border:"1.5px dashed #d97706",background:"white",color:"#92400e",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>＋ 休憩を追加</button>
+            <div style={{display:"flex",gap:8,marginTop:20}}>
+              {editing.id!=null&&isAdmin&&<button onClick={deleteRecord} disabled={saving} style={{padding:"10px 14px",borderRadius:10,border:"none",background:"#fee2e2",color:"#dc2626",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>削除</button>}
+              <button onClick={()=>setEditing(null)} disabled={saving} style={{marginLeft:"auto",padding:"10px 18px",borderRadius:10,border:"1.5px solid #e2e8f0",background:"white",color:"#334155",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>キャンセル</button>
+              <button onClick={saveEdit} disabled={saving} style={{padding:"10px 22px",borderRadius:10,border:"none",background:"#1e3a5f",color:"white",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>{saving?"保存中...":"保存"}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
