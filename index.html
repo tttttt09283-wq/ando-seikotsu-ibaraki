@@ -2596,6 +2596,317 @@ function LaunchROIPanel({bookings,payments,stores,todayStr,user,trainingMode}){
   );
 }
 
+// ===== 学習カリキュラムの教材データ（解剖学・生理学・運動学・東洋医学・経絡経穴・筋膜） =====
+const Q=(q,o,a,e)=>({q,o,a,e});
+const CURRICULUM=[
+{id:"anat",name:"解剖学",icon:"🦴",color:"#2563eb",desc:"骨・関節・筋・神経の構造を、施術部位と結びつけて理解する",units:[
+ {id:"anat1",title:"骨格系と関節の基礎",min:15,
+  points:["成人の骨はおよそ206個。脊柱は頸椎7・胸椎12・腰椎5・仙骨（仙椎5が癒合）・尾骨からなる。","関節は動きの形で分類する：球関節（肩・股）、蝶番関節（肘・指節間）、車軸関節（上橈尺・環軸）、鞍関節（母指CM）、顆状関節（橈骨手根）、平面関節（椎間関節）。","関節は関節包・関節軟骨・滑液・靭帯で安定し、動きと安定性はトレードオフの関係にある（肩は動きが大きく不安定、股は安定している）。","骨には体を支える・動かす・保護する・カルシウムを蓄える・造血する、という働きがある。"],
+  clinical:"肩は可動性が高い代わりに脱臼・腱板損傷が多く、股関節は安定性が高い代わりに可動域が制限されやすい。可動域制限の原因が「関節の形」か「軟部組織」かを切り分ける視点になる。",
+  quiz:[Q("腰椎の数はいくつ？",["3個","5個","7個","12個"],1,"頸椎7・胸椎12・腰椎5。"),Q("肩関節と股関節の分類として正しいのはどれ？",["蝶番関節","鞍関節","球関節","車軸関節"],2,"どちらも球関節（臼状関節）。"),Q("母指のCM関節（手根中手関節）の分類は？",["鞍関節","平面関節","蝶番関節","球関節"],0,"母指CM関節は鞍関節で、対立運動を可能にする。")]},
+ {id:"anat2",title:"上肢・肩周囲の筋",min:20,
+  points:["回旋筋腱板（ローテーターカフ）＝棘上筋・棘下筋・小円筋・肩甲下筋。肩甲骨と上腕骨頭を引き寄せ、肩関節を安定させる。","棘上筋は外転の初期、棘下筋・小円筋は外旋、肩甲下筋は内旋を担当。","三角筋は腋窩神経支配で肩の外転の主動作筋。上腕二頭筋は筋皮神経支配で肘屈曲と前腕回外、上腕三頭筋は橈骨神経支配で肘伸展。","肩甲骨の安定には前鋸筋・僧帽筋（上部・中部・下部）・菱形筋が働く。"],
+  clinical:"肩の挙上障害では、腱板だけでなく肩甲骨を動かす筋（前鋸筋・下部僧帽筋）の機能も確認する。棘上筋腱は肩峰下で挟まれやすい（インピンジメント）。",
+  quiz:[Q("回旋筋腱板に含まれないのはどれ？",["棘上筋","小円筋","三角筋","肩甲下筋"],2,"三角筋は含まれない。"),Q("肩関節の内旋に働く回旋筋腱板の筋は？",["棘下筋","小円筋","棘上筋","肩甲下筋"],3,"肩甲下筋が内旋、棘下筋・小円筋が外旋。"),Q("上腕三頭筋を支配する神経は？",["筋皮神経","橈骨神経","正中神経","尺骨神経"],1,"上腕三頭筋は橈骨神経。上腕二頭筋は筋皮神経。")]},
+ {id:"anat3",title:"体幹・下肢の筋",min:20,
+  points:["大殿筋（下殿神経）は股関節の伸展・外旋、中殿筋（上殿神経）は股関節の外転と歩行時の骨盤の安定。","大腿四頭筋（大腿神経）は膝伸展。ハムストリングス（坐骨神経）は膝屈曲と股伸展。腸腰筋は股関節屈曲の主動作筋。","腹筋群（腹直筋・内外腹斜筋・腹横筋）と脊柱起立筋・多裂筋、腰方形筋が体幹を支える。腹横筋はコルセットのように腹圧を高める。","下腿三頭筋（腓腹筋・ヒラメ筋）はアキレス腱を介して足関節を底屈する。"],
+  clinical:"腰痛では、腸腰筋の短縮と殿筋・腹筋の機能低下がセットで見られることが多い。膝の痛みでは、股関節周囲（中殿筋・大殿筋）の弱化が膝に負担を与えていないかを見る。",
+  quiz:[Q("中殿筋の主な働きはどれ？",["股関節の外転と骨盤の安定","股関節の屈曲","膝関節の伸展","足関節の底屈"],0,"中殿筋は外転と立脚時の骨盤安定。"),Q("大腿四頭筋を支配する神経は？",["脛骨神経","坐骨神経","大腿神経","閉鎖神経"],2,"大腿神経（L2〜L4）。"),Q("股関節屈曲の主動作筋は？",["大殿筋","腸腰筋","ハムストリングス","梨状筋"],1,"腸腰筋が主動作筋。")]},
+ {id:"anat4",title:"神経系（脊髄神経と末梢神経）",min:20,
+  points:["脊髄神経は31対（頸8・胸12・腰5・仙5・尾1）。","腕神経叢はC5〜T1。主な枝は筋皮神経・正中神経・尺骨神経・橈骨神経・腋窩神経。腰仙骨神経叢からは大腿神経・坐骨神経（脛骨神経と総腓骨神経に分かれる）が出る。","正中神経は手根管で絞扼されやすく（母指球の筋力低下・しびれ）、尺骨神経は肘部管で絞扼されやすい（小指・環指のしびれ）。橈骨神経麻痺では下垂手になる。","デルマトーム（皮膚分節）とミオトーム（筋節）で、障害されている神経根の高さを推測できる。"],
+  clinical:"しびれの訴えでは、末梢神経の絞扼（手根管・肘部管）か、神経根の障害（頸椎・腰椎）かを、しびれの範囲と誘発動作で区別する。症状が進行性・筋力低下・膀胱直腸障害を伴う場合は医療機関への紹介を優先する。",
+  quiz:[Q("脊髄神経の数は？",["12対","24対","31対","43対"],2,"頸8・胸12・腰5・仙5・尾1＝31対。"),Q("手根管症候群で障害される神経は？",["橈骨神経","尺骨神経","正中神経","筋皮神経"],2,"手根管を通るのは正中神経。"),Q("橈骨神経麻痺で典型的に見られるのは？",["猿手","鷲手","下垂手","ばね指"],2,"橈骨神経麻痺は下垂手（手関節が背屈できない）。")]},
+ {id:"anat5",title:"循環器・呼吸器の基礎",min:15,
+  points:["血液は体循環（左心室→全身→右心房）と肺循環（右心室→肺→左心房）を巡る。動脈は心臓から出る血管、静脈は心臓へ戻る血管。","手関節の橈骨動脈で脈を触れる（脈診・バイタル確認）。総頸動脈は頸部で触れる。","呼吸の主役は横隔膜（横隔神経・C3〜C5）と外肋間筋。吸気時に横隔膜が収縮して下がる。","リンパ系は組織液を回収して静脈に戻し、免疫にも関わる。"],
+  clinical:"胸郭の動き（呼吸）は肩甲骨・胸椎の可動性と関連する。呼吸が浅く上部胸式になっていると、頸部・肩の筋（斜角筋・僧帽筋上部）が過緊張になりやすい。",
+  quiz:[Q("左心室から出て全身へ向かう循環はどれ？",["肺循環","体循環","門脈循環","胎児循環"],1,"左心室→大動脈→全身が体循環。"),Q("横隔膜を支配する神経は？",["迷走神経","肋間神経","横隔神経","副神経"],2,"横隔神経（C3〜C5）。"),Q("脈を触れる代表的な部位はどれ？",["橈骨動脈","大腿骨","上腕三頭筋","アキレス腱"],0,"手関節の橈骨動脈。")]}
+]},
+{id:"phys",name:"生理学",icon:"🫀",color:"#dc2626",desc:"痛み・筋収縮・自律神経・循環・炎症のしくみを、施術の効果と結びつけて理解する",units:[
+ {id:"phys1",title:"痛みの生理（侵害受容と疼痛抑制）",min:20,
+  points:["痛みの信号は侵害受容器→末梢神経→脊髄後角→視床→大脳皮質へ伝わる。","Aδ線維（有髄・速い）は鋭い痛み、C線維（無髄・遅い）は鈍く長引く痛みを伝える。","ゲートコントロール説：触圧覚を伝えるAβ線維の刺激が、脊髄後角で痛みの伝達を抑える。さする・押さえると痛みが和らぐ理由の一つ。","下行性疼痛抑制系（セロトニン・ノルアドレナリン）やエンドルフィンも痛みを抑える。痛みは感情・睡眠・ストレスの影響も受ける。","内臓や深部の障害が離れた体表に痛みを感じさせるのが関連痛。"],
+  clinical:"施術で痛みが和らぐ背景には、ゲートコントロールや下行性抑制、筋緊張の緩和などが関わる。慢性痛では組織の損傷だけでなく、感作（痛みに敏感な状態）や心理社会的要因も評価に入れる。",
+  quiz:[Q("速く鋭い痛み（一次痛）を伝える線維は？",["Aδ線維","C線維","Aβ線維","Aα線維"],0,"Aδ線維は有髄で伝導が速い。"),Q("ゲートコントロール説で痛みの伝達を抑えるとされる刺激は？",["強い熱刺激","Aβ線維を介する触圧刺激","寒冷刺激のみ","無刺激"],1,"さする・押さえるなどのAβ線維刺激。"),Q("内臓疾患が体表の離れた部位の痛みとして現れることを何という？",["関連痛","幻肢痛","神経障害性疼痛","心因性疼痛"],0,"関連痛。")]},
+ {id:"phys2",title:"筋収縮と筋・腱の感覚器",min:20,
+  points:["運動神経の信号が神経筋接合部でアセチルコリンを放出し、筋小胞体からCa²⁺が出てアクチンとミオシンが滑り込む（滑走説）。収縮にはATPが必要。","遅筋（タイプⅠ）は持久力に優れ姿勢保持に働く。速筋（タイプⅡ）は瞬発力に優れる。","筋紡錘は筋の長さ（伸張）を感知し、伸張反射を起こす。ゴルジ腱器官は張力を感知し、過度な張力で筋を弛緩させる（自己抑制）。","筋の硬さ（筋緊張）は、神経の興奮、血流、筋膜・結合組織の状態などが関わる。"],
+  clinical:"ストレッチでは、ゆっくり持続的に伸ばすと伸張反射が起きにくい。また収縮後の弛緩（等尺性収縮後のリラクゼーション）はゴルジ腱器官や相反抑制の利用として説明される。",
+  quiz:[Q("筋収縮のときに神経筋接合部で放出される物質は？",["ドパミン","アセチルコリン","セロトニン","GABA"],1,"アセチルコリン。"),Q("筋の長さの変化を感知する受容器は？",["ゴルジ腱器官","筋紡錘","パチニ小体","マイスナー小体"],1,"筋紡錘が長さ、ゴルジ腱器官が張力。"),Q("姿勢保持に向いた持久型の筋線維は？",["タイプⅠ（遅筋）","タイプⅡb（速筋）","心筋線維","平滑筋線維"],0,"遅筋（タイプⅠ）。")]},
+ {id:"phys3",title:"自律神経系",min:15,
+  points:["自律神経は交感神経と副交感神経からなり、意識とは別に内臓・血管・汗腺などを調節する。","交感神経が優位になると、心拍数↑・血圧↑・瞳孔散大・消化抑制。副交感神経が優位になると、心拍数↓・消化促進・瞳孔縮小。","交感神経の節後線維の伝達物質はノルアドレナリン、副交感神経はアセチルコリン（節前線維はどちらもアセチルコリン）。","睡眠・ストレス・姿勢・呼吸のしかたが自律神経のバランスに影響する。"],
+  clinical:"施術後の眠気・だるさ・体のぽかぽか感は、副交感神経が優位になる反応として説明できる。起立時のふらつきがある方には、施術後にゆっくり起き上がってもらうよう案内する。",
+  quiz:[Q("交感神経が優位なときの変化として正しいのは？",["心拍数が増える","消化が促進される","瞳孔が縮小する","唾液が増える"],0,"交感神経優位で心拍数↑。"),Q("副交感神経の節後線維が放出する伝達物質は？",["ノルアドレナリン","アセチルコリン","アドレナリン","ドパミン"],1,"アセチルコリン。"),Q("リラックス・休息時に優位になるのは？",["交感神経","副交感神経","運動神経","感覚神経"],1,"副交感神経。")]},
+ {id:"phys4",title:"循環・呼吸とバイタルサイン",min:15,
+  points:["心拍出量＝1回拍出量×心拍数。血圧は心拍出量と末梢血管抵抗で決まる。","成人の安静時脈拍は60〜100回/分が目安。診察室血圧は140/90 mmHg以上で高血圧とされる。","呼吸数は成人でおよそ12〜20回/分。吸気は横隔膜と外肋間筋の収縮による。","バイタルサイン（体温・脈拍・血圧・呼吸・意識）は施術前に体調を把握する基本情報になる。"],
+  clinical:"高血圧・糖尿病・抗凝固薬の服用がある方、発熱や強い倦怠感のある方は、施術内容（強さ・鍼の刺激量・施灸）を調整するか、医療機関の受診を勧める判断が必要になる。",
+  quiz:[Q("心拍出量を表す式は？",["1回拍出量×心拍数","血圧×呼吸数","脈拍÷体温","心拍数÷血圧"],0,"心拍出量＝1回拍出量×心拍数。"),Q("診察室での高血圧の基準（収縮期/拡張期）は？",["120/80以上","130/85以上","140/90以上","160/100以上"],2,"診察室血圧140/90 mmHg以上。"),Q("バイタルサインに含まれないのは？",["体温","脈拍","血圧","身長"],3,"身長はバイタルサインではない。")]},
+ {id:"phys5",title:"炎症と組織修復",min:15,
+  points:["炎症の五徴候：発赤・熱感・腫脹・疼痛・機能障害。","組織修復は、炎症期（数日）→増殖期（数日〜数週）→成熟（リモデリング）期（数週〜数か月）の流れで進む。","急性期は安静・保護・過度な負荷を避ける。回復に合わせて、適切な負荷を段階的に加えることが組織の再生を助ける。","慢性的な痛みでは、炎症がなくても感作や筋緊張が続くことがある。"],
+  clinical:"急性の外傷（捻挫・打撲）で、強い腫脹・熱感・変形・荷重不能がある場合は、骨折・靭帯断裂を疑って医療機関への受診を優先する。",
+  quiz:[Q("炎症の五徴候に含まれないのは？",["発赤","熱感","しびれ","腫脹"],2,"発赤・熱感・腫脹・疼痛・機能障害。"),Q("組織修復の正しい順序は？",["炎症期→増殖期→成熟期","増殖期→炎症期→成熟期","成熟期→炎症期→増殖期","炎症期→成熟期→増殖期"],0,"炎症期→増殖期→成熟（リモデリング）期。"),Q("外傷後に強い腫脹・変形・荷重不能があるとき、まず優先することは？",["強めのマッサージ","医療機関の受診を勧める","ストレッチ","温める"],1,"骨折などを疑い受診を優先。")]}
+]},
+{id:"kine",name:"運動学",icon:"🏃",color:"#059669",desc:"関節運動・姿勢・歩行を、評価と動作指導に使える形で理解する",units:[
+ {id:"kine1",title:"運動の面・軸と関節運動",min:15,
+  points:["体の運動は3つの面で表す：矢状面（屈曲・伸展）、前額面（外転・内転・側屈）、水平面（回旋）。","運動の軸は、矢状面の運動＝左右軸、前額面の運動＝前後軸、水平面の運動＝垂直軸。","関節可動域（日本整形外科学会基準）の例：肩の屈曲・外転は180°、股関節の屈曲125°・伸展15°、膝の屈曲130°。","筋は主動作筋・拮抗筋・協力筋・固定筋が協調して働く。"],
+  clinical:"可動域は「自動」と「他動」を比べる。他動は動くのに自動で動かない場合は筋力・神経の問題、他動でも動かない場合は関節・軟部組織・痛みの問題を疑う。",
+  quiz:[Q("屈曲・伸展が起こる面は？",["矢状面","前額面","水平面","斜面"],0,"屈曲・伸展は矢状面。"),Q("前額面の運動の軸は？",["左右軸","前後軸","垂直軸","斜軸"],1,"前額面の運動は前後軸まわり。"),Q("他動では動くが自動では動かないとき、まず疑うのは？",["関節包の癒着","筋力低下や神経の問題","骨性の制限","皮膚の拘縮"],1,"自動運動のみ制限なら筋力・神経・痛みの影響。")]},
+ {id:"kine2",title:"姿勢とアライメント",min:20,
+  points:["理想的な立位（側面）の重心線は、耳垂→肩峰→大転子→膝関節（やや前方）→外果の前方を通る。","骨盤前傾は腰椎前弯を強め、後傾は腰椎前弯を減らす。猫背（円背）では胸椎後弯が増加し、頭部が前方に出る（前方頭位）。","上位交差症候群：大胸筋・上部僧帽筋・肩甲挙筋が短縮し、深頸屈筋・菱形筋・下部僧帽筋が弱化する。","下位交差症候群：腸腰筋・脊柱起立筋が短縮し、腹筋・殿筋が弱化する。"],
+  clinical:"姿勢は「悪い・良い」ではなく、痛みや動作との関係で評価する。同じ姿勢でも症状が出る人・出ない人がいる。姿勢の指導は1〜2個の具体的な変化に絞ると続きやすい。",
+  quiz:[Q("理想的な立位で側面の重心線が通る部位として正しいのは？",["耳垂・肩峰・大転子・外果の前方","つま先・膝・肩・頭頂","臍・膝・踵のみ","耳垂・肘・膝・つま先"],0,"耳垂→肩峰→大転子→膝やや前→外果の前方。"),Q("下位交差症候群で弱化しやすい筋は？",["腸腰筋","腹筋・殿筋","脊柱起立筋","大腿筋膜張筋"],1,"腸腰筋・脊柱起立筋は短縮、腹筋・殿筋は弱化。"),Q("上位交差症候群で短縮しやすい筋は？",["深頸屈筋","下部僧帽筋","大胸筋・上部僧帽筋","菱形筋"],2,"大胸筋・上部僧帽筋・肩甲挙筋が短縮。")]},
+ {id:"kine3",title:"歩行の運動学",min:20,
+  points:["歩行周期は立脚期（約60%）と遊脚期（約40%）。立脚期は踵接地→荷重応答→立脚中期→立脚終期→前遊脚期。","立脚中期には中殿筋が働いて骨盤を水平に保つ。中殿筋が弱いと、遊脚側の骨盤が下がる（トレンデレンブルグ徴候）。","歩行では、足部のアーチ・足関節・膝・股関節・骨盤・体幹が連動し、衝撃吸収と推進を行う。","歩幅・歩隔・左右差・足の接地の仕方（内側・外側荷重）を観察する。"],
+  clinical:"片側の膝・股・腰の痛みでは、立脚期の左右差（骨盤の傾き、体幹の側屈）を観察すると、負担のかかり方のヒントになる。",
+  quiz:[Q("歩行周期で立脚期が占める割合のおおよそは？",["約40%","約60%","約80%","約20%"],1,"立脚期は約60%、遊脚期は約40%。"),Q("トレンデレンブルグ徴候で弱化しているのは？",["大殿筋","中殿筋","腸腰筋","大腿四頭筋"],1,"中殿筋の弱化で遊脚側の骨盤が下がる。"),Q("歩行の「踵接地」は何期の始まり？",["遊脚期","立脚期","前遊脚期","立脚終期"],1,"踵接地で立脚期が始まる。")]},
+ {id:"kine4",title:"肩関節と肩甲上腕リズム",min:20,
+  points:["腕を挙上するとき、肩甲上腕関節と肩甲胸郭関節が協調して動く（肩甲上腕リズム）。全体の挙上180°のうち、おおよそ肩甲上腕関節120°：肩甲胸郭関節60°（2：1）。","肩甲骨の上方回旋には、僧帽筋（上部・下部）と前鋸筋が働く。","腕の挙上60〜120°あたりで痛みが出て、それを過ぎると軽減する現象をペインフルアーク（有痛弧）といい、肩峰下インピンジメントを疑う所見の一つ。","肩の動きは、胸椎の伸展・胸郭の動きにも影響される。"],
+  clinical:"挙上時に肩をすくめる（上部僧帽筋の過活動）、肩甲骨が浮く（翼状肩甲）などは肩甲骨の安定性の低下を示す。肩の治療では、肩甲骨と胸椎のアプローチもセットで考える。",
+  quiz:[Q("肩甲上腕リズムの目安は？",["1：1","2：1（肩甲上腕：肩甲胸郭）","1：2","3：1"],1,"おおよそ2：1。"),Q("肩甲骨の上方回旋に主に働く筋は？",["前鋸筋・僧帽筋","大胸筋・小胸筋","広背筋・大円筋","肩甲挙筋・菱形筋"],0,"前鋸筋と僧帽筋（上部・下部）。"),Q("ペインフルアーク（有痛弧）が出やすい挙上角度は？",["0〜30°","60〜120°","150〜180°","どの角度でも同じ"],1,"60〜120°付近で痛み、肩峰下インピンジメントを疑う所見。")]},
+ {id:"kine5",title:"腰椎・骨盤・股関節の連動",min:20,
+  points:["体幹の前屈は、腰椎の屈曲と骨盤の前傾（股関節の屈曲）が連動する（腰椎骨盤リズム）。","股関節の可動域が小さいと、腰椎でその分を補い、腰への負担が増える。","腰椎は屈曲・伸展、胸椎は回旋が得意、股関節は全方向に動く。「腰は動きすぎ、胸椎・股関節は動かなすぎ」が腰痛の背景にあることが多い。","腹腔内圧と腹横筋・多裂筋・骨盤底筋・横隔膜が体幹の安定性（コア）を作る。"],
+  clinical:"前屈で痛い、後屈で痛い、回旋で痛い、といった動作の違いから、どの動作が負担かを評価し、動作指導（股関節から曲げる、胸椎を動かす）につなげる。",
+  quiz:[Q("体幹前屈で腰椎と連動して動くのは？",["骨盤の前傾（股関節屈曲）","肩甲骨の挙上","足関節の背屈のみ","頸椎の回旋"],0,"腰椎骨盤リズム。"),Q("股関節の可動域が小さいと起こりやすいのは？",["腰椎への負担が増える","膝の可動域が増える","肩が下がる","姿勢が改善する"],0,"股関節で動けない分を腰椎が補う。"),Q("一般に回旋が得意な脊柱の部位は？",["腰椎","胸椎","仙椎","尾椎"],1,"胸椎は回旋が得意、腰椎は屈曲・伸展。")]}
+]},
+{id:"toyo",name:"東洋医学",icon:"☯️",color:"#7c3aed",desc:"陰陽五行・気血津液・臓腑・四診の考え方を、日々の問診と施術に活かす",units:[
+ {id:"toyo1",title:"陰陽論と五行説",min:15,
+  points:["陰陽：対立・互根・消長・転化の関係。例：天（陽）と地（陰）、昼（陽）と夜（陰）、熱（陽）と寒（陰）。","五行は木・火・土・金・水。相生（木→火→土→金→水→木）は育てる関係、相克（木→土→水→火→金→木）は抑える関係。","五臓は五行に配当される：肝＝木、心＝火、脾＝土、肺＝金、腎＝水。","五行は季節・色・味・感情などにも対応する（例：肝＝春・青・酸・怒、心＝夏・赤・苦・喜）。"],
+  clinical:"五行の関係は、体の不調の連鎖を考える「ものさし」。例えばストレスで肝が高ぶると（木）、脾（土）を抑えて消化が落ちる（木克土）という見方をする。",
+  quiz:[Q("相生の関係として正しいのは？",["木→火","木→土","火→金","金→木"],0,"相生：木→火→土→金→水→木。"),Q("五行で「脾」が配当されるのは？",["木","火","土","金"],2,"脾＝土。"),Q("五行の相克として正しいのは？",["水→木","火→金","土→火","木→水"],1,"相克：木→土→水→火→金→木。火は金を克す。")]},
+ {id:"toyo2",title:"気・血・津液",min:15,
+  points:["気は生命活動のエネルギー。作用は推動・温煦・防御・固摂・気化。","血は全身を栄養し潤す。津液は血以外の体液（汗・唾液・涙など）の総称。","気の失調：気虚（疲れやすい・息切れ）、気滞（張る・イライラ・ため息）、気逆（ほてる・のぼせ・吐き気）。","血の失調：血虚（めまい・乾燥・顔色が悪い）、瘀血（固定した刺すような痛み・暗い舌）。"],
+  clinical:"「肩こり」でも、気滞（ストレス・張る感じ）なのか、瘀血（固定痛・長引く）なのか、血虚（疲労・冷え・乾燥）なのかで、選ぶ経穴や施術の強さが変わる。",
+  quiz:[Q("気虚の症状として当てはまるのは？",["疲れやすい・息切れ","固定した刺す痛み","張る・ため息","のぼせ・ほてり"],0,"気虚＝エネルギー不足。"),Q("固定した刺すような痛みが特徴の病態は？",["気虚","瘀血","津液不足","気逆"],1,"瘀血は固定性の刺痛。"),Q("気の作用として含まれないのは？",["推動","温煦","防御","分泌"],3,"気の作用は推動・温煦・防御・固摂・気化。")]},
+ {id:"toyo3",title:"臓腑（五臓六腑）",min:20,
+  points:["五臓（肝・心・脾・肺・腎）は「貯蔵」、六腑（胆・小腸・胃・大腸・膀胱・三焦）は「受け渡し」の働き。","肝：蔵血・疏泄（気の流れをスムーズにする）、目に開竅。心：血脈を主り神（精神）を蔵す、舌に開竅。脾：運化（消化吸収）・統血、口に開竅。肺：呼吸を主り、皮毛・鼻に開竅。腎：蔵精・納気・水の代謝、耳に開竅。","臓と腑は表裏の関係：肝—胆、心—小腸、脾—胃、肺—大腸、腎—膀胱。","東洋医学の臓腑は解剖学の臓器と同じではなく、機能のまとまりとして捉える。"],
+  clinical:"耳鳴りや腰のだるさは腎、目の疲れ・筋のこわばりは肝、食欲不振・むくみは脾、など、症状と臓腑を結びつけると、問診の質問の幅が広がる。",
+  quiz:[Q("「疏泄」を主るのはどの臓？",["肝","心","肺","腎"],0,"肝は疏泄（気の流れの調整）。"),Q("脾と表裏の関係にある腑は？",["胆","胃","大腸","膀胱"],1,"脾—胃。"),Q("耳に開竅するのは？",["肝","脾","肺","腎"],3,"腎は耳に開竅。")]},
+ {id:"toyo4",title:"四診と弁証",min:20,
+  points:["四診：望診（見る：顔色・舌・姿勢）、聞診（聞く・嗅ぐ：声・呼吸・におい）、問診（聞く：症状・生活）、切診（触れる：脈診・腹診・切経）。","八綱弁証：陰陽・表裏・寒熱・虚実で、病態の大まかな方向を捉える。","舌診：舌質（色・形）と舌苔（厚さ・色）を見る。例：淡白舌＝虚・寒、紅舌＝熱、紫舌＝瘀血、厚い苔＝湿・食積など。","脈診：浮・沈・遅・数・弦・滑など。ただ脈の名前を覚えるのでなく、患者さんの訴えと照らして使う。"],
+  clinical:"問診では、痛みの性質（ズキズキ・重い・張る・刺す）、増悪因子（冷え・動作・天候）、時間帯、睡眠・食欲・便通・月経を聞くと、証を立てる材料になる。",
+  quiz:[Q("四診に含まれないのは？",["望診","聞診","問診","画像診"],3,"四診＝望・聞・問・切。"),Q("八綱弁証の組み合わせは？",["陰陽・表裏・寒熱・虚実","五行・六腑・気血・津液","風寒・暑湿・燥火・熱","木火土金水"],0,"八綱＝陰陽・表裏・寒熱・虚実。"),Q("切診に含まれるのは？",["舌診","脈診","聞診","声の確認"],1,"切診＝脈診・腹診・切経など。舌診は望診。")]},
+ {id:"toyo5",title:"鍼灸の基本と安全管理",min:20,
+  points:["補法は虚を補う（弱く・短く・浅く）、瀉法は実を取り除く（強く・やや長く）。患者さんの体力・反応・部位で刺激量を調整する。","感染予防：ディスポーザブル鍼の使用、手指衛生、刺鍼部位の消毒、使用後の鍼は医療廃棄。","安全管理：抜鍼時の本数確認、気胸（胸背部の深刺に注意）、折鍼、脳貧血（鍼酔い）、出血・皮下出血、灸の火傷に配慮する。","妊娠中・出血傾向・抗凝固薬服用・感染部位・皮膚疾患などは、禁忌または慎重に対応すべき場合がある。事前問診で必ず確認する。"],
+  clinical:"初回は特に、既往歴・服薬・妊娠の可能性・体調を確認し、同意を得てから施術する。迷ったら刺激量を下げ、必要なら医療機関へ紹介する。",
+  quiz:[Q("鍼の使用前後で必ず行うのは？",["使い回し","ディスポ鍼の使用と本数確認","消毒をしない","廃棄しない"],1,"ディスポ鍼の使用と抜鍼時の本数確認。"),Q("背部・胸部への深い刺鍼で特に注意すべき有害事象は？",["気胸","便秘","むくみ","耳鳴り"],0,"胸背部は気胸のリスク。"),Q("抗凝固薬を服用している患者さんへの対応は？",["通常通りに強く刺激する","事前に確認し、慎重に（刺激量を下げる・必要なら紹介）","説明せず施術","灸のみを多用"],1,"出血傾向があるため事前確認と慎重な対応。")]}
+]},
+{id:"meri",name:"経絡経穴",icon:"📍",color:"#d97706",desc:"十四経脈の流れと、臨床でよく使う経穴の位置・働きを覚える",units:[
+ {id:"meri1",title:"十四経脈の概要と流注",min:20,
+  points:["十二経脈＋任脈・督脈＝十四経。十二経脈は手の三陰・手の三陽・足の三陽・足の三陰に分かれる。","流注の順番：肺→大腸→胃→脾→心→小腸→膀胱→腎→心包→三焦→胆→肝（そして肺に戻る）。","手の三陰は胸から手へ、手の三陽は手から頭へ、足の三陽は頭から足へ、足の三陰は足から腹・胸へ流れる。","陽経は主に体の外側・背側、陰経は内側・腹側を走る。任脈は体の前面正中、督脈は背面正中を走る。"],
+  clinical:"痛みの部位を走る経絡を考えると、遠隔の経穴（例：腰痛に委中、頭痛に合谷）を選ぶ根拠になる。まずは「どこを通る経絡か」を言えることが臨床の第一歩。",
+  quiz:[Q("十二経脈の流注で、肺経の次に流れるのは？",["胃経","大腸経","脾経","心経"],1,"肺→大腸→胃→脾→心→小腸…"),Q("督脈が走行する場所は？",["体の前面正中","体の背面正中","体の外側","手の内側"],1,"督脈は背面正中、任脈は前面正中。"),Q("足の三陽経が流れる方向は？",["足から頭","頭から足","手から頭","胸から手"],1,"足の三陽は頭から足へ。")]},
+ {id:"meri2",title:"経穴の取り方（同身寸と骨度法）",min:20,
+  points:["同身寸（指寸法）：患者さん自身の指を物差しにする。母指の幅＝1寸、示指〜小指の4本を揃えた幅（横指4本）＝3寸。","骨度法：体の骨の長さを基準に等分して寸を決める。例：前腕（肘横紋〜手関節横紋）12寸、下腿（膝窩横紋〜外果尖）16寸、臍〜恥骨結合上縁5寸、両乳頭間8寸。","後背部では、後正中線から肩甲骨内縁までが3寸。","経穴は骨の際・筋の間・くぼみ・動脈拍動部に多い。触れて圧痛・硬結・陥凹・冷え・熱などの反応（反応点）を確認して決める。"],
+  clinical:"体格差があるため、必ず患者さん本人の寸法で取る。位置は「教科書の数字」と「触れて見つかる反応」を合わせて決める。",
+  quiz:[Q("骨度法で、下腿（膝窩横紋〜外果尖）は何寸？",["10寸","12寸","16寸","19寸"],2,"下腿16寸、前腕12寸。"),Q("横指4本（示指〜小指）の幅は何寸とする？",["1寸","2寸","3寸","5寸"],2,"4横指＝3寸。"),Q("同身寸で基準にするのは？",["施術者の指","患者さん本人の指・体","統一した定規","年齢の平均値"],1,"患者さん本人の体の寸法で取る。")]},
+ {id:"meri3",title:"要穴（特定穴）の分類",min:25,
+  points:["要穴の例：五兪穴（井・滎・兪・経・合）、原穴、絡穴、郄穴、募穴、背部兪穴、八会穴、交会穴。","原穴（臓腑の原気が集まる）の例：肺＝太淵、大腸＝合谷、胃＝衝陽、脾＝太白、心＝神門、小腸＝腕骨、膀胱＝京骨、腎＝太谿、心包＝大陵、三焦＝陽池、胆＝丘墟、肝＝太衝。","募穴（腹・胸にある臓腑の気が集まる穴）の例：胃＝中脘、大腸＝天枢、小腸＝関元、膀胱＝中極、胆＝日月、肝＝期門、心包＝膻中。","背部兪穴（背中にある臓腑の気が注ぐ穴）の例：肺兪＝第3胸椎、心兪＝第5胸椎、膈兪＝第7胸椎、肝兪＝第9胸椎、脾兪＝第11胸椎、胃兪＝第12胸椎、腎兪＝第2腰椎、大腸兪＝第4腰椎（棘突起の下外方1.5寸）。"],
+  clinical:"臓腑の不調は、背部兪穴（背中）と募穴（腹・胸）の反応を診て、両方を組み合わせる（兪募配穴）。原穴は、その経絡の本質的な不調に使う。",
+  quiz:[Q("大腸の原穴は？",["曲池","合谷","足三里","内関"],1,"大腸の原穴は合谷。"),Q("胃の募穴は？",["天枢","関元","中脘","期門"],2,"胃の募穴は中脘（天枢は大腸の募穴）。"),Q("腎兪はどの高さ？",["第5胸椎","第9胸椎","第2腰椎","第5腰椎"],2,"第2腰椎棘突起の下、外方1.5寸。")]},
+ {id:"meri4",title:"頸・肩・腰の主要経穴",min:25,
+  points:["風池（GB20）：後頭骨の下、胸鎖乳突筋と僧帽筋の間のくぼみ。頭痛・頸のこり・眼精疲労。","天柱（BL10）：後髪際で僧帽筋外縁。頸のこり・頭痛。大椎（GV14）：第7頸椎棘突起の下。","肩井（GB21）：大椎と肩峰外縁の中点。肩こり。妊娠中は慎重に（刺激が強くなりすぎない）。","腎兪（BL23）・大腸兪（BL25）：腰痛の基本穴。志室（BL52）は腎兪の外3寸。委中（BL40）：膝窩横紋の中央、腰痛・坐骨神経痛。環跳（GB30）：殿部、坐骨神経痛。"],
+  clinical:"腰痛では、局所（腎兪・大腸兪・志室）と遠隔（委中・承山）の組み合わせが基本。肩こりでは、肩井だけでなく天柱・風池・肩甲間部（膈兪など）の反応も確認する。",
+  quiz:[Q("膝窩横紋の中央にあり、腰痛によく使う経穴は？",["委中","足三里","三陰交","太衝"],0,"委中（BL40）。"),Q("肩井は何と何の中点？",["風池と天柱","大椎と肩峰外縁","大椎と腎兪","肩髃と曲池"],1,"大椎と肩峰外縁の中点。"),Q("志室は腎兪の外方何寸？",["1.5寸","3寸","4.5寸","6寸"],1,"腎兪の外3寸。")]},
+ {id:"meri5",title:"四肢の主要経穴",min:25,
+  points:["合谷（LI4）：手背、第1・第2中手骨の間。頭痛・歯痛・顔面の症状。曲池（LI11）：肘を曲げたときの肘横紋の橈側端。","内関（PC6）：手関節掌側横紋の上2寸、長掌筋腱と橈側手根屈筋腱の間。吐き気・胸のつかえ・動悸。","足三里（ST36）：外膝眼（犢鼻）の下3寸、脛骨前縁から外方1横指。胃腸・全身の調整。三陰交（SP6）：内果尖の上3寸、脛骨内縁の後ろ。婦人科症状・冷え。","太衝（LR3）：足背、第1・第2中足骨底の間。陽陵泉（GB34）：腓骨頭の前下方のくぼみ、筋会。湧泉（KI1）：足底のくぼみ。"],
+  clinical:"合谷・三陰交は妊娠中は禁忌または慎重とされる穴として扱う。問診で妊娠の可能性を必ず確認する。",
+  quiz:[Q("内関の位置は？",["手関節掌側横紋の上2寸","手関節背側の上3寸","肘窩の中央","足関節の前方"],0,"手関節掌側横紋の上2寸。"),Q("足三里の位置として正しいのは？",["犢鼻の下3寸・脛骨前縁から1横指外","内果の上3寸","腓骨頭の後方","膝窩の中央"],0,"犢鼻の下3寸、脛骨前縁から外方1横指。"),Q("妊娠中に特に慎重に扱う穴はどれ？",["合谷・三陰交","曲池のみ","足三里のみ","太衝のみ"],0,"合谷・三陰交は妊娠中は慎重・禁忌とされる。")]}
+]},
+{id:"fascia",name:"筋膜",icon:"🕸️",color:"#0891b2",desc:"筋膜の構造と、筋膜ライン・トリガーポイント・リリースの考え方を学ぶ",units:[
+ {id:"fas1",title:"筋膜とは（構造と役割）",min:15,
+  points:["筋膜は、コラーゲン線維・エラスチン・基質（ヒアルロン酸など）からなる連続した結合組織のネットワーク。","浅筋膜（皮下組織）と深筋膜（筋を包む膜）がある。筋は内側から筋内膜・筋周膜・筋外膜に包まれる。","筋膜には自由神経終末やルフィニ小体・パチニ小体などの感覚受容器があり、固有感覚や痛みに関与する。","胸腰筋膜は広背筋・大殿筋・脊柱起立筋などをつなぎ、腰部の安定に関わる。"],
+  clinical:"筋だけでなく、それを包む膜・皮下組織・皮膚の滑りも評価する。皮膚をつまんだり動かしたときの滑りの左右差は、簡単な評価になる。",
+  quiz:[Q("筋を包む筋膜の層のうち、最も外側にあるのは？",["筋内膜","筋周膜","筋外膜","筋鞘"],2,"筋外膜（内側から筋内膜・筋周膜・筋外膜）。"),Q("筋膜の基質に含まれる代表的な成分は？",["ヒアルロン酸","ヘモグロビン","インスリン","ミオグロビン"],0,"ヒアルロン酸などの基質。"),Q("胸腰筋膜が連結する筋の組み合わせとして正しいのは？",["広背筋と大殿筋","上腕二頭筋と大胸筋","咬筋と側頭筋","腓腹筋と前脛骨筋のみ"],0,"広背筋・大殿筋・脊柱起立筋などをつなぐ。")]},
+ {id:"fas2",title:"筋膜ライン（アナトミー・トレイン）",min:25,
+  points:["トーマス・マイヤーズの「アナトミー・トレイン」は、筋・筋膜が連なる線（ライン）として体を捉える考え方。","表層後線（SBL）：足底筋膜→下腿三頭筋→ハムストリングス→仙結節靭帯→脊柱起立筋→後頭部→頭皮。表層前線（SFL）：足背→前脛骨筋→大腿四頭筋→腹直筋→胸鎖乳突筋。","外側線（LL）：体の側面（腓骨筋・腸脛靭帯・外腹斜筋など）。らせん線（SPL）：体をらせん状に巻く（回旋・バランス）。","他に、前方・後方機能線、深前線（DFL：体幹深部の安定、腸腰筋など）、腕のライン。"],
+  clinical:"「ふくらはぎや足底を緩めると前屈が変わる」といった遠隔部位の変化を、後線（SBL）の連続として説明できる。ただしラインは仮説として臨床に使い、触診・評価の結果と合わせて判断する。",
+  quiz:[Q("表層後線（SBL）の始まりは？",["足底筋膜","腹直筋","胸鎖乳突筋","腸脛靭帯"],0,"足底筋膜から始まり頭皮へ。"),Q("体の側面を走るラインは？",["表層前線","外側線","表層後線","深前線"],1,"外側線（LL）。"),Q("体幹深部の安定に関わるラインは？",["深前線（DFL）","表層後線","らせん線","腕のライン"],0,"深前線（DFL）。")]},
+ {id:"fas3",title:"癒着・滑走とトリガーポイント",min:20,
+  points:["筋膜の層同士が滑り合うことで動きがスムーズになる。ヒアルロン酸の粘性が高くなる（高密度化）と滑走が悪くなり、動きの制限や痛みにつながるとされる。","トリガーポイント（TrP）：筋の中の索状硬結（taut band）上にある過敏な圧痛点。押すと関連痛が出る、局所単収縮反応が出ることがある。","筋・筋膜性疼痛の背景：過負荷・同一姿勢・外傷・ストレス・睡眠不足。","鍼・圧迫・ストレッチ・動作改善でTrPを緩和し、原因（姿勢・使い方）を同時に改善する。"],
+  clinical:"圧痛点を見つけたら「そこだけ」でなく、関連痛のパターン（例：僧帽筋上部→側頭・こめかみ）と、原因となる筋の過負荷を考える。",
+  quiz:[Q("トリガーポイントの特徴として正しいのは？",["索状硬結上の圧痛点で、関連痛を出すことがある","常に骨の上にある","痛みを出さない","皮膚のみの病変"],0,"索状硬結上の圧痛点＋関連痛。"),Q("筋膜の「滑走」が悪くなると起こりやすいのは？",["可動域の制限や痛み","可動域の拡大","血圧の低下","筋力の増加"],0,"動きの制限・痛みにつながる。"),Q("TrPの施術後に併せて行うとよいのは？",["原因となる姿勢・使い方の改善","放置","同じ強さで長時間の圧迫","安静のみ"],0,"原因（姿勢・使い方）の改善を併せて行う。")]},
+ {id:"fas4",title:"筋膜リリースの考え方と安全",min:20,
+  points:["持続圧：組織の抵抗（バリア）を感じる位置で、ゆっくり圧をかけて待つ。数十秒〜数分、組織がゆるむのを待つ。","痛みの強さ：患者さんが「痛いが気持ちいい」程度までにし、顔をしかめたり息を止める強さは避ける。防御的な筋収縮は逆効果。","方向は、皮膚→筋膜の層→筋の順に、ライン上の関連部位も含めて考える。施術前後で可動域・痛み（NRS）を確認して効果を判断する。","禁忌・慎重：急性炎症・骨折・感染・悪性腫瘍・深部静脈血栓症・重い骨粗鬆症・抗凝固薬服用・皮膚疾患のある部位。"],
+  clinical:"施術の効果が出にくいときは、強さを上げる前に、姿勢・呼吸・動作（使い方）の影響を見直す。必ず施術前後に評価し、変化を患者さんと共有する。",
+  quiz:[Q("筋膜リリースの圧のかけ方として適切なのは？",["ゆっくり持続的に、組織のバリアを感じて待つ","できるだけ強く素早く","痛みを我慢してもらう","毎回同じ強さのみ"],0,"ゆっくり持続的に。"),Q("慎重または禁忌となるのは？",["深部静脈血栓症の疑い","軽い筋のこり","慢性の肩こり","姿勢の乱れ"],0,"DVTの疑いは禁忌・医療機関へ。"),Q("施術の効果を判断するために行うことは？",["施術前後の可動域と痛みの比較","何も評価しない","患者さんの感想を聞かない","強さを変えず時間のみ"],0,"前後評価（可動域・NRS）。")]},
+ {id:"fas5",title:"姿勢・動作から筋膜ラインを評価する",min:20,
+  points:["前屈で後ろ（ハムストリングス〜ふくらはぎ〜足底）が突っ張る → 表層後線（SBL）の制限を疑う。","後屈で前面（股関節前〜腹部〜胸）が突っ張る → 表層前線（SFL）・深前線の制限を疑う。","側屈・体幹の側面の突っ張り → 外側線（LL）、回旋の左右差 → らせん線（SPL）を疑う。","評価→（遠隔部位も含む）施術→再評価、の流れで「どこを触ると変わるか」を確認し、患者さん自身でできるセルフケアに落とし込む。"],
+  clinical:"ラインの評価は、症状のある局所だけを見ないための視点。施術後の再評価で動きが変わらない場合は、ラインの仮説を見直し、他の要因（関節・神経・痛みの感作）を検討する。",
+  quiz:[Q("前屈でふくらはぎや太もも裏が突っ張るとき、まず疑うラインは？",["表層後線（SBL）","表層前線（SFL）","外側線","腕のライン"],0,"前屈の制限は後線（SBL）を疑う。"),Q("後屈で体の前面が突っ張るとき、疑うラインは？",["表層前線（SFL）","表層後線","らせん線のみ","腕のラインのみ"],0,"後屈の制限は前線を疑う。"),Q("評価→施術→再評価を行う主な目的は？",["変化を確認し、仮説と施術が合っているか検証する","時間を延ばす","説明を省く","料金を決める"],0,"変化の確認で仮説を検証する。")]}
+]}
+];
+
+function LearningPanel({user,isAdmin}){
+  const myId=(user&&user.id)||0;
+  const [rows,setRows]=React.useState([]); // learning_progress（自分の分。管理者は全員分）
+  const [loading,setLoading]=React.useState(true);
+  const [tab,setTab]=React.useState("study"); // study | team
+  const [subjId,setSubjId]=React.useState(null);
+  const [unitId,setUnitId]=React.useState(null);
+  const [quiz,setQuiz]=React.useState(null); // {qs:[{q,o,a,e,sel}], submitted, score}
+  const [saving,setSaving]=React.useState(false);
+
+  function load(){
+    const q=isAdmin?"?select=*":`?staff_id=eq.${myId}`;
+    sb.select("learning_progress",q).then(r=>{setRows(Array.isArray(r)?r:[]);setLoading(false);}).catch(()=>setLoading(false));
+  }
+  React.useEffect(()=>{load();},[]);
+
+  const mine=React.useMemo(()=>{const m={};rows.filter(r=>r.staff_id===myId).forEach(r=>{m[r.unit_id]=r;});return m;},[rows,myId]);
+  const totalUnits=CURRICULUM.reduce((s,c)=>s+c.units.length,0);
+  const doneUnits=CURRICULUM.reduce((s,c)=>s+c.units.filter(u=>mine[u.id]&&mine[u.id].completed).length,0);
+  const subj=CURRICULUM.find(c=>c.id===subjId);
+  const unit=subj&&subj.units.find(u=>u.id===unitId);
+
+  function shuffle(a){const b=a.slice();for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];}return b;}
+  function startQuiz(){
+    const qs=unit.quiz.map(x=>{
+      const idx=shuffle(x.o.map((_,i)=>i));
+      return {q:x.q,o:idx.map(i=>x.o[i]),a:idx.indexOf(x.a),e:x.e,sel:null};
+    });
+    setQuiz({qs,submitted:false,score:0});
+  }
+  async function submitQuiz(){
+    if(quiz.qs.some(x=>x.sel===null)){window.alert("すべての問題に答えてください");return;}
+    const score=quiz.qs.filter(x=>x.sel===x.a).length;
+    const total=quiz.qs.length;
+    const pass=score>=Math.ceil(total*2/3);
+    setQuiz({...quiz,submitted:true,score,pass});
+    setSaving(true);
+    try{
+      const cur=mine[unit.id];
+      const now=new Date().toISOString();
+      if(cur){
+        await sb.update("learning_progress",cur.id,{attempts:(cur.attempts||0)+1,last_score:score,total,best_score:Math.max(cur.best_score||0,score),last_attempt_at:now,completed:cur.completed||pass,completed_at:cur.completed_at||(pass?now:null)});
+      }else{
+        await sb.insert("learning_progress",{staff_id:myId,unit_id:unit.id,attempts:1,last_score:score,total,best_score:score,last_attempt_at:now,completed:pass,completed_at:pass?now:null});
+      }
+      load();
+    }catch(e){console.error(e);}
+    setSaving(false);
+  }
+
+  const card={background:"white",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px rgba(0,0,0,.06)",marginBottom:12};
+  const bar=(p,c)=>(<div style={{height:7,background:"#f1f5f9",borderRadius:4}}><div style={{height:7,borderRadius:4,background:c,width:Math.min(100,p)+"%"}}/></div>);
+  const tabBtn=(id,l)=>(<button onClick={()=>setTab(id)} style={{padding:"7px 16px",borderRadius:10,border:"1.5px solid "+(tab===id?"#1e3a5f":"#e2e8f0"),background:tab===id?"#1e3a5f":"white",color:tab===id?"white":"#374151",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>);
+
+  // ===== 単元ページ =====
+  if(tab==="study"&&unit){
+    const st=mine[unit.id];
+    const idx=subj.units.findIndex(u=>u.id===unit.id);
+    return(
+      <div style={{maxWidth:760,margin:"0 auto"}}>
+        <div style={{...card,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <button onClick={()=>{setUnitId(null);setQuiz(null);}} style={{border:"1.5px solid #e2e8f0",background:"white",borderRadius:8,padding:"5px 12px",cursor:"pointer",fontWeight:700}}>← {subj.name}の一覧</button>
+          <span style={{fontSize:12,color:"#94a3b8"}}>{subj.icon} {subj.name}　単元 {idx+1}/{subj.units.length}　目安 {unit.min}分</span>
+          {st&&st.completed&&<span style={{marginLeft:"auto",fontSize:12,fontWeight:800,color:"#059669",background:"#ecfdf5",borderRadius:10,padding:"2px 10px"}}>✅ 合格済み（最高 {st.best_score}/{st.total}）</span>}
+        </div>
+        <div style={card}>
+          <div style={{fontSize:18,fontWeight:800,color:subj.color,marginBottom:10}}>{unit.title}</div>
+          <div style={{fontSize:12,fontWeight:800,color:"#475569",marginBottom:6}}>📘 基礎：ここだけは押さえる</div>
+          <ul style={{margin:"0 0 14px",paddingLeft:20,fontSize:14,lineHeight:1.85,color:"#1e293b"}}>{unit.points.map((p,i)=><li key={i} style={{marginBottom:4}}>{p}</li>)}</ul>
+          <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"10px 12px"}}>
+            <div style={{fontSize:12,fontWeight:800,color:"#92400e",marginBottom:4}}>🩺 臨床ポイント（経験者向け）</div>
+            <div style={{fontSize:13,lineHeight:1.8,color:"#78350f"}}>{unit.clinical}</div>
+          </div>
+        </div>
+        <div style={card}>
+          <div style={{fontSize:14,fontWeight:800,color:"#1e3a5f",marginBottom:8}}>✍️ 確認クイズ（{unit.quiz.length}問中{Math.ceil(unit.quiz.length*2/3)}問以上で合格）</div>
+          {!quiz&&<button onClick={startQuiz} style={{width:"100%",padding:12,borderRadius:10,border:"none",background:subj.color,color:"white",fontWeight:800,fontSize:14,cursor:"pointer"}}>クイズに挑戦する</button>}
+          {quiz&&quiz.qs.map((x,qi)=>(
+            <div key={qi} style={{marginBottom:14}}>
+              <div style={{fontSize:14,fontWeight:700,marginBottom:6}}>Q{qi+1}. {x.q}</div>
+              {x.o.map((o,oi)=>{
+                const chosen=x.sel===oi,right=quiz.submitted&&oi===x.a,wrong=quiz.submitted&&chosen&&oi!==x.a;
+                return(<button key={oi} disabled={quiz.submitted} onClick={()=>setQuiz({...quiz,qs:quiz.qs.map((y,yi)=>yi===qi?{...y,sel:oi}:y)})}
+                  style={{display:"block",width:"100%",textAlign:"left",padding:"9px 12px",marginBottom:5,borderRadius:9,fontSize:13,cursor:quiz.submitted?"default":"pointer",fontFamily:"inherit",
+                    border:"2px solid "+(right?"#059669":wrong?"#dc2626":chosen?subj.color:"#e2e8f0"),background:right?"#ecfdf5":wrong?"#fef2f2":chosen?"#eff6ff":"white"}}>{right?"⭕ ":wrong?"❌ ":""}{o}</button>);
+              })}
+              {quiz.submitted&&<div style={{fontSize:12,color:"#475569",background:"#f8fafc",borderRadius:8,padding:"6px 10px"}}>💡 {x.e}</div>}
+            </div>))}
+          {quiz&&!quiz.submitted&&<button onClick={submitQuiz} style={{width:"100%",padding:12,borderRadius:10,border:"none",background:"#1e3a5f",color:"white",fontWeight:800,fontSize:14,cursor:"pointer"}}>採点する</button>}
+          {quiz&&quiz.submitted&&(
+            <div style={{textAlign:"center",padding:12,borderRadius:10,background:quiz.pass?"#ecfdf5":"#fef2f2"}}>
+              <div style={{fontSize:20,fontWeight:800,color:quiz.pass?"#059669":"#dc2626"}}>{quiz.score}/{quiz.qs.length}　{quiz.pass?"合格 🎉":"もう少し！"}</div>
+              <div style={{display:"flex",gap:8,justifyContent:"center",marginTop:8,flexWrap:"wrap"}}>
+                <button onClick={startQuiz} style={{padding:"8px 16px",borderRadius:9,border:"1.5px solid #1e3a5f",background:"white",fontWeight:700,cursor:"pointer"}}>もう一度</button>
+                {idx+1<subj.units.length&&<button onClick={()=>{setUnitId(subj.units[idx+1].id);setQuiz(null);window.scrollTo(0,0);}} style={{padding:"8px 16px",borderRadius:9,border:"none",background:"#1e3a5f",color:"white",fontWeight:700,cursor:"pointer"}}>次の単元へ →</button>}
+              </div>
+            </div>)}
+        </div>
+      </div>);
+  }
+
+  // ===== スタッフ別進捗（管理者） =====
+  if(tab==="team"&&isAdmin){
+    const staff=STAFF_ACCOUNTS.filter(s=>!s.eventOnly);
+    return(
+      <div style={{maxWidth:900,margin:"0 auto"}}>
+        <div style={{...card,display:"flex",gap:8}}>{tabBtn("study","学習する")}{tabBtn("team","スタッフ別の進捗")}</div>
+        <div style={card}>
+          <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+            <thead><tr style={{background:"#f1f5f9",color:"#475569"}}><th style={{padding:"6px 8px",textAlign:"left"}}>スタッフ</th>{CURRICULUM.map(c=><th key={c.id} style={{padding:"6px 8px",whiteSpace:"nowrap"}}>{c.icon}{c.name}</th>)}<th style={{padding:"6px 8px"}}>全体</th></tr></thead>
+            <tbody>{staff.map(s=>{
+              const rs=rows.filter(r=>r.staff_id===s.id&&r.completed);
+              const done=new Set(rs.map(r=>r.unit_id));
+              const total=CURRICULUM.reduce((a,c)=>a+c.units.filter(u=>done.has(u.id)).length,0);
+              return(<tr key={s.id} style={{borderTop:"1px solid #f1f5f9"}}>
+                <td style={{padding:"7px 8px",fontWeight:700}}>{s.name}</td>
+                {CURRICULUM.map(c=>{const n=c.units.filter(u=>done.has(u.id)).length;return(<td key={c.id} style={{padding:"7px 8px",textAlign:"center",color:n===c.units.length?"#059669":n>0?"#d97706":"#cbd5e1",fontWeight:800}}>{n}/{c.units.length}</td>);})}
+                <td style={{padding:"7px 8px",textAlign:"center",fontWeight:800}}>{Math.round(total/totalUnits*100)}%</td>
+              </tr>);})}</tbody>
+          </table></div>
+          <div style={{fontSize:11,color:"#94a3b8",marginTop:8}}>数字は「合格した単元数／全単元数」。各単元のクイズに合格すると完了になります。</div>
+        </div>
+      </div>);
+  }
+
+  // ===== 科目の単元一覧 =====
+  if(subj){
+    return(
+      <div style={{maxWidth:760,margin:"0 auto"}}>
+        <div style={{...card,display:"flex",alignItems:"center",gap:8}}>
+          <button onClick={()=>setSubjId(null)} style={{border:"1.5px solid #e2e8f0",background:"white",borderRadius:8,padding:"5px 12px",cursor:"pointer",fontWeight:700}}>← 科目一覧</button>
+          <div style={{fontWeight:800,fontSize:16,color:subj.color}}>{subj.icon} {subj.name}</div>
+        </div>
+        <div style={{fontSize:13,color:"#64748b",margin:"0 4px 10px"}}>{subj.desc}</div>
+        {subj.units.map((u,i)=>{const st=mine[u.id];return(
+          <div key={u.id} onClick={()=>{setUnitId(u.id);setQuiz(null);window.scrollTo(0,0);}} style={{...card,cursor:"pointer",display:"flex",alignItems:"center",gap:12,marginBottom:8}}>
+            <div style={{width:32,height:32,borderRadius:16,background:st&&st.completed?"#059669":"#e2e8f0",color:st&&st.completed?"white":"#64748b",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800}}>{st&&st.completed?"✓":i+1}</div>
+            <div style={{flex:1}}><div style={{fontWeight:800,fontSize:14,color:"#1e293b"}}>{u.title}</div><div style={{fontSize:11,color:"#94a3b8"}}>目安 {u.min}分　クイズ{u.quiz.length}問{st?`　最高 ${st.best_score}/${st.total}（${st.attempts}回挑戦）`:""}</div></div>
+            <span style={{color:"#cbd5e1"}}>›</span>
+          </div>);})}
+      </div>);
+  }
+
+  // ===== トップ（科目一覧） =====
+  return(
+    <div style={{maxWidth:900,margin:"0 auto"}}>
+      <div style={{...card,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f",marginRight:6}}>📚 学習カリキュラム</div>
+        {tabBtn("study","学習する")}{isAdmin&&tabBtn("team","スタッフ別の進捗")}
+      </div>
+      <div style={card}>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:700,marginBottom:6}}><span>あなたの進捗</span><span>{doneUnits}/{totalUnits}単元　{Math.round(doneUnits/totalUnits*100)}%</span></div>
+        {bar(doneUnits/totalUnits*100,"#1e3a5f")}
+        <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>各単元の解説を読み、確認クイズに合格すると完了になります（基礎編。経験者向けの臨床ポイント付き）。</div>
+      </div>
+      {loading&&<div style={{color:"#94a3b8",fontSize:13,padding:8}}>読み込み中...</div>}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:12}}>
+        {CURRICULUM.map(c=>{
+          const d=c.units.filter(u=>mine[u.id]&&mine[u.id].completed).length;
+          const next=c.units.find(u=>!(mine[u.id]&&mine[u.id].completed));
+          return(
+          <div key={c.id} onClick={()=>setSubjId(c.id)} style={{background:"white",borderRadius:14,padding:"16px 16px",boxShadow:"0 1px 4px rgba(0,0,0,.06)",cursor:"pointer",borderTop:"4px solid "+c.color}}>
+            <div style={{fontSize:28}}>{c.icon}</div>
+            <div style={{fontWeight:800,fontSize:16,color:c.color,margin:"4px 0"}}>{c.name}</div>
+            <div style={{fontSize:12,color:"#64748b",lineHeight:1.6,minHeight:38}}>{c.desc}</div>
+            <div style={{margin:"10px 0 4px",fontSize:12,fontWeight:700,display:"flex",justifyContent:"space-between"}}><span>{d}/{c.units.length}単元</span>{d===c.units.length&&<span style={{color:"#059669"}}>完了 🎉</span>}</div>
+            {bar(d/c.units.length*100,c.color)}
+            {next&&<div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>次：{next.title}</div>}
+          </div>);})}
+      </div>
+    </div>
+  );
+}
+
 function DailyReportPanel({bookings,payments,stores,todayStr}){
   const fmt=n=>"¥"+Number(n||0).toLocaleString();
   const DAYS_JP=["日","月","火","水","木","金","土"];
@@ -11022,6 +11333,7 @@ function Dashboard({user,onLogout}){
     {id:"staff",label:"スタッフ",color:"#d97706",items:[
       {id:"staff_mgmt",label:"スタッフ・シフト管理",icon:"users-cog",special:""},
       {id:"attendance",label:"勤怠管理",icon:"clock",special:""},
+      {id:"learning",label:"学習カリキュラム",icon:"clipboard-list",special:""},
     ]},
     {id:"store",label:"店舗設定",color:"#0891b2",items:[
       {id:"store_mgmt",label:"店舗管理",icon:"store",special:""},
@@ -11608,6 +11920,7 @@ function Dashboard({user,onLogout}){
           {view==="register_cash"&&<RegisterCashPanel bookings={bookings} payments={payments} refunds={refunds} stores={stores} todayStr={todayStr} currentUser={user}/>}
           {view==="refund"&&<RefundPanel bookings={bookings} payments={payments} refunds={refunds} allRefunds={allRefunds} stores={stores} todayStr={todayStr} user={user} isAdmin={isAdmin} onChanged={reloadRefunds} trainingMode={trainingMode}/>}
           {view==="launch_roi"&&<LaunchROIPanel bookings={bookings} payments={paymentsNet} stores={stores} todayStr={todayStr} user={user} trainingMode={trainingMode}/>}
+          {view==="learning"&&<LearningPanel user={user} isAdmin={isAdmin}/>}
           {view==="preopen_stats"&&<PreOpenStatsPanel bookings={bookings} payments={paymentsNet} stores={stores} user={user}/>}
 
           {/* 離反防止アラート */}
