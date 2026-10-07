@@ -9748,6 +9748,12 @@ function Dashboard({user,onLogout}){
   // その日の出勤時間帯（開始・終了）を返す。特定日の時間変更は現状保存していないため、
   // 週固定シフト（staff_weekly_shifts）の時間をそのまま使う。設定が無ければnull（終日扱い＝グレー表示なし）
   function getShiftTimeRange(staffId,dateObj){
+    // 祝日（営業時間を上書きした日）は、曜日シフトの時間ではなく祝日の診療時間（9:00〜18:00）で予約を受け付ける
+    const dStr=fmtDate(dateObj);
+    if(dStr>="2026-10-01"){
+      const hc=closures.find(x=>x.date===dStr&&x.is_closed===false&&x.open_time&&/祝日|振替休日|国民の休日/.test(x.memo||""));
+      if(hc) return{start:String(hc.open_time).slice(0,5),end:String(hc.close_time||"18:00").slice(0,5)};
+    }
     const dow=dateObj.getDay();
     const ws=weeklyShifts.find(w=>w.staff_id===staffId&&w.day_of_week===dow);
     if(ws&&ws.start_time&&ws.end_time) return{start:ws.start_time,end:ws.end_time};
