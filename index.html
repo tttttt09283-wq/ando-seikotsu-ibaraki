@@ -1931,7 +1931,7 @@ function KarteListPanel({bookings,payments,stores,todayStr}){
 // ===== 日計表（スプレッドシートの日計表と同じ項目を、会計データから自動集計して日別に表示） =====
 // 巻き爪・自賠は、POS会計の「巻き爪・自賠」ボタンで追加した自費項目（payments.jifee_items）から集計する。
 // ===== レジ金（レジ締め）：釣銭準備金＋現金売上±入出金＝あるべきレジ金 と、実際に数えた現金の差額を出す =====
-function RegisterCashPanel({bookings,payments,stores,todayStr,currentUser}){
+function RegisterCashPanel({bookings,payments,stores,todayStr,currentUser,refunds}){
   const fmt=n=>"¥"+Number(n||0).toLocaleString();
   const firstStoreId=(stores&&stores[0]&&stores[0].id)||1;
   const [storeId,setStoreId]=React.useState(firstStoreId);
@@ -1962,8 +1962,15 @@ function RegisterCashPanel({bookings,payments,stores,todayStr,currentUser}){
       });
       other+=nonCash; cash+=Math.max(0,tot-nonCash);
     });
-    return {cash,other,by,count:pays.length};
-  },[bookings,payments,storeId,date]);
+    // 返金：現金で返したぶんはレジ金から引く（現金以外はその支払い方法の売上から引く）
+    let refundCash=0;
+    (refunds||[]).filter(r=>r.refund_date===date&&!r.voided&&(r.store_id||firstStoreId)===storeId).forEach(r=>{
+      const a=r.amount||0;
+      if(r.refund_method==="現金"){ cash-=a; refundCash+=a; }
+      else{ other-=a; by[r.refund_method||"その他"]=(by[r.refund_method||"その他"]||0)-a; }
+    });
+    return {cash,other,by,count:pays.length,refundCash};
+  },[bookings,payments,refunds,storeId,date,firstStoreId]);
 
   // 日付・店舗が変わったら、保存済みの記録と、前回締めの繰越額を読み込む
   React.useEffect(()=>{
@@ -2056,7 +2063,8 @@ function RegisterCashPanel({bookings,payments,stores,todayStr,currentUser}){
           <span>＋ 現金売上（会計から自動）<span style={{fontSize:11,color:"#94a3b8",marginLeft:6}}>{cashInfo.count}件</span></span>
           <b>{fmt(cashInfo.cash)}</b>
         </div>
-        {cashInfo.other>0&&<div style={{...row,fontSize:12,color:"#64748b",paddingTop:0}}><span>（参考）現金以外 {fmt(cashInfo.other)}：{Object.keys(cashInfo.by).map(k=>`${k} ${fmt(cashInfo.by[k])}`).join("／")}</span><span>レジ金には含めません</span></div>}
+        {cashInfo.refundCash>0&&<div style={{...row,fontSize:12,color:"#dc2626",paddingTop:0}}><span>↩️ うち現金での返金 −{fmt(cashInfo.refundCash)}（現金売上から差し引き済み）</span></div>}
+        {cashInfo.other!==0&&<div style={{...row,fontSize:12,color:"#64748b",paddingTop:0}}><span>（参考）現金以外 {fmt(cashInfo.other)}：{Object.keys(cashInfo.by).map(k=>`${k} ${fmt(cashInfo.by[k])}`).join("／")}</span><span>レジ金には含めません</span></div>}
         <div style={{borderTop:"1px dashed #e2e8f0",marginTop:6,paddingTop:6}}>
           <div style={{fontSize:12,color:"#64748b",fontWeight:700,marginBottom:6}}>入金・出金（釣銭の追加、立替精算、両替など）</div>
           {adj.map((a,i)=>(
@@ -2122,6 +2130,253 @@ function RegisterCashPanel({bookings,payments,stores,todayStr,currentUser}){
   );
 }
 
+const REFUND_REASONS=["施術内容へのご不満","会計ミス（二重請求・金額誤り）","来院されなかった・キャンセル","体調不良等で施術中止","回数券・FPの返金","保険請求の訂正","その他"];
+const REFUND_METHODS=["現金","カード","PayPay","その他"];
+
+function RefundPanel({bookings,payments,refunds,allRefunds,stores,todayStr,user,isAdmin,onChanged,trainingMode}){
+  const fmt=n=>"¥"+Number(n||0).toLocaleString();
+  const firstStoreId=(stores&&stores[0]&&stores[0].id)||1;
+  const [tab,setTab]=React.useState("register");
+  const [q,setQ]=React.useState("");
+  const [qDate,setQDate]=React.useState("");
+  const [sel,setSel]=React.useState(null);
+  const [amount,setAmount]=React.useState("");
+  const [method,setMethod]=React.useState("現金");
+  const [target,setTarget]=React.useState("自費");
+  const [rdate,setRdate]=React.useState(todayStr);
+  const [cat,setCat]=React.useState("");
+  const [detail,setDetail]=React.useState("");
+  const [approver,setApprover]=React.useState("");
+  const [saving,setSaving]=React.useState(false);
+  const [msg,setMsg]=React.useState("");
+  // 履歴
+  const [ym,setYm]=React.useState(todayStr.slice(0,7));
+  const [hStore,setHStore]=React.useState(0);
+  const [hReason,setHReason]=React.useState("");
+  const [hQ,setHQ]=React.useState("");
+  const [showVoided,setShowVoided]=React.useState(false);
+
+  const bookingById=React.useMemo(()=>{const m={};bookings.forEach(b=>{m[b.id]=b;});return m;},[bookings]);
+  const storeOf=p=>{const b=bookingById[p.booking_id];return (b&&b.store_id)||firstStoreId;};
+  const storeName=id=>{const s=(stores||[]).find(x=>x.id===id);return s?s.name:"";};
+  const staffName=id=>{const s=STAFF_ACCOUNTS.find(x=>x.id===id);return s?s.name:"—";};
+  const refundedBy=React.useMemo(()=>{const m={};(refunds||[]).forEach(r=>{if(r.payment_id)m[r.payment_id]=(m[r.payment_id]||0)+(r.amount||0);});return m;},[refunds]);
+
+  const candidates=React.useMemo(()=>{
+    const kw=q.trim();
+    return payments.filter(p=>{
+      if(qDate&&p.payment_date!==qDate) return false;
+      if(kw&&!String(p.patient_name||"").includes(kw)) return false;
+      return (p.total_amount||0)>0;
+    }).sort((a,b)=>String(b.payment_date).localeCompare(String(a.payment_date))||b.id-a.id).slice(0,40);
+  },[payments,q,qDate]);
+
+  function pick(p){
+    const remain=(p.total_amount||0)-(refundedBy[p.id]||0);
+    setSel(p);setAmount(String(Math.max(remain,0)));setMsg("");
+    // 元の支払い方法の先頭をデフォルトに（例「カード:¥3,000」→カード）
+    const first=String(p.payment_method||"").split("・")[0].split(":")[0].trim();
+    setMethod(REFUND_METHODS.includes(first)?first:"現金");
+    setTarget((p.jifee_amount||0)>0||(p.insurance_amount||0)===0?"自費":"保険窓口負担");
+    setCat("");setDetail("");setApprover("");setRdate(todayStr);
+  }
+
+  async function submit(){
+    if(!sel) return;
+    const amt=parseInt(amount,10)||0;
+    const remain=(sel.total_amount||0)-(refundedBy[sel.id]||0);
+    if(amt<=0){setMsg("返金額を入力してください");return;}
+    if(amt>remain){setMsg(`返金できる残り金額（${fmt(remain)}）を超えています`);return;}
+    if(!cat){setMsg("返金の理由（分類）を選んでください");return;}
+    if(detail.trim().length<5){setMsg("理由の詳細を5文字以上で具体的に書いてください（何が起きたか／誰が判断したか）");return;}
+    if(!window.confirm(`${sel.patient_name}様\n${sel.payment_date}の会計 ${fmt(sel.total_amount)} のうち\n${fmt(amt)} を返金（売上マイナス）します。\n\n理由：${cat}\n${detail.trim()}\n\nよろしいですか？`)) return;
+    setSaving(true);setMsg("");
+    try{
+      const b=bookingById[sel.booking_id];
+      const row={
+        payment_id:sel.id,booking_id:sel.booking_id||null,store_id:storeOf(sel),patient_name:sel.patient_name||null,
+        refund_date:rdate,amount:amt,refund_method:method,target,reason_category:cat,reason_detail:detail.trim(),
+        original_total:sel.total_amount||0,original_staff_id:(b&&b.staff_id)||sel.staff_id||null,
+        processed_by:(user&&user.id)||null,processed_by_name:(user&&user.name)||null,approved_by:approver.trim()||null,
+        is_training:!!trainingMode,
+      };
+      const res=await sb.insert("refunds",row);
+      if(!Array.isArray(res)||!res[0]) throw new Error((res&&res.message)||"保存に失敗しました");
+      setMsg("✅ 返金を記録しました（売上にマイナスで反映されます）");
+      setSel(null);setDetail("");setCat("");
+      if(onChanged) await onChanged();
+    }catch(e){setMsg("保存に失敗しました："+(e.message||""));}
+    setSaving(false);
+  }
+
+  async function voidRefund(r){
+    const why=window.prompt(`この返金記録（${r.patient_name}様 ${fmt(r.amount)}）を取り消します。\n取り消す理由を入力してください（記録は残り、売上は元に戻ります）`);
+    if(why===null) return;
+    if(why.trim().length<3){window.alert("取り消し理由を入力してください");return;}
+    try{
+      await sb.update("refunds",r.id,{voided:true,void_reason:why.trim(),voided_by_name:(user&&user.name)||null,voided_at:new Date().toISOString()});
+      if(onChanged) await onChanged();
+    }catch(e){window.alert("取り消しに失敗しました："+(e.message||""));}
+  }
+
+  // ===== 履歴・分析 =====
+  const hRows=React.useMemo(()=>{
+    return (allRefunds||[]).filter(r=>!!r.is_training===!!trainingMode).filter(r=>{
+      if(!String(r.refund_date||"").startsWith(ym)) return false;
+      if(hStore&&r.store_id!==hStore) return false;
+      if(hReason&&r.reason_category!==hReason) return false;
+      if(hQ.trim()&&!String(r.patient_name||"").includes(hQ.trim())) return false;
+      if(!showVoided&&r.voided) return false;
+      return true;
+    }).sort((a,b)=>String(b.refund_date).localeCompare(String(a.refund_date))||b.id-a.id);
+  },[allRefunds,ym,hStore,hReason,hQ,showVoided,trainingMode]);
+  const live=hRows.filter(r=>!r.voided);
+  const refundTotal=live.reduce((s,r)=>s+(r.amount||0),0);
+  const monthSales=React.useMemo(()=>{
+    const ids=new Set(bookings.filter(b=>!hStore||(b.store_id||firstStoreId)===hStore).map(b=>b.id));
+    return payments.filter(p=>String(p.payment_date||"").startsWith(ym)&&(!hStore||(p.booking_id?ids.has(p.booking_id):storeOf(p)===hStore))).reduce((s,p)=>s+(p.total_amount||0),0);
+  },[payments,bookings,ym,hStore]);
+  const byReason={},byStaff={},byProc={};
+  live.forEach(r=>{
+    byReason[r.reason_category]=(byReason[r.reason_category]||0)+(r.amount||0);
+    const sn=r.original_staff_id?staffName(r.original_staff_id):"不明";
+    (byStaff[sn]=byStaff[sn]||{n:0,a:0}).n++;byStaff[sn].a+=r.amount||0;
+    const pn=r.processed_by_name||"不明";
+    (byProc[pn]=byProc[pn]||{n:0,a:0}).n++;byProc[pn].a+=r.amount||0;
+  });
+  function shiftMonth(d){const [y,m]=ym.split("-").map(Number);const t=new Date(y,m-1+d,1);setYm(`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}`);}
+  function csv(){
+    const head=["返金日","患者名","店舗","元の会計日","元の会計額","返金額","返金方法","区分","理由分類","理由詳細","施術担当","処理者","確認者","取消","取消理由","記録日時"];
+    const esc=v=>`"${String(v==null?"":v).replace(/"/g,'""')}"`;
+    const pById={};payments.forEach(p=>{pById[p.id]=p;});
+    const lines=[head.map(esc).join(",")].concat(hRows.map(r=>{const p=pById[r.payment_id];return [r.refund_date,r.patient_name,storeName(r.store_id),p?p.payment_date:"",r.original_total,r.amount,r.refund_method,r.target,r.reason_category,r.reason_detail,r.original_staff_id?staffName(r.original_staff_id):"",r.processed_by_name,r.approved_by,r.voided?"取消":"",r.void_reason,(r.created_at||"").slice(0,16).replace("T"," ")].map(esc).join(",");}));
+    const blob=new Blob(["﻿"+lines.join("\n")],{type:"text/csv"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`返金履歴_${ym}.csv`;a.click();
+  }
+
+  const card={background:"white",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px rgba(0,0,0,.06)",marginBottom:12};
+  const h={fontSize:13,fontWeight:800,color:"#1e3a5f",marginBottom:10};
+  const inp={padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"};
+  const tabBtn=(id,label)=>(<button onClick={()=>setTab(id)} style={{padding:"8px 18px",borderRadius:10,border:"1.5px solid "+(tab===id?"#1e3a5f":"#e2e8f0"),background:tab===id?"#1e3a5f":"white",color:tab===id?"white":"#374151",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>{label}</button>);
+  const remainOf=p=>(p.total_amount||0)-(refundedBy[p.id]||0);
+
+  return(
+    <div style={{maxWidth:900,margin:"0 auto"}}>
+      <div style={{...card,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f",marginRight:8}}>↩️ 返金管理</div>
+        {tabBtn("register","返金を登録")}{tabBtn("history","返金履歴・分析")}
+      </div>
+
+      {tab==="register"&&(<>
+        <div style={card}>
+          <div style={h}>① 返金する会計を探す</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+            <input value={q} onChange={e=>setQ(e.target.value)} placeholder="患者名で検索" style={{...inp,flex:1,minWidth:140}}/>
+            <input type="date" value={qDate} onChange={e=>setQDate(e.target.value)} style={inp}/>
+            {qDate&&<button onClick={()=>setQDate("")} style={{...inp,cursor:"pointer",background:"#f8fafc"}}>日付解除</button>}
+          </div>
+          <div style={{maxHeight:300,overflowY:"auto",border:"1px solid #e2e8f0",borderRadius:8}}>
+            {candidates.length===0&&<div style={{padding:14,color:"#94a3b8",textAlign:"center",fontSize:13}}>該当する会計がありません</div>}
+            {candidates.map(p=>{const b=bookingById[p.booking_id];const rem=remainOf(p);return(
+              <div key={p.id} onClick={()=>pick(p)} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",borderBottom:"1px solid #f1f5f9",cursor:"pointer",background:sel&&sel.id===p.id?"#eff6ff":"white",fontSize:13}}>
+                <span style={{width:84,color:"#64748b"}}>{p.payment_date}</span>
+                <b style={{flex:1}}>{p.patient_name}<span style={{fontWeight:500,color:"#94a3b8",marginLeft:6,fontSize:11}}>{b?b.menu:""}</span></b>
+                <span>{fmt(p.total_amount)}</span>
+                {(refundedBy[p.id]||0)>0&&<span style={{fontSize:11,color:"#dc2626",fontWeight:700}}>返金済 {fmt(refundedBy[p.id])}</span>}
+                {rem<=0&&<span style={{fontSize:11,color:"#94a3b8"}}>全額返金済</span>}
+              </div>);})}
+          </div>
+        </div>
+
+        {sel&&(
+        <div style={{...card,border:"2px solid #fecaca"}}>
+          <div style={h}>② 返金内容と理由を記録</div>
+          <div style={{fontSize:13,marginBottom:10,padding:"8px 10px",background:"#f8fafc",borderRadius:8}}>
+            <b>{sel.patient_name}</b> 様／{sel.payment_date}／会計 {fmt(sel.total_amount)}（{sel.payment_method||"—"}）／施術担当：{staffName((bookingById[sel.booking_id]||{}).staff_id||sel.staff_id)}
+            <div style={{color:"#64748b",fontSize:12,marginTop:2}}>返金できる残り：{fmt(remainOf(sel))}</div>
+          </div>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:10}}>
+            <label style={{fontSize:12,fontWeight:700}}>返金額<br/><input type="number" inputMode="numeric" value={amount} onChange={e=>setAmount(e.target.value)} style={{...inp,width:130,textAlign:"right"}}/></label>
+            <label style={{fontSize:12,fontWeight:700}}>返金方法<br/><select value={method} onChange={e=>setMethod(e.target.value)} style={inp}>{REFUND_METHODS.map(m=><option key={m}>{m}</option>)}</select></label>
+            <label style={{fontSize:12,fontWeight:700}}>返金する部分<br/><select value={target} onChange={e=>setTarget(e.target.value)} style={inp}><option>自費</option><option>保険窓口負担</option></select></label>
+            <label style={{fontSize:12,fontWeight:700}}>返金日<br/><input type="date" value={rdate} onChange={e=>setRdate(e.target.value)} style={inp}/></label>
+          </div>
+          <div style={{fontSize:12,fontWeight:700,marginBottom:4}}>理由（分類）<span style={{color:"#dc2626"}}> 必須</span></div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+            {REFUND_REASONS.map(r=>(<button key={r} onClick={()=>setCat(r)} style={{padding:"6px 12px",borderRadius:20,border:"1.5px solid "+(cat===r?"#dc2626":"#e2e8f0"),background:cat===r?"#fee2e2":"white",color:cat===r?"#dc2626":"#374151",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{r}</button>))}
+          </div>
+          <div style={{fontSize:12,fontWeight:700,marginBottom:4}}>理由の詳細<span style={{color:"#dc2626"}}> 必須</span>（何が起きたか／対応内容／誰が判断したか）</div>
+          <textarea value={detail} onChange={e=>setDetail(e.target.value)} rows={3} placeholder="例：施術後に痛みが強く出たとのことで、院長が確認のうえ本日分を全額返金。" style={{...inp,width:"100%",resize:"vertical",marginBottom:10}}/>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}>
+            <label style={{fontSize:12,fontWeight:700,flex:1,minWidth:160}}>確認・承認した人（任意）<br/><input value={approver} onChange={e=>setApprover(e.target.value)} placeholder="例：岩永" style={{...inp,width:"100%"}}/></label>
+            <div style={{fontSize:12,color:"#64748b"}}>処理者：<b>{(user&&user.name)||"—"}</b>（自動記録）</div>
+          </div>
+          <button onClick={submit} disabled={saving} style={{width:"100%",marginTop:12,padding:13,borderRadius:12,border:"none",background:"#dc2626",color:"white",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"inherit",opacity:saving?0.6:1}}>{saving?"保存中...":"返金を記録する（売上をマイナス）"}</button>
+        </div>)}
+        {msg&&<div style={{textAlign:"center",marginBottom:12,fontSize:13,fontWeight:700,color:msg.startsWith("✅")?"#059669":"#dc2626"}}>{msg}</div>}
+      </>)}
+
+      {tab==="history"&&(<>
+        <div style={{...card,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          <button onClick={()=>shiftMonth(-1)} style={{padding:"5px 12px",borderRadius:8,border:"1.5px solid #e2e8f0",background:"white",cursor:"pointer"}}>◀</button>
+          <b style={{fontSize:14}}>{ym.replace("-","年")}月</b>
+          <button onClick={()=>shiftMonth(1)} style={{padding:"5px 12px",borderRadius:8,border:"1.5px solid #e2e8f0",background:"white",cursor:"pointer"}}>▶</button>
+          {stores&&stores.length>1&&<select value={hStore} onChange={e=>setHStore(Number(e.target.value))} style={inp}><option value={0}>全店舗</option>{stores.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select>}
+          <select value={hReason} onChange={e=>setHReason(e.target.value)} style={inp}><option value="">理由：すべて</option>{REFUND_REASONS.map(r=><option key={r}>{r}</option>)}</select>
+          <input value={hQ} onChange={e=>setHQ(e.target.value)} placeholder="患者名" style={{...inp,width:110}}/>
+          <label style={{fontSize:12,display:"flex",alignItems:"center",gap:4}}><input type="checkbox" checked={showVoided} onChange={e=>setShowVoided(e.target.checked)}/>取消分も表示</label>
+          <button onClick={csv} disabled={hRows.length===0} style={{marginLeft:"auto",padding:"6px 14px",borderRadius:8,border:"1.5px solid #1e3a5f",background:"white",color:"#1e3a5f",fontWeight:800,fontSize:12,cursor:"pointer"}}>CSV出力</button>
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginBottom:12}}>
+          {[["総売上（返金前）",fmt(monthSales),"#1e3a5f"],["返金合計",refundTotal>0?"−"+fmt(refundTotal):fmt(0),"#dc2626"],["純売上（返金後）",fmt(monthSales-refundTotal),"#059669"],["返金件数",live.length+"件","#475569"],["返金率",monthSales>0?(refundTotal/monthSales*100).toFixed(1)+"%":"-","#d97706"]].map(([l,v,c])=>(
+            <div key={l} style={{background:"white",borderRadius:12,padding:"12px 14px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}><div style={{fontSize:11,color:"#64748b",fontWeight:700}}>{l}</div><div style={{fontSize:20,fontWeight:800,color:c}}>{v}</div></div>
+          ))}
+        </div>
+
+        {live.length>0&&(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:10,marginBottom:12}}>
+          <div style={card}>
+            <div style={h}>理由別</div>
+            {Object.keys(byReason).sort((a,b)=>byReason[b]-byReason[a]).map(k=>(
+              <div key={k} style={{marginBottom:6,fontSize:12}}>
+                <div style={{display:"flex",justifyContent:"space-between"}}><span>{k}</span><b>{fmt(byReason[k])}</b></div>
+                <div style={{height:6,background:"#f1f5f9",borderRadius:3}}><div style={{height:6,borderRadius:3,background:"#ef4444",width:(byReason[k]/refundTotal*100)+"%"}}/></div>
+              </div>))}
+          </div>
+          <div style={card}>
+            <div style={h}>施術担当別（誰の会計が返金になったか）</div>
+            {Object.keys(byStaff).sort((a,b)=>byStaff[b].a-byStaff[a].a).map(k=>(<div key={k} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"3px 0"}}><span>{k}</span><span>{byStaff[k].n}件　<b>{fmt(byStaff[k].a)}</b></span></div>))}
+          </div>
+          <div style={card}>
+            <div style={h}>処理者別（誰が返金操作したか）</div>
+            {Object.keys(byProc).sort((a,b)=>byProc[b].a-byProc[a].a).map(k=>(<div key={k} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"3px 0"}}><span>{k}</span><span>{byProc[k].n}件　<b>{fmt(byProc[k].a)}</b></span></div>))}
+          </div>
+        </div>)}
+
+        <div style={card}>
+          <div style={h}>返金の履歴（{hRows.length}件）</div>
+          {hRows.length===0&&<div style={{color:"#94a3b8",textAlign:"center",padding:14,fontSize:13}}>この月の返金はありません</div>}
+          {hRows.map(r=>(
+            <div key={r.id} style={{borderTop:"1px solid #f1f5f9",padding:"10px 0",opacity:r.voided?0.5:1}}>
+              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",fontSize:13}}>
+                <span style={{color:"#64748b"}}>{r.refund_date}</span>
+                <b style={{textDecoration:r.voided?"line-through":"none"}}>{r.patient_name}</b>
+                <span style={{color:"#dc2626",fontWeight:800}}>−{fmt(r.amount)}</span>
+                <span style={{fontSize:11,color:"#64748b"}}>（元の会計 {fmt(r.original_total)}／{r.refund_method}／{r.target}）</span>
+                {stores&&stores.length>1&&<span style={{fontSize:11,color:"#94a3b8"}}>{storeName(r.store_id)}</span>}
+                {r.voided&&<span style={{fontSize:11,fontWeight:800,color:"#475569",background:"#e2e8f0",borderRadius:8,padding:"1px 8px"}}>取消済</span>}
+                {isAdmin&&!r.voided&&<button onClick={()=>voidRefund(r)} style={{marginLeft:"auto",border:"1px solid #e2e8f0",background:"white",borderRadius:6,fontSize:11,padding:"3px 8px",cursor:"pointer",color:"#64748b"}}>取り消す</button>}
+              </div>
+              <div style={{fontSize:12,marginTop:3}}><span style={{background:"#fee2e2",color:"#dc2626",fontWeight:700,borderRadius:8,padding:"1px 8px",marginRight:6}}>{r.reason_category}</span>{r.reason_detail}</div>
+              <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>施術担当：{r.original_staff_id?staffName(r.original_staff_id):"不明"}／処理：{r.processed_by_name||"不明"}{r.approved_by?`／確認：${r.approved_by}`:""}／記録 {(r.created_at||"").slice(0,16).replace("T"," ")}{r.voided?`／取消理由：${r.void_reason||""}（${r.voided_by_name||""}）`:""}</div>
+            </div>))}
+        </div>
+      </>)}
+    </div>
+  );
+}
+
 function DailyReportPanel({bookings,payments,stores,todayStr}){
   const fmt=n=>"¥"+Number(n||0).toLocaleString();
   const DAYS_JP=["日","月","火","水","木","金","土"];
@@ -2163,6 +2418,7 @@ function DailyReportPanel({bookings,payments,stores,todayStr}){
       const dayPays=payments.filter(p=>p.payment_date===ds&&bookingById[p.booking_id]);
       const paidIds=new Set();
       dayPays.forEach(p=>{
+        if(p.is_refund){ r.sales+=p.total_amount||0; r.ins+=p.insurance_amount||0; r.jifee+=p.jifee_amount||0; return; }
         r.sales+=p.total_amount||0;
         r.ins+=p.insurance_amount||0;
         r.jifee+=p.jifee_amount||0;
@@ -2445,7 +2701,7 @@ function StatsPanel({bookings,payments,stores,todayStr}){
 
   // === 指標計算 ===
   const totalBk=bks.length;
-  const paidBk=pays.length;
+  const paidBk=pays.filter(p=>!p.is_refund).length;
   const cancelledBk=bks.filter(b=>b.cancelled).length;
   const confirmedBk=totalBk-cancelledBk;
   // 当日キャンセル（予約日そのものにキャンセルされたもの）
@@ -2471,7 +2727,7 @@ function StatsPanel({bookings,payments,stores,todayStr}){
     salesByStaffMap[sid].total+=(p.total_amount||0);
     salesByStaffMap[sid].insurance+=(p.insurance_amount||0);
     salesByStaffMap[sid].jifee+=(p.jifee_amount||0);
-    salesByStaffMap[sid].count++;
+    if(!p.is_refund) salesByStaffMap[sid].count++;
   });
   const salesByStaffList=Object.entries(salesByStaffMap).map(([sid,v])=>{
     const staffInfo=STAFF_ACCOUNTS.find(s=>s.id===Number(sid))||{name:"担当未定",color:"#888",initial:"？"};
@@ -9568,7 +9824,22 @@ function Dashboard({user,onLogout}){
   const resizeRef=React.useRef({startX:0,deltaPx:0});
   const [historyPatient,setHistoryPatient]=React.useState(null);
   const [allPayments,setAllPayments]=React.useState([]);
+  const [allRefunds,setAllRefunds]=React.useState([]);
   const payments=React.useMemo(()=>allPayments.filter(p=>!!p.is_training===trainingMode),[allPayments,trainingMode]);
+  // 返金（取消されていないもの）。売上集計では「返金日にマイナスの会計」として扱う
+  const refunds=React.useMemo(()=>allRefunds.filter(r=>!r.voided&&!!r.is_training===trainingMode),[allRefunds,trainingMode]);
+  const paymentsNet=React.useMemo(()=>{
+    if(refunds.length===0) return payments;
+    const rows=refunds.map(r=>({
+      id:"refund_"+r.id,is_refund:true,booking_id:r.booking_id,patient_name:r.patient_name,payment_date:r.refund_date,
+      total_amount:-(r.amount||0),insurance_amount:r.target==="自費"?0:-(r.amount||0),jifee_amount:r.target==="自費"?-(r.amount||0):0,
+      staff_id:r.original_staff_id,payment_method:null,refund_method:r.refund_method,is_training:r.is_training,
+    }));
+    return [...payments,...rows];
+  },[payments,refunds]);
+  async function reloadRefunds(){
+    try{const r=await sb.select("refunds","?order=refund_date.desc,id.desc");setAllRefunds(Array.isArray(r)?r:[]);}catch(e){}
+  }
   const [businessHours,setBusinessHours]=React.useState([]);
   const [closures,setClosures]=React.useState([]);
   const [stores,setStores]=React.useState([]);
@@ -9656,6 +9927,7 @@ function Dashboard({user,onLogout}){
   }
 
   async function fetchAll(){
+    reloadRefunds();
     // PC・スマホなど別端末で見ている表示（日付・店舗・スタッフ）との連動チェックも、
     // このfetchAllの30秒ごとの自動更新に相乗りさせる（他の通信を止めないようawaitはしない）
     syncViewStateFromServer();
@@ -10509,6 +10781,7 @@ function Dashboard({user,onLogout}){
       {id:"stats",label:"予約分析・サマリー",icon:"bar-chart",special:""},
       {id:"daily_report",label:"日計表（自動集計）",icon:"bar-chart",special:""},
       {id:"register_cash",label:"レジ金（レジ締め）",icon:"receipt",special:""},
+      {id:"refund",label:"返金管理（売上マイナス・履歴）",icon:"receipt",special:""},
       {id:"preopen_stats",label:"イベント期間集計",icon:"bar-chart",special:""},
       {id:"churn_alert",label:"離反防止アラート",icon:"bell",special:""},
       {id:"line_link_check",label:"LINE連携チェック",icon:"link",special:""},
@@ -10771,11 +11044,16 @@ function Dashboard({user,onLogout}){
             // payment_methodは「現金:¥5,000・カード:¥3,000」形式。現金はお預かり額で記録されている場合があるため、
             // 現金＝合計−現金以外 で算出（お釣り分は売上に含めない）。
             const dayStoreIds=new Set(storeBookings.map(b=>b.id));
-            const dayPays=payments.filter(p=>p.payment_date===ds&&dayStoreIds.has(p.booking_id)&&(!selStaff||p.staff_id===selStaff));
+            const dayPays=paymentsNet.filter(p=>p.payment_date===ds&&dayStoreIds.has(p.booking_id)&&(!selStaff||p.staff_id===selStaff));
             let dayCash=0,dayOther=0;
             const dayOtherBy={};
             dayPays.forEach(p=>{
               const tot=parseInt(p.total_amount)||0;
+              if(p.is_refund){
+                if(p.refund_method==="現金"){dayCash+=tot;}
+                else{const nm=p.refund_method||"その他";dayOther+=tot;dayOtherBy[nm]=(dayOtherBy[nm]||0)+tot;}
+                return;
+              }
               let nonCash=0;
               String(p.payment_method||"").split("・").forEach(part=>{
                 const i=part.indexOf(":");
@@ -11100,16 +11378,17 @@ function Dashboard({user,onLogout}){
           {view==="patients"&&<PatientsPanel bookings={bookings} setView={setView} setForm={setForm} setEditId={setEditId} setConflict={setConflict} todayStr={todayStr} selStoreId={selStoreId} setAllBookings={setAllBookings} allPayments={allPayments} setAllPayments={setAllPayments} initialPatient={historyPatient} onConsumeInitialPatient={()=>setHistoryPatient(null)}/>}
 
           {/* サマリー */}
-          {view==="stats"&&<StatsPanel bookings={bookings} payments={payments} todayStr={todayStr} stores={stores}/>}
+          {view==="stats"&&<StatsPanel bookings={bookings} payments={paymentsNet} todayStr={todayStr} stores={stores}/>}
           {view==="karte_list"&&<KarteListPanel bookings={bookings} payments={payments} stores={stores} todayStr={todayStr}/>}
-          {view==="daily_report"&&<DailyReportPanel bookings={bookings} payments={payments} stores={stores} todayStr={todayStr}/>}
-          {view==="register_cash"&&<RegisterCashPanel bookings={bookings} payments={payments} stores={stores} todayStr={todayStr} currentUser={user}/>}
-          {view==="preopen_stats"&&<PreOpenStatsPanel bookings={bookings} payments={payments} stores={stores} user={user}/>}
+          {view==="daily_report"&&<DailyReportPanel bookings={bookings} payments={paymentsNet} stores={stores} todayStr={todayStr}/>}
+          {view==="register_cash"&&<RegisterCashPanel bookings={bookings} payments={payments} refunds={refunds} stores={stores} todayStr={todayStr} currentUser={user}/>}
+          {view==="refund"&&<RefundPanel bookings={bookings} payments={payments} refunds={refunds} allRefunds={allRefunds} stores={stores} todayStr={todayStr} user={user} isAdmin={isAdmin} onChanged={reloadRefunds} trainingMode={trainingMode}/>}
+          {view==="preopen_stats"&&<PreOpenStatsPanel bookings={bookings} payments={paymentsNet} stores={stores} user={user}/>}
 
           {/* 離反防止アラート */}
           {view==="churn_alert"&&<ChurnAlertPanel bookings={bookings} todayStr={todayStr}/>}
                     {view==="line_link_check"&&<LineLinkCheckPanel bookings={bookings}/>}
-                             {view==="staff_kpi"&&<StaffKPIPanel bookings={bookings} payments={payments} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr} trainingMode={trainingMode}/>}
+                             {view==="staff_kpi"&&<StaffKPIPanel bookings={bookings} payments={paymentsNet} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr} trainingMode={trainingMode}/>}
                              {view==="pass_holders"&&<PassHoldersPanel payments={payments} bookings={bookings} trainingMode={trainingMode}/>}
                              {view==="referral_mgmt"&&<ReferralMgmtPanel bookings={bookings} payments={payments}/>}
                     {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} todayStr={todayStr} onRestore={restoreBooking} onDelete={deleteCancelledBooking}/>}
