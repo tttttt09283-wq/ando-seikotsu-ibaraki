@@ -1930,6 +1930,198 @@ function KarteListPanel({bookings,payments,stores,todayStr}){
 
 // ===== 日計表（スプレッドシートの日計表と同じ項目を、会計データから自動集計して日別に表示） =====
 // 巻き爪・自賠は、POS会計の「巻き爪・自賠」ボタンで追加した自費項目（payments.jifee_items）から集計する。
+// ===== レジ金（レジ締め）：釣銭準備金＋現金売上±入出金＝あるべきレジ金 と、実際に数えた現金の差額を出す =====
+function RegisterCashPanel({bookings,payments,stores,todayStr,currentUser}){
+  const fmt=n=>"¥"+Number(n||0).toLocaleString();
+  const firstStoreId=(stores&&stores[0]&&stores[0].id)||1;
+  const [storeId,setStoreId]=React.useState(firstStoreId);
+  const [date,setDate]=React.useState(todayStr);
+  const DENOMS=[10000,5000,2000,1000,500,100,50,10,5,1];
+  const [counts,setCounts]=React.useState({});
+  const [floatStart,setFloatStart]=React.useState("");
+  const [floatNext,setFloatNext]=React.useState("");
+  const [adj,setAdj]=React.useState([]); // {type:"in"|"out",amount,reason}
+  const [memo,setMemo]=React.useState("");
+  const [saved,setSaved]=React.useState(null); // 保存済みの記録
+  const [prevFloat,setPrevFloat]=React.useState(null); // 前回締めの「翌日の釣銭準備金」
+  const [loading,setLoading]=React.useState(true);
+  const [saving,setSaving]=React.useState(false);
+  const [msg,setMsg]=React.useState("");
+
+  // その日の現金売上（現金＝合計−現金以外。お釣り分は含めない）
+  const cashInfo=React.useMemo(()=>{
+    const ids=new Set(bookings.filter(b=>(b.store_id||firstStoreId)===storeId).map(b=>b.id));
+    const pays=payments.filter(p=>p.payment_date===date&&ids.has(p.booking_id));
+    let cash=0,other=0; const by={};
+    pays.forEach(p=>{
+      const tot=parseInt(p.total_amount)||0; let nonCash=0;
+      String(p.payment_method||"").split("・").forEach(part=>{
+        const i=part.indexOf(":"); if(i<0) return;
+        const nm=part.slice(0,i).trim(); const amt=parseInt(part.slice(i+1).replace(/[^\d]/g,""))||0;
+        if(nm&&nm!=="現金"){ nonCash+=amt; by[nm]=(by[nm]||0)+amt; }
+      });
+      other+=nonCash; cash+=Math.max(0,tot-nonCash);
+    });
+    return {cash,other,by,count:pays.length};
+  },[bookings,payments,storeId,date]);
+
+  // 日付・店舗が変わったら、保存済みの記録と、前回締めの繰越額を読み込む
+  React.useEffect(()=>{
+    let alive=true;
+    setLoading(true); setMsg("");
+    sb.select("register_closings",`?store_id=eq.${storeId}&date=lte.${date}&order=date.desc&limit=2`).then(rows=>{
+      if(!alive) return;
+      const list=Array.isArray(rows)?rows:[];
+      const cur=list.find(r=>r.date===date)||null;
+      const prev=list.find(r=>r.date<date)||null;
+      setSaved(cur); setPrevFloat(prev?prev.float_next:null);
+      if(cur){
+        setFloatStart(String(cur.float_start)); setFloatNext(String(cur.float_next));
+        setAdj(Array.isArray(cur.adjustments)?cur.adjustments:[]);
+        setCounts(cur.denominations||{}); setMemo(cur.memo||"");
+      }else{
+        setFloatStart(prev?String(prev.float_next):""); setFloatNext(prev?String(prev.float_next):"");
+        setAdj([]); setCounts({}); setMemo("");
+      }
+      setLoading(false);
+    }).catch(()=>{ if(alive) setLoading(false); });
+    return ()=>{alive=false;};
+  },[storeId,date]);
+
+  const n=v=>parseInt(v,10)||0;
+  const inTotal=adj.filter(a=>a.type==="in").reduce((s,a)=>s+n(a.amount),0);
+  const outTotal=adj.filter(a=>a.type==="out").reduce((s,a)=>s+n(a.amount),0);
+  const expected=n(floatStart)+cashInfo.cash+inTotal-outTotal;
+  const actual=DENOMS.reduce((s,d)=>s+d*n(counts[d]),0);
+  const counted=DENOMS.some(d=>n(counts[d])>0);
+  const diff=actual-expected;
+  const deposit=actual-n(floatNext);
+
+  function shiftDate(delta){ const d=new Date(date+"T00:00:00"); d.setDate(d.getDate()+delta); setDate(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`); }
+  function setAdjAt(i,patch){ setAdj(p=>p.map((a,k)=>k===i?{...a,...patch}:a)); }
+
+  async function save(){
+    if(!counted&&!window.confirm("現金の枚数がまだ入力されていません。このまま保存しますか？")) return;
+    if(counted&&diff!==0&&!window.confirm(`差額が ${diff>0?"+":""}${diff.toLocaleString()}円 あります。このまま保存しますか？`)) return;
+    setSaving(true); setMsg("");
+    const payload={
+      store_id:storeId,date,float_start:n(floatStart),cash_sales:cashInfo.cash,
+      adjustments:adj.filter(a=>n(a.amount)>0),denominations:counts,
+      expected,actual,diff,float_next:n(floatNext),deposit,memo:memo||null,
+      staff_id:(currentUser&&currentUser.id)||null,updated_at:new Date().toISOString(),
+    };
+    try{
+      let res;
+      if(saved) res=await sb.update("register_closings",saved.id,payload);
+      else res=await sb.insert("register_closings",payload);
+      const row=Array.isArray(res)?res[0]:null;
+      if(!row) throw new Error((res&&res.message)||"保存に失敗しました");
+      setSaved(row); setMsg("✅ 保存しました");
+    }catch(e){ setMsg("保存に失敗しました："+(e.message||"")); }
+    setSaving(false);
+  }
+
+  const card={background:"white",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px rgba(0,0,0,.06)",marginBottom:12};
+  const h={fontSize:13,fontWeight:800,color:"#1e3a5f",marginBottom:10};
+  const inp={padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontFamily:"inherit",textAlign:"right",width:130};
+  const row={display:"flex",justifyContent:"space-between",alignItems:"center",padding:"5px 0",fontSize:14};
+
+  return(
+    <div style={{maxWidth:760,margin:"0 auto"}}>
+      <div style={card}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f"}}>💴 レジ金（レジ締め）</div>
+          {stores&&stores.length>1&&(
+            <select value={storeId} onChange={e=>setStoreId(Number(e.target.value))} style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13}}>
+              {stores.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          )}
+          <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
+            <button onClick={()=>shiftDate(-1)} style={{padding:"5px 12px",borderRadius:8,border:"1.5px solid #e2e8f0",background:"white",cursor:"pointer"}}>◀</button>
+            <input type="date" value={date} onChange={e=>e.target.value&&setDate(e.target.value)} style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13}}/>
+            <button onClick={()=>shiftDate(1)} style={{padding:"5px 12px",borderRadius:8,border:"1.5px solid #e2e8f0",background:"white",cursor:"pointer"}}>▶</button>
+          </div>
+        </div>
+        {saved&&<div style={{marginTop:8,fontSize:12,color:"#059669",fontWeight:700}}>✓ この日は保存済みです（{(saved.updated_at||"").slice(0,16).replace("T"," ")}）。内容を変えて保存し直せます。</div>}
+      </div>
+
+      {loading?<div style={{...card,textAlign:"center",color:"#94a3b8"}}>読み込み中...</div>:(<>
+      <div style={card}>
+        <div style={h}>① あるべきレジ金の計算</div>
+        <div style={row}>
+          <span>開始時の釣銭準備金{prevFloat!=null&&<span style={{fontSize:11,color:"#94a3b8",marginLeft:6}}>（前回締め：{fmt(prevFloat)}）</span>}</span>
+          <input type="number" inputMode="numeric" value={floatStart} onChange={e=>setFloatStart(e.target.value)} placeholder="0" style={inp}/>
+        </div>
+        <div style={row}>
+          <span>＋ 現金売上（会計から自動）<span style={{fontSize:11,color:"#94a3b8",marginLeft:6}}>{cashInfo.count}件</span></span>
+          <b>{fmt(cashInfo.cash)}</b>
+        </div>
+        {cashInfo.other>0&&<div style={{...row,fontSize:12,color:"#64748b",paddingTop:0}}><span>（参考）現金以外 {fmt(cashInfo.other)}：{Object.keys(cashInfo.by).map(k=>`${k} ${fmt(cashInfo.by[k])}`).join("／")}</span><span>レジ金には含めません</span></div>}
+        <div style={{borderTop:"1px dashed #e2e8f0",marginTop:6,paddingTop:6}}>
+          <div style={{fontSize:12,color:"#64748b",fontWeight:700,marginBottom:6}}>入金・出金（釣銭の追加、立替精算、両替など）</div>
+          {adj.map((a,i)=>(
+            <div key={i} style={{display:"flex",gap:6,alignItems:"center",marginBottom:6,flexWrap:"wrap"}}>
+              <select value={a.type} onChange={e=>setAdjAt(i,{type:e.target.value})} style={{padding:"6px 8px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13}}>
+                <option value="in">＋ 入金</option><option value="out">− 出金</option>
+              </select>
+              <input type="number" inputMode="numeric" value={a.amount} onChange={e=>setAdjAt(i,{amount:e.target.value})} placeholder="金額" style={{...inp,width:110}}/>
+              <input value={a.reason||""} onChange={e=>setAdjAt(i,{reason:e.target.value})} placeholder="理由（例：消耗品購入）" style={{flex:1,minWidth:120,padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}/>
+              <button onClick={()=>setAdj(p=>p.filter((_,k)=>k!==i))} style={{border:"none",background:"#fee2e2",color:"#dc2626",borderRadius:8,padding:"6px 10px",cursor:"pointer",fontWeight:700}}>✕</button>
+            </div>
+          ))}
+          <button onClick={()=>setAdj(p=>[...p,{type:"out",amount:"",reason:""}])} style={{border:"1.5px dashed #94a3b8",background:"white",color:"#475569",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:12,fontWeight:700}}>＋ 入出金を追加</button>
+        </div>
+        {(inTotal>0||outTotal>0)&&<div style={{...row,fontSize:13,color:"#475569"}}><span>入金 {fmt(inTotal)} ／ 出金 {fmt(outTotal)}</span><span>{inTotal-outTotal>=0?"+":"−"}{fmt(Math.abs(inTotal-outTotal))}</span></div>}
+        <div style={{...row,borderTop:"2px solid #1e3a5f",marginTop:8,paddingTop:10,fontSize:16,fontWeight:800,color:"#1e3a5f"}}>
+          <span>あるべきレジ金</span><span>{fmt(expected)}</span>
+        </div>
+      </div>
+
+      <div style={card}>
+        <div style={h}>② 実際の現金を数える</div>
+        {DENOMS.map(d=>(
+          <div key={d} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0"}}>
+            <span style={{width:84,fontWeight:700,fontSize:14}}>{d>=1000?`${d.toLocaleString()}円札`:`${d}円玉`}</span>
+            <span style={{color:"#94a3b8"}}>×</span>
+            <input type="number" inputMode="numeric" min="0" value={counts[d]===undefined?"":counts[d]} onChange={e=>setCounts(p=>({...p,[d]:e.target.value}))} placeholder="0" style={{...inp,width:90}}/>
+            <span style={{color:"#94a3b8",fontSize:13}}>枚</span>
+            <span style={{marginLeft:"auto",fontWeight:700,fontSize:14}}>{fmt(d*n(counts[d]))}</span>
+          </div>
+        ))}
+        <div style={{...row,borderTop:"2px solid #1e3a5f",marginTop:8,paddingTop:10,fontSize:16,fontWeight:800,color:"#1e3a5f"}}>
+          <span>実際の現金</span><span>{fmt(actual)}</span>
+        </div>
+      </div>
+
+      <div style={{...card,border:"2px solid "+(!counted?"#e2e8f0":diff===0?"#059669":"#dc2626"),background:!counted?"white":diff===0?"#f0fdf4":"#fef2f2"}}>
+        <div style={h}>③ 過不足</div>
+        {!counted?<div style={{color:"#94a3b8",fontSize:13}}>現金の枚数を入力すると、ここに過不足が出ます。</div>:(
+          <div style={{fontSize:22,fontWeight:800,color:diff===0?"#059669":"#dc2626"}}>
+            {diff===0?"✅ ピッタリ合っています":(diff>0?`＋${diff.toLocaleString()}円 多い`:`−${Math.abs(diff).toLocaleString()}円 足りない`)}
+          </div>
+        )}
+        {counted&&diff!==0&&<div style={{fontSize:12,color:"#64748b",marginTop:6}}>あるべきレジ金 {fmt(expected)} − 実際の現金 {fmt(actual)}。会計の金額修正・入出金の記入漏れがないか確認してください。</div>}
+      </div>
+
+      <div style={card}>
+        <div style={h}>④ 締めたあとの現金</div>
+        <div style={row}>
+          <span>明日に残す釣銭準備金</span>
+          <input type="number" inputMode="numeric" value={floatNext} onChange={e=>setFloatNext(e.target.value)} placeholder="0" style={inp}/>
+        </div>
+        <div style={{...row,fontWeight:800}}><span>持ち帰り・入金する現金（実際の現金 − 準備金）</span><span>{fmt(deposit)}</span></div>
+        <textarea value={memo} onChange={e=>setMemo(e.target.value)} rows={2} placeholder="メモ（過不足の原因など）" style={{width:"100%",marginTop:8,padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit",resize:"none"}}/>
+      </div>
+
+      <button onClick={save} disabled={saving} style={{width:"100%",padding:14,borderRadius:12,border:"none",background:"#1e3a5f",color:"white",fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"inherit",opacity:saving?0.6:1}}>
+        {saving?"保存中...":(saved?"レジ締めを更新して保存":"レジ締めを保存")}
+      </button>
+      {msg&&<div style={{textAlign:"center",marginTop:10,fontSize:13,fontWeight:700,color:msg.startsWith("✅")?"#059669":"#dc2626"}}>{msg}</div>}
+      </>)}
+    </div>
+  );
+}
+
 function DailyReportPanel({bookings,payments,stores,todayStr}){
   const fmt=n=>"¥"+Number(n||0).toLocaleString();
   const DAYS_JP=["日","月","火","水","木","金","土"];
@@ -10310,6 +10502,7 @@ function Dashboard({user,onLogout}){
     {id:"analysis",label:"分析",color:"#059669",items:[
       {id:"stats",label:"予約分析・サマリー",icon:"bar-chart",special:""},
       {id:"daily_report",label:"日計表（自動集計）",icon:"bar-chart",special:""},
+      {id:"register_cash",label:"レジ金（レジ締め）",icon:"receipt",special:""},
       {id:"preopen_stats",label:"イベント期間集計",icon:"bar-chart",special:""},
       {id:"churn_alert",label:"離反防止アラート",icon:"bell",special:""},
       {id:"line_link_check",label:"LINE連携チェック",icon:"link",special:""},
@@ -10886,6 +11079,7 @@ function Dashboard({user,onLogout}){
           {view==="stats"&&<StatsPanel bookings={bookings} payments={payments} todayStr={todayStr} stores={stores}/>}
           {view==="karte_list"&&<KarteListPanel bookings={bookings} payments={payments} stores={stores} todayStr={todayStr}/>}
           {view==="daily_report"&&<DailyReportPanel bookings={bookings} payments={payments} stores={stores} todayStr={todayStr}/>}
+          {view==="register_cash"&&<RegisterCashPanel bookings={bookings} payments={payments} stores={stores} todayStr={todayStr} currentUser={user}/>}
           {view==="preopen_stats"&&<PreOpenStatsPanel bookings={bookings} payments={payments} stores={stores} user={user}/>}
 
           {/* 離反防止アラート */}
