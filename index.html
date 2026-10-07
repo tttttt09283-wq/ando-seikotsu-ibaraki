@@ -2417,7 +2417,9 @@ function DailyReportPanel({bookings,payments,stores,todayStr}){
       r.date=ds; r.dow=new Date(ds+"T00:00:00").getDay();
       const dayPays=payments.filter(p=>p.payment_date===ds&&bookingById[p.booking_id]);
       const paidIds=new Set();
+      const karteIds=new Set(); // 当日カルテ管理料をいただいた会計（今月初の判定に使う）
       dayPays.forEach(p=>{
+        if(!p.is_refund&&Array.isArray(p.jifee_items)&&p.jifee_items.some(it=>String((it&&it.label)||"").includes("カルテ管理料"))) karteIds.add(p.booking_id);
         if(p.is_refund){ r.sales+=p.total_amount||0; r.ins+=p.insurance_amount||0; r.jifee+=p.jifee_amount||0; return; }
         r.sales+=p.total_amount||0;
         r.ins+=p.insurance_amount||0;
@@ -2450,8 +2452,8 @@ function DailyReportPanel({bookings,payments,stores,todayStr}){
         const prevDates=(datesByPatient[k]||[]).filter(x=>x<ds).sort();
         const prev=prevDates[prevDates.length-1];
         if(prev&&addMonth(prev)<=ds) r.returnPt++;                       // 再診：前回から1ヶ月以上空いた
-        else if(!prev||prev.slice(0,7)!==ds.slice(0,7)) r.monthFirst++;   // 今月初：その月に初めて来院（新患・再診以外）
-        else r.keepPt++;                                                  // 月内2回目以降
+        else if(karteIds.has(id)) r.monthFirst++;                         // 今月初：当日カルテ管理料をいただいた方（新患・再診以外）
+        else r.keepPt++;                                                  // 月内2回目以降（カルテ管理料なし）
       });
       const dayBookings=storeBookings.filter(b=>b.date===ds);
       r.booked=dayBookings.length;
@@ -2519,7 +2521,7 @@ function DailyReportPanel({bookings,payments,stores,todayStr}){
       </div>
       <div style={{fontSize:11,color:"#94a3b8",marginBottom:10,lineHeight:1.6}}>
         会計（POS）のデータから自動で集計しています。巻き爪・自賠は、会計画面の「巻き爪・自賠」ボタンで追加した分から数えます（導入前の会計は0件になります）。
-        保険対応件数＝保険窓口の金額がある会計の件数／新患＝その院で初めて予約した患者様／再診＝前回の来院から1ヶ月以上空いて来院した患者様／今月初＝その月に初めて来院した患者様（新患・再診を除く）／月内2回目以降＝同じ月に2回目以降の来院。
+        保険対応件数＝保険窓口の金額がある会計の件数／新患＝その院で初めて予約した患者様／再診＝前回の来院から1ヶ月以上空いて来院した患者様／今月初＝当日カルテ管理料をいただいた患者様（新患・再診を除く）／月内2回目以降＝それ以外の来院（カルテ管理料なし）。
       </div>
       <div style={{overflowX:"auto",border:"1px solid #e2e8f0",borderRadius:10}}>
         <table style={{borderCollapse:"collapse",width:"100%"}}>
