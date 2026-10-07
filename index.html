@@ -10731,6 +10731,14 @@ function Dashboard({user,onLogout}){
             const screenW=Math.max(window.innerWidth-130-48,600);
             const CELL_W=Math.max(Math.floor((screenW-HEADER_W)/TOTAL_MINS),12);
 
+            // 祝日（2026/10〜）：temp_closuresの営業時間上書き＋メモに祝日系の語がある日を祝日として表示
+            function holidayOf(dStr){
+              if(dStr<"2026-10-01") return null;
+              const c=closures.find(x=>x.date===dStr&&x.is_closed===false&&x.open_time&&/祝日|振替休日|国民の休日/.test(x.memo||""));
+              if(!c) return null;
+              const nm=(c.memo||"").replace(/9-18営業/,"").replace(/^祝日（(.+)）$/,"$1").trim()||"祝日";
+              return{name:nm,open:String(c.open_time).slice(0,5),close:String(c.close_time||"18:00").slice(0,5)};
+            }
             const staffList=storeStaff;
             const filteredStaff=selStaff?staffList.filter(s=>s.id===selStaff):staffList;
 
@@ -10823,12 +10831,14 @@ function Dashboard({user,onLogout}){
                     const isToday=dStr===todayStr;
                     const isSun=d.getDay()===0,isSat=d.getDay()===6;
                     const cnt=storeBookings.filter(b=>b.date===dStr&&!b.cancelled).length;
+                    const hol=holidayOf(dStr);
                     return(
                       <button key={dStr} onClick={()=>setBaseDate(new Date(dStr+"T00:00:00"))}
                         style={{flex:1,minWidth:72,padding:"6px 4px",borderRadius:10,border:"none",cursor:"pointer",fontWeight:800,fontSize:12,textAlign:"center",transition:"all .15s",
                           background:isToday?"#d97706":isSelected?"rgba(255,255,255,.3)":"rgba(255,255,255,.1)",
                           color:"white",boxShadow:isToday?"0 2px 8px rgba(217,119,6,.5)":"none"}}>
-                        <div style={{color:isSun?"#fca5a5":isSat?"#c4b5fd":"white"}}>{d.getMonth()+1}/{d.getDate()}({DAYS_JP[d.getDay()]})</div>
+                        <div style={{color:(isSun||hol)?"#fca5a5":isSat?"#c4b5fd":"white"}}>{d.getMonth()+1}/{d.getDate()}({DAYS_JP[d.getDay()]})</div>
+                        {hol&&<div style={{fontSize:9,fontWeight:800,color:"#fecaca",marginTop:1}}>🎌祝 {hol.open.replace(/^0/,"")}-{hol.close.replace(/^0/,"")}</div>}
                         {cnt>0&&<div style={{fontSize:10,opacity:.8,marginTop:1}}>{cnt}件</div>}
                         {isToday&&<div style={{fontSize:9,fontWeight:700,marginTop:1}}>今日</div>}
                       </button>
@@ -10839,7 +10849,8 @@ function Dashboard({user,onLogout}){
 
                 {/* 日付ピッカー */}
                 {(!selStaff||weekViewMode==="calendar")&&<div style={{padding:"6px 12px",borderBottom:"1px solid #e2e8f0",display:"flex",alignItems:"center",gap:8,background:"#f8fafc"}}>
-                  <span style={{fontSize:13,fontWeight:800,color:"#1e3a5f"}}>{baseDate.getFullYear()}年{baseDate.getMonth()+1}月{baseDate.getDate()}日（{DAYS_JP[baseDate.getDay()]}）</span>
+                  <span style={{fontSize:13,fontWeight:800,color:holidayOf(ds)?"#dc2626":"#1e3a5f"}}>{baseDate.getFullYear()}年{baseDate.getMonth()+1}月{baseDate.getDate()}日（{DAYS_JP[baseDate.getDay()]}）</span>
+                  {holidayOf(ds)&&<span style={{fontSize:11,fontWeight:800,color:"#dc2626",background:"#fee2e2",padding:"2px 10px",borderRadius:20}}>🎌 {holidayOf(ds).name}｜診療 {holidayOf(ds).open}〜{holidayOf(ds).close}</span>}
                   {ds!==todayStr&&<button className="btn btn-outline btn-xs" onClick={()=>setBaseDate(new Date())}>今日</button>}
                   <input type="date" value={ds} onChange={e=>{if(e.target.value)setBaseDate(new Date(e.target.value+"T00:00:00"));}}
                     style={{marginLeft:"auto",padding:"3px 8px",border:"1.5px solid #e2e8f0",borderRadius:7,fontSize:12,color:"#374151",cursor:"pointer"}}/>
@@ -10866,7 +10877,8 @@ function Dashboard({user,onLogout}){
                       const isToday=wdStr===todayStr;
                       const isSun=wd.getDay()===0,isSat=wd.getDay()===6;
                       const dayBookings=storeBookings.filter(b=>b.date===wdStr&&!b.cancelled);
-                      const dayColor=isSun?"#ef4444":isSat?"#7c3aed":"#1e293b";
+                      const wdHol=holidayOf(wdStr);
+                      const dayColor=(isSun||wdHol)?"#ef4444":isSat?"#7c3aed":"#1e293b";
                       // その日実際に出勤しているスタッフのみ表示（誤予約防止）
                       const dayStaffList=filteredStaff.filter(s=>isStaffWorkingOnDate(s.id,wd)&&(!s.eventOnly||isEventDateAdmin(wdStr)));
 
@@ -10886,12 +10898,13 @@ function Dashboard({user,onLogout}){
                       return(
                         <div key={wdStr}>
                           {/* 日付ヘッダー行 */}
-                          <div style={{display:"flex",background:isToday?"#1e3a5f":isSun?"#fff1f2":isSat?"#faf5ff":"#f1f5f9",borderBottom:"1px solid #e2e8f0",borderTop:"2px solid #e2e8f0"}}>
+                          <div style={{display:"flex",background:isToday?"#1e3a5f":(isSun||wdHol)?"#fff1f2":isSat?"#faf5ff":"#f1f5f9",borderBottom:"1px solid #e2e8f0",borderTop:"2px solid #e2e8f0"}}>
                             <div style={{width:HEADER_W,flexShrink:0,padding:"5px 8px",borderRight:"1px solid #e2e8f0",display:"flex",alignItems:"center",gap:6}}>
                               <span style={{fontWeight:800,fontSize:12,color:isToday?"white":dayColor}}>
                                 {wd.getMonth()+1}/{wd.getDate()}({DAYS_JP[wd.getDay()]})
                               </span>
                               {isToday&&<span style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,.8)"}}>今日</span>}
+                              {wdHol&&<span title={wdHol.name+" 診療 "+wdHol.open+"〜"+wdHol.close} style={{fontSize:9,fontWeight:800,color:"#dc2626",background:"#fee2e2",borderRadius:8,padding:"1px 5px",whiteSpace:"nowrap"}}>祝 {wdHol.open.replace(/^0/,"")}-{wdHol.close.replace(/^0/,"")}</span>}
                             </div>
                             {/* 対応可能・予約数 */}
                             <div style={{position:"relative",flex:1,height:22}}>
@@ -10960,6 +10973,11 @@ function Dashboard({user,onLogout}){
                                   {shiftRange&&shiftEndX<rowFullW&&(
                                     <div style={{position:"absolute",left:shiftEndX,top:0,bottom:0,width:rowFullW-shiftEndX,background:"repeating-linear-gradient(45deg,#f1f5f9,#f1f5f9 6px,#e9edf1 6px,#e9edf1 12px)",pointerEvents:"none",zIndex:0}}/>
                                   )}
+                                  {/* 祝日の診療時間外（9:00〜18:00以外）を斜線で表示 */}
+                                  {wdHol&&(()=>{const ox=Math.max(0,Math.min(rowFullW,timeToX(wdHol.open))),cx=Math.max(0,Math.min(rowFullW,timeToX(wdHol.close)));const bg="repeating-linear-gradient(45deg,#fee2e2,#fee2e2 6px,#fecaca 6px,#fecaca 12px)";return(<React.Fragment>
+                                    {ox>0&&<div style={{position:"absolute",left:0,top:0,bottom:0,width:ox,background:bg,pointerEvents:"none",zIndex:0}}/>}
+                                    {cx<rowFullW&&<div style={{position:"absolute",left:cx,top:0,bottom:0,width:rowFullW-cx,background:bg,pointerEvents:"none",zIndex:0}}/>}
+                                  </React.Fragment>);})()}
                                   {/* 現在時刻バー：今日の列にだけ、今の時間の位置に赤い縦線を表示する */}
                                   {isToday&&nowInRange&&(
                                     <div style={{position:"absolute",left:nowX,top:0,bottom:0,width:2,background:"#ef4444",pointerEvents:"none",zIndex:5,boxShadow:"0 0 4px rgba(239,68,68,.6)"}}>
