@@ -5483,6 +5483,8 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
   const [selPatient,setSelPatient]=React.useState(null);
   const [activeTab,setActiveTab]=React.useState("intake");
   const [treatments,setTreatments]=React.useState([]);
+  const [patientPasses,setPatientPasses]=React.useState([]); // この患者様の回数券・フリーパス（購入履歴）
+  const [passUsages,setPassUsages]=React.useState([]); // その消費履歴
   const [loadingDetail,setLoadingDetail]=React.useState(false);
   const [editMode,setEditMode]=React.useState(false);
   const [editForm,setEditForm]=React.useState({name:"",phone:"",address:"",karte_no:""});
@@ -5547,6 +5549,19 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
       const data=await sb.select("treatments",`?booking_id=in.(${ids})&order=treated_at.desc`);
       setTreatments(Array.isArray(data)?data:[]);
     }else{setTreatments([]);}
+    // 回数券・フリーパスの購入履歴と消費履歴（名前または電話番号が一致するもの）
+    try{
+      const phone=((patientBks.find(b=>b.phone)||{}).phone||"").trim();
+      const training=!!(patientBks[0]&&patientBks[0].is_training);
+      const orq=phone?`(patient_name.eq.${encodeURIComponent(name)},phone.eq.${encodeURIComponent(phone)})`:`(patient_name.eq.${encodeURIComponent(name)})`;
+      const ps=await sb.select("passes",`?or=${orq}&order=purchased_date.desc`);
+      const mine=(Array.isArray(ps)?ps:[]).filter(x=>!!x.is_training===training);
+      setPatientPasses(mine);
+      if(mine.length>0){
+        const us=await sb.select("pass_usages",`?pass_id=in.(${mine.map(x=>x.id).join(",")})&order=used_date.desc`);
+        setPassUsages(Array.isArray(us)?us:[]);
+      }else{ setPassUsages([]); }
+    }catch(e){ setPatientPasses([]); setPassUsages([]); }
     setLoadingDetail(false);
   }
 
@@ -5943,9 +5958,31 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
                 ):(
                   selBks.length===0?(
                     <div style={{textAlign:"center",padding:30,color:"#9ca3af"}}>来院記録がありません</div>
-                                    ):<div>{selBks.map((b,i)=>{
+                                    ):<div>
+                  {patientPasses.length>0&&(
+                    <div style={{background:"#faf5ff",border:"1.5px solid #e9d5ff",borderRadius:10,padding:"10px 12px",marginBottom:10}}>
+                      <div style={{fontSize:12,fontWeight:800,color:"#7c3aed",marginBottom:6}}>🎫 回数券・フリーパスの購入履歴</div>
+                      {patientPasses.map(ps=>{
+                        const isFP=(ps.pass_type||"").includes("フリーパス");
+                        const used=passUsages.filter(u=>u.pass_id===ps.id).length;
+                        return(
+                          <div key={ps.id} style={{display:"flex",flexWrap:"wrap",alignItems:"center",gap:8,padding:"5px 0",borderTop:"1px solid #f3e8ff",fontSize:12}}>
+                            <span style={{fontWeight:700,color:"#1e293b"}}>{ps.purchased_date}</span>
+                            <span style={{fontWeight:800,color:"#6d28d9"}}>{ps.pass_type}</span>
+                            {ps.amount>0&&<span style={{color:"#64748b"}}>{ps.amount.toLocaleString()}円</span>}
+                            {isFP
+                              ?<span style={{color:"#64748b"}}>有効期限 {ps.expiry_date||"—"}（利用{used}回）</span>
+                              :<span style={{color:"#64748b"}}>残り{ps.remaining_count!=null?ps.remaining_count:"—"}／{ps.total_count!=null?ps.total_count:"—"}回{ps.expiry_date?`（期限 ${ps.expiry_date}）`:""}</span>}
+                            {ps.active===false&&<span className="badge badge-gray" style={{fontSize:9}}>終了</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {selBks.map((b,i)=>{
                     const staff=STAFF_ACCOUNTS.find(s=>s.id===b.staff_id)||{name:"不明",color:"#888",initial:"？"};
                     const treat=treatments.find(t=>t.booking_id===b.id);
+                    const usedPass=(()=>{ const u=passUsages.find(x=>x.booking_id===b.id); return u?patientPasses.find(x=>x.id===u.pass_id):null; })();
                     const isFirst=i===selBks.length-1;
                     const pay=(allPayments||[]).find(p=>p.booking_id===b.id);
                     const isEditingThis=editingPaymentId===(pay&&pay.id);
@@ -5962,6 +5999,7 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
                             </div>
                           </div>
                           <div style={{fontSize:11,color:"#64748b"}}>{b.menu}</div>
+                          {usedPass&&<div style={{fontSize:11,color:"#7c3aed",fontWeight:700,marginTop:2}}>🎫 {usedPass.pass_type}を利用</div>}
                           {b.cancelled?(
                             <div style={{fontSize:11,color:"#dc2626",fontWeight:600,marginTop:2}}>理由：{b.cancel_reason||"未記録"}{b.cancelled_via_line?"（マイページ経由）":""}</div>
                           ):(
