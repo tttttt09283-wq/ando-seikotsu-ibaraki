@@ -2377,6 +2377,225 @@ function RefundPanel({bookings,payments,refunds,allRefunds,stores,todayStr,user,
   );
 }
 
+const LAUNCH_CATS=["広告・集客費","販促物（チラシ・看板等）","人件費","内装・設備","備品・消耗品","その他"];
+const LAUNCH_AD_CATS=["広告・集客費","販促物（チラシ・看板等）"];
+const LAUNCH_CHANNELS=["チラシ①","チラシ②","Threads","Instagram","Google検索","看板","通りがかり","紹介","その他"];
+
+function LaunchROIPanel({bookings,payments,stores,todayStr,user,trainingMode}){
+  const fmt=n=>"¥"+Math.round(Number(n)||0).toLocaleString();
+  const pct=(a,b)=>b>0?(a/b*100).toFixed(1)+"%":"-";
+  const firstStoreId=(stores&&stores[0]&&stores[0].id)||1;
+  const [storeId,setStoreId]=React.useState(firstStoreId);
+  const [start,setStart]=React.useState("2026-10-01");
+  const [end,setEnd]=React.useState(todayStr);
+  const [costs,setCosts]=React.useState([]);
+  const [loading,setLoading]=React.useState(true);
+  const [showGuide,setShowGuide]=React.useState(false);
+  // 入力フォーム
+  const [fDate,setFDate]=React.useState(todayStr);
+  const [fCat,setFCat]=React.useState(LAUNCH_CATS[0]);
+  const [fChannel,setFChannel]=React.useState("");
+  const [fItem,setFItem]=React.useState("");
+  const [fAmount,setFAmount]=React.useState("");
+  const [fMemo,setFMemo]=React.useState("");
+  const [saving,setSaving]=React.useState(false);
+  const [msg,setMsg]=React.useState("");
+
+  function loadCosts(){
+    sb.select("launch_costs","?order=cost_date.desc,id.desc").then(r=>{setCosts(Array.isArray(r)?r:[]);setLoading(false);}).catch(()=>setLoading(false));
+  }
+  React.useEffect(()=>{loadCosts();},[]);
+
+  async function addCost(){
+    const amt=parseInt(fAmount,10);
+    if(!fItem.trim()){setMsg("内容を入力してください");return;}
+    if(!(amt>=0)){setMsg("金額を入力してください");return;}
+    setSaving(true);setMsg("");
+    try{
+      const res=await sb.insert("launch_costs",{store_id:storeId,cost_date:fDate,category:fCat,channel:LAUNCH_AD_CATS.includes(fCat)&&fChannel?fChannel:null,item:fItem.trim(),amount:amt,memo:fMemo.trim()||null,created_by_name:(user&&user.name)||null,is_training:!!trainingMode});
+      if(!Array.isArray(res)||!res[0]) throw new Error((res&&res.message)||"保存に失敗しました");
+      setFItem("");setFAmount("");setFMemo("");setMsg("✅ 追加しました");loadCosts();
+    }catch(e){setMsg("保存に失敗しました："+(e.message||""));}
+    setSaving(false);
+  }
+  async function delCost(c){
+    if(!window.confirm(`${c.item}（${fmt(c.amount)}）を削除しますか？`)) return;
+    try{await sb.delete("launch_costs",c.id);setCosts(p=>p.filter(x=>x.id!==c.id));}catch(e){window.alert("削除に失敗しました");}
+  }
+
+  const calc=React.useMemo(()=>{
+    const bookingById={};
+    bookings.forEach(b=>{bookingById[b.id]=b;});
+    const inStore=b=>(b.store_id||firstStoreId)===storeId;
+    const key=b=>(b.phone||"")+"|"+(b.patient_name||"");
+    // 店舗の会計（返金はマイナスの会計として含まれる）
+    const pays=payments.filter(p=>{const b=bookingById[p.booking_id];return b&&inStore(b);});
+    const real=pays.filter(p=>!p.is_refund);
+    // 患者ごとの来院（会計済みの予約）
+    const visitsBy={}; // key -> {dates:[...]}
+    const seen=new Set();
+    real.forEach(p=>{
+      const b=bookingById[p.booking_id]; if(seen.has(b.id)) return; seen.add(b.id);
+      (visitsBy[key(b)]=visitsBy[key(b)]||[]).push(p.payment_date||b.date);
+    });
+    Object.values(visitsBy).forEach(a=>a.sort());
+    // 来院経路：その患者の予約のうち、最初に入力があったもの
+    const channelBy={};
+    bookings.filter(b=>inStore(b)&&b.how_know).sort((a,b)=>String(a.date).localeCompare(String(b.date))).forEach(b=>{
+      const k=key(b); if(channelBy[k]) return;
+      let c=String(b.how_know).trim(); if(c.startsWith("その他")) c="その他";
+      channelBy[k]=c;
+    });
+    const inR=d=>d&&d>=start&&d<=end;
+    const periodPays=pays.filter(p=>inR(p.payment_date));
+    const sales=periodPays.reduce((s,p)=>s+(p.total_amount||0),0);
+    const refunds=periodPays.filter(p=>p.is_refund).reduce((s,p)=>s+(p.total_amount||0),0);
+    const periodReal=real.filter(p=>inR(p.payment_date));
+    const visitCount=new Set(periodReal.map(p=>p.booking_id)).size;
+    // 新患＝初めて会計した日が期間内の患者
+    const newKeys=Object.keys(visitsBy).filter(k=>inR(visitsBy[k][0]));
+    const returned=newKeys.filter(k=>visitsBy[k].length>=2);
+    // 回数券・FP
+    let passSales=0; const passBuyers=new Set();
+    periodReal.forEach(p=>{(Array.isArray(p.jifee_items)?p.jifee_items:[]).forEach(it=>{
+      if(/回数券|回券|フリーパス|FP/.test(String(it.label||""))){passSales+=parseInt(it.amount)||0;const b=bookingById[p.booking_id];if(b)passBuyers.add(key(b));}
+    });});
+    // 患者別の期間売上
+    const salesByKey={};
+    periodPays.forEach(p=>{const b=bookingById[p.booking_id];if(!b) return;const k=key(b);salesByKey[k]=(salesByKey[k]||0)+(p.total_amount||0);});
+    // 費用（期間終了日までに発生した全額＝開業前の投資も含む）
+    const storeCosts=costs.filter(c=>(c.store_id||firstStoreId)===storeId&&!!c.is_training===!!trainingMode&&c.cost_date<=end);
+    const costTotal=storeCosts.reduce((s,c)=>s+(c.amount||0),0);
+    const byCat={};storeCosts.forEach(c=>{byCat[c.category]=(byCat[c.category]||0)+(c.amount||0);});
+    const adCost=LAUNCH_AD_CATS.reduce((s,c)=>s+(byCat[c]||0),0);
+    // チャネル別
+    const ch={};
+    const ensure=n=>(ch[n]=ch[n]||{newN:0,sales:0,cost:0});
+    newKeys.forEach(k=>{const n=channelBy[k]||"不明（未入力）";const e=ensure(n);e.newN++;e.sales+=salesByKey[k]||0;});
+    storeCosts.forEach(c=>{if(c.channel) ensure(c.channel).cost+=c.amount||0;});
+    // 営業日あたり売上（直近＝期間内で会計のあった日数で割る）
+    const days=new Set(periodPays.filter(p=>!p.is_refund).map(p=>p.payment_date)).size;
+    return {sales,refunds,visitCount,newCount:newKeys.length,returnedCount:returned.length,passSales,passBuyerCount:passBuyers.size,
+      costTotal,byCat,adCost,ch,days,storeCosts,
+      avgVisits:newKeys.length?newKeys.reduce((s,k)=>s+visitsBy[k].length,0)/newKeys.length:0};
+  },[bookings,payments,costs,storeId,start,end,trainingMode,firstStoreId]);
+
+  const profit=calc.sales-calc.costTotal;
+  const recov=pct(calc.sales,calc.costTotal);
+  const perDay=calc.days>0?calc.sales/calc.days:0;
+  const remain=Math.max(0,calc.costTotal-calc.sales);
+  const daysToRecover=perDay>0&&remain>0?Math.ceil(remain/perDay):0;
+  const cac=calc.newCount>0?calc.adCost/calc.newCount:0;
+  const cacAll=calc.newCount>0?calc.costTotal/calc.newCount:0;
+  const unit=calc.visitCount>0?calc.sales/calc.visitCount:0;
+
+  const card={background:"white",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px rgba(0,0,0,.06)",marginBottom:12};
+  const h={fontSize:13,fontWeight:800,color:"#1e3a5f",marginBottom:10};
+  const inp={padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"};
+  const Kpi=({l,v,sub,c})=>(<div style={{background:"white",borderRadius:12,padding:"12px 14px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}><div style={{fontSize:11,color:"#64748b",fontWeight:700}}>{l}</div><div style={{fontSize:20,fontWeight:800,color:c||"#1e3a5f",marginTop:2}}>{v}</div>{sub&&<div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>{sub}</div>}</div>);
+  const grid={display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:10,marginBottom:12};
+  const preset=(l,s,e)=>(<button key={l} onClick={()=>{setStart(s);setEnd(e);}} style={{...inp,cursor:"pointer",background:start===s&&end===e?"#1e3a5f":"white",color:start===s&&end===e?"white":"#374151",fontWeight:700}}>{l}</button>);
+  const chNames=Object.keys(calc.ch).sort((a,b)=>calc.ch[b].newN-calc.ch[a].newN);
+
+  return(
+    <div style={{maxWidth:980,margin:"0 auto"}}>
+      <div style={{...card,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f"}}>📈 開業の費用対効果</div>
+        {stores&&stores.length>1&&<select value={storeId} onChange={e=>setStoreId(Number(e.target.value))} style={inp}>{stores.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select>}
+        {preset("プレオープン","2026-10-01","2026-10-04")}
+        {preset("開業〜今日","2026-10-05",todayStr)}
+        {preset("10/1〜今日","2026-10-01",todayStr)}
+        <span style={{display:"flex",gap:4,alignItems:"center",fontSize:12}}><input type="date" value={start} onChange={e=>e.target.value&&setStart(e.target.value)} style={inp}/>〜<input type="date" value={end} onChange={e=>e.target.value&&setEnd(e.target.value)} style={inp}/></span>
+        <button onClick={()=>setShowGuide(v=>!v)} style={{...inp,marginLeft:"auto",cursor:"pointer",background:"#eff6ff",color:"#1d4ed8",fontWeight:700}}>{showGuide?"▲ 数字の見方を閉じる":"❓ どの数字を見ればいい？"}</button>
+      </div>
+
+      {showGuide&&(
+      <div style={{...card,background:"#f8fafc",fontSize:13,lineHeight:1.8,color:"#334155"}}>
+        <div style={h}>立ち上げ期に見るべき数字（上から順に見ると流れが分かります）</div>
+        <div><b>① 回収率・損益</b>…かけた費用に対して、売上でどれだけ取り戻せたか。100%を超えると費用は回収済み。ただし売上＝利益ではない（家賃・人件費・原価は別）ので、あくまで「投資を回収できているか」の目安です。</div>
+        <div><b>② 新患獲得単価</b>…広告・販促費 ÷ 新患数。「1人の新規患者を連れてくるのにいくらかかったか」。この数字が、1人の患者様が生む売上（客単価×通院回数）より低ければ、広告は採算が合っています。</div>
+        <div><b>③ チャネル別（チラシ・Threads等）</b>…どの集客手段が効いているか。費用が小さく新患が多い手段に予算を寄せ、効かない手段はやめる判断に使います。※費用の入力時に集客チャネルを選ぶと出ます。</div>
+        <div><b>④ 2回目来院率・平均通院回数</b>…一度来た方が通ってくれているか。立ち上げは「来てもらう」より「通ってもらう」ほうが収益に効きます。ここが低いと広告を増やしても赤字が膨らみます。</div>
+        <div><b>⑤ 客単価・回数券/FP購入率</b>…1回あたりの売上と、継続前提の購入（回数券・フリーパス）がどれだけ出ているか。購入額は先に入る売上で、通院の定着にもつながります。</div>
+        <div><b>⑥ 回収までの目安日数</b>…今の売上ペースがこのまま続いた場合、あと何営業日で費用を回収できるか。</div>
+        <div style={{color:"#64748b",marginTop:6}}>費用は「期間の終了日までに登録した全額」を投資額として扱います（開業前の内装費や広告費も入れられます）。人件費は月ごとなど、まとめて1行で入力して構いません。</div>
+      </div>)}
+
+      <div style={grid}>
+        <Kpi l="総投資額（費用合計）" v={fmt(calc.costTotal)} sub={`広告・販促 ${fmt(calc.adCost)}`}/>
+        <Kpi l="期間の売上（返金後）" v={fmt(calc.sales)} sub={calc.refunds<0?`返金 ${fmt(calc.refunds)} を含む`:`会計${calc.visitCount}件`} c="#059669"/>
+        <Kpi l="回収率（売上÷費用）" v={recov} sub={profit>=0?`費用を ${fmt(profit)} 上回る`:`あと ${fmt(remain)} で回収`} c={profit>=0?"#059669":"#d97706"}/>
+        <Kpi l="売上−費用" v={(profit<0?"−":"")+fmt(Math.abs(profit))} sub="利益ではなく投資回収の目安" c={profit>=0?"#059669":"#dc2626"}/>
+        <Kpi l="回収までの目安" v={remain<=0?"回収済み":(daysToRecover>0?`あと約${daysToRecover}営業日`:"-")} sub={perDay>0?`1営業日あたり売上 ${fmt(perDay)}`:"売上データなし"}/>
+      </div>
+
+      <div style={grid}>
+        <Kpi l="新患数（期間内に初来院）" v={calc.newCount+"人"} sub={`来院（会計）${calc.visitCount}件`}/>
+        <Kpi l="新患獲得単価（広告・販促費÷新患）" v={calc.newCount>0&&calc.adCost>0?fmt(cac):"-"} sub={calc.newCount>0?`総費用ベース ${fmt(cacAll)}／人`:""}/>
+        <Kpi l="2回目来院率（新患のうち）" v={pct(calc.returnedCount,calc.newCount)} sub={`${calc.returnedCount}/${calc.newCount}人が再来院`}/>
+        <Kpi l="新患の平均通院回数" v={calc.avgVisits.toFixed(1)+"回"}/>
+        <Kpi l="客単価（売上÷来院）" v={fmt(unit)}/>
+        <Kpi l="回数券・FP" v={fmt(calc.passSales)} sub={`購入 ${calc.passBuyerCount}人（来院の${pct(calc.passBuyerCount,calc.visitCount)}）`}/>
+      </div>
+
+      <div style={card}>
+        <div style={h}>集客チャネル別（来院経路 × 費用）</div>
+        {chNames.length===0?<div style={{fontSize:13,color:"#94a3b8"}}>この期間の新患データがありません</div>:(
+        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead><tr style={{background:"#f1f5f9",color:"#475569"}}>{["チャネル","新患数","費用","新患獲得単価","新患の売上","費用対効果(売上÷費用)"].map(t=><th key={t} style={{padding:"6px 8px",textAlign:t==="チャネル"?"left":"right",whiteSpace:"nowrap"}}>{t}</th>)}</tr></thead>
+          <tbody>{chNames.map(n=>{const e=calc.ch[n];return(<tr key={n} style={{borderTop:"1px solid #f1f5f9"}}>
+            <td style={{padding:"6px 8px",fontWeight:700}}>{n}</td>
+            <td style={{padding:"6px 8px",textAlign:"right"}}>{e.newN}人</td>
+            <td style={{padding:"6px 8px",textAlign:"right"}}>{e.cost>0?fmt(e.cost):"-"}</td>
+            <td style={{padding:"6px 8px",textAlign:"right"}}>{e.cost>0&&e.newN>0?fmt(e.cost/e.newN):"-"}</td>
+            <td style={{padding:"6px 8px",textAlign:"right"}}>{fmt(e.sales)}</td>
+            <td style={{padding:"6px 8px",textAlign:"right",fontWeight:800,color:e.cost>0&&e.sales>=e.cost?"#059669":"#475569"}}>{e.cost>0?(e.sales/e.cost*100).toFixed(0)+"%":"-"}</td>
+          </tr>);})}</tbody>
+        </table></div>)}
+        <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>来院経路は予約時・問診票の「何を見て来院したか」の回答です。費用は、入力時にチャネルを選んだ分だけがここに入ります。</div>
+      </div>
+
+      <div style={card}>
+        <div style={h}>費用の内訳</div>
+        {Object.keys(calc.byCat).length===0&&<div style={{fontSize:13,color:"#94a3b8"}}>まだ費用が登録されていません。下のフォームから追加してください。</div>}
+        {Object.keys(calc.byCat).sort((a,b)=>calc.byCat[b]-calc.byCat[a]).map(k=>(
+          <div key={k} style={{marginBottom:6,fontSize:13}}>
+            <div style={{display:"flex",justifyContent:"space-between"}}><span>{k}</span><b>{fmt(calc.byCat[k])}<span style={{fontWeight:500,color:"#94a3b8",marginLeft:6}}>{pct(calc.byCat[k],calc.costTotal)}</span></b></div>
+            <div style={{height:6,background:"#f1f5f9",borderRadius:3}}><div style={{height:6,borderRadius:3,background:"#3b82f6",width:(calc.byCat[k]/calc.costTotal*100)+"%"}}/></div>
+          </div>))}
+      </div>
+
+      <div style={card}>
+        <div style={h}>費用を追加</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
+          <label style={{fontSize:12,fontWeight:700}}>日付<br/><input type="date" value={fDate} onChange={e=>setFDate(e.target.value)} style={inp}/></label>
+          <label style={{fontSize:12,fontWeight:700}}>種類<br/><select value={fCat} onChange={e=>setFCat(e.target.value)} style={inp}>{LAUNCH_CATS.map(c=><option key={c}>{c}</option>)}</select></label>
+          {LAUNCH_AD_CATS.includes(fCat)&&<label style={{fontSize:12,fontWeight:700}}>集客チャネル<br/><select value={fChannel} onChange={e=>setFChannel(e.target.value)} style={inp}><option value="">（選ばない）</option>{LAUNCH_CHANNELS.map(c=><option key={c}>{c}</option>)}</select></label>}
+          <label style={{fontSize:12,fontWeight:700,flex:1,minWidth:150}}>内容<br/><input value={fItem} onChange={e=>setFItem(e.target.value)} placeholder="例：チラシ①印刷・配布" style={{...inp,width:"100%"}}/></label>
+          <label style={{fontSize:12,fontWeight:700}}>金額（円）<br/><input type="number" inputMode="numeric" value={fAmount} onChange={e=>setFAmount(e.target.value)} style={{...inp,width:120,textAlign:"right"}}/></label>
+        </div>
+        <input value={fMemo} onChange={e=>setFMemo(e.target.value)} placeholder="メモ（任意）" style={{...inp,width:"100%",marginBottom:8}}/>
+        <button onClick={addCost} disabled={saving} style={{width:"100%",padding:11,borderRadius:10,border:"none",background:"#1e3a5f",color:"white",fontWeight:800,fontSize:14,cursor:"pointer",opacity:saving?0.6:1}}>{saving?"保存中...":"＋ 費用を追加"}</button>
+        {msg&&<div style={{textAlign:"center",marginTop:8,fontSize:13,fontWeight:700,color:msg.startsWith("✅")?"#059669":"#dc2626"}}>{msg}</div>}
+      </div>
+
+      <div style={card}>
+        <div style={h}>登録済みの費用（{calc.storeCosts.length}件）</div>
+        {loading&&<div style={{color:"#94a3b8",fontSize:13}}>読み込み中...</div>}
+        {calc.storeCosts.map(c=>(
+          <div key={c.id} style={{display:"flex",alignItems:"center",gap:8,borderTop:"1px solid #f1f5f9",padding:"7px 0",fontSize:13,flexWrap:"wrap"}}>
+            <span style={{color:"#64748b",width:84}}>{c.cost_date}</span>
+            <span style={{fontSize:11,background:"#eff6ff",color:"#1d4ed8",borderRadius:8,padding:"1px 8px"}}>{c.category}</span>
+            {c.channel&&<span style={{fontSize:11,background:"#fef3c7",color:"#92400e",borderRadius:8,padding:"1px 8px"}}>{c.channel}</span>}
+            <span style={{flex:1,minWidth:120}}>{c.item}{c.memo&&<span style={{color:"#94a3b8",fontSize:11,marginLeft:6}}>{c.memo}</span>}</span>
+            <b>{fmt(c.amount)}</b>
+            <button onClick={()=>delCost(c)} style={{border:"1px solid #e2e8f0",background:"white",borderRadius:6,fontSize:11,padding:"2px 8px",cursor:"pointer",color:"#64748b"}}>削除</button>
+          </div>))}
+      </div>
+    </div>
+  );
+}
+
 function DailyReportPanel({bookings,payments,stores,todayStr}){
   const fmt=n=>"¥"+Number(n||0).toLocaleString();
   const DAYS_JP=["日","月","火","水","木","金","土"];
@@ -2408,7 +2627,7 @@ function DailyReportPanel({bookings,payments,stores,todayStr}){
     });
     // 再診＝前回の来院から1ヶ月以上空いた方（前回来院日の1ヶ月後の日付以降に来院）
     const addMonth=ds=>{const d=new Date(ds+"T00:00:00");d.setMonth(d.getMonth()+1);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");};
-    const blank=()=>({sales:0,ins:0,jifee:0,insCount:0,juCount:0,hariCount:0,visits:0,newPt:0,returnPt:0,monthFirst:0,keepPt:0,
+    const blank=()=>({sales:0,ins:0,jifee:0,insCount:0,juCount:0,hariCount:0,jihiOnlyCount:0,visits:0,newPt:0,returnPt:0,monthFirst:0,keepPt:0,
       makiNew:0,makiCont:0,makiSales:0,jibaiNew:0,jibaiCont:0,jibaiSales:0,cancel:0,booked:0});
     const out=[];
     for(let d=1;d<=days;d++){
@@ -2424,12 +2643,13 @@ function DailyReportPanel({bookings,payments,stores,todayStr}){
         r.sales+=p.total_amount||0;
         r.ins+=p.insurance_amount||0;
         r.jifee+=p.jifee_amount||0;
-        if((p.insurance_amount||0)>0){
+        if(p.insurance_type){
+          // 会計画面で施術区分（保険診療／鍼灸併用／鍼灸のみ）を選んだ会計だけを保険として数える
           r.insCount++;
-          // 保険の種類：会計時に保存した種類を優先し、無い場合は予約メニュー名の頭で判定（手技療法＝柔整保険／鍼灸＝鍼灸保険）
-          const bk=bookingById[p.booking_id];
-          const kind=p.insurance_type||((bk&&String(bk.menu||"").startsWith("鍼灸"))?"鍼灸":"手技療法");
-          if(String(kind).startsWith("鍼灸")) r.hariCount++; else r.juCount++;
+          if(String(p.insurance_type).startsWith("鍼灸")) r.hariCount++; else r.juCount++;
+        }else{
+          // 区分が未選択の会計は「自費のみ」として数える
+          r.jihiOnlyCount++;
         }
         paidIds.add(p.booking_id);
         (Array.isArray(p.jifee_items)?p.jifee_items:[]).forEach(it=>{
@@ -2463,7 +2683,7 @@ function DailyReportPanel({bookings,payments,stores,todayStr}){
     return out;
   },[bookings,payments,storeId,ym,firstStoreId]);
 
-  const sumKeys=["sales","ins","jifee","insCount","juCount","hariCount","visits","newPt","returnPt","monthFirst","keepPt","makiNew","makiCont","makiSales","jibaiNew","jibaiCont","jibaiSales","cancel","booked"];
+  const sumKeys=["sales","ins","jifee","insCount","juCount","hariCount","jihiOnlyCount","visits","newPt","returnPt","monthFirst","keepPt","makiNew","makiCont","makiSales","jibaiNew","jibaiCont","jibaiSales","cancel","booked"];
   const total={};
   sumKeys.forEach(k=>{total[k]=rows.reduce((s,r)=>s+(r[k]||0),0);});
   const cancelRate=r=>r.booked>0?(r.cancel/r.booked*100).toFixed(1)+"%":"-";
@@ -2488,6 +2708,7 @@ function DailyReportPanel({bookings,payments,stores,todayStr}){
     {h:"自賠売上",f:r=>fmt(r.jibaiSales)},
     {h:"キャンセル数",f:r=>r.cancel},
     {h:"キャンセル率",f:cancelRate},
+    {h:"自費のみ件数",f:r=>r.jihiOnlyCount},
   ];
 
   function copyForSheet(){
@@ -2521,7 +2742,7 @@ function DailyReportPanel({bookings,payments,stores,todayStr}){
       </div>
       <div style={{fontSize:11,color:"#94a3b8",marginBottom:10,lineHeight:1.6}}>
         会計（POS）のデータから自動で集計しています。巻き爪・自賠は、会計画面の「巻き爪・自賠」ボタンで追加した分から数えます（導入前の会計は0件になります）。
-        保険対応件数＝保険窓口の金額がある会計の件数／新患＝その院で初めて予約した患者様／再診＝前回の来院から1ヶ月以上空いて来院した患者様／今月初＝当日カルテ管理料をいただいた患者様（新患・再診を除く）／月内2回目以降＝それ以外の来院（カルテ管理料なし）。
+        保険対応件数＝会計画面で施術区分（保険診療／鍼灸併用／鍼灸のみ）を選んだ会計の件数／自費のみ件数＝施術区分が未選択の会計の件数（右端の列）／新患＝その院で初めて予約した患者様／再診＝前回の来院から1ヶ月以上空いて来院した患者様／今月初＝当日カルテ管理料をいただいた患者様（新患・再診を除く）／月内2回目以降＝それ以外の来院（カルテ管理料なし）。
       </div>
       <div style={{overflowX:"auto",border:"1px solid #e2e8f0",borderRadius:10}}>
         <table style={{borderCollapse:"collapse",width:"100%"}}>
@@ -10785,6 +11006,7 @@ function Dashboard({user,onLogout}){
       {id:"register_cash",label:"レジ金（レジ締め）",icon:"receipt",special:""},
       {id:"refund",label:"返金管理（売上マイナス・履歴）",icon:"receipt",special:""},
       {id:"preopen_stats",label:"イベント期間集計",icon:"bar-chart",special:""},
+      {id:"launch_roi",label:"開業の費用対効果",icon:"trending",special:""},
       {id:"churn_alert",label:"離反防止アラート",icon:"bell",special:""},
       {id:"line_link_check",label:"LINE連携チェック",icon:"link",special:""},
       {id:"staff_kpi",label:"スタッフKPI管理",icon:"trending",special:""},
@@ -11385,6 +11607,7 @@ function Dashboard({user,onLogout}){
           {view==="daily_report"&&<DailyReportPanel bookings={bookings} payments={paymentsNet} stores={stores} todayStr={todayStr}/>}
           {view==="register_cash"&&<RegisterCashPanel bookings={bookings} payments={payments} refunds={refunds} stores={stores} todayStr={todayStr} currentUser={user}/>}
           {view==="refund"&&<RefundPanel bookings={bookings} payments={payments} refunds={refunds} allRefunds={allRefunds} stores={stores} todayStr={todayStr} user={user} isAdmin={isAdmin} onChanged={reloadRefunds} trainingMode={trainingMode}/>}
+          {view==="launch_roi"&&<LaunchROIPanel bookings={bookings} payments={paymentsNet} stores={stores} todayStr={todayStr} user={user} trainingMode={trainingMode}/>}
           {view==="preopen_stats"&&<PreOpenStatsPanel bookings={bookings} payments={paymentsNet} stores={stores} user={user}/>}
 
           {/* 離反防止アラート */}
