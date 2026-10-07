@@ -651,7 +651,10 @@ function App(){
     }
     if(!found) return true;
     if(found.is_working===false) return false;
-    if(t && found.start_time && found.end_time){
+    // 祝日などで営業時間を上書きしている日は、曜日ごとのシフト時間ではなく営業時間（isTimeAllowedForDate）に従う
+    var clo = getClosureForDate(fmtDate(d));
+    var hasOverride = !!(clo && clo.is_closed===false && clo.open_time);
+    if(t && !hasOverride && found.start_time && found.end_time){
       var tm=toMin(t);
       if(tm<toMin(found.start_time) || tm+(durationMinutes||20)>toMin(found.end_time)) return false;
     }
