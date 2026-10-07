@@ -416,14 +416,30 @@ function renderPrevPayments(){
 function renderPrevPaymentsInner(){
   if(!prevPays||prevPays.length===0) return `<div class="card"><div class="card-header" style="background:#f1f5f9;color:#475569;">📋 前回の会計</div><div class="card-body" style="font-size:13px;color:#64748b;">この患者様の過去の会計はありません（初回）</div></div>`;
   const dayDiff=d=>Math.round((new Date(booking.date+"T00:00:00")-new Date(String(d).slice(0,10)+"T00:00:00"))/86400000);
+  // 内訳：保険窓口・自費の各項目・回数券利用・割引/調整を1行ずつ表示し、合計と必ず一致させる
   const detail=x=>{
-    const p=x.p,items=Array.isArray(p.jifee_items)?p.jifee_items:[];
-    const parts=[];
-    if((p.insurance_amount||0)>0) parts.push(`${escH(p.insurance_type||"保険")}窓口 ${fmt(p.insurance_amount)}`);
-    items.forEach(i=>parts.push(`${escH(i.label)} ${fmt(i.amount)}`));
-    if(parts.length===0&&(p.jifee_amount||0)>0) parts.push(`自費 ${fmt(p.jifee_amount)}`);
-    x.uses.forEach(n=>parts.push(`🎫 ${escH(n)}を利用`));
-    return parts.join("／")||"—";
+    const p=x.p;
+    const rows=[];
+    const ins=p.insurance_amount||0, jf=p.jifee_amount||0, total=p.total_amount||0;
+    const items=Array.isArray(p.jifee_items)?p.jifee_items.filter(i=>i&&i.label):[];
+    const b=x.b;
+    const bkMenu=b?((Array.isArray(b.menus)&&b.menus.length?b.menus.join("・"):b.menu)||""):"";
+    if(ins>0||p.insurance_type) rows.push([`${escH(p.insurance_type||"保険")}窓口${bkMenu&&/[1-3]割/.test(bkMenu)?`（${escH(bkMenu.match(/[1-3]割/)[0])}）`:""}`,ins]);
+    if(items.length>0){
+      items.forEach(i=>rows.push([escH(i.label),parseInt(i.amount)||0]));
+    }else if(jf>0||p.memo){
+      // 項目ごとの金額が保存されていない過去の会計：メモの項目名から表示する
+      const labels=String(p.memo||"").split("・").map(t=>t.trim()).filter(Boolean);
+      if(labels.length===1) rows.push([escH(labels[0]),jf]);
+      else if(labels.length>1) rows.push([escH(labels.join("・"))+"<span style=\"color:#94a3b8;\">（項目別の金額は未保存）</span>",jf]);
+      else if(jf>0) rows.push(["自費",jf]);
+    }
+    const sum=rows.reduce((a,r)=>a+r[1],0);
+    const diff=total-sum;
+    if(diff!==0) rows.push([diff<0?"割引・調整":"その他（内訳に含まれない金額）",diff]);
+    const use=x.uses.map(n=>`<div style="color:#6d28d9;">🎫 ${escH(n)}を利用</div>`).join("");
+    const table=`<table style="width:100%;border-collapse:collapse;margin-top:2px;">${rows.map(r=>`<tr><td style="padding:1px 0;">${r[0]}</td><td style="text-align:right;white-space:nowrap;padding:1px 0;${r[1]<0?"color:#dc2626;":""}">${r[1]<0?"−":""}${fmt(Math.abs(r[1]))}</td></tr>`).join("")}<tr style="border-top:1px solid #cbd5e1;font-weight:800;"><td style="padding-top:2px;">合計</td><td style="text-align:right;padding-top:2px;">${fmt(total)}</td></tr></table>`;
+    return (rows.length?table:"")+use;
   };
   const first=prevPays[0];
   const d0=dayDiff(first.p.payment_date);
@@ -437,7 +453,7 @@ function renderPrevPaymentsInner(){
       </div>
       <div style="font-size:12px;color:#475569;margin-top:2px;">${x.b?escH((Array.isArray(x.b.menus)&&x.b.menus.length?x.b.menus.join("・"):x.b.menu)||"")+"　":""}${x.b&&x.b.staff_id?escH(STAFF[x.b.staff_id]||"")+"先生":""}</div>
       <div style="font-size:12px;color:#334155;margin-top:2px;">${detail(x)}</div>
-      ${x.p.memo?`<div style="font-size:11px;color:#92400e;margin-top:2px;">📝 ${escH(x.p.memo)}</div>`:""}
+      
     </div>`;
   return `<div class="card" style="border:2px solid #2563eb;">
     <div class="card-header" style="background:#eff6ff;color:#1d4ed8;">📋 前回の会計${same?`<span style="margin-left:8px;font-size:11px;background:#fef3c7;color:#92400e;border-radius:8px;padding:1px 8px;">⚠ 本日すでに会計あり</span>`:""}</div>
