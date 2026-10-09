@@ -2596,7 +2596,7 @@ function LaunchROIPanel({bookings,payments,stores,todayStr,user,trainingMode}){
   );
 }
 
-// ===== 学習カリキュラムの教材データ（解剖学・生理学・運動学・東洋医学・経絡経穴・筋膜） =====
+// ===== 学習カリキュラムの教材データ（7科目：解剖・生理・運動学・東洋医学・経絡経穴・筋膜・部位別検査） =====
 const Q=(q,o,a,e)=>({q,o,a,e});
 const CURRICULUM=[
 {id:"anat",name:"解剖学",icon:"🦴",color:"#2563eb",desc:"骨・関節・筋・神経の構造を、施術部位と結びつけて理解する",units:[
@@ -2731,10 +2731,151 @@ const CURRICULUM=[
   clinical:"ラインの評価は、症状のある局所だけを見ないための視点。施術後の再評価で動きが変わらない場合は、ラインの仮説を見直し、他の要因（関節・神経・痛みの感作）を検討する。",
   quiz:[Q("前屈でふくらはぎや太もも裏が突っ張るとき、まず疑うラインは？",["表層後線（SBL）","表層前線（SFL）","外側線","腕のライン"],0,"前屈の制限は後線（SBL）を疑う。"),Q("後屈で体の前面が突っ張るとき、疑うラインは？",["表層前線（SFL）","表層後線","らせん線のみ","腕のラインのみ"],0,"後屈の制限は前線を疑う。"),Q("評価→施術→再評価を行う主な目的は？",["変化を確認し、仮説と施術が合っているか検証する","時間を延ばす","説明を省く","料金を決める"],0,"変化の確認で仮説を検証する。")]}
 ]}
+,{id:"exam",name:"部位別の検査と評価",icon:"🔍",color:"#be185d",desc:"部位ごとの検査の種類・やり方・陽性の意味と、評価の考え方（症例パターン付き）",units:[
+ {id:"exam1",title:"評価の流れと考え方（臨床推論・レッドフラッグ）",min:20,
+  points:["評価の流れ：①問診（主訴・いつから・きっかけ・どの動作で・痛みの性質・経過・既往・服薬）→②視診（姿勢・腫れ・変形・歩き方）→③触診（圧痛・熱感・腫脹・筋緊張）→④可動域（自動→他動→抵抗）→⑤徒手検査（整形外科的・神経学的）→⑥動作評価→⑦仮説を立てて施術→⑧再評価。","健側から先に、痛くない動きから先に検査する。痛みを出す動作は最後にする。","1つの検査だけで決めつけない。問診・圧痛・可動域・誘発テストなど複数の所見がそろうかを見る。陽性は「その組織が症状に関わっている可能性が高い」という意味で、診断の確定ではない。","検査の目的は4つ：①受診・紹介が必要かのふるい分け（レッドフラッグ）②痛みの原因組織の絞り込み③動作・機能の問題の把握④施術効果の確認（前後比較）。","レッドフラッグ（受診を優先）：発熱・原因不明の体重減少、夜間や安静時に強くなる痛み、悪性腫瘍の既往、進行する筋力低下やしびれ、膀胱・直腸の障害や会陰部のしびれ、強い外傷後の変形や荷重不能、胸痛・息苦しさ・冷や汗、片側ふくらはぎの腫れ・熱感・痛み。","イエローフラッグ（長引く要因）：不安・恐怖で動かさない、仕事や家庭のストレス、睡眠不足、「治らない」という思い込み。説明と動かす安心感づくりが必要。"],
+  clinical:"所見は必ず左右差・前後差で記録する（例：SLR 右45°痛・左70°）。再評価で変化が出ない場合は、仮説を見直す。レッドフラッグがあるときは、無理に施術を続けず受診を勧め、その判断を記録に残す。",
+  quiz:[Q("評価の順番として適切なのは？",["問診→視診→触診→可動域→徒手検査→施術→再評価","いきなり強い徒手検査から","施術→問診→再評価","徒手検査のみ"],0,"問診から始め、最後に再評価で確認する。"),Q("レッドフラッグに当たるのは？",["夜間や安静時にも強まる痛みと体重減少","動かすと軽い痛み","朝にこわばる程度","肩のこり"],0,"夜間・安静時痛や原因不明の体重減少は受診を優先。"),Q("1つの整形外科的テストが陽性だったとき、適切な解釈は？",["診断が確定した","他の所見と合わせて、関与の可能性を判断する","無視する","施術を強くする"],1,"複数の所見がそろうかを見る。"),Q("検査の順序で適切なのは？",["痛い側・痛い動作から先に","健側・痛くない動作から先に","順不同","動かさずに触診のみ"],1,"健側から先に、痛みを出す動作は最後に。")]},
+ {id:"exam2",title:"頸部・胸郭出口の検査",min:25,
+  tests:[
+   {name:"スパーリングテスト",how:"座位で頸部を患側へ側屈・軽く伸展させ、頭頂部から下向きに圧迫する。",pos:"患側の上肢へ放散痛・しびれが出る → 頸椎の神経根症状を疑う。"},
+   {name:"ジャクソン圧迫テスト",how:"頸部を後屈して患側へ傾け（または回旋し）、頭頂部から圧迫する。",pos:"上肢への放散痛 → 神経根（椎間孔の狭小）。"},
+   {name:"頸椎牽引（ディストラクション）テスト",how:"仰臥位または座位で、頭部をゆっくり上方へ牽引する。",pos:"症状が軽くなる → 神経根の圧迫が関与。"},
+   {name:"ショルダーデプレッションテスト",how:"頸部を健側へ側屈させ、患側の肩を下方へ押し下げる。",pos:"患側の頸部〜上肢に痛み・放散痛 → 神経根への牽引ストレス・癒着。"},
+   {name:"アドソンテスト",how:"患側の橈骨動脈を触れながら、上肢を伸展・外転し、頸部を後屈・患側へ回旋して深く息を吸う。",pos:"脈拍の減弱・消失、症状の誘発 → 斜角筋部での胸郭出口の圧迫。"},
+   {name:"ライトテスト",how:"上肢を過外転（約120°以上）・外旋して脈拍を触れる。",pos:"脈拍の減弱・症状の誘発 → 小胸筋下の圧迫（過外転症候群）。"},
+   {name:"ルースの3分間挙上負荷テスト",how:"肩を外転90°・外旋、肘90°屈曲で、手を3分間ゆっくり握って開く。",pos:"しびれ・だるさで続けられない → 胸郭出口症候群を疑う。"}],
+  points:["頸の症状は大きく4つのパターンで考える：①神経根型（上肢の放散痛・しびれ、頸の後屈・側屈で増悪）②筋・筋膜型（局所のこり・圧痛、関連痛、上肢の神経症状なし）③胸郭出口型（腕を上げる・荷物を持つと症状）④脊髄型（両手のしびれ・細かい動作の障害・歩行のふらつき）。","④の脊髄型（頸髄症）が疑われるときは、ホフマン徴候・腱反射の亢進などを確認し、医療機関への受診を勧める。","頸部の強い後屈・回旋・牽引は、めまい・失神・しびれの悪化がないかを確認しながら行う。症状が出たらすぐ中止する。"],
+  clinical:"頸のテストは、上肢のしびれが「どの指に出ているか」（親指側＝C6、中指＝C7、小指側＝C8）とセットで解釈する。陽性でも、画像所見がなくても、神経症状の経過（広がる・悪化する）を見ながら紹介のタイミングを決める。",
+  quiz:[Q("スパーリングテストで陽性と判断するのは？",["患側上肢への放散痛・しびれの誘発","頸部のこりの軽減","脈拍の増加","めまいが消える"],0,"圧迫で患側上肢に放散痛が出れば陽性。"),Q("頸椎牽引テストで症状が軽減したときに示唆されるのは？",["神経根の圧迫","筋肉痛のみ","胸郭出口の動脈圧迫のみ","異常なし"],0,"牽引で楽になる＝神経根圧迫の関与。"),Q("橈骨動脈の脈拍の減弱を見て胸郭出口の圧迫を確認するテストは？",["アドソンテスト・ライトテスト","スパーリングテスト","ホフマン徴候","SLR"],0,"アドソン・ライトは脈拍の変化を見る。"),Q("両手のしびれと細かい動作の障害・歩行のふらつきがあるとき、まず考えるのは？",["頸髄症の可能性として受診を勧める","筋疲労","通常の肩こり","通常の寝違え"],0,"脊髄症状が疑われるため受診を優先。")]},
+ {id:"exam3",title:"肩の検査（インピンジメント・腱板・二頭筋・不安定性）",min:30,
+  tests:[
+   {name:"ペインフルアーク",how:"自動で腕を横から挙上してもらい、痛みの出る角度を確認する。",pos:"60〜120°で痛み、それを過ぎると軽減 → 肩峰下インピンジメント。"},
+   {name:"ホーキンス・ケネディテスト",how:"肩を90°屈曲、肘を90°屈曲し、他動的に肩を内旋する。",pos:"肩前外側の痛み → 肩峰下インピンジメント。"},
+   {name:"ニアーテスト",how:"肩甲骨を固定し、前腕を回内した腕を他動的に最大屈曲する。",pos:"肩の痛み → 肩峰下インピンジメント。"},
+   {name:"ドロップアームサイン",how:"他動的に外転90°にした腕をゆっくり下ろしてもらう。",pos:"ゆっくり下ろせず落ちる → 腱板（特に棘上筋）の大きな断裂を疑う。"},
+   {name:"ジョブテスト（empty can）",how:"肩90°外転・水平屈曲30°・内旋位（親指を下）で、上から下方へ抵抗をかける。",pos:"痛み・脱力 → 棘上筋。"},
+   {name:"外旋抵抗テスト",how:"肘90°屈曲・上腕を体側につけ、外旋方向に抵抗する。",pos:"痛み・脱力 → 棘下筋・小円筋。"},
+   {name:"リフトオフテスト",how:"手の甲を腰に当て、背中から離してもらう（さらに抵抗をかける）。",pos:"離せない・脱力 → 肩甲下筋。"},
+   {name:"スピードテスト",how:"肘を伸ばし、前腕を回外して肩を90°屈曲、下方へ抵抗をかける。",pos:"結節間溝の痛み → 上腕二頭筋長頭腱炎。"},
+   {name:"ヤーガソンテスト",how:"肘90°屈曲・前腕回内位から、回外に抵抗しながら外旋してもらう。",pos:"結節間溝の痛み → 上腕二頭筋長頭腱。"},
+   {name:"アプリヘンションテスト",how:"肩90°外転・外旋位で、前方へ押す方向の力を加える。",pos:"脱臼しそうな不安感・恐怖感 → 肩の前方不安定性。"}],
+  points:["肩の痛みは、肩の中（腱板・関節包・二頭筋腱・関節）と、肩の外（頸・胸椎・肩甲骨・内臓）に分けて考える。頸の動きで症状が変わるか、内臓疾患のサイン（冷や汗・胸痛）がないかも確認する。","動きの特徴：凍結肩（五十肩）は自動も他動も可動域が制限される（特に外旋・外転）。腱板断裂は、他動では上がるが自動では上がらない。","年代の目安：若年は不安定性・外傷、中高年は腱板・インピンジメント・凍結肩が多い。","検査の考え方：まず可動域（自動・他動）→痛みの出る動き→腱板テスト（抵抗）→二頭筋腱→不安定性、の順に絞り込む。"],
+  clinical:"肩の挙上障害では、肩甲骨の動き（肩甲上腕リズム）と胸椎の伸展も確認する。腱板断裂が疑われる場合（ドロップアーム陽性、急な脱力）は、施術を急がず受診を勧める。",
+  quiz:[Q("他動では挙がるが自動では挙がらず、ドロップアームサインが陽性のとき疑うのは？",["腱板断裂","凍結肩","頸椎症のみ","正常"],0,"腱板断裂では他動可・自動不可。"),Q("凍結肩の可動域の特徴は？",["自動・他動の両方が制限される","他動は正常","自動のみ制限","制限はない"],0,"自動・他動の両方で制限（特に外旋）。"),Q("リフトオフテストで主に評価する筋は？",["肩甲下筋","棘上筋","小円筋","大胸筋"],0,"リフトオフは肩甲下筋。"),Q("スピードテスト・ヤーガソンテストで痛む部位は？",["結節間溝（上腕二頭筋長頭腱）","肩鎖関節のみ","肩甲骨下角","肘外側"],0,"結節間溝の上腕二頭筋長頭腱。"),Q("ホーキンス・ケネディテストの陽性が示唆するのは？",["肩峰下インピンジメント","肘部管症候群","手根管症候群","大腿神経障害"],0,"肩峰下インピンジメント。")]},
+ {id:"exam4",title:"肘・手首・手の検査",min:25,
+  tests:[
+   {name:"トムゼンテスト",how:"肘を伸ばし前腕を回内して、手関節を背屈させ、抵抗をかける。",pos:"外側上顆の痛み → 上腕骨外側上顆炎（テニス肘）。"},
+   {name:"中指伸展テスト",how:"肘伸展位で、中指の伸展に抵抗する。",pos:"外側上顆の痛み → テニス肘。"},
+   {name:"チェアテスト",how:"椅子の背を、肘を伸ばして前腕回内位で持ち上げる。",pos:"外側上顆の痛み → テニス肘。"},
+   {name:"手関節屈曲抵抗テスト",how:"前腕回外位で手関節の屈曲に抵抗する。",pos:"内側上顆の痛み → 上腕骨内側上顆炎（ゴルフ肘）。"},
+   {name:"外反ストレステスト（肘）",how:"肘を軽く屈曲し、外反方向のストレスをかける。",pos:"内側の痛み・不安定性 → 内側側副靭帯の損傷。"},
+   {name:"ティネル徴候",how:"手根管（手関節掌側）、または肘部管を軽く叩く。",pos:"支配領域へ放散するしびれ → 手根管症候群（正中神経）、肘部管症候群（尺骨神経）。"},
+   {name:"ファーレンテスト",how:"両手の甲を合わせ、手関節を屈曲して60秒保持する。",pos:"母指〜環指（橈側）のしびれ → 手根管症候群。"},
+   {name:"フィンケルシュタインテスト",how:"母指を手の中に入れて握り、手関節を尺屈する。",pos:"橈骨茎状突起部の痛み → ドケルバン腱鞘炎。"},
+   {name:"フローマン徴候",how:"母指と示指で紙をはさんで引っ張ってもらう。",pos:"母指の指節間関節が曲がる（代償）→ 尺骨神経麻痺。"}],
+  points:["肘の外側の痛み＝伸筋（手首を反らす筋）の付着部、内側の痛み＝屈筋（手首を曲げる筋）の付着部、と整理すると覚えやすい。","しびれは、どの指に出るかで神経を推測する：母指〜環指橈側＝正中神経、環指尺側〜小指＝尺骨神経、母指〜示指の手背側＝橈骨神経。夜間・明け方のしびれは手根管症候群で多い。","手の腱鞘炎は、使いすぎ（スマホ・育児・家事・仕事）の聞き取りが重要。","頸椎からのしびれ（神経根）との鑑別：頸の動きで症状が変わるか、しびれの範囲が神経の支配域か髄節かを確認する。"],
+  clinical:"テニス肘・ゴルフ肘では、付着部だけでなく前腕の筋腹・肩甲骨周囲・握り方（作業動作）まで確認する。手のしびれが両側、または急に悪化する場合は、頸椎や全身疾患（糖尿病・甲状腺）の確認も必要。",
+  quiz:[Q("手関節の背屈抵抗で肘外側が痛むときに疑うのは？",["上腕骨外側上顆炎","上腕骨内側上顆炎","肘部管症候群","尺骨神経麻痺"],0,"トムゼンテスト陽性＝外側上顆炎。"),Q("夜間・明け方の母指〜環指のしびれ、ファーレンテスト陽性で疑うのは？",["手根管症候群","肘部管症候群","橈骨神経麻痺","胸郭出口症候群"],0,"手根管症候群（正中神経）。"),Q("フィンケルシュタインテストで評価する疾患は？",["ドケルバン腱鞘炎","ばね指","テニス肘","ゴルフ肘"],0,"橈骨茎状突起部の腱鞘炎。"),Q("小指と環指尺側のしびれで疑う神経は？",["尺骨神経","正中神経","橈骨神経","腋窩神経"],0,"尺骨神経（肘部管など）。")]},
+ {id:"exam5",title:"腰部・仙腸関節の検査",min:30,
+  tests:[
+   {name:"SLR（下肢伸展挙上）テスト",how:"仰臥位で膝を伸ばしたまま、下肢をゆっくり挙上する。",pos:"約30〜70°で下肢後面に放散痛 → 坐骨神経（L5・S1）の伸張。70°以上のハムストリングスの突っ張りは非特異的。"},
+   {name:"ブラガードテスト",how:"SLRで痛みが出た角度から少し下げ、足関節を背屈させる。",pos:"痛みが再現・増強 → 坐骨神経の伸張（神経由来）。"},
+   {name:"FNS（大腿神経伸展）テスト",how:"腹臥位で膝を屈曲する（または股関節を伸展する）。",pos:"大腿前面への放散痛 → 大腿神経（L2〜L4）。"},
+   {name:"ケンプテスト",how:"立位または座位で、腰椎を伸展・側屈・回旋する。",pos:"腰痛の誘発 → 椎間関節の関与。下肢への放散痛 → 神経根の関与。"},
+   {name:"パトリックテスト（FABER）",how:"仰臥位で、股関節を屈曲・外転・外旋（足を反対の膝に乗せ）、膝を下に押す。",pos:"鼠径部の痛み → 股関節。殿部・後方の痛み → 仙腸関節。"},
+   {name:"ゲンスレンテスト",how:"仰臥位でベッドの端から片脚を垂らし、反対の脚を抱え込む。",pos:"仙腸関節部の痛み → 仙腸関節障害。"},
+   {name:"前屈・後屈テスト（方向の優位性）",how:"立位で前屈、後屈、側屈、回旋を行い、痛みの方向を確認する。",pos:"前屈で増悪 → 椎間板由来が多い。後屈・歩行で増悪、前屈・座位で軽減 → 脊柱管狭窄症が多い。"}],
+  points:["腰痛の分類（考え方）：①筋・筋膜性、②椎間関節性、③椎間板性（前屈・座位で増悪）、④神経根性（下肢への放散痛・しびれ）、⑤脊柱管狭窄（間欠性跛行）、⑥仙腸関節性、⑦内臓・骨折・腫瘍などの重篤なもの。","腰椎分離症：成長期のスポーツ選手で、後屈・回旋で腰痛が出る。疑ったら受診（画像）を勧める。","馬尾症候群（会陰部のしびれ・排尿排便の障害・両下肢の脱力）は緊急受診。","神経根の高さ：L4＝下腿内側・膝蓋腱反射、L5＝足背・母趾背屈、S1＝足外側・つま先立ち・アキレス腱反射。"],
+  clinical:"腰痛の評価では、「痛みを出す動き」と「楽になる動き」の両方を見つけて指導に使う。同じSLR陽性でも、神経の症状（しびれ・筋力低下）を伴うか、痛みだけかで対応が変わる。進行性の筋力低下があるときは受診を優先。",
+  quiz:[Q("SLRテストで坐骨神経の伸張として陽性と考えやすい角度は？",["約30〜70°","0〜10°","100°以上","角度に関係なく"],0,"約30〜70°で下肢後面への放散痛。"),Q("前屈で増悪する腰痛で多く疑われるのは？",["椎間板性","脊柱管狭窄","股関節症","内臓疾患のみ"],0,"前屈で椎間板内圧が上がる。"),Q("歩くと下肢が痛み、座ると楽になる（間欠性跛行）で疑うのは？",["脊柱管狭窄症","肉離れ","頸椎ヘルニア","足底腱膜炎"],0,"脊柱管狭窄症。"),Q("会陰部のしびれと排尿障害がある場合の対応は？",["緊急で医療機関を受診するよう勧める","ストレッチを指導","様子を見る","強めの施術"],0,"馬尾症候群の可能性、緊急受診。"),Q("FNSテストが示す神経は？",["大腿神経（L2〜L4）","坐骨神経（L5・S1）","腓骨神経","脛骨神経"],0,"大腿神経。")]},
+ {id:"exam6",title:"股関節・骨盤の検査",min:25,
+  tests:[
+   {name:"トーマステスト",how:"仰臥位で片膝を胸に抱え、反対側の大腿が浮くかを見る。",pos:"浮く → 反対側の股関節の屈曲拘縮・腸腰筋の短縮。"},
+   {name:"エリーテスト",how:"腹臥位で膝を屈曲していく。",pos:"殿部が持ち上がる → 大腿直筋の短縮。"},
+   {name:"オーバーテスト",how:"側臥位で上側の下肢を外転・伸展位から下ろす。",pos:"下がらない → 腸脛靭帯・大腿筋膜張筋の短縮。"},
+   {name:"パトリックテスト（FABER）",how:"仰臥位で股関節を屈曲・外転・外旋する。",pos:"鼠径部の痛み → 股関節。後方の痛み → 仙腸関節。"},
+   {name:"FADIRテスト",how:"股関節を屈曲・内転・内旋する。",pos:"鼠径部の痛み → 大腿骨寛骨臼インピンジメント（FAI）や関節唇の問題。"},
+   {name:"トレンデレンブルグテスト",how:"片脚立ちをしてもらい、骨盤の傾きを見る。",pos:"挙上側（遊脚側）の骨盤が下がる → 立脚側の中殿筋の機能低下。"},
+   {name:"脚長差の測定",how:"棘果長（上前腸骨棘〜内果）と転子果長（大転子〜外果）を測る。",pos:"棘果長に差 → 骨盤・股関節の関与。転子果長に差 → 下肢の長さの差。"}],
+  points:["股関節の痛みは、鼠径部（前面）が多い。殿部・大腿外側・膝に出る関連痛も多く、「膝の痛み」の原因が股関節ということもある。","高齢者で、鼠径部痛と歩行時の痛み・可動域の低下があれば、変形性股関節症を疑う。転倒後の強い痛みや荷重不能は大腿骨頸部骨折の可能性があり、受診を優先する。","成長期（小児）の股関節・膝の痛み・跛行は、大腿骨頭すべり症やペルテス病などの可能性があり、受診を勧める。","骨盤の評価：左右の腸骨稜・上前腸骨棘・上後腸骨棘の高さ、立位と座位の違い、片脚立ちの安定性を見る。"],
+  clinical:"股関節は、可動域（特に内旋・屈曲）の左右差を最初に見る。腰痛・膝痛・足の痛みの評価では、股関節の可動域と中殿筋の機能を必ず確認する。",
+  quiz:[Q("トレンデレンブルグテスト陽性が示すのは？",["立脚側の中殿筋の機能低下","大腿四頭筋の短縮","腸腰筋の筋力低下のみ","ハムストリングスの短縮"],0,"遊脚側の骨盤が下がる＝立脚側の中殿筋。"),Q("エリーテストで殿部が持ち上がるときに示唆されるのは？",["大腿直筋の短縮","腸脛靭帯の短縮","腸腰筋の短縮","ハムストリングスの短縮"],0,"大腿直筋の短縮。"),Q("高齢者の転倒後、強い鼠径部痛で荷重ができない場合は？",["医療機関への受診を優先する","ストレッチ","強めの揉みほぐし","温めて様子を見る"],0,"大腿骨頸部骨折の可能性。"),Q("FADIRで鼠径部痛が出るときに疑うのは？",["FAI・関節唇の問題","ドケルバン腱鞘炎","手根管症候群","テニス肘"],0,"FAI・関節唇損傷など。")]},
+ {id:"exam7",title:"膝の検査",min:30,
+  tests:[
+   {name:"ラックマンテスト",how:"膝を20〜30°屈曲し、大腿を固定して脛骨を前方へ引く。",pos:"前方への動揺が大きい・終末の抵抗感がない → 前十字靭帯（ACL）損傷。"},
+   {name:"前方引き出しテスト",how:"膝90°屈曲位で、脛骨を前方へ引く。",pos:"前方への移動の増加 → ACL損傷。"},
+   {name:"後方引き出しテスト",how:"膝90°屈曲位で、脛骨を後方へ押す。",pos:"後方への移動の増加 → 後十字靭帯（PCL）損傷。"},
+   {name:"外反ストレステスト",how:"膝0°と30°で、外反方向のストレスをかける。",pos:"内側の痛み・動揺 → 内側側副靭帯（MCL）損傷。"},
+   {name:"内反ストレステスト",how:"膝0°と30°で、内反方向のストレスをかける。",pos:"外側の痛み・動揺 → 外側側副靭帯（LCL）損傷。"},
+   {name:"マクマレーテスト",how:"仰臥位で膝を最大屈曲し、下腿を内旋・外旋しながら伸展する。",pos:"クリック音・痛み → 半月板損傷。"},
+   {name:"アプレー圧迫テスト",how:"腹臥位で膝を90°屈曲し、足部を圧迫しながら回旋する。",pos:"痛み → 半月板損傷。"},
+   {name:"膝蓋跳動（浮球感）",how:"膝蓋上嚢を押さえて膝蓋骨を押し下げる。",pos:"膝蓋骨が浮いて跳ねる → 関節内の水腫（関節液の貯留）。"},
+   {name:"膝蓋骨圧迫（グラインド）テスト",how:"膝蓋骨を大腿骨へ押しつけながら動かす。",pos:"痛み・ざらつき → 膝蓋大腿関節の障害。"}],
+  points:["膝の問診：受傷機転（接触・非接触、ひねり）、ポップ音、腫れた時間（受傷直後＝関節内出血を疑う）、荷重できるか、ロッキング（膝が伸びない）、膝崩れ感。","受診を優先：受傷直後の大きな腫れ、荷重できない、ロッキング、明らかな変形。","中高年の膝痛：変形性膝関節症が多い。動き始めの痛み、階段（特に下り）、内側の圧痛、O脚。","膝の痛みは、股関節・足部（扁平足・回内足）・体幹の影響を受ける。膝だけを見ない。","成長期のスポーツ選手の膝の痛み：オスグッド・シュラッター病（脛骨粗面）、ジャンパー膝（膝蓋腱）などを考える。"],
+  clinical:"ACL損傷が疑われる受傷（非接触でひねる・ポップ音・直後の腫れ）では、ラックマンの結果にかかわらず受診を勧める。慢性の膝痛では、膝周囲の施術に加え、股関節の可動域・中殿筋・足部のアライメントを評価して、再発しにくい動きを指導する。",
+  quiz:[Q("ラックマンテストで評価するのは？",["前十字靭帯（ACL）","後十字靭帯（PCL）","内側側副靭帯","半月板"],0,"ラックマンはACL。"),Q("外反ストレスで痛み・動揺がある場合に疑うのは？",["内側側副靭帯損傷","外側側副靭帯損傷","アキレス腱断裂","半月板のみ"],0,"外反ストレス→内側側副靭帯。"),Q("受傷直後に大きく腫れ、荷重できない場合は？",["受診を優先する","強く揉む","温める","様子を見る"],0,"関節内出血・靭帯損傷・骨折の可能性。"),Q("膝蓋跳動が陽性のときに示唆されるのは？",["関節水腫","アキレス腱炎","足底腱膜炎","手根管症候群"],0,"関節内の水腫。")]},
+ {id:"exam8",title:"足関節・足部の検査",min:25,
+  tests:[
+   {name:"前方引き出しテスト（足関節）",how:"足関節を軽度底屈位にして、踵を前方へ引く。",pos:"前方への動揺・痛み → 前距腓靭帯（ATFL）損傷。"},
+   {name:"距骨傾斜（内反ストレス）テスト",how:"足関節を内反方向へ傾ける。",pos:"動揺・痛み → 前距腓靭帯・踵腓靭帯損傷。"},
+   {name:"トンプソンテスト",how:"腹臥位で膝を曲げ、ふくらはぎ（下腿三頭筋）をつまむ。",pos:"足関節が底屈しない → アキレス腱断裂。"},
+   {name:"オタワ足関節ルール",how:"足関節捻挫後に、骨折を疑う所見があるかを確認する。",pos:"次のいずれかがあれば受診（X線）を勧める：外果・内果の後縁（先端から6cm以内）や先端の圧痛、第5中足骨基部の圧痛、舟状骨の圧痛、受傷直後と診察時に4歩連続で荷重できない。"},
+   {name:"足底腱膜炎の評価",how:"踵の内側と足底腱膜の圧痛、母趾の背屈（ウィンドラス）を確認する。",pos:"朝の一歩目の痛み・踵の圧痛 → 足底腱膜炎。"},
+   {name:"アーチの評価（舟状骨ドロップなど）",how:"立位と座位で、舟状骨の高さ・踵の傾き・扁平足の程度を見る。",pos:"荷重で内側アーチが下がる → 回内足・扁平足。膝・腰への影響を考える。"}],
+  points:["足関節捻挫は内反捻挫が多く、外果前方（ATFL）の圧痛・腫脹が典型。骨折・靭帯完全断裂を見逃さないため、オタワ足関節ルールで受診判断をする。","アキレス腱断裂の典型：「後ろから蹴られた」感覚と音、歩行はできてもつま先立ちができない。","小児・成長期のかかと痛みはシーバー病（踵骨骨端症）など。","足部は立位・歩行の土台。アーチ・足趾の使い方・靴を確認する。"],
+  clinical:"足関節捻挫は、受傷直後の評価（受診判断）と、回復期の再発予防（バランス・腓骨筋・足関節背屈の可動域）で役割が変わる。慢性の足底痛・膝痛では、足部アライメントとインソール・靴の確認を忘れない。",
+  quiz:[Q("アキレス腱断裂の確認に使うテストは？",["トンプソンテスト","ラックマンテスト","SLRテスト","スパーリングテスト"],0,"トンプソンテスト。"),Q("オタワ足関節ルールが陽性の場合は？",["X線の検討（受診）を勧める","そのままマッサージ","様子を見る","強く温める"],0,"骨折を除外するため受診を勧める。"),Q("朝の一歩目で踵が痛むときに疑うのは？",["足底腱膜炎","アキレス腱断裂","外側側副靭帯損傷","テニス肘"],0,"足底腱膜炎の典型。"),Q("足関節捻挫で最も損傷しやすい靭帯は？",["前距腓靭帯（ATFL）","三角靭帯","前十字靭帯","後距腓靭帯"],0,"内反捻挫では前距腓靭帯が最も多い。")]},
+ {id:"exam9",title:"神経学的検査（筋力・反射・知覚）",min:30,
+  tests:[
+   {name:"筋力テスト（MMT 0〜5）",how:"各筋の筋力を段階で評価する。5＝強い抵抗に抗して全可動域、4＝中等度の抵抗に抗する、3＝重力に抗して全可動域、2＝重力を除けば動かせる、1＝筋収縮のみ、0＝収縮なし。",pos:"左右差・髄節で低下 → 神経根・末梢神経の障害を疑う。"},
+   {name:"深部腱反射",how:"ハンマーで腱を叩き、反応の左右差と亢進・低下を見る。上腕二頭筋（C5）、腕橈骨筋（C6）、上腕三頭筋（C7）、膝蓋腱（L4）、アキレス腱（S1）。",pos:"低下・消失 → 末梢神経・神経根。亢進 → 上位運動ニューロン（脊髄・脳）の障害。"},
+   {name:"知覚検査",how:"触覚・痛覚（軽く触れる・つまむ）を、デルマトームに沿って左右比較する。C6＝母指、C7＝中指、C8＝小指、L4＝下腿内側、L5＝足背・母趾、S1＝足外側。",pos:"しびれ・鈍麻の範囲 → 神経根の高さの推定。"},
+   {name:"ホフマン徴候",how:"中指の末節を弾く。",pos:"母指・示指が屈曲する → 錐体路徴候（頸髄症などを疑う）。"},
+   {name:"バビンスキー反射",how:"足底の外側を踵から小趾側、母趾球へこする。",pos:"母趾が背屈する → 陽性＝錐体路障害。"}],
+  points:["髄節別の筋力（目安）：C5＝三角筋・肘屈曲、C6＝手関節背屈、C7＝肘伸展・手関節屈曲、C8＝手指屈曲、T1＝小指外転。L2＝股屈曲、L3＝膝伸展、L4＝足関節背屈（前脛骨筋）、L5＝母趾背屈、S1＝足関節底屈（つま先立ち）。","神経根症状では、①放散痛・しびれの範囲、②筋力低下、③腱反射の低下、をセットで確認する。","上位運動ニューロン障害のサイン：腱反射の亢進、ホフマン・バビンスキー陽性、歩行の障害。これらがあれば受診を勧める。","評価の記録：テスト名、左右、結果（数値・段階）、症状の再現の有無を書く。"],
+  clinical:"施術前後に神経学的な所見が悪化していないかを確認する習慣をつける。しびれが広がる・筋力が落ちる・反射が消える、といった変化は、紹介の判断材料になる。",
+  quiz:[Q("アキレス腱反射が主に関わる髄節は？",["S1","C6","L2","T1"],0,"アキレス腱反射はS1。"),Q("L5神経根障害で低下しやすい動作は？",["母趾の背屈","つま先立ち","肘の屈曲","手関節の背屈"],0,"L5は母趾背屈（長母趾伸筋）。"),Q("ホフマン徴候が陽性のときに考えるのは？",["上位運動ニューロン（頸髄症など）の障害","末梢神経の絞扼のみ","筋疲労","異常なし"],0,"錐体路徴候として頸髄症などを疑う。"),Q("MMTで「重力に抗して全可動域を動かせる」は？",["3","1","5","0"],0,"MMT 3。")]},
+ {id:"exam10",title:"症例演習A：頸・肩・上肢のパターン",min:30,
+  cases:[
+   {title:"症例1：45歳女性・デスクワーク",story:"右肩から腕の外側、母指側にしびれ。頸を右に傾けて上を向くと腕に電気が走る。",think:"神経根型を疑う。スパーリング・ジャクソン・牽引テストを行い、C6の筋力（手関節背屈）・上腕二頭筋/腕橈骨筋反射・母指の知覚を確認する。筋力低下が進行する、両側に出る、歩行障害があるなら受診を優先。"},
+   {title:"症例2：55歳男性",story:"重い物を持った後から腕が上がらない。他動で挙げると90°以上上がるが、自分では挙げられない。ドロップアームサイン陽性。",think:"腱板（棘上筋）の大きな断裂を疑う。無理に動かさず、受診（画像検査）を勧める。"},
+   {title:"症例3：52歳女性",story:"数か月かけて徐々に肩が上がらなくなった。夜間痛があり、着替えや帯を結ぶ動作が困難。自動・他動ともに外旋が大きく制限。",think:"凍結肩（五十肩）の拘縮期を疑う。時期（炎症期・拘縮期・回復期）で施術の強さと目標を変える。糖尿病などの全身疾患の有無も確認。"}],
+  points:["検査を選ぶ前に、まず「しびれ・痛みの範囲」「動かすと変わるか」「他動と自動の差」を整理する。","肩の症状は、肩そのもの・頸・胸郭出口・内臓の4方向から確認する。","上肢のしびれは、どの神経・髄節かを知覚の範囲で推定する。"],
+  clinical:"症例演習は、答えを覚えるのではなく「次に何を確認するか」を言葉にする練習。検査の結果をカルテにどう書くか（例：右スパーリング陽性・C6知覚鈍麻・上腕二頭筋反射低下）までセットで練習する。",
+  quiz:[Q("症例1の初期評価として最も適切な組み合わせは？",["スパーリング・ジャクソン・牽引テストと、C5〜C8の筋力・反射・知覚","SLRとラックマン","トンプソンとオタワルール","ファーレンとフィンケルシュタイン"],0,"頸の神経根症状の評価。"),Q("症例2で最も適切な対応は？",["腱板断裂を疑い、受診を勧める","強いマッサージで挙上を促す","温めて様子を見る","無理に挙上訓練を行う"],0,"腱板断裂が疑われるため受診を優先。"),Q("症例3の可動域の特徴として適切なのは？",["自動・他動ともに制限（特に外旋）","他動は正常","自動のみ制限","制限はない"],0,"凍結肩の特徴。"),Q("夜間・明け方に母指〜環指のしびれが強く、ファーレンテスト陽性。疑うのは？",["手根管症候群","肘部管症候群","テニス肘","頸椎ヘルニア（C8）"],0,"手根管症候群（正中神経）。"),Q("ドアノブをひねる・雑巾をしぼると肘の外側が痛い。まず行う検査は？",["トムゼンテスト","外反ストレステスト","ティネル徴候（肘部管）","フローマン徴候"],0,"外側上顆炎の確認にトムゼンテスト。")]},
+ {id:"exam11",title:"症例演習B：腰・股・下肢のパターン",min:30,
+  cases:[
+   {title:"症例1：35歳男性",story:"前屈で腰痛が増悪し、左殿部から下腿外側・足背にしびれ。左SLR 45°で陽性。母趾の背屈がやや弱い。",think:"L5神経根の症状を伴う椎間板性の腰痛を疑う。SLR・ブラガード、L5の筋力（母趾背屈）・知覚（足背）を確認する。筋力低下が進行する場合・排尿障害がある場合は受診。"},
+   {title:"症例2：72歳男性",story:"歩くと殿部から下肢が痛みしびれ、数百mで休む。座る・前かがみになると楽。後屈で下肢症状が出る。",think:"脊柱管狭窄症（間欠性跛行）を疑う。前屈（楽）・後屈（悪化）、歩行距離、自転車に乗れるかを確認する。血管性の跛行（足の脈拍・冷え）との鑑別も。"},
+   {title:"症例3：14歳男子サッカー部",story:"数週間続く腰痛。後屈と片脚での後屈で痛みが強い。",think:"成長期の腰椎分離症を疑う。ケンプ・後屈テストで再現されても、施術を急がず、スポーツ中止の判断と受診（画像検査）を勧める。"},
+   {title:"症例4：60歳女性",story:"歩き始めに鼠径部が痛む。股関節の屈曲・内旋が制限。",think:"変形性股関節症を疑う。股関節の可動域（特に内旋・屈曲）、FABER・FADIR、中殿筋の機能を確認する。"}],
+  points:["腰痛では「痛みの方向（前屈・後屈）」「下肢症状の有無」「歩行・座位での変化」が分類の鍵。","下肢症状のあるときは、髄節ごとの筋力・知覚・反射を必ず確認する。","高齢者・成長期・悪性腫瘍の既往・外傷後は、レッドフラッグを最優先に確認する。"],
+  clinical:"腰痛患者では、検査の結果を、動作指導（股関節から曲げる・胸椎を動かす・中殿筋を使う）に変換して伝えると、再発予防につながる。",
+  quiz:[Q("症例1のSLR陽性・母趾背屈の低下から、まず考える神経根は？",["L5","C6","T4","S3"],0,"母趾背屈はL5。"),Q("症例2で最も疑われるのは？",["脊柱管狭窄症","腰椎分離症","仙腸関節炎","梨状筋のこりのみ"],0,"間欠性跛行・前屈で軽減。"),Q("症例3で適切な対応は？",["スポーツの休止と受診（画像）を勧める","通常通り練習を継続","強いストレッチ","後屈を繰り返す"],0,"分離症は早期の診断・休止が重要。"),Q("症例4で確認すべき可動域は？",["股関節の内旋・屈曲","手首の背屈","頸の回旋","肘の屈曲"],0,"変形性股関節症では内旋・屈曲が早期に制限される。"),Q("腰痛で緊急受診を勧めるべきサインは？",["会陰部のしびれと排尿障害","朝の軽いこわばり","立ち上がりの痛み","夕方のだるさ"],0,"馬尾症候群のサイン。")]},
+ {id:"exam12",title:"症例演習C：膝・足・外傷のパターン",min:30,
+  cases:[
+   {title:"症例1：20代男性サッカー",story:"着地でひねり、ポップ音。直後から膝が腫れ、体重をかけると膝が抜ける感じ。",think:"ACL損傷を疑う。ラックマン・前方引き出しで確認し、施術より受診（画像検査）を優先。受傷直後の腫れは関節内出血のサイン。"},
+   {title:"症例2：45歳女性",story:"階段で膝をひねり、その後しゃがむと内側が痛む。ときどきひっかかる感じ・クリック音。",think:"内側半月板損傷を疑う。マクマレー・アプレー・関節裂隙の圧痛を確認。ロッキングがあれば受診。"},
+   {title:"症例3：30代男性",story:"バスケで着地時に足を内反。外果の下が腫れ、4歩連続で歩けない。",think:"オタワ足関節ルール陽性（4歩荷重不能）。骨折を除外するため受診（X線）を勧める。"},
+   {title:"症例4：42歳男性",story:"ダッシュした瞬間、ふくらはぎを後ろから蹴られたような感覚と音。歩行はできるが、つま先立ちができない。",think:"アキレス腱断裂を疑う。トンプソンテスト陽性ならすぐに受診。"}],
+  points:["外傷では、受傷機転→腫れの時間経過→荷重の可否→不安定性の順に確認し、受診が必要かを最初に判断する。","慢性の膝・足の痛みでは、股関節・足部・動作（歩き方・靴）まで確認する。","評価と記録：受傷機転・初見所見・実施した検査と結果・受診勧奨の判断と患者さんの同意を必ず記録する。"],
+  clinical:"外傷の初期対応では「施術できるか」ではなく「施術してよいか」を先に判断する。迷ったら受診を勧める。受診の勧め方は、理由を短く具体的に（例：骨折の可能性を除外するため）伝える。",
+  quiz:[Q("症例1で最も適切な対応は？",["ACL損傷を疑い、受診を勧める","揉みほぐしを強くする","温めて様子を見る","すぐにスポーツ復帰を促す"],0,"受傷直後の腫れ・膝崩れ＝受診を優先。"),Q("症例2で確認する検査は？",["マクマレーテスト・アプレー圧迫テスト","トンプソンテスト","ホフマン徴候","SLR"],0,"半月板の検査。"),Q("症例3でオタワ足関節ルールが陽性とされる根拠は？",["4歩連続で荷重できない","軽い腫れ","筋肉痛","朝のこわばり"],0,"4歩連続荷重不能は陽性所見。"),Q("症例4で行う検査は？",["トンプソンテスト","ラックマンテスト","ジョブテスト","ファーレンテスト"],0,"アキレス腱断裂の確認。"),Q("外傷の初期評価で最優先すべきは？",["受診が必要かどうかの判断","施術の強さ","料金の説明","SNS用の写真"],0,"まず受診の要否を判断する。")]}
+]}
+
 ];
 
+const LEARNING_TARGET_EMAILS=["sato@ando.jp","hosonaga@ando.jp","tanaka@ando.jp"]; // 基礎知識の学習対象（佐藤・細永・田中）
 function LearningPanel({user,isAdmin}){
-  const myId=(user&&user.id)||0;
+  const myEmail=(user&&user.email)||"";
+  const learners=STAFF_ACCOUNTS.filter(s=>!s.eventOnly);
+  const targets=learners.filter(s=>LEARNING_TARGET_EMAILS.includes(s.email));
+  const [learnerEmail,setLearnerEmail]=React.useState(()=>{try{const v=localStorage.getItem("learning_learner");if(v&&STAFF_ACCOUNTS.some(s=>s.email===v&&!s.eventOnly))return v;}catch(e){}return myEmail;});
+  function pickLearner(v){setLearnerEmail(v);setSubjId(null);setUnitId(null);setQuiz(null);try{localStorage.setItem("learning_learner",v);}catch(e){}}
+  const learner=learners.find(s=>s.email===learnerEmail)||{email:learnerEmail,name:(user&&user.name)||learnerEmail};
+  const [attempts,setAttempts]=React.useState([]);
+  const [showAll,setShowAll]=React.useState(false);
   const [rows,setRows]=React.useState([]); // learning_progress（自分の分。管理者は全員分）
   const [loading,setLoading]=React.useState(true);
   const [tab,setTab]=React.useState("study"); // study | team
@@ -2744,12 +2885,13 @@ function LearningPanel({user,isAdmin}){
   const [saving,setSaving]=React.useState(false);
 
   function load(){
-    const q=isAdmin?"?select=*":`?staff_id=eq.${myId}`;
+    const q="?select=*";
     sb.select("learning_progress",q).then(r=>{setRows(Array.isArray(r)?r:[]);setLoading(false);}).catch(()=>setLoading(false));
+    if(isAdmin) sb.select("learning_attempts","?order=created_at.desc&limit=1000").then(r=>setAttempts(Array.isArray(r)?r:[])).catch(()=>{});
   }
   React.useEffect(()=>{load();},[]);
 
-  const mine=React.useMemo(()=>{const m={};rows.filter(r=>r.staff_id===myId).forEach(r=>{m[r.unit_id]=r;});return m;},[rows,myId]);
+  const mine=React.useMemo(()=>{const m={};rows.filter(r=>r.learner_email===learnerEmail).forEach(r=>{m[r.unit_id]=r;});return m;},[rows,learnerEmail]);
   const totalUnits=CURRICULUM.reduce((s,c)=>s+c.units.length,0);
   const doneUnits=CURRICULUM.reduce((s,c)=>s+c.units.filter(u=>mine[u.id]&&mine[u.id].completed).length,0);
   const subj=CURRICULUM.find(c=>c.id===subjId);
@@ -2773,10 +2915,12 @@ function LearningPanel({user,isAdmin}){
     try{
       const cur=mine[unit.id];
       const now=new Date().toISOString();
+      const recBy=(user&&user.name)||myEmail;
+      await sb.insert("learning_attempts",{learner_email:learnerEmail,learner_name:learner.name,unit_id:unit.id,score,total,passed:pass,wrong:quiz.qs.filter(x=>x.sel!==x.a).map(x=>x.q),recorded_by:recBy});
       if(cur){
         await sb.update("learning_progress",cur.id,{attempts:(cur.attempts||0)+1,last_score:score,total,best_score:Math.max(cur.best_score||0,score),last_attempt_at:now,completed:cur.completed||pass,completed_at:cur.completed_at||(pass?now:null)});
       }else{
-        await sb.insert("learning_progress",{staff_id:myId,unit_id:unit.id,attempts:1,last_score:score,total,best_score:score,last_attempt_at:now,completed:pass,completed_at:pass?now:null});
+        await sb.insert("learning_progress",{learner_email:learnerEmail,learner_name:learner.name,recorded_by:recBy,unit_id:unit.id,attempts:1,last_score:score,total,best_score:score,last_attempt_at:now,completed:pass,completed_at:pass?now:null});
       }
       load();
     }catch(e){console.error(e);}
@@ -2796,12 +2940,28 @@ function LearningPanel({user,isAdmin}){
         <div style={{...card,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
           <button onClick={()=>{setUnitId(null);setQuiz(null);}} style={{border:"1.5px solid #e2e8f0",background:"white",borderRadius:8,padding:"5px 12px",cursor:"pointer",fontWeight:700}}>← {subj.name}の一覧</button>
           <span style={{fontSize:12,color:"#94a3b8"}}>{subj.icon} {subj.name}　単元 {idx+1}/{subj.units.length}　目安 {unit.min}分</span>
+          {learnerEmail!==myEmail&&<span style={{fontSize:12,fontWeight:800,color:"#be185d",background:"#fdf2f8",borderRadius:10,padding:"2px 10px"}}>受講者：{learner.name}</span>}
           {st&&st.completed&&<span style={{marginLeft:"auto",fontSize:12,fontWeight:800,color:"#059669",background:"#ecfdf5",borderRadius:10,padding:"2px 10px"}}>✅ 合格済み（最高 {st.best_score}/{st.total}）</span>}
         </div>
         <div style={card}>
           <div style={{fontSize:18,fontWeight:800,color:subj.color,marginBottom:10}}>{unit.title}</div>
-          <div style={{fontSize:12,fontWeight:800,color:"#475569",marginBottom:6}}>📘 基礎：ここだけは押さえる</div>
+          <div style={{fontSize:12,fontWeight:800,color:"#475569",marginBottom:6}}>{unit.tests?"📘 考え方・押さえるポイント":unit.cases?"📘 考え方のポイント":"📘 基礎：ここだけは押さえる"}</div>
           <ul style={{margin:"0 0 14px",paddingLeft:20,fontSize:14,lineHeight:1.85,color:"#1e293b"}}>{unit.points.map((p,i)=><li key={i} style={{marginBottom:4}}>{p}</li>)}</ul>
+          {unit.tests&&(<div style={{marginBottom:14}}>
+            <div style={{fontSize:12,fontWeight:800,color:"#475569",marginBottom:6}}>🔍 検査の種類（方法 → 陽性の意味）</div>
+            {unit.tests.map((t,i)=>(<div key={i} style={{border:"1px solid #e2e8f0",borderLeft:"4px solid "+subj.color,borderRadius:8,padding:"8px 12px",marginBottom:6}}>
+              <div style={{fontWeight:800,fontSize:14,color:"#1e293b"}}>{t.name}</div>
+              <div style={{fontSize:13,color:"#475569",lineHeight:1.7,marginTop:2}}><b style={{color:"#64748b"}}>やり方：</b>{t.how}</div>
+              <div style={{fontSize:13,color:"#9d174d",lineHeight:1.7}}><b>陽性の意味：</b>{t.pos}</div>
+            </div>))}
+          </div>)}
+          {unit.cases&&(<div style={{marginBottom:14}}>
+            <div style={{fontSize:12,fontWeight:800,color:"#475569",marginBottom:6}}>📋 症例パターン（まず自分で考えてから「考え方」を開く）</div>
+            {unit.cases.map((c,i)=>(<details key={i} style={{border:"1px solid #e2e8f0",borderRadius:8,padding:"8px 12px",marginBottom:6}}>
+              <summary style={{cursor:"pointer",fontWeight:800,fontSize:13,color:"#1e293b"}}>{c.title}<div style={{fontWeight:500,fontSize:13,color:"#475569",marginTop:3}}>{c.story}</div></summary>
+              <div style={{marginTop:6,fontSize:13,lineHeight:1.8,color:"#065f46",background:"#ecfdf5",borderRadius:8,padding:"8px 10px"}}><b>考え方：</b>{c.think}</div>
+            </details>))}
+          </div>)}
           <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"10px 12px"}}>
             <div style={{fontSize:12,fontWeight:800,color:"#92400e",marginBottom:4}}>🩺 臨床ポイント（経験者向け）</div>
             <div style={{fontSize:13,lineHeight:1.8,color:"#78350f"}}>{unit.clinical}</div>
@@ -2836,25 +2996,52 @@ function LearningPanel({user,isAdmin}){
 
   // ===== スタッフ別進捗（管理者） =====
   if(tab==="team"&&isAdmin){
-    const staff=STAFF_ACCOUNTS.filter(s=>!s.eventOnly);
+    const list=showAll?learners:targets;
+    const fmtD=d=>d?String(d).slice(0,10).replace(/-/g,"/"):"—";
+    const daysAgo=d=>d?Math.floor((Date.now()-new Date(d).getTime())/86400000):null;
     return(
-      <div style={{maxWidth:900,margin:"0 auto"}}>
-        <div style={{...card,display:"flex",gap:8}}>{tabBtn("study","学習する")}{tabBtn("team","スタッフ別の進捗")}</div>
-        <div style={card}>
-          <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-            <thead><tr style={{background:"#f1f5f9",color:"#475569"}}><th style={{padding:"6px 8px",textAlign:"left"}}>スタッフ</th>{CURRICULUM.map(c=><th key={c.id} style={{padding:"6px 8px",whiteSpace:"nowrap"}}>{c.icon}{c.name}</th>)}<th style={{padding:"6px 8px"}}>全体</th></tr></thead>
-            <tbody>{staff.map(s=>{
-              const rs=rows.filter(r=>r.staff_id===s.id&&r.completed);
-              const done=new Set(rs.map(r=>r.unit_id));
-              const total=CURRICULUM.reduce((a,c)=>a+c.units.filter(u=>done.has(u.id)).length,0);
-              return(<tr key={s.id} style={{borderTop:"1px solid #f1f5f9"}}>
-                <td style={{padding:"7px 8px",fontWeight:700}}>{s.name}</td>
-                {CURRICULUM.map(c=>{const n=c.units.filter(u=>done.has(u.id)).length;return(<td key={c.id} style={{padding:"7px 8px",textAlign:"center",color:n===c.units.length?"#059669":n>0?"#d97706":"#cbd5e1",fontWeight:800}}>{n}/{c.units.length}</td>);})}
-                <td style={{padding:"7px 8px",textAlign:"center",fontWeight:800}}>{Math.round(total/totalUnits*100)}%</td>
-              </tr>);})}</tbody>
-          </table></div>
-          <div style={{fontSize:11,color:"#94a3b8",marginTop:8}}>数字は「合格した単元数／全単元数」。各単元のクイズに合格すると完了になります。</div>
-        </div>
+      <div style={{maxWidth:980,margin:"0 auto"}}>
+        <div style={{...card,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>{tabBtn("study","学習する")}{tabBtn("team","スタッフ別の進捗")}
+          <label style={{marginLeft:"auto",fontSize:12,display:"flex",alignItems:"center",gap:4}}><input type="checkbox" checked={showAll} onChange={e=>setShowAll(e.target.checked)}/>全スタッフを表示</label></div>
+        {list.map(s=>{
+          const rs=rows.filter(r=>r.learner_email===s.email);
+          const byUnit={};rs.forEach(r=>{byUnit[r.unit_id]=r;});
+          const done=CURRICULUM.reduce((a,c)=>a+c.units.filter(u=>byUnit[u.id]&&byUnit[u.id].completed).length,0);
+          const last=rs.reduce((m,r)=>r.last_attempt_at&&(!m||r.last_attempt_at>m)?r.last_attempt_at:m,null);
+          const att=attempts.filter(a=>a.learner_email===s.email);
+          const wrongCount={};att.forEach(a=>(Array.isArray(a.wrong)?a.wrong:[]).forEach(q=>{wrongCount[q]=(wrongCount[q]||0)+1;}));
+          const weak=Object.keys(wrongCount).sort((a,b)=>wrongCount[b]-wrongCount[a]).slice(0,3);
+          const stuck=CURRICULUM.flatMap(c=>c.units.filter(u=>byUnit[u.id]&&!byUnit[u.id].completed).map(u=>u.title));
+          const ago=daysAgo(last);
+          return(
+          <div key={s.email} style={card}>
+            <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",marginBottom:8}}>
+              <div style={{width:34,height:34,borderRadius:10,background:s.color||"#64748b",color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800}}>{s.initial||s.name.charAt(0)}</div>
+              <div style={{fontWeight:800,fontSize:15}}>{s.name}</div>
+              <div style={{fontWeight:800,fontSize:18,color:"#1e3a5f"}}>{Math.round(done/totalUnits*100)}%<span style={{fontSize:12,fontWeight:600,color:"#94a3b8",marginLeft:6}}>{done}/{totalUnits}単元</span></div>
+              <div style={{marginLeft:"auto",fontSize:12,color:ago!==null&&ago>=7?"#dc2626":"#64748b",fontWeight:700}}>最終学習：{fmtD(last)}{ago!==null?`（${ago===0?"今日":ago+"日前"}）`:"（未着手）"}</div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:8,marginBottom:8}}>
+              {CURRICULUM.map(c=>{const n=c.units.filter(u=>byUnit[u.id]&&byUnit[u.id].completed).length;return(
+                <div key={c.id}><div style={{fontSize:11,fontWeight:700,display:"flex",justifyContent:"space-between"}}><span>{c.icon}{c.name}</span><span style={{color:n===c.units.length?"#059669":"#64748b"}}>{n}/{c.units.length}</span></div>{bar(n/c.units.length*100,c.color)}</div>);})}
+            </div>
+            <details>
+              <summary style={{cursor:"pointer",fontSize:12,fontWeight:800,color:"#2563eb"}}>単元ごとの状況を開く（○合格　△挑戦中　・未着手）</summary>
+              {CURRICULUM.map(c=>(<div key={c.id} style={{marginTop:8}}>
+                <div style={{fontSize:12,fontWeight:800,color:c.color}}>{c.icon}{c.name}</div>
+                {c.units.map(u=>{const r=byUnit[u.id];return(<div key={u.id} style={{display:"flex",gap:8,fontSize:12,padding:"2px 0",color:"#334155"}}>
+                  <span style={{width:16,fontWeight:800,color:r&&r.completed?"#059669":r?"#d97706":"#cbd5e1"}}>{r&&r.completed?"○":r?"△":"・"}</span>
+                  <span style={{flex:1}}>{u.title}</span>
+                  <span style={{color:"#94a3b8"}}>{r?`最高 ${r.best_score}/${r.total}　${r.attempts}回　${fmtD(r.last_attempt_at)}`:""}</span>
+                </div>);})}
+              </div>))}
+            </details>
+            {(weak.length>0||stuck.length>0)&&(<div style={{marginTop:8,fontSize:12,background:"#fff7ed",borderRadius:8,padding:"8px 10px",color:"#7c2d12",lineHeight:1.7}}>
+              {stuck.length>0&&<div><b>合格できていない単元：</b>{stuck.join("、")}</div>}
+              {weak.length>0&&<div><b>間違いが多い問題：</b>{weak.map(q=>`「${q}」（${wrongCount[q]}回）`).join("　")}</div>}
+            </div>)}
+          </div>);})}
+        <div style={{fontSize:11,color:"#94a3b8",margin:"0 4px"}}>各単元のクイズ合格で完了。「学習する」タブで受講者を選べば、管理者の画面からその方の分として受講・記録もできます（共有タブレット用）。</div>
       </div>);
   }
 
@@ -2882,9 +3069,14 @@ function LearningPanel({user,isAdmin}){
       <div style={{...card,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
         <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f",marginRight:6}}>📚 学習カリキュラム</div>
         {tabBtn("study","学習する")}{isAdmin&&tabBtn("team","スタッフ別の進捗")}
+        {(<span style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6,fontSize:12,fontWeight:700}}>受講者（自分を選ぶ）：
+          <select value={learnerEmail} onChange={e=>pickLearner(e.target.value)} style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"}}>
+            {targets.length>0&&<optgroup label="基礎知識の学習対象">{targets.map(s=><option key={s.email} value={s.email}>{s.name}</option>)}</optgroup>}
+            <optgroup label="その他のスタッフ">{learners.filter(s=>!LEARNING_TARGET_EMAILS.includes(s.email)).map(s=><option key={s.email} value={s.email}>{s.name}</option>)}</optgroup>
+          </select></span>)}
       </div>
       <div style={card}>
-        <div style={{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:700,marginBottom:6}}><span>あなたの進捗</span><span>{doneUnits}/{totalUnits}単元　{Math.round(doneUnits/totalUnits*100)}%</span></div>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:700,marginBottom:6}}><span>{learnerEmail===myEmail?"あなたの進捗":learner.name+"さんの進捗"}</span><span>{doneUnits}/{totalUnits}単元　{Math.round(doneUnits/totalUnits*100)}%</span></div>
         {bar(doneUnits/totalUnits*100,"#1e3a5f")}
         <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>各単元の解説を読み、確認クイズに合格すると完了になります（基礎編。経験者向けの臨床ポイント付き）。</div>
       </div>
@@ -2906,6 +3098,7 @@ function LearningPanel({user,isAdmin}){
     </div>
   );
 }
+
 
 function DailyReportPanel({bookings,payments,stores,todayStr}){
   const fmt=n=>"¥"+Number(n||0).toLocaleString();
