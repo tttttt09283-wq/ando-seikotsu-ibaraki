@@ -1,0 +1,93 @@
+@import "tailwindcss";
+
+/*
+ * ブランドカラー（ここを変えるとアプリ全体の色が変わります）
+ * メイン：ターコイズブルー / サブ：ホワイト / アクセント：ネイビー・イエロー
+ */
+@theme {
+  --color-brand-50: #ecf9fa;
+  --color-brand-100: #d0f0f3;
+  --color-brand-200: #a3e1e7;
+  --color-brand-300: #63cbd5;
+  --color-brand-400: #2fb5c2;
+  --color-brand-500: #14a8b5;
+  --color-brand-600: #0e8893;
+  --color-brand-700: #0b6d76;
+  --color-brand-800: #0c5961;
+
+  --color-navy-500: #3d5a80;
+  --color-navy-700: #284870;
+  --color-navy-900: #1e3a5f;
+
+  --color-sun-100: #fff6d6;
+  --color-sun-300: #ffd866;
+  --color-sun-400: #ffc93c;
+  --color-sun-500: #f5b301;
+
+  --font-sans: var(--font-maru), "Hiragino Maru Gothic ProN", "Hiragino Sans", "Noto Sans JP", "Meiryo", sans-serif;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+  /* 上部の進捗バー・下部の固定ボタンに隠れないよう、スクロール時の余白を確保 */
+  scroll-padding-top: 5rem;
+  scroll-padding-bottom: 8rem;
+}
+
+body {
+  background: var(--color-brand-50);
+  color: var(--color-navy-900);
+  font-family: var(--font-sans);
+  line-height: 1.7;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* キーボード操作時に、今どこを選んでいるか分かりやすくする（アクセシビリティ） */
+:focus-visible {
+  outline: 3px solid var(--color-sun-500);
+  outline-offset: 2px;
+}
+
+/* 画面が切り替わったときのふわっとした演出 */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.6) rotate(-8deg);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.08) rotate(2deg);
+  }
+  100% {
+    transform: scale(1) rotate(0);
+  }
+}
+.animate-rise-in {
+  animation: rise-in 0.45s ease-out both;
+}
+.animate-pop-in {
+  animation: pop-in 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.2) 0.3s both;
+}
+
+/* 動きを減らす設定の利用者には、アニメーションを止める */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
