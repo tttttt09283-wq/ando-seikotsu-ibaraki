@@ -2133,6 +2133,204 @@ function RegisterCashPanel({bookings,payments,stores,todayStr,currentUser,refund
 const REFUND_REASONS=["施術内容へのご不満","会計ミス（二重請求・金額誤り）","来院されなかった・キャンセル","体調不良等で施術中止","回数券・FPの返金","保険請求の訂正","その他"];
 const REFUND_METHODS=["現金","カード","PayPay","その他"];
 
+// ===== 患者名の統合（表記ゆれ・重複登録を1つにまとめる） =====
+const MERGE_TABLES=[
+  {t:"bookings",col:"patient_name",label:"予約"},
+  {t:"payments",col:"patient_name",label:"会計"},
+  {t:"refunds",col:"patient_name",label:"返金"},
+  {t:"passes",col:"patient_name",label:"回数券"},
+  {t:"posture_records",col:"patient_name",label:"姿勢分析"},
+  {t:"meal_logs",col:"patient_name",label:"食事記録"},
+  {t:"treatment_plans",col:"patient_name",label:"施術計画"},
+  {t:"patient_referral_codes",col:"patient_name",label:"紹介コード"},
+  {t:"referrals",col:"referred_patient_name",label:"紹介履歴"},
+  {t:"patient_preferences",col:"patient_name",label:"通知設定",key:"phone"},
+  {t:"patient_karte",col:"patient_name",label:"カルテ基本情報",unique:true},
+];
+function PatientMergePanel({bookings,user,isAdmin,onChanged}){
+  const norm=s=>String(s||"").normalize("NFKC").replace(/[\s　]/g,"").toLowerCase();
+  const digits=s=>String(s||"").replace(/\D/g,"");
+  const enc=encodeURIComponent;
+  const [tab,setTab]=React.useState("cand");
+  const [log,setLog]=React.useState([]);
+  const [busy,setBusy]=React.useState(false);
+  const [msg,setMsg]=React.useState("");
+  const [picks,setPicks]=React.useState({}); // groupKey -> {to, from:{name:bool}}
+  const [mFrom,setMFrom]=React.useState("");
+  const [mTo,setMTo]=React.useState("");
+  const [skip,setSkip]=React.useState({});
+
+  function loadLog(){sb.select("patient_merge_log","?order=created_at.desc&limit=100").then(r=>setLog(Array.isArray(r)?r:[])).catch(()=>{});}
+  React.useEffect(()=>{loadLog();},[]);
+
+  const info=React.useMemo(()=>{
+    const m={};
+    (bookings||[]).forEach(b=>{
+      const n=b.patient_name; if(!n) return;
+      const o=m[n]||(m[n]={name:n,count:0,last:"",phones:new Set()});
+      o.count++; if((b.date||"")>o.last) o.last=b.date||"";
+      const d=digits(b.phone); if(d.length>=10) o.phones.add(d);
+    });
+    return m;
+  },[bookings]);
+  const names=Object.keys(info);
+
+  const groups=React.useMemo(()=>{
+    const out=[];
+    const byKey={};names.forEach(n=>{const k=norm(n);(byKey[k]=byKey[k]||[]).push(n);});
+    Object.keys(byKey).forEach(k=>{if(byKey[k].length>1) out.push({key:"n:"+k,kind:"name",names:byKey[k]});});
+    const byPh={};names.forEach(n=>info[n].phones.forEach(p=>{(byPh[p]=byPh[p]||[]).push(n);}));
+    Object.keys(byPh).forEach(p=>{
+      const ns=[...new Set(byPh[p])];
+      if(ns.length>1){
+        // 同じ表記ゆれグループに完全に含まれるものは重複表示しない
+        if(out.some(g=>g.kind==="name"&&ns.every(x=>g.names.includes(x)))) return;
+        out.push({key:"p:"+p,kind:"phone",phone:p,names:ns});
+      }
+    });
+    return out.filter(g=>!skip[g.key]);
+  },[info,skip]);
+
+  function pickOf(g){
+    const cur=picks[g.key];
+    if(cur) return cur;
+    const best=[...g.names].sort((a,b)=>info[b].count-info[a].count||a.length-b.length)[0];
+    const from={};g.names.forEach(n=>{from[n]=n!==best;});
+    return {to:best,from};
+  }
+  function setPick(g,p){setPicks(s=>({...s,[g.key]:p}));}
+
+  async function mergeOne(from,to){
+    const affected={},skipped=[];
+    for(const T of MERGE_TABLES){
+      try{
+        if(T.unique){
+          const ex=await sb.select(T.t,`?${T.col}=eq.${enc(to)}&select=id`);
+          if(Array.isArray(ex)&&ex.length>0){
+            const src=await sb.select(T.t,`?${T.col}=eq.${enc(from)}&select=id`);
+            if(Array.isArray(src)&&src.length>0) skipped.push(T.label+"（統合先に既にあるため移していません）");
+            continue;
+          }
+        }
+        const r=await sb.query(T.t,"PATCH",{[T.col]:to},`?${T.col}=eq.${enc(from)}`);
+        if(Array.isArray(r)){ if(r.length>0) affected[T.t]=r.map(x=>T.key?x[T.key]:x.id); }
+        else throw new Error((r&&r.message)||"更新失敗");
+      }catch(e){skipped.push(T.label+"："+(e.message||e));}
+    }
+    await sb.insert("patient_merge_log",{from_name:from,to_name:to,affected,merged_by:(user&&user.name)||(user&&user.email)||"",});
+    return {affected,skipped};
+  }
+  async function doMerge(froms,to){
+    if(!isAdmin){alert("統合は管理者のみ可能です");return;}
+    froms=froms.filter(f=>f&&f!==to);
+    if(!to||froms.length===0){alert("統合する名前を選んでください");return;}
+    if(!window.confirm(`次の名前を「${to}」に統合します。\n\n${froms.map(f=>"・"+f).join("\n")}\n\n予約・会計・回数券などの名前がすべて「${to}」に変わります。履歴タブから元に戻せます。よろしいですか？`)) return;
+    setBusy(true);setMsg("");
+    let total=0,notes=[];
+    for(const f of froms){
+      const r=await mergeOne(f,to);
+      Object.values(r.affected).forEach(a=>{total+=a.length;});
+      r.skipped.forEach(s=>notes.push(f+" → "+s));
+    }
+    setBusy(false);
+    setMsg(`統合しました（${froms.length}件の名前／${total}件のデータを更新）`+(notes.length?"\n注意：\n"+notes.join("\n"):""));
+    loadLog();
+    if(onChanged) onChanged();
+  }
+  async function undo(row){
+    if(!isAdmin) return;
+    if(row.undone_at){return;}
+    if(!window.confirm(`「${row.from_name}」→「${row.to_name}」の統合を元に戻します。\n（統合時に移した ${Object.values(row.affected||{}).reduce((s,a)=>s+a.length,0)} 件を元の名前に戻します）`)) return;
+    setBusy(true);
+    const errs=[];
+    for(const T of MERGE_TABLES){
+      const ids=(row.affected||{})[T.t];
+      if(!ids||ids.length===0) continue;
+      const keyCol=T.key||"id";
+      try{
+        const r=await sb.query(T.t,"PATCH",{[T.col]:row.from_name},`?${keyCol}=in.(${ids.map(x=>enc(x)).join(",")})`);
+        if(!Array.isArray(r)) errs.push(T.label);
+      }catch(e){errs.push(T.label);}
+    }
+    await sb.query("patient_merge_log","PATCH",{undone_at:new Date().toISOString()},`?id=eq.${row.id}`);
+    setBusy(false);
+    setMsg(errs.length?"元に戻せなかった項目："+errs.join("、"):"元に戻しました");
+    loadLog();
+    if(onChanged) onChanged();
+  }
+
+  const card={background:"#fff",borderRadius:12,padding:16,boxShadow:"0 1px 4px rgba(0,0,0,.08)",marginBottom:12};
+  const tabBtn=(id,l)=><button onClick={()=>setTab(id)} style={{padding:"7px 16px",borderRadius:8,border:"none",cursor:"pointer",fontWeight:800,fontSize:13,fontFamily:"inherit",background:tab===id?"#1e3a5f":"#f1f5f9",color:tab===id?"#fff":"#475569"}}>{l}</button>;
+  const chip=(t,c,bg)=><span style={{fontSize:11,fontWeight:800,color:c,background:bg,borderRadius:10,padding:"2px 8px",marginLeft:6}}>{t}</span>;
+  const Row=({n,g,p})=>(
+    <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:8,background:p.to===n?"#eff6ff":"#f8fafc",border:p.to===n?"1.5px solid #3b82f6":"1.5px solid #e2e8f0",marginBottom:6,flexWrap:"wrap"}}>
+      <label style={{display:"flex",alignItems:"center",gap:6,fontSize:12,fontWeight:800,color:"#1d4ed8",cursor:"pointer"}}>
+        <input type="radio" checked={p.to===n} onChange={()=>{const from={};g.names.forEach(x=>{from[x]=x!==n;});setPick(g,{to:n,from});}}/>残す名前
+      </label>
+      <span style={{fontWeight:800,fontSize:15,color:"#1e293b"}}>「{n}」</span>
+      <span style={{fontSize:12,color:"#64748b"}}>予約{info[n].count}件・最終 {info[n].last||"-"}{info[n].phones.size>0?"・"+[...info[n].phones].join("/"):"・電話なし"}</span>
+      {p.to!==n&&(<label style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6,fontSize:12,fontWeight:700,color:"#be185d",cursor:"pointer"}}>
+        <input type="checkbox" checked={!!p.from[n]} onChange={e=>setPick(g,{...p,from:{...p.from,[n]:e.target.checked}})}/>これを統合する
+      </label>)}
+    </div>);
+
+  return (
+    <div style={{padding:16,maxWidth:900}}>
+      <div style={{...card,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+        <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f",marginRight:6}}>🔗 患者名の統合</div>
+        {tabBtn("cand",`統合候補（${groups.length}）`)}{tabBtn("manual","名前を指定して統合")}{tabBtn("log",`統合履歴（${log.length}）`)}
+      </div>
+      {!isAdmin&&<div style={{...card,color:"#b45309",background:"#fffbeb",fontWeight:700,fontSize:13}}>統合の実行は管理者のみです（閲覧のみ可能）。</div>}
+      {msg&&<div style={{...card,background:"#f0fdf4",color:"#166534",fontWeight:700,fontSize:13,whiteSpace:"pre-wrap"}}>{msg}</div>}
+      {busy&&<div style={{...card,fontWeight:700}}>処理中…</div>}
+
+      {tab==="cand"&&(<div>
+        <div style={{fontSize:12,color:"#64748b",marginBottom:10,lineHeight:1.7}}>
+          「芦田隆之」と「芦田　隆之」のようなスペース・全角半角の違い（表記ゆれ）と、同じ電話番号で名前が違う患者を自動で探します。<br/>
+          同じ電話番号は家族で共有している場合もあるため、<b>別人でないか確認してから</b>統合してください。
+        </div>
+        {groups.length===0&&<div style={{...card,textAlign:"center",color:"#64748b",padding:30}}>統合候補はありません ✨</div>}
+        {groups.map(g=>{const p=pickOf(g);return (
+          <div key={g.key} style={card}>
+            <div style={{marginBottom:8,fontWeight:800,fontSize:13,color:"#334155"}}>
+              {g.kind==="name"?"表記ゆれの可能性":"同じ電話番号"}{g.kind==="name"?chip("確度 高","#166534","#dcfce7"):chip("要確認（家族の可能性）","#b45309","#fef3c7")}
+            </div>
+            {g.names.map(n=><Row key={n} n={n} g={g} p={p}/>)}
+            <div style={{display:"flex",gap:8,marginTop:8}}>
+              <button disabled={busy||!isAdmin} onClick={()=>doMerge(g.names.filter(n=>p.from[n]),p.to)} style={{padding:"8px 18px",borderRadius:8,border:"none",background:isAdmin?"#2563eb":"#cbd5e1",color:"#fff",fontWeight:800,cursor:isAdmin?"pointer":"default",fontFamily:"inherit"}}>「{p.to}」に統合する</button>
+              <button onClick={()=>setSkip(s=>({...s,[g.key]:true}))} style={{padding:"8px 14px",borderRadius:8,border:"1.5px solid #e2e8f0",background:"#fff",color:"#64748b",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>別人なので無視</button>
+            </div>
+          </div>);})}
+      </div>)}
+
+      {tab==="manual"&&(<div style={card}>
+        <div style={{fontSize:12,color:"#64748b",marginBottom:10,lineHeight:1.7}}>名前が大きく違う（旧姓・漢字違いなど）場合は、ここで指定して統合できます。</div>
+        <datalist id="pm-names">{names.sort().map(n=><option key={n} value={n}/>)}</datalist>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+          <label style={{fontSize:12,fontWeight:800}}>統合される名前（消える側）
+            <input list="pm-names" value={mFrom} onChange={e=>setMFrom(e.target.value)} placeholder="名前を入力して選択" style={{width:"100%",marginTop:4,padding:"9px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontFamily:"inherit",boxSizing:"border-box"}}/></label>
+          <label style={{fontSize:12,fontWeight:800}}>残す名前（統合先）
+            <input list="pm-names" value={mTo} onChange={e=>setMTo(e.target.value)} placeholder="名前を入力して選択" style={{width:"100%",marginTop:4,padding:"9px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontFamily:"inherit",boxSizing:"border-box"}}/></label>
+        </div>
+        {[mFrom,mTo].map((n,i)=>info[n]?<div key={i} style={{fontSize:12,color:"#475569",marginBottom:4}}>{i===0?"消える側":"残す側"}：予約{info[n].count}件・最終 {info[n].last||"-"}・{info[n].phones.size>0?[...info[n].phones].join("/"):"電話なし"}</div>:null)}
+        <button disabled={busy||!isAdmin||!info[mFrom]||!mTo||mFrom===mTo} onClick={async()=>{await doMerge([mFrom],mTo);setMFrom("");}} style={{marginTop:8,padding:"9px 20px",borderRadius:8,border:"none",background:(isAdmin&&info[mFrom]&&mTo&&mFrom!==mTo)?"#2563eb":"#cbd5e1",color:"#fff",fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>統合する</button>
+      </div>)}
+
+      {tab==="log"&&(<div>
+        {log.length===0&&<div style={{...card,textAlign:"center",color:"#64748b",padding:30}}>統合履歴はまだありません</div>}
+        {log.map(r=>(
+          <div key={r.id} style={{...card,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap",opacity:r.undone_at?0.55:1}}>
+            <div style={{flex:1,minWidth:200}}>
+              <div style={{fontWeight:800,fontSize:14}}>「{r.from_name}」→「{r.to_name}」{r.undone_at&&chip("元に戻し済み","#64748b","#e2e8f0")}</div>
+              <div style={{fontSize:12,color:"#64748b",marginTop:3}}>{String(r.created_at||"").slice(0,16).replace("T"," ")}・実行：{r.merged_by||"-"}・{Object.keys(r.affected||{}).map(t=>{const T=MERGE_TABLES.find(x=>x.t===t);return (T?T.label:t)+r.affected[t].length;}).join(" / ")||"対象データなし"}</div>
+            </div>
+            {isAdmin&&!r.undone_at&&<button disabled={busy} onClick={()=>undo(r)} style={{padding:"6px 14px",borderRadius:8,border:"1.5px solid #e2e8f0",background:"#fff",color:"#be185d",fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>元に戻す</button>}
+          </div>))}
+      </div>)}
+    </div>
+  );
+}
+
 function RefundPanel({bookings,payments,refunds,allRefunds,stores,todayStr,user,isAdmin,onChanged,trainingMode}){
   const fmt=n=>"¥"+Number(n||0).toLocaleString();
   const firstStoreId=(stores&&stores[0]&&stores[0].id)||1;
@@ -11499,6 +11697,7 @@ function Dashboard({user,onLogout}){
       {id:"add",label:"新規予約",icon:"plus",special:"btn-add",action:()=>openAdd()},
       {id:"checkin",label:"来院受付",icon:"scan",special:""},
       {id:"patients",label:"患者管理",icon:"users",special:""},
+      {id:"patient_merge",label:"患者名の統合",icon:"users",special:""},
       {id:"cancelled_list",label:"キャンセル一覧",icon:"x-circle",special:""},
       {id:"staff_off_conflicts",label:"休みスタッフの予約",icon:"alert",special:""},
       {id:"bulk_receipt",label:"まとめレシート発行",icon:"receipt",special:""},
@@ -12113,6 +12312,7 @@ function Dashboard({user,onLogout}){
           {view==="register_cash"&&<RegisterCashPanel bookings={bookings} payments={payments} refunds={refunds} stores={stores} todayStr={todayStr} currentUser={user}/>}
           {view==="refund"&&<RefundPanel bookings={bookings} payments={payments} refunds={refunds} allRefunds={allRefunds} stores={stores} todayStr={todayStr} user={user} isAdmin={isAdmin} onChanged={reloadRefunds} trainingMode={trainingMode}/>}
           {view==="launch_roi"&&<LaunchROIPanel bookings={bookings} payments={paymentsNet} stores={stores} todayStr={todayStr} user={user} trainingMode={trainingMode}/>}
+          {view==="patient_merge"&&<PatientMergePanel bookings={bookings} user={user} isAdmin={isAdmin} onChanged={fetchAll}/>}
           {view==="learning"&&<LearningPanel user={user} isAdmin={isAdmin}/>}
           {view==="preopen_stats"&&<PreOpenStatsPanel bookings={bookings} payments={paymentsNet} stores={stores} user={user}/>}
 
