@@ -2220,6 +2220,51 @@ function PatientMergePanel({bookings,user,isAdmin,onChanged}){
     await sb.insert("patient_merge_log",{from_name:from,to_name:to,affected,merged_by:(user&&user.name)||(user&&user.email)||"",});
     return {affected,skipped};
   }
+  // 同じ患者の予約のうち、電話番号・住所が空のものを、その患者の最新の入力値で補完する
+  function planFill(rows){
+    const ok=v=>v!=null&&String(v).trim()!=="";
+    const sorted=[...rows].sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
+    const best={};
+    ["phone","address"].forEach(f=>{const x=sorted.find(b=>ok(b[f]));if(x)best[f]=x[f];});
+    const plan=[];
+    ["phone","address"].forEach(f=>{
+      if(!best[f]) return;
+      const ids=rows.filter(b=>!ok(b[f])).map(b=>b.id);
+      if(ids.length) plan.push({f,v:best[f],ids});
+    });
+    return plan;
+  }
+  async function applyFill(plan){
+    let n=0;
+    for(const pl of plan){
+      for(let i=0;i<pl.ids.length;i+=100){
+        const ch=pl.ids.slice(i,i+100);
+        const r=await sb.query("bookings","PATCH",{[pl.f]:pl.v},`?id=in.(${ch.join(",")})`);
+        if(Array.isArray(r)) n+=r.length;
+      }
+    }
+    return n;
+  }
+  async function fillOne(name){
+    const rows=await sb.select("bookings",`?patient_name=eq.${enc(name)}&select=id,date,phone,address`);
+    if(!Array.isArray(rows)) return 0;
+    return applyFill(planFill(rows));
+  }
+  const fillPreview=React.useMemo(()=>{
+    const by={};(bookings||[]).forEach(b=>{if(b.patient_name)(by[b.patient_name]=by[b.patient_name]||[]).push(b);});
+    let pats=0,items=0;const plans=[];
+    Object.keys(by).forEach(n=>{const pl=planFill(by[n]);if(pl.length){pats++;items+=pl.reduce((s,x)=>s+x.ids.length,0);plans.push(...pl);}});
+    return {pats,items,plans};
+  },[bookings]);
+  async function fillAll(){
+    if(!isAdmin){alert("管理者のみ実行できます");return;}
+    if(fillPreview.items===0){setMsg("補完できるデータはありません");return;}
+    if(!window.confirm(`${fillPreview.pats}人・${fillPreview.items}件の予約で、空の電話番号／住所を同じ患者の最新の入力値で補完します。よろしいですか？`)) return;
+    setBusy(true);setMsg("");
+    const n=await applyFill(fillPreview.plans);
+    setBusy(false);setMsg(`補完しました（${n}件）`);
+    if(onChanged) onChanged();
+  }
   async function doMerge(froms,to){
     if(!isAdmin){alert("統合は管理者のみ可能です");return;}
     froms=froms.filter(f=>f&&f!==to);
@@ -2232,8 +2277,10 @@ function PatientMergePanel({bookings,user,isAdmin,onChanged}){
       Object.values(r.affected).forEach(a=>{total+=a.length;});
       r.skipped.forEach(s=>notes.push(f+" → "+s));
     }
+    let filled=0;
+    try{filled=await fillOne(to);}catch(e){}
     setBusy(false);
-    setMsg(`統合しました（${froms.length}件の名前／${total}件のデータを更新）`+(notes.length?"\n注意：\n"+notes.join("\n"):""));
+    setMsg(`統合しました（${froms.length}件の名前／${total}件のデータを更新）`+(filled?`\n電話番号・住所の空欄を ${filled} 件補完しました`:"")+(notes.length?"\n注意：\n"+notes.join("\n"):""));
     loadLog();
     if(onChanged) onChanged();
   }
@@ -2278,7 +2325,7 @@ function PatientMergePanel({bookings,user,isAdmin,onChanged}){
     <div style={{padding:16,maxWidth:900}}>
       <div style={{...card,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
         <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f",marginRight:6}}>🔗 患者名の統合</div>
-        {tabBtn("cand",`統合候補（${groups.length}）`)}{tabBtn("manual","名前を指定して統合")}{tabBtn("log",`統合履歴（${log.length}）`)}
+        {tabBtn("cand",`統合候補（${groups.length}）`)}{tabBtn("fill",`電話・住所の補完（${fillPreview.pats}）`)}{tabBtn("manual","名前を指定して統合")}{tabBtn("log",`統合履歴（${log.length}）`)}
       </div>
       {!isAdmin&&<div style={{...card,color:"#b45309",background:"#fffbeb",fontWeight:700,fontSize:13}}>統合の実行は管理者のみです（閲覧のみ可能）。</div>}
       {msg&&<div style={{...card,background:"#f0fdf4",color:"#166534",fontWeight:700,fontSize:13,whiteSpace:"pre-wrap"}}>{msg}</div>}
@@ -2301,6 +2348,15 @@ function PatientMergePanel({bookings,user,isAdmin,onChanged}){
               <button onClick={()=>setSkip(s=>({...s,[g.key]:true}))} style={{padding:"8px 14px",borderRadius:8,border:"1.5px solid #e2e8f0",background:"#fff",color:"#64748b",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>別人なので無視</button>
             </div>
           </div>);})}
+      </div>)}
+
+      {tab==="fill"&&(<div style={card}>
+        <div style={{fontSize:13,color:"#334155",lineHeight:1.8,marginBottom:12}}>
+          同じ患者の予約の中で、電話番号や住所が空欄の予約に、その患者の<b>最新の入力値</b>を自動で入れます。<br/>
+          現在の補完対象：<b>{fillPreview.pats}人／{fillPreview.items}件</b><br/>
+          <span style={{fontSize:12,color:"#64748b"}}>※統合を実行したときも、統合後の患者について自動で補完されます。</span>
+        </div>
+        <button disabled={busy||!isAdmin||fillPreview.items===0} onClick={fillAll} style={{padding:"9px 20px",borderRadius:8,border:"none",background:(isAdmin&&fillPreview.items>0)?"#2563eb":"#cbd5e1",color:"#fff",fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>まとめて補完する</button>
       </div>)}
 
       {tab==="manual"&&(<div style={card}>
@@ -4803,7 +4859,7 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
               // 既にこの日時で予約枠（レーン数）が埋まっているスタッフは選べないようにする
               let isBooked=false;
               if(form.date&&form.time){
-                const laneCapacity=getLaneCount?getLaneCount(s.id):1;
+                const laneCapacity=getLaneCount?getLaneCount(s.id,form.date):1;
                 const overlapCount=bookings.filter(b=>b.id!==editId&&b.staff_id===s.id&&b.date===form.date&&!b.cancelled&&overlaps(b,form)).length;
                 isBooked=overlapCount>=laneCapacity;
               }
@@ -4824,7 +4880,7 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
           {form.staff_id&&staffCanDoMenus&&!staffCanDoMenus(form.staff_id,selectedMenus)&&(
             <div style={{marginTop:8,fontSize:12,color:"#dc2626",fontWeight:700}}>⚠ 選択中の担当者は、選ばれているメニューに対応していません</div>
           )}
-          {form.staff_id&&form.date&&form.time&&bookings.filter(b=>b.id!==editId&&b.staff_id===form.staff_id&&b.date===form.date&&!b.cancelled&&overlaps(b,form)).length>=(getLaneCount?getLaneCount(form.staff_id):1)&&(
+          {form.staff_id&&form.date&&form.time&&bookings.filter(b=>b.id!==editId&&b.staff_id===form.staff_id&&b.date===form.date&&!b.cancelled&&overlaps(b,form)).length>=(getLaneCount?getLaneCount(form.staff_id,form.date):1)&&(
             <div style={{marginTop:8,fontSize:12,color:"#dc2626",fontWeight:700}}>⚠ 選択中の担当者はこの時間帯、既に予約枠が埋まっています</div>
           )}
         </div>
@@ -7738,7 +7794,7 @@ function CheckInPanel({bookings,onOpenPatient,onCheckedIn,onGoToCalendar,weeklyS
     if(candidates.length===0) return preferredStaffId; // 出勤者が誰もいない場合はフェイルセーフで元の担当のまま
     // 空いていて（同時受付枠に余裕があり）かつ元の担当ならそれを優先
     function hasRoom(staffId){
-      const capacity=getLaneCount?getLaneCount(staffId):1;
+      const capacity=getLaneCount?getLaneCount(staffId,dateStr):1;
       const overlapCount=bookings.filter(b=>!b.cancelled&&b.staff_id===staffId&&b.date===dateStr&&overlaps(b,{time:timeStr,duration:30})).length;
       return overlapCount<capacity;
     }
@@ -10773,6 +10829,7 @@ function Dashboard({user,onLogout}){
   const [dateOverrides,setDateOverrides]=React.useState([]); // 特定日だけの出勤・休み変更（staff_date_overrides）
   const [staffStoreMap,setStaffStoreMap]=React.useState({}); // {staffId: [storeIds]}
   const [staffMenuMap,setStaffMenuMap]=React.useState({}); // {staffId: [対応可能メニュー名] | undefined(=全メニュー対応)}
+  const [dateLaneMap,setDateLaneMap]=React.useState({}); // {"スタッフID|日付": その日だけのレーン数}
   const [staffLaneMap,setStaffLaneMap]=React.useState({}); // {staffId: 同時受付レーン数（未設定は1）}
   const [customMenus,setCustomMenus]=React.useState([]); // 「メニュー・コース管理」で追加された有効なメニュー一覧
   const [staffVersion,setStaffVersion]=React.useState(0); // STAFF_ACCOUNTS（動的マージ）が更新されたら再描画するためのトリガー
@@ -10781,7 +10838,9 @@ function Dashboard({user,onLogout}){
   const isAdmin=user.role==="admin";
   const todayStr=fmtDate(today);
 
-  function getLaneCount(staffId){
+  // 日付を渡すと、その日だけの設定（staff_date_lanes）があればそれを優先する。なければスタッフの標準レーン数。
+  function getLaneCount(staffId,dateStr){
+    if(dateStr){const v=dateLaneMap[staffId+"|"+dateStr];if(v)return v;}
     return staffLaneMap[staffId]||1;
   }
 
@@ -10836,20 +10895,33 @@ function Dashboard({user,onLogout}){
     viewStateSyncRef.current.loaded=true;
   }
 
-  async function changeLaneCount(staffId,delta){
-    const next=Math.max(1,Math.min(6,getLaneCount(staffId)+delta));
-    setStaffLaneMap(prev=>({...prev,[staffId]:next})); // 即座に画面へ反映
+  // 指定した日だけ、同時受付レーン数を変更する（他の日には影響しない）
+  async function changeLaneCount(staffId,delta,dateStr){
+    const base=staffLaneMap[staffId]||1;
+    const next=Math.max(1,Math.min(6,getLaneCount(staffId,dateStr)+delta));
+    const key=staffId+"|"+dateStr;
+    setDateLaneMap(prev=>{const n={...prev};if(next===base)delete n[key];else n[key]=next;return n;}); // 即座に画面へ反映
     try{
-      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
-      await fetch(`${SUPABASE_URL}/rest/v1/clinic_staff?id=eq.${staffId}`,{
-        method:"PATCH",
-        headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json"},
-        body:JSON.stringify({lane_count:next}),
-      });
+      if(next===base){
+        await sb.query("staff_date_lanes","DELETE",null,`?staff_id=eq.${staffId}&date=eq.${dateStr}`);
+      }else{
+        const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+        await fetch(`${SUPABASE_URL}/rest/v1/staff_date_lanes?on_conflict=staff_id,date`,{
+          method:"POST",
+          headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates"},
+          body:JSON.stringify({staff_id:staffId,date:dateStr,lane_count:next}),
+        });
+      }
     }catch(e){
       console.error("レーン数の保存に失敗しました",e);
     }
   }
+  React.useEffect(()=>{
+    sb.select("staff_date_lanes","?select=staff_id,date,lane_count").then(rows=>{
+      if(!Array.isArray(rows)) return;
+      const m={};rows.forEach(x=>{m[x.staff_id+"|"+x.date]=x.lane_count;});setDateLaneMap(m);
+    }).catch(()=>{});
+  },[]);
 
   async function fetchAll(){
     reloadRefunds();
@@ -11221,7 +11293,7 @@ function Dashboard({user,onLogout}){
         if(!ok) return;
       }
     }
-    const laneCapacity=getLaneCount(form.staff_id);
+    const laneCapacity=getLaneCount(form.staff_id,form.date);
     // トレーニングモード中の練習予約でも、本番予約と時間が被らないよう本番分も含めて判定する
     const overlapCountLocal=calendarBookings.filter(b=>b.id!==editId&&b.staff_id===form.staff_id&&b.date===form.date&&!b.cancelled&&overlaps(b,form)).length;
     if(overlapCountLocal>=laneCapacity){setConflict(true);return;}
@@ -11421,7 +11493,7 @@ function Dashboard({user,onLogout}){
       return;
     }
     function hasRoom(staffId){
-      const capacity=getLaneCount(staffId);
+      const capacity=getLaneCount(staffId,newDate);
       const overlapCount=bookings.filter(b=>b.id!==booking.id&&b.staff_id===staffId&&b.date===newDate&&!b.cancelled&&overlaps(b,{time:newTime,duration:booking.duration||DURATION[booking.menu]||30})).length;
       return overlapCount<capacity;
     }
@@ -11441,7 +11513,7 @@ function Dashboard({user,onLogout}){
     }
   }
   async function reassignStaffForBooking(booking,newStaffId){
-    const laneCapacity=getLaneCount(newStaffId);
+    const laneCapacity=getLaneCount(newStaffId,booking.date);
     const overlapCount=bookings.filter(b=>b.id!==booking.id&&b.staff_id===newStaffId&&b.date===booking.date&&!b.cancelled&&overlaps(b,booking)).length;
     if(overlapCount>=laneCapacity){
       showToast("その時間は選択したスタッフの予約枠が埋まっています","delete");
@@ -11465,7 +11537,7 @@ function Dashboard({user,onLogout}){
       showToast("移動先のスタッフはこの日休みのため移動できません","delete");
       return;
     }
-    const laneCapacity=getLaneCount(newStaffId);
+    const laneCapacity=getLaneCount(newStaffId,newDate);
     const overlapCountLocal=calendarBookings.filter(b=>b.id!==booking.id&&b.staff_id===newStaffId&&b.date===newDate&&!b.cancelled&&overlaps(b,{time:newTime,duration:booking.duration||DURATION[booking.menu]||30})).length;
     if(overlapCountLocal>=laneCapacity){
       showToast("その時間はすでに予約枠が埋まっています","delete");
@@ -11510,7 +11582,7 @@ function Dashboard({user,onLogout}){
     if(trainingMode&&!booking.is_training){ showToast("本番の予約はトレーニングモードでは変更できません（閲覧のみ）","delete"); return; }
     const clamped=Math.max(10,Math.min(240,newDuration)); // 10分〜4時間の範囲に収める
     if(clamped===(booking.duration||DURATION[booking.menu]||30)) return; // 変化なし
-    const laneCapacity=getLaneCount(booking.staff_id);
+    const laneCapacity=getLaneCount(booking.staff_id,booking.date);
     const overlapCountLocal=calendarBookings.filter(b=>b.id!==booking.id&&b.staff_id===booking.staff_id&&b.date===booking.date&&!b.cancelled&&overlaps(b,{time:booking.time,duration:clamped})).length;
     if(overlapCountLocal>=laneCapacity){
       showToast("その時間はすでに予約枠が埋まっています","delete");
@@ -12136,7 +12208,7 @@ function Dashboard({user,onLogout}){
                           {dayStaffList.map(staff=>{
                             const staffBookings=dayBookings.filter(b=>b.staff_id===staff.id);
                             const staffBreaks=breaks.filter(b=>b.date===wdStr&&b.staff_id===staff.id);
-                            const configuredLanes=getLaneCount(staff.id);
+                            const configuredLanes=getLaneCount(staff.id,wdStr);
                             // レーン分け（段を分けるかどうか）は実際の予約時間の重なりだけで判定する。
                             // 以前は「名前が読めるように」という表示上の余白（minGapMinutes）もここに混ぜていたため、
                             // 実際には時間が重なっていない予約まで別の段に分かれてバラバラに見えてしまっていた。
@@ -12158,9 +12230,9 @@ function Dashboard({user,onLogout}){
                                   </div>
                                   {isAdmin&&(
                                     <div style={{display:"flex",flexDirection:"column",gap:1,flexShrink:0}}>
-                                      <button onClick={()=>changeLaneCount(staff.id,1)} title="同時受付レーンを増やす"
+                                      <button onClick={()=>changeLaneCount(staff.id,1,wdStr)} title="この日だけ同時受付レーンを増やす"
                                         style={{width:16,height:14,lineHeight:"12px",fontSize:9,fontWeight:900,border:"1px solid #d1d5db",background:"white",color:"#374151",borderRadius:3,cursor:"pointer",padding:0}}>＋</button>
-                                      <button onClick={()=>changeLaneCount(staff.id,-1)} title="同時受付レーンを減らす"
+                                      <button onClick={()=>changeLaneCount(staff.id,-1,wdStr)} title="この日だけ同時受付レーンを減らす"
                                         style={{width:16,height:14,lineHeight:"12px",fontSize:9,fontWeight:900,border:"1px solid #d1d5db",background:"white",color:"#374151",borderRadius:3,cursor:"pointer",padding:0}}>－</button>
                                     </div>
                                   )}
