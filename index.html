@@ -8848,12 +8848,12 @@ function CancelledListPanel({bookings,todayStr,onRestore,onDelete}){
 }
 
 // ===== 経営ダッシュボード =====
-// 院の大事な数字（売上・来院・新規・再来率・キャンセル率・集客経路・要フォロー患者）を1画面にまとめる。
+// 「今どうなっているか（現状）」「このままだと月末どうなるか（予測）」「目標との差」「だから何をするか（即行動）」を1画面で示す。
 // 今月の数字は「先月の同じ日数まで」と比べるので、月の途中でも公平に比較できる。
-// データは管理画面が読み込み済みの bookings / payments（返金を差し引いた paymentsNet）だけを使い、追加の通信はしない。
 const DASH_FOLLOW_MIN_DAYS=30;   // 最終来院からこの日数以上空いた人を「要フォロー」とする
 const DASH_FOLLOW_MAX_DAYS=180;  // これより長い人は離反済みとして要フォローから外す
 const DASH_RETURN_WINDOW_DAYS=30; // 新規の「再来」とみなす期間（初回から何日以内に2回目があるか）
+const DASH_THRESHOLDS={returnRate:0.6,cancelRate:0.1,lineRate:0.5}; // 注意を出す基準
 
 function dashPatientKey(b){
   const digits=String(b.phone||"").replace(/[^0-9]/g,"");
@@ -8865,49 +8865,86 @@ function dashAddDays(dateStr,n){
 }
 function dashDiffDays(a,b){return Math.round((new Date(b+"T00:00:00")-new Date(a+"T00:00:00"))/86400000);}
 function dashYen(n){return "¥"+Math.round(n||0).toLocaleString("ja-JP");}
-function dashPct(n){return n===null||!isFinite(n)?"—":Math.round(n*100)+"%";}
+function dashMan(n){const v=Math.round(n||0);return Math.abs(v)>=10000?(Math.round(v/1000)/10).toLocaleString("ja-JP")+"万円":v.toLocaleString("ja-JP")+"円";}
+function dashManShort(n){const v=Math.round(n||0);return Math.abs(v)>=10000?Math.round(v/10000).toLocaleString("ja-JP")+"万":v.toLocaleString("ja-JP");}
+function dashPct(n){return n===null||n===undefined||!isFinite(n)?"—":Math.round(n*100)+"%";}
+function dashMonthStart(y,m){return `${y}-${String(m).padStart(2,"0")}-01`;}
 
-// 今月（1日〜今日）と、先月の同じ日数の期間を返す
 function dashPeriods(todayStr){
   const [y,m,d]=todayStr.split("-").map(Number);
   const pad=n=>String(n).padStart(2,"0");
-  const curFrom=`${y}-${pad(m)}-01`;
   const py=m===1?y-1:y, pm=m===1?12:m-1;
   const prevLastDay=new Date(py,pm,0).getDate();
-  const prevFrom=`${py}-${pad(pm)}-01`;
-  const prevTo=`${py}-${pad(pm)}-${pad(Math.min(d,prevLastDay))}`;
   const daysInMonth=new Date(y,m,0).getDate();
-  return {curFrom,curTo:todayStr,prevFrom,prevTo,day:d,daysInMonth,monthLabel:`${m}月`,prevLabel:`${pm}月`};
+  return {
+    y,m,day:d,daysInMonth,remainingDays:daysInMonth-d,
+    curFrom:dashMonthStart(y,m),curTo:todayStr,curEnd:`${y}-${pad(m)}-${pad(daysInMonth)}`,
+    prevFrom:dashMonthStart(py,pm),prevTo:`${py}-${pad(pm)}-${pad(Math.min(d,prevLastDay))}`,
+    monthLabel:`${m}月`,prevLabel:`${pm}月`,
+  };
 }
 
-function computeDashboard(bookings,payments,todayStr){
+function computeDashboard(bookings,payments,todayStr,targets){
   const P=dashPeriods(todayStr);
-  const inRange=(date,from,to)=>date&&date>=from&&date<=to;
+  const inRange=(date,from,to)=>!!date&&date>=from&&date<=to;
   const active=bookings.filter(b=>!b.cancelled);
 
-  // 患者ごとの初回来院日（キャンセルを除く、全期間）
   const firstVisit={};
   active.forEach(b=>{const k=dashPatientKey(b);if(!firstVisit[k]||b.date<firstVisit[k])firstVisit[k]=b.date;});
 
   function periodStats(from,to){
     const all=bookings.filter(b=>inRange(b.date,from,to));
     const visits=all.filter(b=>!b.cancelled);
-    const cancelled=all.filter(b=>b.cancelled);
     const newKeys=new Set();const newBookings=[];
     visits.forEach(b=>{const k=dashPatientKey(b);if(firstVisit[k]===b.date&&!newKeys.has(k)){newKeys.add(k);newBookings.push(b);}});
     const pays=payments.filter(p=>inRange(p.payment_date,from,to));
     const revenue=pays.reduce((s,p)=>s+(p.total_amount||0),0);
     const paidVisits=pays.filter(p=>!p.is_refund).length;
+    const patients=new Set(visits.map(dashPatientKey));
+    const linePatients=new Set(visits.filter(b=>b.line_user_id).map(dashPatientKey));
     return {
       revenue,visits:visits.length,newPatients:newKeys.size,newBookings,
-      cancelRate:all.length?cancelled.length/all.length:null,
+      cancelRate:all.length?all.filter(b=>b.cancelled).length/all.length:null,
       unitPrice:paidVisits?revenue/paidVisits:null,
+      lineRate:patients.size?linePatients.size/patients.size:null,
     };
   }
   const cur=periodStats(P.curFrom,P.curTo);
   const prev=periodStats(P.prevFrom,P.prevTo);
 
-  // 新規の再来率：初回が「再来期間」を過ぎ終わった直近90日の新規のうち、期間内に2回目が来た割合
+  // ===== 月末の着地予測 =====
+  // 「今のペースが続いた場合」と「すでに入っている予約の分」の大きい方を見込みとする
+  const tomorrowStr=dashAddDays(todayStr,1);
+  const bookedRest=active.filter(b=>inRange(b.date,tomorrowStr,P.curEnd));
+  const bookedRestNew=new Set(bookedRest.filter(b=>firstVisit[dashPatientKey(b)]===b.date).map(dashPatientKey)).size;
+  const pace=(v)=>P.day>0?v/P.day*P.daysInMonth:v;
+  const unit=cur.unitPrice||prev.unitPrice||0;
+  const forecast={
+    revenue:Math.max(pace(cur.revenue),cur.revenue+bookedRest.length*unit),
+    visits:Math.max(pace(cur.visits),cur.visits+bookedRest.length),
+    newPatients:Math.max(pace(cur.newPatients),cur.newPatients+bookedRestNew),
+  };
+
+  function goal(key,actual,fc){
+    const target=targets&&targets[key]?targets[key]:null;
+    if(!target) return {target:null,actual,forecast:fc};
+    const need=Math.max(0,target-actual);
+    return {
+      target,actual,forecast:fc,
+      progress:actual/target,           // 目標に対する現在の達成率
+      expected:P.day/P.daysInMonth,      // 今日時点で本来いるべき達成率
+      forecastRate:fc/target,            // 着地見込みの達成率
+      shortfall:Math.max(0,target-fc),
+      perDayNeeded:P.remainingDays>0?need/P.remainingDays:need,
+    };
+  }
+  const goals={
+    revenue:goal("sales",cur.revenue,forecast.revenue),
+    visits:goal("visits",cur.visits,forecast.visits),
+    newPatients:goal("new_patients",cur.newPatients,forecast.newPatients),
+  };
+
+  // 新規の再来率
   const cohortTo=dashAddDays(todayStr,-DASH_RETURN_WINDOW_DAYS);
   const cohortFrom=dashAddDays(cohortTo,-90);
   const byPatient={};
@@ -8921,7 +8958,7 @@ function computeDashboard(bookings,payments,todayStr){
   });
   const returnRate=cohort?returned/cohort:null;
 
-  // 要フォロー：最終来院から30〜180日空いていて、今後の予約が無い患者
+  // 要フォロー
   const lastVisit={},hasFuture={},sample={};
   active.forEach(b=>{
     const k=dashPatientKey(b);
@@ -8935,7 +8972,7 @@ function computeDashboard(bookings,payments,todayStr){
     .sort((a,b)=>a.days-b.days);
   const followWithLine=follow.filter(x=>x.b.line_user_id).length;
 
-  // 今月の新規の集客経路
+  // 集客経路
   const channelCount={};
   cur.newBookings.forEach(b=>{
     let c=b.from_body_check?"カラダ年齢チェック":(String(b.how_know||"").trim()||"未記入");
@@ -8944,57 +8981,172 @@ function computeDashboard(bookings,payments,todayStr){
   });
   const channels=Object.entries(channelCount).sort((a,b)=>b[1]-a[1]);
 
-  // 日別売上（今月）
-  const daily=[];
-  for(let i=1;i<=P.daysInMonth;i++){
-    const ds=P.curFrom.slice(0,8)+String(i).padStart(2,"0");
-    daily.push({day:i,date:ds,amount:payments.filter(p=>p.payment_date===ds).reduce((s,p)=>s+(p.total_amount||0),0),future:ds>todayStr});
+  // 6ヶ月の推移（今月は実績＋見込み）
+  const trend=[];
+  for(let i=5;i>=0;i--){
+    const dt=new Date(P.y,P.m-1-i,1);
+    const y=dt.getFullYear(),m=dt.getMonth()+1;
+    const last=new Date(y,m,0).getDate();
+    const from=dashMonthStart(y,m),to=`${y}-${String(m).padStart(2,"0")}-${String(last).padStart(2,"0")}`;
+    const s=i===0?cur:periodStats(from,to);
+    trend.push({label:`${m}月`,revenue:s.revenue,visits:s.visits,newPatients:s.newPatients,isCurrent:i===0,forecastRevenue:i===0?forecast.revenue:null});
   }
 
-  // 今日・明日
   const today=active.filter(b=>b.date===todayStr);
-  const tomorrowStr=dashAddDays(todayStr,1);
   const tomorrow=active.filter(b=>b.date===tomorrowStr);
   const todayNew=today.filter(b=>firstVisit[dashPatientKey(b)]===todayStr).length;
 
-  // 月末の着地予測（今日までの1日あたり平均 × 月の日数）
-  const forecast=P.day>0?cur.revenue/P.day*P.daysInMonth:null;
-
-  return {P,cur,prev,returnRate,cohort,returned,follow,followWithLine,channels,daily,today,tomorrow,todayNew,forecast};
+  return {P,cur,prev,forecast,goals,returnRate,cohort,returned,follow,followWithLine,channels,trend,today,tomorrow,todayNew,bookedRest:bookedRest.length};
 }
 
-// 数字から「今やるべきこと」を作る（数字を見て終わりにせず、行動につなげる）
-function dashActions(D){
-  const a=[];
-  if(D.follow.length>0) a.push({level:"high",text:`最終来院から${DASH_FOLLOW_MIN_DAYS}日以上空いて次回予約が無い方が${D.follow.length}人います（LINE連携済み${D.followWithLine}人）。`,cta:"離反防止アラートでLINEを送る",view:"churn_alert"});
-  if(D.returnRate!==null&&D.returnRate<0.6) a.push({level:"high",text:`新規の方の${DASH_RETURN_WINDOW_DAYS}日以内の再来率が${dashPct(D.returnRate)}です。初診時に次回予約を取る声かけを徹底しましょう。`});
-  if(D.cur.cancelRate!==null&&D.cur.cancelRate>0.1) a.push({level:"mid",text:`今月のキャンセル率が${dashPct(D.cur.cancelRate)}です。前日リマインドのLINE連携率を上げると減らせます。`,cta:"LINE連携チェック",view:"line_link_check"});
-  if(D.prev.newPatients>0&&D.cur.newPatients<D.prev.newPatients) a.push({level:"mid",text:`新規患者が先月の同時期より${D.prev.newPatients-D.cur.newPatients}人少ないペースです。紹介キャンペーンやカラダ年齢チェックの告知を増やしましょう。`,cta:"紹介キャンペーン管理",view:"referral_mgmt"});
-  if(D.tomorrow.length>0) a.push({level:"low",text:`明日の予約は${D.tomorrow.length}件です。`});
-  if(a.length===0) a.push({level:"low",text:"大きな課題は見つかりませんでした。この調子を続けましょう！"});
-  return a;
+// ===== 注意点と即行動 =====
+// 数字を見て終わりにせず、「何が問題か（注意点）」と「今日から何をするか（即行動）」をセットで出す。
+function dashInsights(D,taskStats){
+  const out=[];
+  const g=D.goals;
+  if(g.revenue.target&&g.revenue.forecastRate<1){
+    out.push({level:"high",kpi:"売上",
+      issue:`売上の着地見込みは目標の${dashPct(g.revenue.forecastRate)}（あと${dashMan(g.revenue.shortfall)}不足）`,
+      action:`残り${D.P.remainingDays}日、1日あたり${dashMan(g.revenue.perDayNeeded)}の売上が必要です。空き枠への再来予約の声かけと、要フォロー患者への連絡を優先しましょう。`,
+      view:"churn_alert",cta:"要フォロー患者に連絡",task:"売上目標の不足分を埋める（再来予約の声かけ・フォロー連絡）"});
+  }
+  if(g.newPatients.target&&g.newPatients.forecastRate<1){
+    out.push({level:"high",kpi:"新規",
+      issue:`新規患者の着地見込みは目標の${dashPct(g.newPatients.forecastRate)}（あと${Math.ceil(g.newPatients.shortfall)}人不足）`,
+      action:"紹介キャンペーンの声かけ、LINEでのカラダ年齢チェックの告知を今週中に実施しましょう。",
+      view:"referral_mgmt",cta:"紹介キャンペーン管理",task:"新規集客の強化（紹介の声かけ・カラダ年齢チェックの告知）"});
+  }
+  if(D.returnRate!==null&&D.returnRate<DASH_THRESHOLDS.returnRate){
+    out.push({level:"high",kpi:"再来率",
+      issue:`新規の${DASH_RETURN_WINDOW_DAYS}日以内の再来率が${dashPct(D.returnRate)}（基準${dashPct(DASH_THRESHOLDS.returnRate)}）`,
+      action:"初診の方には、施術後その場で次回予約を取る流れを全員で統一しましょう。",
+      task:"初診時の次回予約の声かけを統一する"});
+  }
+  if(D.cur.cancelRate!==null&&D.cur.cancelRate>DASH_THRESHOLDS.cancelRate){
+    out.push({level:"mid",kpi:"キャンセル",
+      issue:`今月のキャンセル率が${dashPct(D.cur.cancelRate)}（基準${dashPct(DASH_THRESHOLDS.cancelRate)}）`,
+      action:"前日リマインドが届くよう、LINE未連携の患者さんに連携をお願いしましょう。",
+      view:"line_link_check",cta:"LINE連携チェック",task:"LINE未連携の患者さんに連携を案内する"});
+  }
+  if(D.cur.lineRate!==null&&D.cur.lineRate<DASH_THRESHOLDS.lineRate){
+    out.push({level:"mid",kpi:"LINE連携",
+      issue:`今月来院された方のLINE連携率が${dashPct(D.cur.lineRate)}`,
+      action:"受付時にLINE登録とマイページ連携をご案内しましょう（リマインド・再来案内の土台になります）。",
+      view:"line_link_check",cta:"LINE連携チェック",task:"受付でのLINE連携の案内を徹底する"});
+  }
+  if(D.follow.length>0){
+    out.push({level:D.follow.length>=10?"high":"mid",kpi:"フォロー",
+      issue:`最終来院から${DASH_FOLLOW_MIN_DAYS}日以上空いて次回予約が無い方が${D.follow.length}人（LINE連携${D.followWithLine}人）`,
+      action:"LINE連携済みの方へ離反防止アラートからメッセージを送りましょう。",
+      view:"churn_alert",cta:"LINEを送る",task:`要フォロー患者${D.follow.length}人へ連絡する`});
+  }
+  if(taskStats&&taskStats.overdue>0){
+    out.push({level:"mid",kpi:"行動計画",
+      issue:`期限を過ぎた行動計画が${taskStats.overdue}件あります`,
+      action:"担当者と期限を見直し、今週中に完了か期限変更を決めましょう。",
+      view:"actions",cta:"行動管理を開く"});
+  }
+  if(out.length===0) out.push({level:"low",kpi:"順調",issue:"大きな課題は見つかりませんでした",action:"この調子を続けましょう。目標を少し上げるのもおすすめです。"});
+  return out;
 }
 
-function DashKpi({label,value,prevValue,diff,fmt,good,sub}){
-  const up=diff>0,down=diff<0;
-  const color=diff===0||diff===null||diff===undefined?"#64748b":((up&&good!=="down")||(down&&good==="down"))?"#059669":"#dc2626";
+function DashCard({children,style}){
+  return <div style={{background:"white",borderRadius:16,padding:18,boxShadow:"0 1px 3px rgba(15,23,42,.08)",border:"1px solid #e2e8f0",minWidth:0,...style}}>{children}</div>;
+}
+function DashTitle({children,right}){
+  return <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:12,flexWrap:"wrap"}}><div style={{fontSize:16,fontWeight:800,color:"#0f172a"}}>{children}</div>{right}</div>;
+}
+const DASH_NUM={fontWeight:900,color:"#0f172a",lineHeight:1.15,letterSpacing:"-.5px",fontVariantNumeric:"tabular-nums",overflowWrap:"anywhere",minWidth:0};
+
+// 目標に対する現状と見込みを1枚で示すカード
+function DashGoalCard({label,g,fmt,unitLabel}){
+  const hasTarget=!!g.target;
+  const status=!hasTarget?null:g.forecastRate>=1?{t:"達成ペース",c:"#047857",bg:"#d1fae5"}:g.forecastRate>=0.9?{t:"あと少し",c:"#b45309",bg:"#fef3c7"}:{t:"要対策",c:"#b91c1c",bg:"#fee2e2"};
+  const pct=hasTarget?Math.min(1,g.progress):0;
+  const fcPct=hasTarget?Math.min(1,g.forecastRate):0;
   return(
-    <div style={{background:"white",borderRadius:16,padding:"16px 18px",boxShadow:"0 1px 3px rgba(15,23,42,.08)",border:"1px solid #e2e8f0",minWidth:0}}>
-      <div style={{fontSize:13,fontWeight:700,color:"#475569"}}>{label}</div>
-      <div style={{fontSize:30,fontWeight:900,color:"#0f172a",lineHeight:1.2,marginTop:6,letterSpacing:"-.5px",fontVariantNumeric:"tabular-nums"}}>{value}</div>
-      {prevValue!==undefined&&(
-        <div style={{fontSize:12,marginTop:6,color:"#64748b",display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-          <span>先月同時期 {prevValue}</span>
-          {diff!==null&&diff!==undefined&&<span style={{fontWeight:800,color}}>{up?"▲":down?"▼":"±"}{fmt?fmt(Math.abs(diff)):Math.abs(diff).toLocaleString("ja-JP")}</span>}
+    <DashCard>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+        <div style={{fontSize:14,fontWeight:800,color:"#475569"}}>{label}</div>
+        {status&&<span style={{fontSize:12,fontWeight:800,color:status.c,background:status.bg,borderRadius:999,padding:"3px 10px",whiteSpace:"nowrap"}}>{status.t}</span>}
+      </div>
+      <div style={{...DASH_NUM,fontSize:"clamp(22px,2.2vw,30px)",marginTop:8}}>{fmt(g.actual)}</div>
+      <div style={{fontSize:13,color:"#64748b",marginTop:2}}>今日までの実績</div>
+      {hasTarget?(
+        <>
+          <div style={{position:"relative",height:12,background:"#f1f5f9",borderRadius:99,marginTop:12,overflow:"hidden"}}>
+            <div style={{position:"absolute",inset:0,width:fcPct*100+"%",background:"#c7d2fe",borderRadius:99}}/>
+            <div style={{position:"absolute",inset:0,width:pct*100+"%",background:"#4f46e5",borderRadius:99}}/>
+            <div title="今日時点の目安" style={{position:"absolute",top:-2,bottom:-2,left:`calc(${Math.min(1,g.expected)*100}% - 1px)`,width:2,background:"#0f172a"}}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#64748b",marginTop:6,gap:6,flexWrap:"wrap"}}>
+            <span>達成率 <b style={{color:"#0f172a"}}>{dashPct(g.progress)}</b>（目安{dashPct(g.expected)}）</span>
+            <span>目標 {fmt(g.target)}</span>
+          </div>
+          <div style={{marginTop:10,padding:"10px 12px",background:"#f8fafc",borderRadius:10,fontSize:13,lineHeight:1.6,color:"#334155"}}>
+            月末見込み <b style={{color:"#0f172a"}}>{fmt(g.forecast)}</b>（目標の{dashPct(g.forecastRate)}）
+            {g.shortfall>0&&<><br/>残り{unitLabel}：1日あたり <b style={{color:"#b91c1c"}}>{fmt(g.perDayNeeded)}</b> 必要</>}
+          </div>
+        </>
+      ):(
+        <div style={{marginTop:10,padding:"10px 12px",background:"#f8fafc",borderRadius:10,fontSize:13,color:"#334155"}}>
+          月末見込み <b style={{color:"#0f172a"}}>{fmt(g.forecast)}</b><div style={{fontSize:12,color:"#94a3b8",marginTop:2}}>目標を設定すると、達成見込みと必要なペースが出ます</div>
         </div>
       )}
-      {sub&&<div style={{fontSize:12,marginTop:4,color:"#64748b"}}>{sub}</div>}
+    </DashCard>
+  );
+}
+
+function DashMiniKpi({label,value,sub,warn}){
+  return(
+    <div style={{background:"white",borderRadius:14,padding:"12px 14px",border:"1px solid "+(warn?"#fecaca":"#e2e8f0"),minWidth:0}}>
+      <div style={{fontSize:12,fontWeight:700,color:"#64748b"}}>{label}</div>
+      <div style={{...DASH_NUM,fontSize:22,marginTop:4,color:warn?"#b91c1c":"#0f172a"}}>{value}</div>
+      {sub&&<div style={{fontSize:11,color:"#94a3b8",marginTop:2,overflowWrap:"anywhere"}}>{sub}</div>}
     </div>
   );
 }
 
-function DashboardPanel({bookings,payments,stores,todayStr,onOpenView}){
+// 6ヶ月の売上推移（今月は見込みを薄く表示）
+function DashTrend({trend}){
+  const max=Math.max(1,...trend.map(t=>Math.max(t.revenue,t.forecastRevenue||0)));
+  return(
+    <div role="img" aria-label="直近6ヶ月の売上推移">
+      <div style={{fontSize:11,color:"#94a3b8",marginBottom:4}}>売上（万円）</div>
+      <div style={{display:"flex",alignItems:"flex-end",gap:6,height:150}}>
+        {trend.map(t=>(
+          <div key={t.label} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",height:"100%",minWidth:0}}>
+            <div style={{fontSize:11,fontWeight:800,color:"#334155",marginBottom:4,maxWidth:"100%",overflowWrap:"anywhere",textAlign:"center"}}>{dashManShort(t.isCurrent?t.forecastRevenue:t.revenue)}</div>
+            <div style={{position:"relative",width:"100%",maxWidth:44,height:((t.isCurrent?t.forecastRevenue:t.revenue)/max)*110,minHeight:2}}>
+              {t.isCurrent&&<div style={{position:"absolute",inset:0,background:"repeating-linear-gradient(45deg,#c7d2fe,#c7d2fe 4px,#e0e7ff 4px,#e0e7ff 8px)",borderRadius:"6px 6px 0 0"}}/>}
+              <div style={{position:"absolute",left:0,right:0,bottom:0,height:t.isCurrent?(t.revenue/Math.max(1,t.forecastRevenue))*100+"%":"100%",background:t.isCurrent?"#4f46e5":"#94a3b8",borderRadius:"6px 6px 0 0"}}/>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{display:"flex",gap:6,marginTop:6}}>
+        {trend.map(t=>(
+          <div key={t.label} style={{flex:1,textAlign:"center",fontSize:11,color:"#64748b",lineHeight:1.5,minWidth:0}}>
+            <div style={{fontWeight:800,color:t.isCurrent?"#4f46e5":"#334155"}}>{t.label}{t.isCurrent?"（見込）":""}</div>
+            <div>来院{t.visits}</div><div>新規{t.newPatients}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function DashboardPanel({bookings,payments,stores,todayStr,onOpenView,user,isAdmin}){
   const [storeId,setStoreId]=React.useState(null);
+  const [targets,setTargets]=React.useState(null);
+  const [targetRowId,setTargetRowId]=React.useState(null);
+  const [editingTargets,setEditingTargets]=React.useState(false);
+  const [targetForm,setTargetForm]=React.useState({sales:"",visits:"",new_patients:""});
+  const [taskStats,setTaskStats]=React.useState(null);
+  const [toast,setToast]=React.useState("");
+  const P=dashPeriods(todayStr);
+  const monthDate=P.curFrom;
+
   const firstStoreId=stores&&stores.length>0?stores[0].id:null;
   const fb=React.useMemo(()=>storeId===null?bookings:bookings.filter(b=>(b.store_id||firstStoreId)===storeId),[bookings,storeId,firstStoreId]);
   const fp=React.useMemo(()=>{
@@ -9002,112 +9154,465 @@ function DashboardPanel({bookings,payments,stores,todayStr,onOpenView}){
     const ids=new Set(fb.map(b=>b.id));
     return payments.filter(p=>p.booking_id&&ids.has(p.booking_id));
   },[payments,fb,storeId]);
-  const D=React.useMemo(()=>computeDashboard(fb,fp,todayStr),[fb,fp,todayStr]);
-  const actions=dashActions(D);
-  const maxDaily=Math.max(1,...D.daily.map(d=>d.amount));
-  const card={background:"white",borderRadius:16,padding:18,boxShadow:"0 1px 3px rgba(15,23,42,.08)",border:"1px solid #e2e8f0"};
-  const h={fontSize:15,fontWeight:800,color:"#0f172a",marginBottom:12,display:"flex",alignItems:"center",gap:8};
-  const levelStyle={high:{bg:"#fef2f2",bd:"#fecaca",dot:"#dc2626"},mid:{bg:"#fffbeb",bd:"#fde68a",dot:"#d97706"},low:{bg:"#f0f9ff",bd:"#bae6fd",dot:"#0284c7"}};
+
+  // 目標の読み込み：院の目標（clinic_monthly_targets）→ 無ければスタッフ別目標の合計
+  React.useEffect(()=>{
+    let cancelled=false;
+    (async()=>{
+      try{
+        const storeFilter=storeId===null?"store_id=is.null":`store_id=eq.${storeId}`;
+        const rows=await sb.select("clinic_monthly_targets",`?target_month=eq.${monthDate}&${storeFilter}&limit=1`);
+        if(cancelled) return;
+        if(Array.isArray(rows)&&rows.length>0){
+          const r=rows[0];setTargetRowId(r.id);
+          setTargets({sales:r.target_sales,visits:r.target_visits,new_patients:r.target_new_patients,source:"clinic"});
+          return;
+        }
+        setTargetRowId(null);
+        const staffRows=storeId===null?await sb.select("staff_monthly_target",`?target_month=eq.${monthDate}`):[];
+        if(cancelled) return;
+        if(Array.isArray(staffRows)&&staffRows.length>0){
+          const sum=k=>staffRows.reduce((s,r)=>s+(r[k]||0),0)||null;
+          setTargets({sales:sum("target_sales"),visits:sum("target_visits"),new_patients:sum("target_new_patients"),source:"staff"});
+        }else setTargets(null);
+      }catch(e){if(!cancelled)setTargets(null);}
+    })();
+    return ()=>{cancelled=true;};
+  },[storeId,monthDate]);
+
+  // 行動計画の状況
+  React.useEffect(()=>{
+    sb.select("action_items","?select=id,status,due_date,owner_staff_id,done_at").then(rows=>{
+      if(!Array.isArray(rows)) return;
+      const open=rows.filter(r=>r.status!=="done");
+      setTaskStats({
+        open:open.length,
+        overdue:open.filter(r=>r.due_date&&r.due_date<todayStr).length,
+        doneThisMonth:rows.filter(r=>r.status==="done"&&r.done_at&&r.done_at.slice(0,7)===todayStr.slice(0,7)).length,
+        mine:open.filter(r=>user&&r.owner_staff_id===user.id).length,
+      });
+    }).catch(()=>{});
+  },[todayStr,user]);
+
+  const D=React.useMemo(()=>computeDashboard(fb,fp,todayStr,targets),[fb,fp,todayStr,targets]);
+  const insights=dashInsights(D,taskStats);
+
+  function showToast(m){setToast(m);setTimeout(()=>setToast(""),2500);}
+  async function saveTargets(){
+    const num=v=>{const n=parseInt(String(v).replace(/[^0-9]/g,""),10);return isNaN(n)?null:n;};
+    const body={target_month:monthDate,store_id:storeId,target_sales:num(targetForm.sales),target_visits:num(targetForm.visits),target_new_patients:num(targetForm.new_patients),updated_at:new Date().toISOString()};
+    try{
+      if(targetRowId) await sb.update("clinic_monthly_targets",targetRowId,body);
+      else{const r=await sb.insert("clinic_monthly_targets",body);if(Array.isArray(r)&&r[0])setTargetRowId(r[0].id);}
+      setTargets({sales:body.target_sales,visits:body.target_visits,new_patients:body.target_new_patients,source:"clinic"});
+      setEditingTargets(false);showToast("目標を保存しました");
+    }catch(e){showToast("保存に失敗しました");}
+  }
+  async function makeTask(ins){
+    try{
+      await sb.insert("action_items",{title:ins.task,detail:`【${ins.kpi}】${ins.issue}\n→ ${ins.action}`,owner_staff_id:user?user.id:null,due_date:dashAddDays(todayStr,7),priority:ins.level==="high"?"high":"mid",source:"dashboard",kpi:ins.kpi,created_by:user?user.id:null,store_id:storeId});
+      showToast("行動管理にタスクを追加しました（担当：自分・期限：1週間後）");
+    }catch(e){showToast("タスクの追加に失敗しました");}
+  }
+
+  const levelStyle={high:{bg:"#fef2f2",bd:"#fecaca",dot:"#dc2626",label:"重要"},mid:{bg:"#fffbeb",bd:"#fde68a",dot:"#d97706",label:"注意"},low:{bg:"#f0fdf4",bd:"#bbf7d0",dot:"#16a34a",label:"順調"}};
+  const btn={padding:"8px 12px",borderRadius:8,border:"none",background:"#1e3a5f",color:"white",fontWeight:800,fontSize:13,cursor:"pointer",whiteSpace:"nowrap"};
+  const btnGhost={...btn,background:"white",color:"#1e3a5f",border:"1px solid #cbd5e1"};
+  const inp={width:"100%",padding:"9px 10px",border:"1px solid #cbd5e1",borderRadius:8,fontSize:15,boxSizing:"border-box"};
 
   return(
-    <div style={{padding:"16px 16px 40px",maxWidth:1200,margin:"0 auto"}}>
+    <div style={{padding:"16px 16px 48px",maxWidth:1200,margin:"0 auto"}}>
+      {toast&&<div style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",background:"#0f172a",color:"white",padding:"10px 16px",borderRadius:10,fontWeight:700,zIndex:1000,fontSize:14}}>{toast}</div>}
       <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:14}}>
         <div>
           <div style={{fontSize:22,fontWeight:900,color:"#0f172a"}}>経営ダッシュボード</div>
-          <div style={{fontSize:13,color:"#64748b",marginTop:2}}>{D.P.monthLabel}1日〜今日（{D.P.day}日間）／比較は{D.P.prevLabel}の同じ日数まで</div>
+          <div style={{fontSize:13,color:"#64748b",marginTop:2}}>{P.monthLabel}1日〜今日（{P.day}日経過・残り{P.remainingDays}日）／比較は{P.prevLabel}の同じ日数まで</div>
         </div>
-        {stores&&stores.length>1&&(
-          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-            {[{id:null,name:"全店舗"},...stores].map(s=>(
-              <button key={String(s.id)} onClick={()=>setStoreId(s.id)} style={{padding:"8px 14px",borderRadius:999,border:"1px solid "+(storeId===s.id?"#1e3a5f":"#cbd5e1"),background:storeId===s.id?"#1e3a5f":"white",color:storeId===s.id?"white":"#334155",fontWeight:700,fontSize:13,cursor:"pointer"}}>{s.name}</button>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {stores&&stores.length>1&&[{id:null,name:"全店舗"},...stores].map(s=>(
+            <button key={String(s.id)} onClick={()=>setStoreId(s.id)} style={{padding:"8px 14px",borderRadius:999,border:"1px solid "+(storeId===s.id?"#1e3a5f":"#cbd5e1"),background:storeId===s.id?"#1e3a5f":"white",color:storeId===s.id?"white":"#334155",fontWeight:700,fontSize:13,cursor:"pointer"}}>{s.name}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* ① 今日 */}
+      <div style={{background:"linear-gradient(135deg,#1e3a5f,#1e6bb0)",color:"white",borderRadius:16,padding:"14px 18px",marginBottom:14,display:"flex",gap:"10px 28px",flexWrap:"wrap",alignItems:"baseline"}}>
+        <div style={{fontSize:14,fontWeight:800,opacity:.85}}>今日</div>
+        {[[D.today.length,"件の予約"],[D.todayNew,"人が初来院"],[D.tomorrow.length,"件（明日の予約）"],[D.bookedRest,"件（今月の残り予約）"]].map(([n,l])=>(
+          <div key={l} style={{whiteSpace:"nowrap"}}><span style={{fontSize:28,fontWeight:900}}>{n}</span><span style={{fontSize:13,marginLeft:4,opacity:.85}}>{l}</span></div>
+        ))}
+      </div>
+
+      {/* ② 目標・現状・予測 */}
+      <DashCard style={{marginBottom:14,background:"#f8fafc"}}>
+        <DashTitle right={isAdmin&&!editingTargets&&<button style={btnGhost} onClick={()=>{setTargetForm({sales:targets&&targets.sales||"",visits:targets&&targets.visits||"",new_patients:targets&&targets.new_patients||""});setEditingTargets(true);}}>🎯 {targets?"目標を変更":"今月の目標を設定"}</button>}>
+          🎯 今月の目標と着地見込み{targets&&targets.source==="staff"&&<span style={{fontSize:12,fontWeight:600,color:"#64748b",marginLeft:6}}>（スタッフ別目標の合計）</span>}
+        </DashTitle>
+        {editingTargets&&(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10,marginBottom:14,padding:14,background:"white",borderRadius:12,border:"1px solid #e2e8f0"}}>
+            {[["sales","売上目標（円）"],["visits","来院数目標（件）"],["new_patients","新規患者目標（人）"]].map(([k,l])=>(
+              <label key={k} style={{fontSize:13,fontWeight:700,color:"#334155"}}>{l}<input inputMode="numeric" style={{...inp,marginTop:4}} value={targetForm[k]} onChange={e=>setTargetForm(f=>({...f,[k]:e.target.value}))}/></label>
             ))}
+            <div style={{display:"flex",gap:8,alignItems:"flex-end"}}><button style={btn} onClick={saveTargets}>保存</button><button style={btnGhost} onClick={()=>setEditingTargets(false)}>やめる</button></div>
           </div>
         )}
-      </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12}}>
+          <DashGoalCard label="売上（返金差引）" g={D.goals.revenue} fmt={dashYen} unitLabel={`${P.remainingDays}日`}/>
+          <DashGoalCard label="来院数" g={D.goals.visits} fmt={n=>Math.round(n).toLocaleString("ja-JP")+"件"} unitLabel={`${P.remainingDays}日`}/>
+          <DashGoalCard label="新規患者" g={D.goals.newPatients} fmt={n=>(Math.round(n*10)/10).toLocaleString("ja-JP")+"人"} unitLabel={`${P.remainingDays}日`}/>
+        </div>
+      </DashCard>
 
-      {/* 今日 */}
-      <div style={{...card,background:"linear-gradient(135deg,#1e3a5f,#1e6bb0)",color:"white",border:"none",marginBottom:14,display:"flex",gap:24,flexWrap:"wrap",alignItems:"center"}}>
-        <div style={{fontSize:14,fontWeight:800,opacity:.85}}>今日</div>
-        <div><span style={{fontSize:30,fontWeight:900}}>{D.today.length}</span><span style={{fontSize:13,marginLeft:4,opacity:.85}}>件の予約</span></div>
-        <div><span style={{fontSize:30,fontWeight:900}}>{D.todayNew}</span><span style={{fontSize:13,marginLeft:4,opacity:.85}}>人が初来院</span></div>
-        <div><span style={{fontSize:30,fontWeight:900}}>{D.tomorrow.length}</span><span style={{fontSize:13,marginLeft:4,opacity:.85}}>件（明日）</span></div>
-      </div>
+      {/* ③ 注意点と即行動 */}
+      <DashCard style={{marginBottom:14}}>
+        <DashTitle>⚡ 注意点と、今すぐやること</DashTitle>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {insights.map((x,i)=>{const st=levelStyle[x.level];return(
+            <div key={i} style={{background:st.bg,border:"1px solid "+st.bd,borderRadius:12,padding:"12px 14px"}}>
+              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                <span style={{fontSize:11,fontWeight:900,color:"white",background:st.dot,borderRadius:6,padding:"2px 7px"}}>{st.label}</span>
+                <span style={{fontSize:12,fontWeight:800,color:"#475569"}}>{x.kpi}</span>
+              </div>
+              <div style={{fontSize:15,fontWeight:800,color:"#0f172a",marginTop:6,lineHeight:1.5}}>{x.issue}</div>
+              <div style={{fontSize:14,color:"#334155",marginTop:4,lineHeight:1.6}}>👉 {x.action}</div>
+              {(x.view||x.task)&&(
+                <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
+                  {x.view&&onOpenView&&<button style={btn} onClick={()=>onOpenView(x.view)}>{x.cta} →</button>}
+                  {x.task&&<button style={btnGhost} onClick={()=>makeTask(x)}>＋ タスクにする</button>}
+                </div>
+              )}
+            </div>
+          );})}
+        </div>
+      </DashCard>
 
-      {/* KPI */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:12,marginBottom:14}}>
-        <DashKpi label="売上（返金差引）" value={dashYen(D.cur.revenue)} prevValue={dashYen(D.prev.revenue)} diff={D.cur.revenue-D.prev.revenue} fmt={dashYen} sub={D.forecast!==null?`月末の着地予測 ${dashYen(D.forecast)}`:null}/>
-        <DashKpi label="来院数" value={D.cur.visits+"件"} prevValue={D.prev.visits+"件"} diff={D.cur.visits-D.prev.visits} fmt={n=>n+"件"}/>
-        <DashKpi label="新規患者" value={D.cur.newPatients+"人"} prevValue={D.prev.newPatients+"人"} diff={D.cur.newPatients-D.prev.newPatients} fmt={n=>n+"人"}/>
-        <DashKpi label="客単価" value={D.cur.unitPrice===null?"—":dashYen(D.cur.unitPrice)} prevValue={D.prev.unitPrice===null?"—":dashYen(D.prev.unitPrice)} diff={D.cur.unitPrice!==null&&D.prev.unitPrice!==null?Math.round(D.cur.unitPrice-D.prev.unitPrice):null} fmt={dashYen}/>
-        <DashKpi label={`新規の再来率（${DASH_RETURN_WINDOW_DAYS}日以内）`} value={dashPct(D.returnRate)} sub={D.cohort?`直近の新規${D.cohort}人中${D.returned}人が2回目来院`:"対象の新規患者がまだいません"}/>
-        <DashKpi label="キャンセル率" value={dashPct(D.cur.cancelRate)} prevValue={dashPct(D.prev.cancelRate)} diff={D.cur.cancelRate!==null&&D.prev.cancelRate!==null?Math.round((D.cur.cancelRate-D.prev.cancelRate)*100):null} fmt={n=>n+"pt"} good="down"/>
+      {/* ④ 指標 */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginBottom:14}}>
+        <DashMiniKpi label="客単価" value={D.cur.unitPrice===null?"—":dashYen(D.cur.unitPrice)} sub={`先月同時期 ${D.prev.unitPrice===null?"—":dashYen(D.prev.unitPrice)}`}/>
+        <DashMiniKpi label={`新規の再来率（${DASH_RETURN_WINDOW_DAYS}日）`} value={dashPct(D.returnRate)} sub={D.cohort?`${D.cohort}人中${D.returned}人`:"対象者なし"} warn={D.returnRate!==null&&D.returnRate<DASH_THRESHOLDS.returnRate}/>
+        <DashMiniKpi label="キャンセル率" value={dashPct(D.cur.cancelRate)} sub={`先月同時期 ${dashPct(D.prev.cancelRate)}`} warn={D.cur.cancelRate!==null&&D.cur.cancelRate>DASH_THRESHOLDS.cancelRate}/>
+        <DashMiniKpi label="LINE連携率" value={dashPct(D.cur.lineRate)} sub="今月来院された方" warn={D.cur.lineRate!==null&&D.cur.lineRate<DASH_THRESHOLDS.lineRate}/>
+        <DashMiniKpi label="要フォロー" value={D.follow.length+"人"} sub={`LINE連携${D.followWithLine}人`}/>
+        <DashMiniKpi label="行動計画" value={taskStats?taskStats.open+"件":"—"} sub={taskStats?`期限切れ${taskStats.overdue}件・今月完了${taskStats.doneThisMonth}件`:"読み込み中"} warn={taskStats&&taskStats.overdue>0}/>
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:14}}>
-        {/* やること */}
-        <div style={card}>
-          <div style={h}>📌 今やること</div>
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {actions.map((a,i)=>{const st=levelStyle[a.level];return(
-              <div key={i} style={{background:st.bg,border:"1px solid "+st.bd,borderRadius:12,padding:"10px 12px"}}>
-                <div style={{display:"flex",gap:8,alignItems:"flex-start"}}>
-                  <span style={{width:8,height:8,borderRadius:"50%",background:st.dot,marginTop:7,flexShrink:0}}/>
-                  <div style={{fontSize:14,color:"#1e293b",lineHeight:1.6,fontWeight:600}}>{a.text}</div>
-                </div>
-                {a.cta&&a.view&&onOpenView&&<button onClick={()=>onOpenView(a.view)} style={{marginTop:8,marginLeft:16,padding:"7px 12px",borderRadius:8,border:"none",background:"#1e3a5f",color:"white",fontWeight:800,fontSize:13,cursor:"pointer"}}>{a.cta} →</button>}
-              </div>
-            );})}
-          </div>
-        </div>
-
-        {/* 日別売上 */}
-        <div style={card}>
-          <div style={h}>📈 {D.P.monthLabel}の日別売上</div>
-          <div style={{display:"flex",alignItems:"flex-end",gap:2,height:140}} role="img" aria-label={`${D.P.monthLabel}の日別売上グラフ`}>
-            {D.daily.map(d=>(
-              <div key={d.day} title={`${d.day}日 ${dashYen(d.amount)}`} style={{flex:1,minWidth:3,height:Math.max(d.amount>0?4:1,(d.amount/maxDaily)*130),background:d.future?"#e2e8f0":d.date===todayStr?"#f59e0b":"#3b82f6",borderRadius:"3px 3px 0 0"}}/>
-            ))}
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#94a3b8",marginTop:4}}><span>1日</span><span>{D.P.daysInMonth}日</span></div>
-        </div>
-
-        {/* 集客経路 */}
-        <div style={card}>
-          <div style={h}>🧲 今月の新規の集客経路</div>
+        <DashCard>
+          <DashTitle>📈 直近6ヶ月の推移</DashTitle>
+          <DashTrend trend={D.trend}/>
+          <div style={{fontSize:11,color:"#94a3b8",marginTop:8}}>今月は「濃い色＝実績、しま模様＝月末までの見込み」</div>
+        </DashCard>
+        <DashCard>
+          <DashTitle>🧲 今月の新規の集客経路</DashTitle>
           {D.channels.length===0?<div style={{fontSize:14,color:"#64748b"}}>今月の新規患者はまだいません。</div>:(
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
               {D.channels.map(([name,n])=>(
                 <div key={name}>
-                  <div style={{display:"flex",justifyContent:"space-between",fontSize:14,fontWeight:700,color:"#1e293b"}}><span>{name==="カラダ年齢チェック"?"📋 ":""}{name}</span><span>{n}人</span></div>
-                  <div style={{height:8,background:"#f1f5f9",borderRadius:99,marginTop:4,overflow:"hidden"}}><div style={{height:"100%",width:(n/D.cur.newPatients*100)+"%",background:name==="カラダ年齢チェック"?"#14a8b5":"#6366f1",borderRadius:99}}/></div>
+                  <div style={{display:"flex",justifyContent:"space-between",gap:8,fontSize:14,fontWeight:700,color:"#1e293b"}}><span style={{overflowWrap:"anywhere"}}>{name==="カラダ年齢チェック"?"📋 ":""}{name}</span><span style={{whiteSpace:"nowrap"}}>{n}人</span></div>
+                  <div style={{height:8,background:"#f1f5f9",borderRadius:99,marginTop:4,overflow:"hidden"}}><div style={{height:"100%",width:(n/Math.max(1,D.cur.newPatients)*100)+"%",background:name==="カラダ年齢チェック"?"#14a8b5":"#6366f1",borderRadius:99}}/></div>
                 </div>
               ))}
             </div>
           )}
-        </div>
-
-        {/* 要フォロー */}
-        <div style={card}>
-          <div style={{...h,justifyContent:"space-between"}}><span>🔔 要フォロー（{D.follow.length}人）</span>
-            {onOpenView&&<button onClick={()=>onOpenView("churn_alert")} style={{padding:"6px 10px",borderRadius:8,border:"1px solid #cbd5e1",background:"white",fontWeight:700,fontSize:12,cursor:"pointer"}}>LINEを送る →</button>}
-          </div>
+        </DashCard>
+        <DashCard>
+          <DashTitle right={onOpenView&&<button style={btnGhost} onClick={()=>onOpenView("churn_alert")}>LINEを送る →</button>}>🔔 要フォロー（{D.follow.length}人）</DashTitle>
           {D.follow.length===0?<div style={{fontSize:14,color:"#64748b"}}>対象の方はいません。</div>:(
             <div style={{display:"flex",flexDirection:"column",maxHeight:260,overflowY:"auto"}}>
               {D.follow.slice(0,30).map(x=>(
-                <div key={x.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 2px",borderBottom:"1px solid #f1f5f9",fontSize:14}}>
-                  <span style={{fontWeight:700,color:"#1e293b"}}>{x.b.patient_name} 様{x.b.line_user_id&&<span style={{marginLeft:6,fontSize:10,fontWeight:800,color:"white",background:"#06C755",borderRadius:4,padding:"1px 5px"}}>LINE</span>}</span>
-                  <span style={{color:x.days>=90?"#dc2626":x.days>=60?"#d97706":"#475569",fontWeight:700}}>{x.days}日前</span>
+                <div key={x.key} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,padding:"8px 2px",borderBottom:"1px solid #f1f5f9",fontSize:14}}>
+                  <span style={{fontWeight:700,color:"#1e293b",minWidth:0,overflowWrap:"anywhere"}}>{x.b.patient_name} 様{x.b.line_user_id&&<span style={{marginLeft:6,fontSize:10,fontWeight:800,color:"white",background:"#06C755",borderRadius:4,padding:"1px 5px"}}>LINE</span>}</span>
+                  <span style={{color:x.days>=90?"#dc2626":x.days>=60?"#d97706":"#475569",fontWeight:700,whiteSpace:"nowrap"}}>{x.days}日前</span>
                 </div>
               ))}
-              {D.follow.length>30&&<div style={{fontSize:12,color:"#94a3b8",paddingTop:6}}>ほか{D.follow.length-30}人（離反防止アラートで全員を確認できます）</div>}
+              {D.follow.length>30&&<div style={{fontSize:12,color:"#94a3b8",paddingTop:6}}>ほか{D.follow.length-30}人</div>}
             </div>
           )}
-        </div>
+        </DashCard>
       </div>
 
       <div style={{fontSize:11,color:"#94a3b8",marginTop:14,lineHeight:1.7}}>
-        ※患者は電話番号（無い場合はお名前）で同一人物とみなしています。新規＝キャンセルを除いた初めての来院。売上は会計の合計から返金を差し引いた金額です。
+        ※月末見込み＝「今日までのペースが続いた場合」と「実績＋今月残りの予約（売上は客単価で換算）」の大きい方。患者は電話番号（無い場合はお名前）で同一人物とみなしています。売上は会計から返金を差し引いた金額です。
       </div>
+    </div>
+  );
+}
+
+// ===== 行動管理（タスク・会議・行動計画） =====
+// 会議で決めたこと・ダッシュボードの即行動を「担当者・期限・進捗」つきのタスクにして、最後までやり切る仕組み。
+const ACTION_STATUS={todo:{label:"未着手",color:"#64748b",bg:"#f1f5f9"},doing:{label:"進行中",color:"#1d4ed8",bg:"#dbeafe"},done:{label:"完了",color:"#047857",bg:"#d1fae5"}};
+const ACTION_PRIORITY={high:{label:"高",color:"#b91c1c"},mid:{label:"中",color:"#b45309"},low:{label:"低",color:"#475569"}};
+
+function actionStaffName(id){
+  const s=STAFF_ACCOUNTS.find(x=>x.id===id);return s?s.name:"未割当";
+}
+function actionStaffOptions(){return STAFF_ACCOUNTS.filter(s=>!s.eventOnly);}
+
+function ActionItemRow({item,todayStr,onChange,onEdit,compact}){
+  const overdue=item.status!=="done"&&item.due_date&&item.due_date<todayStr;
+  const st=ACTION_STATUS[item.status]||ACTION_STATUS.todo;
+  const next=item.status==="todo"?"doing":item.status==="doing"?"done":"todo";
+  return(
+    <div style={{background:"white",border:"1px solid "+(overdue?"#fecaca":"#e2e8f0"),borderRadius:12,padding:"12px 14px"}}>
+      <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+        <button title="状態を進める" onClick={()=>onChange(item,{status:next,progress:next==="done"?100:next==="doing"?Math.max(item.progress||0,10):0,done_at:next==="done"?new Date().toISOString():null})}
+          style={{flexShrink:0,minWidth:64,padding:"6px 8px",borderRadius:8,border:"none",background:st.bg,color:st.color,fontWeight:900,fontSize:12,cursor:"pointer"}}>{st.label}</button>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:15,fontWeight:800,color:"#0f172a",textDecoration:item.status==="done"?"line-through":"none",overflowWrap:"anywhere"}}>
+            <span style={{color:(ACTION_PRIORITY[item.priority]||ACTION_PRIORITY.mid).color,marginRight:6}}>●</span>{item.title}
+          </div>
+          <div style={{fontSize:12,color:"#64748b",marginTop:3,display:"flex",gap:10,flexWrap:"wrap"}}>
+            {!compact&&<span>👤 {actionStaffName(item.owner_staff_id)}</span>}
+            <span style={{color:overdue?"#b91c1c":"#64748b",fontWeight:overdue?800:400}}>📅 {item.due_date||"期限なし"}{overdue?"（期限切れ）":""}</span>
+            {item.kpi&&<span>🏷 {item.kpi}</span>}
+          </div>
+          {item.status!=="done"&&(
+            <div style={{display:"flex",alignItems:"center",gap:8,marginTop:8}}>
+              <input type="range" min="0" max="100" step="10" value={item.progress||0} aria-label="進捗率"
+                onChange={e=>onChange(item,{progress:Number(e.target.value),status:Number(e.target.value)>0&&item.status==="todo"?"doing":item.status},true)}
+                style={{flex:1,accentColor:"#4f46e5"}}/>
+              <span style={{fontSize:13,fontWeight:800,color:"#4f46e5",width:40,textAlign:"right"}}>{item.progress||0}%</span>
+            </div>
+          )}
+          {item.progress_note&&<div style={{fontSize:13,color:"#334155",marginTop:6,background:"#f8fafc",borderRadius:8,padding:"6px 8px",overflowWrap:"anywhere"}}>📝 {item.progress_note}</div>}
+        </div>
+        <button onClick={()=>onEdit(item)} style={{flexShrink:0,padding:"6px 10px",borderRadius:8,border:"1px solid #cbd5e1",background:"white",fontSize:12,fontWeight:700,cursor:"pointer"}}>編集</button>
+      </div>
+    </div>
+  );
+}
+
+function ActionEditModal({item,meetings,onSave,onDelete,onClose}){
+  const [f,setF]=React.useState({title:"",detail:"",owner_staff_id:"",due_date:"",priority:"mid",status:"todo",progress:0,progress_note:"",meeting_id:"",...item,owner_staff_id:item.owner_staff_id??"",meeting_id:item.meeting_id??""});
+  const inp={width:"100%",padding:"10px",border:"1px solid #cbd5e1",borderRadius:8,fontSize:15,boxSizing:"border-box",marginTop:4};
+  const lab={display:"block",fontSize:13,fontWeight:700,color:"#334155",marginTop:12};
+  return(
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-box" style={{maxWidth:520}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-header" style={{background:"#1e3a5f"}}><div style={{fontWeight:800,fontSize:16,color:"white"}}>{item.id?"タスクを編集":"タスクを追加"}</div><button className="modal-close" onClick={onClose}>✕</button></div>
+        <div style={{padding:18,overflowY:"auto"}}>
+          <label style={lab}>やること（必須）<input style={inp} value={f.title} onChange={e=>setF({...f,title:e.target.value})} placeholder="例：初診の方への次回予約の声かけを統一する"/></label>
+          <label style={lab}>詳細・完了の基準<textarea style={{...inp,minHeight:70}} value={f.detail||""} onChange={e=>setF({...f,detail:e.target.value})}/></label>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <label style={lab}>担当者<select style={inp} value={f.owner_staff_id} onChange={e=>setF({...f,owner_staff_id:e.target.value})}><option value="">未割当</option>{actionStaffOptions().map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
+            <label style={lab}>期限<input type="date" style={inp} value={f.due_date||""} onChange={e=>setF({...f,due_date:e.target.value})}/></label>
+            <label style={lab}>優先度<select style={inp} value={f.priority} onChange={e=>setF({...f,priority:e.target.value})}>{Object.entries(ACTION_PRIORITY).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}</select></label>
+            <label style={lab}>状態<select style={inp} value={f.status} onChange={e=>setF({...f,status:e.target.value})}>{Object.entries(ACTION_STATUS).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}</select></label>
+          </div>
+          <label style={lab}>進捗メモ（どこまで進んだか）<textarea style={{...inp,minHeight:60}} value={f.progress_note||""} onChange={e=>setF({...f,progress_note:e.target.value})}/></label>
+          {meetings&&meetings.length>0&&<label style={lab}>関連する会議<select style={inp} value={f.meeting_id} onChange={e=>setF({...f,meeting_id:e.target.value})}><option value="">なし</option>{meetings.map(m=><option key={m.id} value={m.id}>{m.held_on} {m.title}</option>)}</select></label>}
+          <div style={{display:"flex",gap:8,marginTop:18,flexWrap:"wrap"}}>
+            <button className="btn btn-primary" style={{flex:1,justifyContent:"center",padding:11}} disabled={!f.title.trim()} onClick={()=>onSave({
+              title:f.title.trim(),detail:f.detail||null,owner_staff_id:f.owner_staff_id===""?null:Number(f.owner_staff_id),due_date:f.due_date||null,priority:f.priority,status:f.status,
+              progress:f.status==="done"?100:Number(f.progress)||0,progress_note:f.progress_note||null,meeting_id:f.meeting_id===""?null:Number(f.meeting_id),
+              done_at:f.status==="done"?(item.done_at||new Date().toISOString()):null,
+            })}>保存</button>
+            {item.id&&<button onClick={()=>{if(confirm("このタスクを削除しますか？"))onDelete(item);}} style={{padding:"11px 14px",borderRadius:8,border:"1px solid #fecaca",background:"#fef2f2",color:"#b91c1c",fontWeight:800,cursor:"pointer"}}>削除</button>}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 会議の記録：議事メモ＋決定事項（＝行動計画）をまとめて登録する
+function MeetingEditor({todayStr,user,onSaved,onCancel}){
+  const [m,setM]=React.useState({held_on:todayStr,title:"院内ミーティング",notes:""});
+  const [rows,setRows]=React.useState([{title:"",owner:"",due:dashAddDays(todayStr,7),priority:"mid"}]);
+  const [saving,setSaving]=React.useState(false);
+  const inp={width:"100%",padding:"9px 10px",border:"1px solid #cbd5e1",borderRadius:8,fontSize:15,boxSizing:"border-box"};
+  async function save(){
+    const items=rows.filter(r=>r.title.trim());
+    if(!m.title.trim()){alert("会議名を入力してください");return;}
+    setSaving(true);
+    try{
+      const created=await sb.insert("meetings",{held_on:m.held_on,title:m.title.trim(),notes:m.notes||null,created_by:user?user.id:null});
+      const meetingId=Array.isArray(created)&&created[0]?created[0].id:null;
+      if(!meetingId) throw new Error("meeting not created");
+      if(items.length>0){
+        await sb.insert("action_items",items.map(r=>({title:r.title.trim(),owner_staff_id:r.owner===""?null:Number(r.owner),due_date:r.due||null,priority:r.priority,meeting_id:meetingId,source:"meeting",created_by:user?user.id:null})));
+      }
+      onSaved();
+    }catch(e){alert("保存に失敗しました。通信状況を確認してもう一度お試しください。");}
+    setSaving(false);
+  }
+  return(
+    <DashCard>
+      <DashTitle>📝 会議を記録する</DashTitle>
+      <div style={{display:"grid",gridTemplateColumns:"160px 1fr",gap:10}}>
+        <label style={{fontSize:13,fontWeight:700}}>開催日<input type="date" style={{...inp,marginTop:4}} value={m.held_on} onChange={e=>setM({...m,held_on:e.target.value})}/></label>
+        <label style={{fontSize:13,fontWeight:700}}>会議名<input style={{...inp,marginTop:4}} value={m.title} onChange={e=>setM({...m,title:e.target.value})}/></label>
+      </div>
+      <label style={{display:"block",fontSize:13,fontWeight:700,marginTop:12}}>議事メモ（話し合った内容・数字の振り返り）
+        <textarea style={{...inp,marginTop:4,minHeight:110}} value={m.notes} onChange={e=>setM({...m,notes:e.target.value})} placeholder={"例：\n・今月の新規は目標12人に対して見込み9人\n・初診の再来率が55%と低い"}/>
+      </label>
+      <div style={{fontSize:14,fontWeight:800,marginTop:16,marginBottom:8}}>✅ 決定事項（行動計画）— 誰が・いつまでに・何をする</div>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {rows.map((r,i)=>(
+          <div key={i} style={{display:"grid",gridTemplateColumns:"minmax(0,2fr) minmax(0,1fr) 140px 70px 32px",gap:6,alignItems:"center"}}>
+            <input style={inp} placeholder="やること" value={r.title} onChange={e=>setRows(rs=>rs.map((x,j)=>j===i?{...x,title:e.target.value}:x))}/>
+            <select style={inp} value={r.owner} onChange={e=>setRows(rs=>rs.map((x,j)=>j===i?{...x,owner:e.target.value}:x))}><option value="">担当者</option>{actionStaffOptions().map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select>
+            <input type="date" style={inp} value={r.due} onChange={e=>setRows(rs=>rs.map((x,j)=>j===i?{...x,due:e.target.value}:x))}/>
+            <select style={inp} value={r.priority} onChange={e=>setRows(rs=>rs.map((x,j)=>j===i?{...x,priority:e.target.value}:x))}>{Object.entries(ACTION_PRIORITY).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}</select>
+            <button aria-label="この行を削除" onClick={()=>setRows(rs=>rs.length>1?rs.filter((_,j)=>j!==i):rs)} style={{border:"none",background:"none",fontSize:18,color:"#94a3b8",cursor:"pointer"}}>✕</button>
+          </div>
+        ))}
+      </div>
+      <button onClick={()=>setRows(rs=>[...rs,{title:"",owner:"",due:dashAddDays(todayStr,7),priority:"mid"}])} style={{marginTop:8,padding:"8px 12px",borderRadius:8,border:"1px dashed #94a3b8",background:"white",fontWeight:700,cursor:"pointer"}}>＋ 行動を追加</button>
+      <div style={{display:"flex",gap:8,marginTop:16}}>
+        <button className="btn btn-primary" disabled={saving} onClick={save} style={{padding:"10px 18px"}}>{saving?"保存中...":"会議と行動計画を保存"}</button>
+        <button className="btn" onClick={onCancel} style={{padding:"10px 18px"}}>やめる</button>
+      </div>
+    </DashCard>
+  );
+}
+
+function ActionPanel({user,isAdmin,todayStr}){
+  const [tab,setTab]=React.useState("mine");
+  const [items,setItems]=React.useState([]);
+  const [meetings,setMeetings]=React.useState([]);
+  const [loading,setLoading]=React.useState(true);
+  const [editing,setEditing]=React.useState(null);
+  const [newMeeting,setNewMeeting]=React.useState(false);
+  const [staffFilter,setStaffFilter]=React.useState("all");
+  const [showDone,setShowDone]=React.useState(false);
+  const [openMeetingId,setOpenMeetingId]=React.useState(null);
+  const [err,setErr]=React.useState("");
+
+  async function load(){
+    try{
+      const [a,m]=await Promise.all([sb.select("action_items","?order=due_date.asc.nullslast,id.desc"),sb.select("meetings","?order=held_on.desc,id.desc&limit=50")]);
+      if(!Array.isArray(a)||!Array.isArray(m)) throw new Error("load");
+      setItems(a);setMeetings(m);setErr("");
+    }catch(e){setErr("読み込みに失敗しました。ログインし直すか、通信状況を確認してください。");}
+    setLoading(false);
+  }
+  React.useEffect(()=>{load();},[]);
+
+  const saveTimer=React.useRef({});
+  async function updateItem(item,patch,debounce){
+    const merged={...item,...patch,updated_at:new Date().toISOString()};
+    setItems(list=>list.map(x=>x.id===item.id?merged:x));
+    const run=()=>sb.update("action_items",item.id,{...patch,updated_at:merged.updated_at}).catch(()=>setErr("保存に失敗しました"));
+    if(debounce){clearTimeout(saveTimer.current[item.id]);saveTimer.current[item.id]=setTimeout(run,600);}
+    else await run();
+  }
+  async function saveEdit(data){
+    try{
+      if(editing.id) await sb.update("action_items",editing.id,{...data,updated_at:new Date().toISOString()});
+      else await sb.insert("action_items",{...data,source:"manual",created_by:user?user.id:null});
+      setEditing(null);load();
+    }catch(e){alert("保存に失敗しました");}
+  }
+  async function deleteItem(item){try{await sb.delete("action_items",item.id);setEditing(null);load();}catch(e){alert("削除に失敗しました");}}
+
+  const open=items.filter(i=>i.status!=="done");
+  const mine=items.filter(i=>user&&i.owner_staff_id===user.id&&(showDone||i.status!=="done"));
+  const groups=list=>{
+    const weekEnd=dashAddDays(todayStr,7);
+    return [
+      {id:"overdue",label:"⚠️ 期限切れ",items:list.filter(i=>i.status!=="done"&&i.due_date&&i.due_date<todayStr)},
+      {id:"week",label:"📌 今週まで",items:list.filter(i=>i.status!=="done"&&(!i.due_date||(i.due_date>=todayStr&&i.due_date<=weekEnd)))},
+      {id:"later",label:"🗓 それ以降",items:list.filter(i=>i.status!=="done"&&i.due_date&&i.due_date>weekEnd)},
+      {id:"done",label:"✅ 完了",items:list.filter(i=>i.status==="done")},
+    ].filter(g=>g.items.length>0);
+  };
+  const people=actionStaffOptions().map(s=>{
+    const mineAll=items.filter(i=>i.owner_staff_id===s.id);
+    const o=mineAll.filter(i=>i.status!=="done");
+    return {s,total:mineAll.length,open:o.length,overdue:o.filter(i=>i.due_date&&i.due_date<todayStr).length,done:mineAll.length-o.length,avg:o.length?Math.round(o.reduce((t,i)=>t+(i.progress||0),0)/o.length):null};
+  }).filter(p=>p.total>0);
+  const unassigned=open.filter(i=>!i.owner_staff_id).length;
+  const teamList=items.filter(i=>(showDone||i.status!=="done")&&(staffFilter==="all"||(staffFilter==="none"?!i.owner_staff_id:String(i.owner_staff_id)===staffFilter)));
+
+  const tabBtn=(id,label,badge)=>(
+    <button key={id} onClick={()=>setTab(id)} style={{padding:"10px 16px",borderRadius:10,border:"none",background:tab===id?"#1e3a5f":"white",color:tab===id?"white":"#334155",fontWeight:800,fontSize:14,cursor:"pointer",boxShadow:tab===id?"none":"0 1px 2px rgba(0,0,0,.06)"}}>
+      {label}{badge>0&&<span style={{marginLeft:6,background:tab===id?"white":"#dc2626",color:tab===id?"#1e3a5f":"white",borderRadius:99,padding:"0 7px",fontSize:12}}>{badge}</span>}
+    </button>
+  );
+  const renderGroups=(list,compact)=>groups(list).map(g=>(
+    <div key={g.id} style={{marginBottom:14}}>
+      <div style={{fontSize:14,fontWeight:800,color:g.id==="overdue"?"#b91c1c":"#334155",margin:"4px 0 8px"}}>{g.label}（{g.items.length}）</div>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>{g.items.map(i=><ActionItemRow key={i.id} item={i} todayStr={todayStr} onChange={updateItem} onEdit={setEditing} compact={compact}/>)}</div>
+    </div>
+  ));
+  const myOverdue=open.filter(i=>user&&i.owner_staff_id===user.id&&i.due_date&&i.due_date<todayStr).length;
+
+  return(
+    <div style={{padding:"16px 16px 48px",maxWidth:1000,margin:"0 auto"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",gap:10,flexWrap:"wrap",marginBottom:14}}>
+        <div>
+          <div style={{fontSize:22,fontWeight:900,color:"#0f172a"}}>行動管理</div>
+          <div style={{fontSize:13,color:"#64748b",marginTop:2}}>会議で決めたこと・ダッシュボードの即行動を、担当者・期限・進捗で最後までやり切る</div>
+        </div>
+        <button className="btn btn-primary" onClick={()=>setEditing({owner_staff_id:user?user.id:null,due_date:dashAddDays(todayStr,7)})} style={{padding:"10px 16px"}}>＋ タスクを追加</button>
+      </div>
+      {err&&<div style={{background:"#fef2f2",border:"1px solid #fecaca",color:"#b91c1c",borderRadius:10,padding:"10px 12px",marginBottom:12,fontWeight:700}}>{err}</div>}
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:14}}>
+        {tabBtn("mine","自分のタスク",myOverdue)}
+        {tabBtn("team","全員の進捗",open.filter(i=>i.due_date&&i.due_date<todayStr).length)}
+        {tabBtn("meetings","会議・行動計画",0)}
+        <label style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6,fontSize:13,fontWeight:700,color:"#475569"}}><input type="checkbox" checked={showDone} onChange={e=>setShowDone(e.target.checked)}/>完了も表示</label>
+      </div>
+
+      {loading?<div style={{padding:30,textAlign:"center",color:"#64748b"}}>読み込み中...</div>:(
+        <>
+          {tab==="mine"&&(mine.length===0?<DashCard><div style={{fontSize:15,color:"#475569"}}>あなたが担当のタスクはありません。🎉</div></DashCard>:renderGroups(mine,true))}
+
+          {tab==="team"&&(
+            <>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:10,marginBottom:14}}>
+                {people.map(p=>(
+                  <button key={p.s.id} onClick={()=>setStaffFilter(String(p.s.id))} style={{textAlign:"left",background:"white",border:"1px solid "+(staffFilter===String(p.s.id)?"#1e3a5f":p.overdue?"#fecaca":"#e2e8f0"),borderRadius:14,padding:"12px 14px",cursor:"pointer"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{width:10,height:10,borderRadius:"50%",background:p.s.color}}/><span style={{fontWeight:800,color:"#0f172a",overflowWrap:"anywhere"}}>{p.s.name}</span></div>
+                    <div style={{fontSize:13,color:"#475569",marginTop:6,lineHeight:1.6}}>未完了 <b>{p.open}</b>件{p.overdue>0&&<span style={{color:"#b91c1c",fontWeight:800}}>（期限切れ{p.overdue}）</span>}<br/>完了 {p.done}件{p.avg!==null&&<>・平均進捗 {p.avg}%</>}</div>
+                    <div style={{height:6,background:"#f1f5f9",borderRadius:99,marginTop:8,overflow:"hidden"}}><div style={{height:"100%",width:(p.total?p.done/p.total*100:0)+"%",background:"#10b981"}}/></div>
+                  </button>
+                ))}
+                {people.length===0&&<DashCard><div style={{fontSize:14,color:"#64748b"}}>まだタスクがありません。会議の記録や「＋ タスクを追加」から始めましょう。</div></DashCard>}
+              </div>
+              <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:10,flexWrap:"wrap"}}>
+                <span style={{fontSize:13,fontWeight:700,color:"#475569"}}>表示：</span>
+                <select value={staffFilter} onChange={e=>setStaffFilter(e.target.value)} style={{padding:"8px 10px",borderRadius:8,border:"1px solid #cbd5e1",fontSize:14}}>
+                  <option value="all">全員</option>{actionStaffOptions().map(s=><option key={s.id} value={String(s.id)}>{s.name}</option>)}<option value="none">未割当（{unassigned}）</option>
+                </select>
+              </div>
+              {teamList.length===0?<DashCard><div style={{fontSize:14,color:"#64748b"}}>該当するタスクはありません。</div></DashCard>:renderGroups(teamList,false)}
+            </>
+          )}
+
+          {tab==="meetings"&&(
+            <>
+              {newMeeting?<div style={{marginBottom:14}}><MeetingEditor todayStr={todayStr} user={user} onSaved={()=>{setNewMeeting(false);load();}} onCancel={()=>setNewMeeting(false)}/></div>
+                :<button className="btn btn-primary" onClick={()=>setNewMeeting(true)} style={{marginBottom:14,padding:"10px 16px"}}>＋ 会議を記録する</button>}
+              {meetings.length===0&&!newMeeting&&<DashCard><div style={{fontSize:14,color:"#64748b"}}>まだ会議の記録がありません。</div></DashCard>}
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {meetings.map(m=>{
+                  const its=items.filter(i=>i.meeting_id===m.id);
+                  const done=its.filter(i=>i.status==="done").length;
+                  const isOpen=openMeetingId===m.id;
+                  return(
+                    <DashCard key={m.id} style={{padding:0}}>
+                      <button onClick={()=>setOpenMeetingId(isOpen?null:m.id)} style={{width:"100%",textAlign:"left",background:"none",border:"none",padding:"14px 16px",cursor:"pointer",display:"flex",justifyContent:"space-between",gap:10,alignItems:"center"}}>
+                        <div style={{minWidth:0}}><div style={{fontSize:12,color:"#64748b",fontWeight:700}}>{m.held_on}</div><div style={{fontSize:16,fontWeight:800,color:"#0f172a",overflowWrap:"anywhere"}}>{m.title}</div></div>
+                        <div style={{textAlign:"right",flexShrink:0}}><div style={{fontSize:13,fontWeight:800,color:its.length&&done===its.length?"#047857":"#334155"}}>行動計画 {done}/{its.length} 完了</div><div style={{height:6,width:120,background:"#f1f5f9",borderRadius:99,marginTop:4,overflow:"hidden"}}><div style={{height:"100%",width:(its.length?done/its.length*100:0)+"%",background:"#10b981"}}/></div></div>
+                      </button>
+                      {isOpen&&(
+                        <div style={{padding:"0 16px 16px"}}>
+                          {m.notes&&<div style={{whiteSpace:"pre-wrap",fontSize:14,lineHeight:1.7,color:"#334155",background:"#f8fafc",borderRadius:10,padding:12,marginBottom:12,overflowWrap:"anywhere"}}>{m.notes}</div>}
+                          <div style={{display:"flex",flexDirection:"column",gap:8}}>{its.map(i=><ActionItemRow key={i.id} item={i} todayStr={todayStr} onChange={updateItem} onEdit={setEditing}/>)}</div>
+                          <button onClick={()=>setEditing({meeting_id:m.id,due_date:dashAddDays(todayStr,7)})} style={{marginTop:10,padding:"8px 12px",borderRadius:8,border:"1px dashed #94a3b8",background:"white",fontWeight:700,cursor:"pointer"}}>＋ この会議に行動を追加</button>
+                        </div>
+                      )}
+                    </DashCard>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </>
+      )}
+      {editing&&<ActionEditModal item={editing} meetings={meetings} onSave={saveEdit} onDelete={deleteItem} onClose={()=>setEditing(null)}/>}
     </div>
   );
 }
@@ -11023,9 +11528,10 @@ function Dashboard({user,onLogout}){
     }catch(e){}
     return {};
   });
-  function toggleGroup(groupId){
+  function toggleGroup(groupId,defaultCollapsed){
     setCollapsedGroups(prev=>{
-      const next={...prev,[groupId]:!prev[groupId]};
+      const current=prev[groupId]!==undefined?!!prev[groupId]:!!defaultCollapsed;
+      const next={...prev,[groupId]:!current};
       try{localStorage.setItem("ando_admin_collapsed_groups",JSON.stringify(next));}catch(e){}
       return next;
     });
@@ -12058,48 +12564,46 @@ function Dashboard({user,onLogout}){
   const SvgShift=()=><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="14" x2="10" y2="14"/><line x1="12" y1="14" x2="16" y2="14"/><line x1="8" y1="18" x2="10" y2="18"/><line x1="12" y1="18" x2="16" y2="18"/></svg>;
   const SvgRefresh=()=><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>;
 
+  // メニューは「よく使うもの」を上に、使う頻度の低いものは「その他・設定」にまとめて最初は閉じておく
   const SIDEBAR_GROUPS = [
-    {id:"booking",label:"予約・顧客",color:"#2563eb",items:[
+    {id:"booking",label:"予約・患者",color:"#2563eb",items:[
       {id:"add",label:"新規予約",icon:"plus",special:"btn-add",action:()=>openAdd()},
       {id:"checkin",label:"来院受付",icon:"scan",special:""},
       {id:"patients",label:"患者管理",icon:"users",special:""},
-      {id:"patient_merge",label:"患者名の統合",icon:"users",special:""},
       {id:"cancelled_list",label:"キャンセル一覧",icon:"x-circle",special:""},
       {id:"staff_off_conflicts",label:"休みスタッフの予約",icon:"alert",special:""},
-      {id:"bulk_receipt",label:"まとめレシート発行",icon:"receipt",special:""},
-      {id:"karte_list",label:"カルテ番号一覧（保険請求）",icon:"clipboard-list",special:""},
     ]},
-    {id:"analysis",label:"分析",color:"#059669",items:[
-      {id:"dashboard",label:"経営ダッシュボード",icon:"trending",special:""},
-      {id:"stats",label:"予約分析・サマリー",icon:"bar-chart",special:""},
+    {id:"analysis",label:"数字・集客",color:"#059669",items:[
       {id:"daily_report",label:"日計表（自動集計）",icon:"bar-chart",special:""},
       {id:"register_cash",label:"レジ金（レジ締め）",icon:"receipt",special:""},
-      {id:"refund",label:"返金管理（売上マイナス・履歴）",icon:"receipt",special:""},
-      {id:"preopen_stats",label:"イベント期間集計",icon:"bar-chart",special:""},
-      {id:"launch_roi",label:"開業の費用対効果",icon:"trending",special:""},
-      {id:"churn_alert",label:"離反防止アラート",icon:"bell",special:""},
-      {id:"line_link_check",label:"LINE連携チェック",icon:"link",special:""},
+      {id:"stats",label:"予約分析・サマリー",icon:"bar-chart",special:""},
       {id:"staff_kpi",label:"スタッフKPI管理",icon:"trending",special:""},
-      {id:"pass_holders",label:"回数券・FP対象者",icon:"receipt",special:""},
+      {id:"churn_alert",label:"離反防止アラート",icon:"bell",special:""},
       {id:"referral_mgmt",label:"紹介キャンペーン管理",icon:"users",special:""},
     ]},
-    {id:"clinical",label:"臨床サポート",color:"#7c3aed",items:[
+    {id:"clinical",label:"臨床サポート",color:"#7c3aed",defaultCollapsed:true,items:[
       {id:"symptom_checker",label:"症状チェッカー（試験運用）",icon:"search",special:"",action:()=>window.open("/symptom-checker.html","_blank")},
       {id:"posture_analysis",label:"姿勢評価",icon:"activity",special:"",action:()=>window.open("/posture-analysis.html","_blank")},
       {id:"posture_records",label:"姿勢の経過記録",icon:"activity",special:""},
       {id:"treatment_plans",label:"施術計画書",icon:"clipboard-list",special:""},
     ]},
-    {id:"staff",label:"スタッフ",color:"#d97706",items:[
+    {id:"staff",label:"スタッフ",color:"#d97706",defaultCollapsed:true,items:[
       {id:"staff_mgmt",label:"スタッフ・シフト管理",icon:"users-cog",special:""},
       {id:"attendance",label:"勤怠管理",icon:"clock",special:""},
       {id:"learning",label:"学習カリキュラム",icon:"clipboard-list",special:""},
     ]},
-    {id:"store",label:"店舗設定",color:"#0891b2",items:[
+    {id:"more",label:"その他・設定",color:"#64748b",defaultCollapsed:true,items:[
+      {id:"patient_merge",label:"患者名の統合",icon:"users",special:""},
+      {id:"bulk_receipt",label:"まとめレシート発行",icon:"receipt",special:""},
+      {id:"karte_list",label:"カルテ番号一覧（保険請求）",icon:"clipboard-list",special:""},
+      {id:"refund",label:"返金管理",icon:"receipt",special:""},
+      {id:"pass_holders",label:"回数券・FP対象者",icon:"receipt",special:""},
+      {id:"line_link_check",label:"LINE連携チェック",icon:"link",special:""},
+      {id:"preopen_stats",label:"イベント期間集計",icon:"bar-chart",special:""},
+      {id:"launch_roi",label:"開業の費用対効果",icon:"trending",special:""},
       {id:"store_mgmt",label:"店舗管理",icon:"store",special:""},
       {id:"business_hours",label:"営業時間・休憩",icon:"clock",special:""},
       {id:"menu_mgmt",label:"メニュー・コース管理",icon:"menu",special:""},
-    ]},
-    {id:"system",label:"システム",color:"#64748b",items:[
       {id:"user_mgmt",label:"ユーザー管理",icon:"user",special:""},
       {id:"settings",label:"各種設定",icon:"settings",special:""},
     ]},
@@ -12202,13 +12706,20 @@ function Dashboard({user,onLogout}){
             >
               📅 カレンダー
             </button>
+            {[{id:"dashboard",label:"📊 経営ダッシュボード"},{id:"actions",label:"✅ 行動管理（タスク・会議）"}].map(p=>(
+              <button key={p.id}
+                className={`sidebar-btn ${view===p.id?"active":""}`}
+                onClick={()=>setView(p.id)}
+                style={{background:view===p.id?"#e8f0fe":"#f8fafc",border:"1.5px solid "+(view===p.id?"#1e3a5f":"#e5e7eb"),borderRadius:10,fontWeight:800,marginBottom:8,boxShadow:"0 1px 2px rgba(0,0,0,.04)"}}
+              >{p.label}</button>
+            ))}
             {SIDEBAR_GROUPS.map(group=>{
-              const isCollapsed = !!collapsedGroups[group.id];
+              const isCollapsed = collapsedGroups[group.id]!==undefined ? !!collapsedGroups[group.id] : !!group.defaultCollapsed;
               const hasActive = group.items.some(it=>!it.action && view===it.id);
               return(
                 <div key={group.id} style={{marginBottom:2}}>
                                     <button
-                    onClick={()=>toggleGroup(group.id)}
+                    onClick={()=>toggleGroup(group.id,group.defaultCollapsed)}
                     onMouseOver={e=>{e.currentTarget.style.borderColor="#cbd5e1";e.currentTarget.style.boxShadow="0 2px 6px rgba(0,0,0,.08)";}}
                     onMouseOut={e=>{e.currentTarget.style.borderColor=hasActive?group.color+"55":"#e5e7eb";e.currentTarget.style.boxShadow="0 1px 2px rgba(0,0,0,.04)";}}
                     style={{width:"100%",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"11px 12px",background:hasActive?group.color+"12":"#f8fafc",border:"1.5px solid "+(hasActive?group.color+"55":"#e5e7eb"),borderRadius:10,cursor:"pointer",fontFamily:"inherit",marginTop:8,boxShadow:"0 1px 2px rgba(0,0,0,.04)",transition:"border-color .15s,box-shadow .15s"}}
@@ -12685,7 +13196,9 @@ function Dashboard({user,onLogout}){
           {view==="preopen_stats"&&<PreOpenStatsPanel bookings={bookings} payments={paymentsNet} stores={stores} user={user}/>}
 
           {/* 経営ダッシュボード */}
-          {view==="dashboard"&&<DashboardPanel bookings={bookings} payments={paymentsNet} stores={stores} todayStr={todayStr} onOpenView={setView}/>}
+          {view==="dashboard"&&<DashboardPanel bookings={bookings} payments={paymentsNet} stores={stores} todayStr={todayStr} onOpenView={setView} user={user} isAdmin={isAdmin}/>}
+          {/* 行動管理 */}
+          {view==="actions"&&<ActionPanel user={user} isAdmin={isAdmin} todayStr={todayStr}/>}
 
           {/* 離反防止アラート */}
           {view==="churn_alert"&&<ChurnAlertPanel bookings={bookings} todayStr={todayStr}/>}
