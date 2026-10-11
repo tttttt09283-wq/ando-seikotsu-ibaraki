@@ -24,6 +24,25 @@ export default async function handler(req, res) {
     return;
   }
 
+  // ===== 呼び出した人が「ログイン中の管理者」かを確認する =====
+  // （以前は誰でもこのAPIを呼べたため、部外者がログインアカウントを作れてしまっていた）
+  const authHeader = req.headers.authorization || "";
+  const callerToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  if (!callerToken) {
+    res.status(401).json({ error: "管理者としてログインしてから操作してください" });
+    return;
+  }
+  try {
+    const isAdmin = await verifyAdmin(callerToken, serviceKey);
+    if (!isAdmin) {
+      res.status(403).json({ error: "スタッフの追加は管理者のみ可能です" });
+      return;
+    }
+  } catch (e) {
+    res.status(401).json({ error: "ログイン情報を確認できませんでした。ログインし直してください" });
+    return;
+  }
+
   const { email, password } = req.body || {};
   if (!email || !password) {
     res.status(400).json({ error: "email・passwordが必要です" });
@@ -55,4 +74,21 @@ export default async function handler(req, res) {
   } catch (e) {
     res.status(500).json({ error: e.message || String(e) });
   }
+}
+
+// ログイン中ユーザーのトークンから本人を特定し、clinic_staff で role='admin' かを確認する
+async function verifyAdmin(callerToken, serviceKey) {
+  const userRes = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+    headers: { apikey: serviceKey, Authorization: `Bearer ${callerToken}` },
+  });
+  if (!userRes.ok) throw new Error("invalid token");
+  const user = await userRes.json();
+  if (!user || !user.id) throw new Error("invalid token");
+  const staffRes = await fetch(
+    `${SUPABASE_URL}/rest/v1/clinic_staff?auth_uid=eq.${encodeURIComponent(user.id)}&role=eq.admin&select=id`,
+    { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } },
+  );
+  if (!staffRes.ok) throw new Error("lookup failed");
+  const rows = await staffRes.json();
+  return Array.isArray(rows) && rows.length > 0;
 }
