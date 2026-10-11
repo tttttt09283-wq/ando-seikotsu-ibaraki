@@ -203,6 +203,8 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 <script type="text/babel">
 
 const CLINIC_NAME = "あんど整骨院";
+// ログイン画面の「ID」に @ が無いとき、後ろに付けるドメイン（例：andokourien → andokourien@ando.jp）
+const LOGIN_ID_DOMAIN = "ando.jp";
 const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
 
@@ -849,13 +851,20 @@ function LoginScreen({onLogin}){
   const [err,setErr]=React.useState("");
   const [loading,setLoading]=React.useState(false);
   const [showPw,setShowPw]=React.useState(false);
+  // ログインID → メールアドレス（「@」が無ければ @ando.jp を付ける。メールアドレスをそのまま入れてもOK）
+  function loginIdToEmail(id){
+    const v=String(id||"").trim().toLowerCase();
+    return v.includes("@")?v:v+"@"+LOGIN_ID_DOMAIN;
+  }
   async function login(){
+    if(!email.trim()||!pw){setErr("IDとパスワードを入力してください");return;}
     setLoading(true);setErr("");
     try{
+      const loginEmail=loginIdToEmail(email);
       // Supabase Authでログイン
-      await sb.login(email.trim(),pw);
+      await sb.login(loginEmail,pw);
       // ログイン後、clinic_staffから対応するスタッフ情報を取得（RLSにより自分の分だけ見える）
-      const users=await sb.select("clinic_staff",`?email=eq.${encodeURIComponent(email.trim())}`);
+      const users=await sb.select("clinic_staff",`?email=eq.${encodeURIComponent(loginEmail)}`);
       if(users&&users.length>0){
         const u=users[0];
         const acc=STAFF_ACCOUNTS.find(s=>s.id===u.id)||STAFF_ACCOUNTS.find(s=>s.email===u.email);
@@ -864,7 +873,7 @@ function LoginScreen({onLogin}){
         setErr("スタッフ情報が見つかりませんでした");
       }
     }catch(e){
-      setErr("メールアドレスまたはパスワードが違います");
+      setErr("IDまたはパスワードが違います");
     }
     setLoading(false);
   }
@@ -883,13 +892,13 @@ function LoginScreen({onLogin}){
         <div style={{fontSize:16,fontWeight:800,color:"#1e3a5f",marginBottom:20,textAlign:"center"}}>ログイン</div>
         {err&&<div style={{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#dc2626",fontSize:13,textAlign:"center",fontWeight:600}}>{err}</div>}
         <div className="form-group">
-          <label className="form-label">メールアドレス</label>
-          <input type="email" className="form-input" value={email} onChange={e=>{setEmail(e.target.value);setErr("");}} placeholder="iwanaga@ando.jp" onKeyDown={e=>e.key==="Enter"&&login()}/>
+          <label className="form-label">ID</label>
+          <input type="text" className="form-input" value={email} onChange={e=>{setEmail(e.target.value);setErr("");}} placeholder="IDを入力" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} onKeyDown={e=>e.key==="Enter"&&login()}/>
         </div>
         <div className="form-group">
           <label className="form-label">パスワード</label>
           <div style={{position:"relative"}}>
-            <input type={showPw?"text":"password"} className="form-input" value={pw} onChange={e=>{setPw(e.target.value);setErr("");}} placeholder="パスワード" onKeyDown={e=>e.key==="Enter"&&login()} style={{paddingRight:44}}/>
+            <input type={showPw?"text":"password"} autoComplete="current-password" className="form-input" value={pw} onChange={e=>{setPw(e.target.value);setErr("");}} placeholder="パスワード" onKeyDown={e=>e.key==="Enter"&&login()} style={{paddingRight:44}}/>
             <button onClick={()=>setShowPw(v=>!v)} style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#9ca3af",fontSize:16}}>{showPw?"○":"●"}</button>
           </div>
         </div>
