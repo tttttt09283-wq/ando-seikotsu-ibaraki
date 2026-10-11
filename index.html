@@ -210,11 +210,11 @@ const BASE_STAFF_ACCOUNTS = [
   // storeIds: このスタッフが勤務する店舗のID（stores.id）を配列で指定。
   // 未指定（storeIdsを書かない）の場合は「全店舗で勤務」として扱われます。
   // 実際の勤務地は、管理画面の「スタッフ・シフト管理」→勤務地の設定で店舗ごとに割り当ててください（そちらが優先されます）。
-  {id:1,name:"奥田 貴明",email:"okuda@ando.jp",password:"okuda123",role:"staff",color:"#2563eb",initial:"奥"},
-  {id:2,name:"佐藤 幸輝",email:"sato@ando.jp",password:"sato123",role:"staff",color:"#059669",initial:"佐"},
-  {id:3,name:"細永 育代",email:"hosonaga@ando.jp",password:"hosonaga123",role:"staff",color:"#d97706",initial:"細"},
-  {id:4,name:"田中 夕賀",email:"tanaka@ando.jp",password:"tanaka123",role:"staff",color:"#7c3aed",initial:"田"},
-  {id:5,name:"岩永 拓己",email:"iwanaga@ando.jp",password:"iwanaga123",role:"admin",color:"#dc2626",initial:"岩"},
+  {id:1,name:"奥田 貴明",email:"okuda@ando.jp",role:"staff",color:"#2563eb",initial:"奥"},
+  {id:2,name:"佐藤 幸輝",email:"sato@ando.jp",role:"staff",color:"#059669",initial:"佐"},
+  {id:3,name:"細永 育代",email:"hosonaga@ando.jp",role:"staff",color:"#d97706",initial:"細"},
+  {id:4,name:"田中 夕賀",email:"tanaka@ando.jp",role:"staff",color:"#7c3aed",initial:"田"},
+  {id:5,name:"岩永 拓己",email:"iwanaga@ando.jp",role:"admin",color:"#dc2626",initial:"岩"},
 ];
 // 「スタッフ管理」画面から追加されたスタッフ（clinic_staffテーブルにname等が登録されたもの）を
 // ここにマージすることで、コードを書き換えなくてもカレンダー等に自動で反映されるようにする。
@@ -224,7 +224,7 @@ function updateStaffAccounts(dynamicStaffRows){
   const extra=(dynamicStaffRows||[])
     .filter(r=>r.name&&!BASE_STAFF_ACCOUNTS.some(s=>s.id===r.id||s.name===r.name))
     .map(r=>({
-      id:r.id,name:r.name,email:r.email||"",password:r.password||"",
+      id:r.id,name:r.name,email:r.email||"",
       role:r.role||"staff",color:r.color||"#64748b",initial:r.initial||(r.name?r.name.charAt(0):"?"),
       eventOnly:!!r.event_only,
     }));
@@ -896,17 +896,7 @@ function LoginScreen({onLogin}){
         <button className="btn btn-primary" onClick={login} disabled={loading} style={{width:"100%",padding:13,fontSize:15,borderRadius:10,justifyContent:"center",opacity:loading?.7:1}}>
           {loading?"確認中...":"ログイン"}
         </button>
-        <div style={{marginTop:18,background:"#f8fafc",borderRadius:10,padding:"12px 14px",border:"1px solid #e2e8f0"}}>
-          <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:8,textTransform:"uppercase",letterSpacing:.5}}>スタッフアカウント</div>
-          {STAFF_ACCOUNTS.map(s=>(
-            <button key={s.id} onClick={()=>{setEmail(s.email);setPw(s.password);}} style={{display:"flex",width:"100%",alignItems:"center",gap:8,background:"none",border:"none",padding:"4px 0",cursor:"pointer",textAlign:"left"}}>
-              <div style={{width:20,height:20,borderRadius:"50%",background:s.color,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontSize:10,fontWeight:800,flexShrink:0}}>{s.initial}</div>
-              <span style={{fontWeight:700,color:s.color,fontSize:12}}>{s.name}</span>
-              <span style={{color:"#9ca3af",fontSize:11}}>{s.email}</span>
-              {s.role==="admin"&&<span className="badge badge-yellow" style={{marginLeft:"auto"}}>管理者</span>}
-            </button>
-          ))}
-        </div>
+        <div style={{marginTop:14,fontSize:11,color:"#94a3b8",textAlign:"center",lineHeight:1.6}}>パスワードを忘れた場合は管理者に再設定を依頼してください</div>
       </div>
     </div>
   );
@@ -5941,9 +5931,12 @@ function AddStaffModal({onClose,onCreated,existingIds}){
     setSaving(true);
     try{
       // ① Authアカウントを作成（サーバー関数経由・即ログイン可能な状態で作成）
+      // ログイン中の管理者のトークンを付ける（サーバー側で管理者かどうかを確認する）
+      const adminToken=(await supabaseClient.auth.getSession()).data.session?.access_token;
+      if(!adminToken) throw new Error("ログインし直してから、もう一度お試しください");
       const res=await fetch("/api/create-staff",{
         method:"POST",
-        headers:{"Content-Type":"application/json"},
+        headers:{"Content-Type":"application/json",Authorization:`Bearer ${adminToken}`},
         body:JSON.stringify({email:email.trim(),password}),
       });
       const data=await res.json().catch(()=>null);
@@ -5956,7 +5949,7 @@ function AddStaffModal({onClose,onCreated,existingIds}){
       const insertRes=await fetch(`${SUPABASE_URL}/rest/v1/clinic_staff`,{
         method:"POST",
         headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
-        body:JSON.stringify({id:idNum,auth_uid:data.authUid,email:email.trim(),password,name:name.trim(),role,store_ids:[],color,initial:initial||name.charAt(0),event_only:eventOnly}),
+        body:JSON.stringify({id:idNum,auth_uid:data.authUid,email:email.trim(),name:name.trim(),role,store_ids:[],color,initial:initial||name.charAt(0),event_only:eventOnly}),
       });
       const insertBody=await insertRes.text();
       if(!insertRes.ok){
