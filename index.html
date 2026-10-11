@@ -621,6 +621,7 @@ function PatientHistoryModal({patientName,bookings,onClose}){
       {label:"既往歴",value:firstBooking.medical_history},
       {label:"継続意思",value:firstBooking.want_continue},
       {label:"来院経路",value:firstBooking.how_know},
+      {label:"カラダチェック",value:firstBooking.from_body_check?("経由あり"+(firstBooking.body_check_summary?"（"+firstBooking.body_check_summary+"）":"")):null},
     ].filter(r=>r.value&&String(r.value).trim());
 
     const w=window.open("","_blank");
@@ -752,6 +753,7 @@ function PatientHistoryModal({patientName,bookings,onClose}){
                     {label:"既往歴",value:firstBooking.medical_history},
                     {label:"継続意思",value:firstBooking.want_continue},
                     {label:"来院経路",value:firstBooking.how_know},
+                    {label:"カラダチェック",value:firstBooking.from_body_check?("経由あり"+(firstBooking.body_check_summary?"（"+firstBooking.body_check_summary+"）":"")):null},
                   ].map(({label,value})=>value?(
                     <div key={label} style={{display:"flex",gap:10,padding:"10px 0",borderBottom:"1px solid #f1f5f9"}}>
                       <div style={{width:80,fontSize:12,fontWeight:700,color:"#94a3b8",flexShrink:0}}>{label}</div>
@@ -7347,6 +7349,7 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
                         {label:"既往歴",value:firstBk.medical_history},
                         {label:"継続意思",value:firstBk.want_continue},
                         {label:"来院経路",value:firstBk.how_know},
+                        {label:"カラダチェック",value:firstBk.from_body_check?("経由あり"+(firstBk.body_check_summary?"（"+firstBk.body_check_summary+"）":"")):null},
                       ].map(({label,value})=>value?(
                         <div key={label} style={{display:"flex",gap:12,padding:"10px 0",borderBottom:"1px solid #f1f5f9"}}>
                           <div style={{width:80,fontSize:12,fontWeight:700,color:"#94a3b8",flexShrink:0}}>{label}</div>
@@ -12349,6 +12352,7 @@ function Dashboard({user,onLogout}){
                                         {sameDay&&<div style={{position:"absolute",top:-1,left:-1,background:"#fff",color:"#a16207",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"6px 0 4px 0",lineHeight:1,letterSpacing:0}}>⚡当日</div>}
                                         {b.memo&&<div style={{position:"absolute",bottom:-1,left:-1,background:"#fff",color:"#1e3a5f",fontSize:8,fontWeight:900,padding:"0 3px",borderRadius:"6px 4px 0 0",lineHeight:1.4}}>📝</div>}
                                         {b.booked_via_line&&<div style={{position:"absolute",bottom:-1,right:-1,background:"#06C755",color:"white",fontSize:7,fontWeight:900,padding:"1px 3px",borderRadius:"4px 0 4px 0",lineHeight:1}}>LINE</div>}
+                                        {b.from_body_check&&<div title="カラダ年齢チェック経由" style={{position:"absolute",bottom:-1,right:b.booked_via_line?26:-1,background:"#d0f0f3",color:"#0c5961",fontSize:7,fontWeight:900,padding:"1px 3px",borderRadius:"4px 4px 0 0",lineHeight:1}}>📋</div>}
                                         <div
                                           onPointerDown={e=>{e.stopPropagation();}}
                                           onDoubleClick={e=>{
@@ -12542,6 +12546,7 @@ function Dashboard({user,onLogout}){
                 {b.checked_in_at&&<div style={{fontSize:10,fontWeight:800,color:"#111",background:"#facc15",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4}}>📷 来院済み</div>}
                 {isSameDayBooking(b)&&<div style={{fontSize:10,fontWeight:800,color:"#a16207",background:"#fef9c3",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>⚡ 当日予約</div>}
                 {b.booked_via_line&&<div style={{fontSize:10,fontWeight:800,color:"white",background:"#06C755",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>LINE予約</div>}
+                {b.from_body_check&&<div title={b.body_check_summary||""} style={{fontSize:10,fontWeight:800,color:"#0c5961",background:"#d0f0f3",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>📋 カラダチェック経由{b.body_check_summary?"："+b.body_check_summary:""}</div>}
                 {b.referrer_name&&<div style={{fontSize:10,fontWeight:800,color:"#6d28d9",background:"#ede9fe",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>🎁 紹介：{b.referrer_name}</div>}
                 {b.memo&&<div style={{fontSize:11,color:"white",background:"rgba(255,255,255,.18)",borderRadius:6,padding:"5px 8px",marginTop:6,lineHeight:1.5}}>📝 {b.memo}</div>}
                 {isReadOnlyReal&&<div style={{fontSize:10,fontWeight:800,color:"#1e293b",background:"#fff",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4}}>🔒 本番の予約（閲覧のみ）</div>}

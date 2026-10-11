@@ -123,6 +123,23 @@ cp .env.example .env.local
 
 現在は Vercel の「Logs」に `body-check-stats` という1行の JSON として記録されます。管理画面での集計が必要になったら、`src/app/api/stats/route.ts` にデータベース保存を追加してください。
 
+## 7. カラダチェックからの予約の見分け方
+
+結果画面の予約ボタンは、予約ページ（`booking.html`）に `?src=body-check&bc=結果の要約` を付けて開きます。
+予約フォームはこれを読み取り、次の3か所に目印を残します。
+
+- **予約データ**：`bookings` テーブルの `from_body_check`（true/false）と `body_check_summary`（例：カラダ年齢 50代レベル／スコア68点・Bランク）
+- **グループLINEの新規予約通知**：「📋 カラダ年齢チェック経由（…）」の1行
+- **管理画面**：予約詳細に「📋 カラダチェック経由」バッジ、患者情報に「カラダチェック」欄、タイムラインに 📋 マーク
+
+LINEログインでページが開き直されても目印が消えないよう、予約フォームはブラウザのタブ内（sessionStorage）にも控えています。
+
+件数の確認（Supabase の SQL Editor）：
+
+```sql
+select count(*) from bookings where from_body_check and not cancelled;
+```
+
 ## 7. 注意事項
 
 - 採点基準は医学的に検証されたものではなく、サービス独自の仮の参考指標です。
