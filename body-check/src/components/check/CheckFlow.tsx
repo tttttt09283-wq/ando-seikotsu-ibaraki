@@ -20,7 +20,7 @@ type StepKey = "profile" | "consent" | "safety" | CheckId;
 
 const CHECK_LEADS: Record<CheckId, string> = {
   balance: "壁や椅子など、すぐに支えられる場所で片足立ちをしてみましょう",
-  legs: "安定した椅子に座り、30秒間で何回立ち上がれるか数えてください",
+  legs: "安定した椅子に座り、30秒間で何回立ち上がれるか数えてください（この回数でカラダ年齢を判定します）",
   flexibility: "立ったまま前屈をして、手がどこまで届くか確かめましょう",
   shoulder: "両腕をゆっくり上げて、肩の動きを確かめましょう",
   condition: "最近の身体の状態について、当てはまるものを選んでください",

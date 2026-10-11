@@ -6,6 +6,7 @@
  * localStorage = ブラウザに小さなデータを保存できる仕組み。
  * プライベートブラウズ等で使えない場合もあるので、失敗してもアプリが止まらないようにしています。
  */
+import { SEX_OPTIONS } from "@/config/bodyAge";
 import { AGE_GROUPS, CHECK_ORDER, SYMPTOMS } from "@/config/checks";
 import type { Answers, CheckAnswer, Profile } from "@/types";
 
@@ -40,7 +41,7 @@ function newSessionId(): string {
 export function createInitialState(): CheckState {
   return {
     sessionId: newSessionId(),
-    profile: { ageGroup: null, symptoms: [] },
+    profile: { ageGroup: null, sex: null, symptoms: [] },
     answers: {},
     safetyAgreed: false,
     consent: null,
@@ -73,6 +74,7 @@ export function sanitizeState(raw: unknown, now: number = Date.now()): CheckStat
   const symptomIds = SYMPTOMS.map((s) => s.id) as string[];
   const profile: Profile = {
     ageGroup: ageIds.includes(r.profile?.ageGroup as string) ? (r.profile!.ageGroup as Profile["ageGroup"]) : null,
+    sex: SEX_OPTIONS.some((o) => o.id === r.profile?.sex) ? (r.profile!.sex as Profile["sex"]) : null,
     symptoms: Array.isArray(r.profile?.symptoms)
       ? (r.profile!.symptoms.filter((s) => symptomIds.includes(s)) as Profile["symptoms"])
       : [],

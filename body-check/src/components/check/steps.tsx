@@ -15,6 +15,7 @@ import {
   SHOULDER_OPTIONS,
   SYMPTOMS,
 } from "@/config/checks";
+import { SEX_OPTIONS, type SexId } from "@/config/bodyAge";
 import { balanceOptionIdForSeconds, isValidLegsCount, parseCount } from "@/lib/scoring";
 import { Card, cx, OptionCard } from "@/components/ui";
 import type { AgeGroupId, BalanceValue, CheckAnswer, ConditionValue, Profile, SymptomId } from "@/types";
@@ -48,6 +49,7 @@ function Fieldset({ legend, hint, children }: { legend: string; hint?: string; c
 
 export function ProfileStep({ initial, onSubmit, render }: StepRenderProps<Profile>) {
   const [ageGroup, setAgeGroup] = useState<AgeGroupId | null>(initial?.ageGroup ?? null);
+  const [sex, setSex] = useState<SexId | null>(initial?.sex ?? null);
   const [symptoms, setSymptoms] = useState<SymptomId[]>(initial?.symptoms ?? []);
 
   const toggleSymptom = (id: string) => {
@@ -62,8 +64,9 @@ export function ProfileStep({ initial, onSubmit, render }: StepRenderProps<Profi
 
   const tryNext = () => {
     if (!ageGroup) return "年代を選んでください";
+    if (!sex) return "性別を選んでください（「回答しない」も選べます）";
     if (symptoms.length === 0) return "気になる症状を1つ以上選んでください（ない場合は「特になし」）";
-    onSubmit({ ageGroup, symptoms });
+    onSubmit({ ageGroup, sex, symptoms });
     return null;
   };
 
@@ -85,6 +88,25 @@ export function ProfileStep({ initial, onSubmit, render }: StepRenderProps<Profi
               />
             ))}
           </div>
+        </Fieldset>
+      </Card>
+      <Card>
+        <Fieldset legend="性別">
+          <div className="grid grid-cols-3 gap-2">
+            {SEX_OPTIONS.map((o) => (
+              <OptionCard
+                key={o.id}
+                type="radio"
+                name="sex"
+                value={o.id}
+                label={o.label}
+                checked={sex === o.id}
+                onChange={(v) => setSex(v as SexId)}
+                compact
+              />
+            ))}
+          </div>
+          <p className="text-xs text-slate-600">カラダ年齢の判定で、性別ごとの標準値と比べるために使います。</p>
         </Fieldset>
       </Card>
       <Card>

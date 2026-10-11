@@ -39,8 +39,13 @@ export interface Answers {
   condition?: CheckAnswer<ConditionValue>;
 }
 
+export type { SexId } from "@/config/bodyAge";
+import type { SexId } from "@/config/bodyAge";
+
 export interface Profile {
   ageGroup: AgeGroupId | null;
+  /** 性別（カラダ年齢の判定に使用。「回答しない」も選べます） */
+  sex: SexId | null;
   symptoms: SymptomId[];
 }
 

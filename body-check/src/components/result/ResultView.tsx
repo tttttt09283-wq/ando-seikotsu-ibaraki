@@ -8,6 +8,8 @@ import { RANKS, SCORING_CONFIG } from "@/config/scoring";
 import { siteConfig } from "@/config/site";
 import { CheckIllustration } from "@/components/Illustrations";
 import { buttonStyles, Card, cx, Footer, MedicalDisclaimer, Spinner } from "@/components/ui";
+import { BODY_AGE_SOURCE } from "@/config/bodyAge";
+import { bodyAgeMessage, estimateBodyAge, type BodyAgeResult } from "@/lib/bodyAge";
 import { buildResultMessages, calculateResult } from "@/lib/scoring";
 import { recommendSelfCare } from "@/lib/selfcare";
 import { buildCompletionEvent, sendStats } from "@/lib/stats";
@@ -37,7 +39,7 @@ export function ResultView() {
     if (!state || !result || sentRef.current) return;
     if (!siteConfig.statsEnabled || state.consent !== "granted" || state.statsSent) return;
     sentRef.current = true;
-    sendStats(buildCompletionEvent(state.sessionId, state.profile.ageGroup, state.profile.symptoms, result)).then((ok) => {
+    sendStats(buildCompletionEvent(state.sessionId, state.profile.ageGroup, state.profile.sex, state.profile.symptoms, result)).then((ok) => {
       if (ok) setState((prev) => (prev ? saveState({ ...prev, statsSent: true }) : prev));
     });
   }, [state, result]);
@@ -59,6 +61,15 @@ export function ResultView() {
     );
   }
 
+  const legs = state.answers.legs;
+  const bodyAge = legs?.status === "answered" ? estimateBodyAge(legs.value, state.profile.sex, state.profile.ageGroup) : null;
+  const bodyAgeUnavailableReason =
+    legs?.status !== "answered"
+      ? "CHECK 2（30秒椅子立ち上がり）を測定すると、カラダ年齢が表示されます"
+      : !state.profile.sex
+        ? "性別が未入力のため判定できませんでした。もう一度チェックするとカラダ年齢が表示されます"
+        : null;
+
   const restart = () => {
     clearState();
     router.push("/check");
@@ -74,7 +85,13 @@ export function ResultView() {
   return (
     <main className="flex flex-1 flex-col">
       <div className="space-y-6 px-5 pb-6 pt-6">
-        <ScoreCard result={result} date={formatDate(state.completedAt)} ageLabel={AGE_GROUPS.find((a) => a.id === state.profile.ageGroup)?.label} />
+        <ScoreCard
+          result={result}
+          bodyAge={bodyAge}
+          bodyAgeUnavailableReason={bodyAgeUnavailableReason}
+          date={formatDate(state.completedAt)}
+          ageLabel={AGE_GROUPS.find((a) => a.id === state.profile.ageGroup)?.label}
+        />
         <Messages result={result} />
         <ItemList result={result} />
         <StrengthsAndImprovements result={result} />
@@ -128,7 +145,46 @@ function ScoreGauge({ total }: { total: number }) {
 }
 
 /** スクリーンショットしたくなる、メインの結果カード */
-function ScoreCard({ result, date, ageLabel }: { result: ScoreResult; date: string; ageLabel?: string }) {
+function BodyAgeBlock({ bodyAge, unavailableReason }: { bodyAge: BodyAgeResult | null; unavailableReason: string | null }) {
+  if (!bodyAge) {
+    return (
+      <div className="relative mt-4 rounded-3xl bg-white/15 p-4 text-center">
+        <h1 id="score-heading" className="text-sm font-bold">
+          カラダ年齢（下半身）
+        </h1>
+        <p className="mt-1 text-xs leading-relaxed">{unavailableReason}</p>
+      </div>
+    );
+  }
+  return (
+    <div className="relative mt-4 rounded-3xl bg-white px-4 py-5 text-center text-navy-900 shadow-lg">
+      <h1 id="score-heading" className="whitespace-nowrap text-[13px] font-bold text-brand-700">
+        あなたのカラダ年齢（下半身）
+      </h1>
+      <p className="mt-2 font-black leading-none">
+        <span className="animate-pop-in inline-block whitespace-nowrap text-[2.75rem] text-brand-600">{bodyAge.band.label}</span>
+        <span className="mt-1 block text-xl">レベル</span>
+      </p>
+      {bodyAge.belowAllBands && <p className="mt-2 text-xs text-slate-600">（標準値の範囲より少ない回数でした）</p>}
+      <p className="mt-3 text-sm font-bold leading-relaxed">{bodyAgeMessage(bodyAge)}</p>
+      <p className="mt-2 text-[10px] leading-snug text-slate-500">30秒椅子立ち上がりの回数を日本人の性別・年代別標準値と比べた目安です</p>
+    </div>
+  );
+}
+
+function ScoreCard({
+  result,
+  bodyAge,
+  bodyAgeUnavailableReason,
+  date,
+  ageLabel,
+}: {
+  result: ScoreResult;
+  bodyAge: BodyAgeResult | null;
+  bodyAgeUnavailableReason: string | null;
+  date: string;
+  ageLabel?: string;
+}) {
   const rank = RANKS.find((r) => r.id === result.rank);
   return (
     <section
@@ -142,9 +198,9 @@ function ScoreCard({ result, date, ageLabel }: { result: ScoreResult; date: stri
         <span>{siteConfig.serviceName}</span>
         <span className="whitespace-nowrap">{date}</span>
       </div>
-      <h1 id="score-heading" className="relative mt-4 text-center text-base font-bold tracking-wider">
-        カラダコンディションスコア
-      </h1>
+      <BodyAgeBlock bodyAge={bodyAge} unavailableReason={bodyAgeUnavailableReason} />
+
+      <h2 className="relative mt-6 text-center text-base font-bold tracking-wider">カラダコンディションスコア</h2>
 
       {result.total === null ? (
         <p className="relative my-8 text-center text-2xl font-black">未測定</p>
@@ -358,7 +414,9 @@ function ScoreDisclaimer() {
       <p>
         ※スコアとランクは「あんど式」独自の参考指標です。医学的に検証された基準ではなく、疾病のリスクや健康状態を判定するものではありません。
       </p>
-      <p>※年齢別の基準による「身体年齢」は、信頼できる研究データに基づく基準を準備中のため、現在は表示していません。</p>
+      <p>
+        ※カラダ年齢は、30秒椅子立ち上がりの回数が、日本人の性別・年代別標準値（{BODY_AGE_SOURCE}）のどの年代の「普通」の範囲に届いているかで判定した、下半身の筋持久力の目安です。実際の年齢や健康状態を示すものではありません。
+      </p>
       <p>※結果はお使いのスマホの中だけで計算・保存されています（7日間）。</p>
     </div>
   );
