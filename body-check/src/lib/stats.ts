@@ -1,10 +1,11 @@
 /**
  * ===== 匿名の利用統計 =====
- * 同意した利用者についてのみ、個人を特定しない情報（年代・症状カテゴリ・各チェック結果・
+ * 同意した利用者についてのみ、個人を特定しない情報（年代・性別・症状カテゴリ・各チェック結果・
  * スコア・ランク・予約ボタンのクリック有無）を送信します。氏名・電話番号・メールなどは扱いません。
  *
  * NEXT_PUBLIC_STATS_ENABLED が true でない場合は、何も送信しません。
  */
+import { SEX_OPTIONS, type SexId } from "@/config/bodyAge";
 import { AGE_GROUPS, CHECK_ORDER, SYMPTOMS } from "@/config/checks";
 import type { AgeGroupId, CheckId, RankId, ScoreResult, SymptomId } from "@/types";
 
@@ -12,6 +13,7 @@ export interface CompletionEvent {
   type: "complete";
   sessionId: string;
   ageGroup: AgeGroupId | null;
+  sex: SexId | null;
   symptoms: SymptomId[];
   /** 各チェックの点数（未測定は null） */
   scores: Record<CheckId, number | null>;
@@ -29,11 +31,12 @@ export type StatsEvent = CompletionEvent | BookingClickEvent;
 export function buildCompletionEvent(
   sessionId: string,
   ageGroup: AgeGroupId | null,
+  sex: SexId | null,
   symptoms: SymptomId[],
   result: ScoreResult,
 ): CompletionEvent {
   const scores = Object.fromEntries(result.items.map((i) => [i.id, i.score])) as Record<CheckId, number | null>;
-  return { type: "complete", sessionId, ageGroup, symptoms, scores, total: result.total, rank: result.rank };
+  return { type: "complete", sessionId, ageGroup, sex, symptoms, scores, total: result.total, rank: result.rank };
 }
 
 const SESSION_ID_RE = /^[A-Za-z0-9-]{8,64}$/;
@@ -50,6 +53,8 @@ export function validateStatsEvent(raw: unknown): StatsEvent | null {
   const ageIds = AGE_GROUPS.map((a) => a.id) as string[];
   const symptomIds = SYMPTOMS.map((s) => s.id) as string[];
   if (r.ageGroup !== null && !ageIds.includes(r.ageGroup as string)) return null;
+  const sex = r.sex ?? null;
+  if (sex !== null && !SEX_OPTIONS.some((o) => o.id === sex)) return null;
   if (!Array.isArray(r.symptoms) || r.symptoms.length > symptomIds.length) return null;
   if (!r.symptoms.every((s) => symptomIds.includes(s))) return null;
 
@@ -72,6 +77,7 @@ export function validateStatsEvent(raw: unknown): StatsEvent | null {
     type: "complete",
     sessionId: r.sessionId,
     ageGroup: r.ageGroup as AgeGroupId | null,
+    sex: sex as SexId | null,
     symptoms: [...new Set(r.symptoms as SymptomId[])],
     scores,
     total,

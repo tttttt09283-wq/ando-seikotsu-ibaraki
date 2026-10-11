@@ -7,6 +7,7 @@ const validComplete = {
   type: "complete",
   sessionId: "18e809a8-eb5a-434c-9248-bce8b0766b86",
   ageGroup: "40s",
+  sex: "female",
   symptoms: ["low_back", "posture"],
   scores: { balance: 12, legs: null, flexibility: 8, shoulder: 20, condition: 10 },
   total: 63,
@@ -33,6 +34,7 @@ describe("validateStatsEvent（統計データの検証）", () => {
     expect(validateStatsEvent({ ...validComplete, symptoms: ["unknown"] })).toBeNull();
     expect(validateStatsEvent({ ...validComplete, total: 101 })).toBeNull();
     expect(validateStatsEvent({ ...validComplete, rank: "Z" })).toBeNull();
+    expect(validateStatsEvent({ ...validComplete, sex: "other" })).toBeNull();
     expect(validateStatsEvent({ ...validComplete, scores: { ...validComplete.scores, legs: 25 } })).toBeNull();
   });
 });
@@ -62,7 +64,7 @@ describe("sanitizeState（ブラウザ内保存データの確認）", () => {
       answers: { legs: { status: "answered", value: 10 }, hack: { status: "skipped" }, balance: "bad" },
     };
     const r = sanitizeState(s)!;
-    expect(r.profile).toEqual({ ageGroup: null, symptoms: ["low_back"] });
+    expect(r.profile).toEqual({ ageGroup: null, sex: null, symptoms: ["low_back"] });
     expect(Object.keys(r.answers)).toEqual(["legs"]);
   });
 });
