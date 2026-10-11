@@ -130,6 +130,28 @@ function getDays(n){
   return arr;
 }
 
+// ===== あんど式カラダ年齢チェックからの予約の目印 =====
+// カラダチェックの結果画面の予約ボタンは「?src=body-check&bc=結果の要約」を付けてこのページを開く。
+// LINEログイン（liff.login）でページが開き直されるとURLの値が消えるため、sessionStorageにも控えておく。
+function readBodyCheckRef(){
+  var KEY="body_check_ref";
+  try{
+    var params=new URLSearchParams(window.location.search);
+    if(params.get("src")==="body-check"){
+      var summary=(params.get("bc")||"").replace(/[\u0000-\u001f\u007f]/g,"").trim().slice(0,100);
+      var ref={from:true, summary:summary||null};
+      try{ sessionStorage.setItem(KEY, JSON.stringify(ref)); }catch(e){}
+      return ref;
+    }
+    var saved=sessionStorage.getItem(KEY);
+    if(saved){
+      var obj=JSON.parse(saved);
+      if(obj&&obj.from===true) return {from:true, summary:typeof obj.summary==="string"?obj.summary.slice(0,100):null};
+    }
+  }catch(e){}
+  return {from:false, summary:null};
+}
+
 var sb = {
   select: function(table, filters){
     filters = filters || "";
@@ -228,6 +250,10 @@ function App(){
 
   var lineUserIdState = useState(null);
   var lineUserId = lineUserIdState[0]; var setLineUserId = lineUserIdState[1];
+
+  // カラダ年齢チェック経由かどうか（初回描画時に1回だけ読み取る）
+  var bodyCheckRefState = useState(readBodyCheckRef);
+  var bodyCheckRef = bodyCheckRefState[0];
 
   // ===== 紹介キャンペーン（?ref=コードで来た場合） =====
   var referralCodeState = useState(null); // URLの?refパラメータ（見つかった生の値）
@@ -944,7 +970,9 @@ function App(){
       other_clinic:form.otherClinic+(form.otherClinicName?"（"+form.otherClinicName+"）":""),
       medical_history:form.medicalHistory,
       want_continue:formatWantContinue(),
-      how_know:howKnowText
+      how_know:howKnowText,
+      from_body_check:bodyCheckRef.from,
+      body_check_summary:bodyCheckRef.summary
     }).then(function(result){
       // 予約IDを取得
       if(!(Array.isArray(result) && result.length > 0)) return;
@@ -1003,7 +1031,8 @@ function App(){
           "\n📣 経路："+(howKnowText||"未記入")+"\n"+
           "🔔 LINE連携："+(form.lineNotify && lineUserId ? "あり" : "なし")+
           (form.referrerName.trim()?"\n🎁 紹介者："+form.referrerName+" 様（体験会無料）":"")+
-          (validCodeReferral?"\n🎁 紹介URL経由："+referrerInfo.name+" 様のご紹介":"");
+          (validCodeReferral?"\n🎁 紹介URL経由："+referrerInfo.name+" 様のご紹介":"")+
+          (bodyCheckRef.from?"\n📋 カラダ年齢チェック経由"+(bodyCheckRef.summary?"（"+bodyCheckRef.summary+"）":""):"");
 
         fetch("/api/line-notify",{
           method:"POST",
@@ -1096,6 +1125,8 @@ function App(){
       reminded:false,
       // 伝えたいことがあれば症状欄に入れる
       symptoms:memo||null,
+      from_body_check:bodyCheckRef.from,
+      body_check_summary:bodyCheckRef.summary,
     }).then(function(result){
       var nb=Array.isArray(result)&&result.length>0?result[0]:null;
       if(!nb) return;
@@ -1117,7 +1148,7 @@ function App(){
           headers:{"Content-Type":"application/json"},
           body:JSON.stringify({
             groupId:LINE_GROUP_ID,
-            message:"🏥【リピーター予約】\n👤 "+pastBooking.patient_name+" 様\n📞 "+(pastBooking.phone||"未記入")+"\n🏠 "+(pastBooking.address||"未記入")+"\n📅 "+fmtDateJP(selDate)+" "+selTime+(memo?"\n💬 "+memo:"")
+            message:"🏥【リピーター予約】\n👤 "+pastBooking.patient_name+" 様\n📞 "+(pastBooking.phone||"未記入")+"\n🏠 "+(pastBooking.address||"未記入")+"\n📅 "+fmtDateJP(selDate)+" "+selTime+(memo?"\n💬 "+memo:"")+(bodyCheckRef.from?"\n📋 カラダ年齢チェック経由"+(bodyCheckRef.summary?"（"+bodyCheckRef.summary+"）":""):"")
           })
         }).catch(function(){});
         // QR・確認メッセージ送信

@@ -23,6 +23,13 @@ export default function PrivacyPage() {
           </p>
         </Card>
 
+        <Card className="space-y-2 text-base leading-relaxed">
+          <h2 className="text-lg font-black">WEB予約をする場合</h2>
+          <p>
+            結果画面の予約ボタンから予約した場合に限り、今回のチェック結果の要約（カラダ年齢・スコア・ランク）が予約フォームに引き継がれ、当院の予約情報として保存されます。当日の施術の参考にするためです。予約しない場合は送信されません。
+          </p>
+        </Card>
+
         {siteConfig.statsEnabled && (
           <Card className="space-y-2 text-base leading-relaxed">
             <h2 className="text-lg font-black">匿名の利用統計（同意した方のみ）</h2>

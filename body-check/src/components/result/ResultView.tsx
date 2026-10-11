@@ -10,6 +10,7 @@ import { CheckIllustration } from "@/components/Illustrations";
 import { buttonStyles, Card, cx, Footer, MedicalDisclaimer, Spinner } from "@/components/ui";
 import { BODY_AGE_SOURCE } from "@/config/bodyAge";
 import { bodyAgeMessage, estimateBodyAge, type BodyAgeResult } from "@/lib/bodyAge";
+import { buildBodyCheckSummary, buildBookingUrl } from "@/lib/booking";
 import { buildResultMessages, calculateResult } from "@/lib/scoring";
 import { recommendSelfCare } from "@/lib/selfcare";
 import { buildCompletionEvent, sendStats } from "@/lib/stats";
@@ -96,7 +97,10 @@ export function ResultView() {
         <ItemList result={result} />
         <StrengthsAndImprovements result={result} />
         <SelfCareSection result={result} />
-        <BookingSection onClick={onBookingClick} />
+        <BookingSection
+          url={siteConfig.bookingUrl ? buildBookingUrl(siteConfig.bookingUrl, buildBodyCheckSummary(result, bodyAge)) : null}
+          onClick={onBookingClick}
+        />
 
         <div className="space-y-3 pt-2">
           <button type="button" onClick={restart} className={buttonStyles.secondary}>
@@ -372,8 +376,7 @@ function SelfCareSection({ result }: { result: ScoreResult }) {
   );
 }
 
-function BookingSection({ onClick }: { onClick: () => void }) {
-  const url = siteConfig.bookingUrl;
+function BookingSection({ url, onClick }: { url: string | null; onClick: () => void }) {
   return (
     <section aria-labelledby="booking-heading" className="rounded-[2rem] border-2 border-brand-200 bg-white p-6 text-center">
       <p className="text-3xl" aria-hidden="true">
@@ -402,7 +405,12 @@ function BookingSection({ onClick }: { onClick: () => void }) {
           </p>
         </>
       )}
-      <p className="mt-3 text-xs text-slate-600">ご予約は任意です。セルフケアだけでも、ぜひ続けてみてください。</p>
+      {url && (
+        <p className="mt-3 text-xs leading-relaxed text-slate-600">
+          予約フォームには、今回のチェック結果（カラダ年齢・スコア）が引き継がれ、当日の施術の参考にさせていただきます。
+        </p>
+      )}
+      <p className="mt-2 text-xs text-slate-600">ご予約は任意です。セルフケアだけでも、ぜひ続けてみてください。</p>
     </section>
   );
 }
