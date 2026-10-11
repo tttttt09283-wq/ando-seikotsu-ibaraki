@@ -4765,7 +4765,26 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
           <button onClick={onClose} style={{background:"none",border:"none",fontSize:22,cursor:"pointer",color:"#94a3b8",lineHeight:1}}>x</button>
         </div>
       </div>
-      {conflict&&<div style={{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#dc2626",fontSize:13,fontWeight:700}}>ダブルブッキングになります</div>}
+      {conflict&&(()=>{
+        const c=(typeof conflict==="object")?conflict:null;
+        const st=c&&STAFF_ACCOUNTS.find(x=>x.id===c.staffId);
+        const dur=c?(c.duration||DURATION[form.menu]||30):0;
+        const endOf=(t,d)=>{const m=toMin(t)+(d||30);return String(Math.floor(m/60)).padStart(2,"0")+":"+String(m%60).padStart(2,"0");};
+        return (<div style={{background:"#fef2f2",border:"1.5px solid #fecaca",borderRadius:8,padding:"10px 14px",marginBottom:14,color:"#dc2626",fontSize:13}}>
+          <div style={{fontWeight:800}}>ダブルブッキングになります</div>
+          {c&&(<div style={{marginTop:6,color:"#7f1d1d",fontSize:12,lineHeight:1.7}}>
+            <div>今回の予約：{c.date} {c.time}〜{endOf(c.time,dur)}／担当：{st?st.name:"-"}（同時受付 {c.capacity} 枠）</div>
+            <div style={{fontWeight:700,marginTop:4}}>重なっている既存の予約（{c.items.length}件）</div>
+            {c.items.map(b=>(
+              <div key={b.id} style={{background:"#fff",border:"1px solid #fecaca",borderRadius:6,padding:"5px 8px",marginTop:4,color:"#334155"}}>
+                <b>{b.time}〜{endOf(b.time,b.duration||DURATION[b.menu]||30)}</b>　{b.patient_name||"(名前なし)"}　<span style={{color:"#64748b"}}>{b.menu||""}</span>
+                {b.phone&&<span style={{color:"#64748b"}}>　{b.phone}</span>}
+                {b.checked_in_at&&<span style={{color:"#16a34a",fontWeight:700}}>　来院済</span>}
+              </div>))}
+            <div style={{marginTop:6,color:"#7f1d1d"}}>→ 時間をずらすか、別の担当を選んでください。</div>
+          </div>)}
+        </div>);
+      })()}
       {showSearch?(
         <div style={{background:"#f0f9ff",borderRadius:10,padding:14,marginBottom:16,border:"1px solid #bae6fd"}}>
           <div style={{fontWeight:800,fontSize:13,color:"#0369a1",marginBottom:10}}>既存患者を検索</div>
@@ -11296,14 +11315,19 @@ function Dashboard({user,onLogout}){
     const laneCapacity=getLaneCount(form.staff_id,form.date);
     // トレーニングモード中の練習予約でも、本番予約と時間が被らないよう本番分も含めて判定する
     const overlapCountLocal=calendarBookings.filter(b=>b.id!==editId&&b.staff_id===form.staff_id&&b.date===form.date&&!b.cancelled&&overlaps(b,form)).length;
-    if(overlapCountLocal>=laneCapacity){setConflict(true);return;}
+    if(overlapCountLocal>=laneCapacity){
+      setConflict({capacity:laneCapacity,staffId:form.staff_id,date:form.date,time:form.time,duration:form.duration,
+        items:calendarBookings.filter(b=>b.id!==editId&&b.staff_id===form.staff_id&&b.date===form.date&&!b.cancelled&&overlaps(b,form))});
+      return;
+    }
     // 保存直前にもう一度サーバーへ問い合わせて、ほぼ同時に他のスタッフが同じ枠を
     // 確保してしまっていないか最終確認する（画面上のデータには多少タイムラグがあるため）
     try{
       const freshSameDay=await sb.select("bookings",`?staff_id=eq.${form.staff_id}&date=eq.${form.date}`);
       const overlapCountFresh=(Array.isArray(freshSameDay)?freshSameDay:[]).filter(b=>b.id!==editId&&!b.cancelled&&overlaps(b,form)).length;
       if(overlapCountFresh>=laneCapacity){
-        setConflict(true);
+        setConflict({capacity:laneCapacity,staffId:form.staff_id,date:form.date,time:form.time,duration:form.duration,
+          items:(Array.isArray(freshSameDay)?freshSameDay:[]).filter(b=>b.id!==editId&&!b.cancelled&&overlaps(b,form))});
         showToast("ちょうど別の予約が入ってしまいました。時間をご確認ください","delete");
         return;
       }
