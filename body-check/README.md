@@ -97,6 +97,7 @@ cp .env.example .env.local
 
 ## 5. よくある変更
 
+- **結果の解説文（良い点・気をつけたい点・整骨院で確認できること）を変える** → `src/config/feedback.ts`
 - **カラダ年齢の基準を見直す** → `src/config/bodyAge.ts`（原著論文の表と照合のうえ変更）
 - **採点基準を変える** → `src/config/checks.ts` の `points` / `LEGS_THRESHOLDS`
 - **ランクの境目・文言** → `src/config/scoring.ts` の `RANKS`
