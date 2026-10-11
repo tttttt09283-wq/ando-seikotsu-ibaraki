@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AGE_GROUPS, CHECK_META, MAX_POINTS_PER_CHECK } from "@/config/checks";
+import { AGE_GROUPS, CHECK_META, MAX_POINTS_PER_CHECK, SYMPTOMS } from "@/config/checks";
 import { RANKS, SCORING_CONFIG } from "@/config/scoring";
 import { siteConfig } from "@/config/site";
 import { CheckIllustration } from "@/components/Illustrations";
@@ -11,6 +11,8 @@ import { buttonStyles, Card, cx, Footer, MedicalDisclaimer, Spinner } from "@/co
 import { BODY_AGE_SOURCE } from "@/config/bodyAge";
 import { bodyAgeMessage, estimateBodyAge, type BodyAgeResult } from "@/lib/bodyAge";
 import { buildBodyCheckSummary, buildBookingUrl } from "@/lib/booking";
+import { LEVEL_META } from "@/config/feedback";
+import { buildDetailedFeedback, type DetailedFeedback } from "@/lib/feedback";
 import { buildResultMessages, calculateResult } from "@/lib/scoring";
 import { recommendSelfCare } from "@/lib/selfcare";
 import { buildCompletionEvent, sendStats } from "@/lib/stats";
@@ -71,6 +73,15 @@ export function ResultView() {
         ? "性別が未入力のため判定できませんでした。もう一度チェックするとカラダ年齢が表示されます"
         : null;
 
+  const feedback = buildDetailedFeedback(result, state.answers);
+  const bookingUrl = siteConfig.bookingUrl
+    ? buildBookingUrl(siteConfig.bookingUrl, buildBodyCheckSummary(result, bodyAge))
+    : null;
+  const symptomLabels = state.profile.symptoms
+    .filter((s) => s !== "none" && s !== "other")
+    .map((s) => SYMPTOMS.find((x) => x.id === s)?.label)
+    .filter((l): l is string => !!l);
+
   const restart = () => {
     clearState();
     router.push("/check");
@@ -94,13 +105,11 @@ export function ResultView() {
           ageLabel={AGE_GROUPS.find((a) => a.id === state.profile.ageGroup)?.label}
         />
         <Messages result={result} />
-        <ItemList result={result} />
         <StrengthsAndImprovements result={result} />
+        <DetailedItemList result={result} feedback={feedback} />
+        <ConsultSection feedback={feedback} symptoms={symptomLabels} url={bookingUrl} onClick={onBookingClick} />
         <SelfCareSection result={result} />
-        <BookingSection
-          url={siteConfig.bookingUrl ? buildBookingUrl(siteConfig.bookingUrl, buildBodyCheckSummary(result, bodyAge)) : null}
-          onClick={onBookingClick}
-        />
+        <BookingSection url={bookingUrl} onClick={onBookingClick} />
 
         <div className="space-y-3 pt-2">
           <button type="button" onClick={restart} className={buttonStyles.secondary}>
@@ -264,47 +273,140 @@ function Messages({ result }: { result: ScoreResult }) {
   );
 }
 
-function ItemList({ result }: { result: ScoreResult }) {
+function DetailedItemList({ result, feedback }: { result: ScoreResult; feedback: DetailedFeedback }) {
   return (
     <section aria-labelledby="items-heading">
-      <h2 id="items-heading" className="mb-3 text-xl font-black">
-        項目別の評価
+      <h2 id="items-heading" className="text-xl font-black">
+        項目別のくわしい解説
       </h2>
+      <p className="mb-3 mt-1 text-sm text-slate-700">良い点と、気をつけたい点をまとめました。</p>
       <ul className="space-y-3">
         {result.items.map((item) => {
           const meta = CHECK_META[item.id];
+          const fb = feedback.items.find((f) => f.id === item.id);
+          const level = fb ? LEVEL_META[fb.level] : null;
           const percent = item.score === null ? 0 : (item.score / MAX_POINTS_PER_CHECK) * 100;
           return (
             <li key={item.id}>
-              <Card className="flex items-center gap-3 p-4">
-                <CheckIllustration id={item.id} className="size-14 shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <p className="font-black">
-                      <span className="mr-1 text-xs text-brand-700">CHECK{meta.number}</span>
-                      {meta.title}
-                    </p>
-                    {item.score === null ? (
-                      <span className="shrink-0 rounded-full bg-slate-200 px-2 py-0.5 text-xs font-bold text-slate-700">未測定</span>
-                    ) : (
-                      <span className="shrink-0 font-black tabular-nums text-brand-700">
-                        {Math.round(item.score * 10) / 10}
-                        <span className="text-xs text-slate-600">/{MAX_POINTS_PER_CHECK}</span>
-                      </span>
+              <Card className="p-4">
+                <div className="flex items-center gap-3">
+                  <CheckIllustration id={item.id} className="size-14 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="font-black leading-snug">
+                        <span className="mr-1 text-xs text-brand-700">CHECK{meta.number}</span>
+                        {meta.title}
+                      </p>
+                      {level ? (
+                        <span
+                          className="shrink-0 rounded-full px-2.5 py-0.5 text-xs font-black"
+                          style={{ color: level.color, background: level.bg }}
+                        >
+                          {level.mark} {level.label}
+                        </span>
+                      ) : (
+                        <span className="shrink-0 rounded-full bg-slate-200 px-2 py-0.5 text-xs font-bold text-slate-700">未測定</span>
+                      )}
+                    </div>
+                    {item.score !== null && (
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-brand-100" aria-hidden="true">
+                          <div className="h-full rounded-full bg-gradient-to-r from-brand-400 to-brand-600" style={{ width: `${percent}%` }} />
+                        </div>
+                        <span className="shrink-0 text-xs font-black tabular-nums text-brand-700">
+                          {Math.round(item.score * 10) / 10}/{MAX_POINTS_PER_CHECK}
+                        </span>
+                      </div>
+                    )}
+                    <p className="mt-1 text-sm text-slate-600">{item.summary}</p>
+                  </div>
+                </div>
+                {fb && (
+                  <div className="mt-3 space-y-2 border-t border-brand-100 pt-3 text-[15px] leading-relaxed">
+                    <p className="font-black text-navy-900">{fb.headline}</p>
+                    <div className="rounded-xl bg-brand-50 p-3">
+                      <p className="text-xs font-black text-brand-700">👍 良い点</p>
+                      <p className="mt-0.5">{fb.goodPoint}</p>
+                    </div>
+                    <div className={cx("rounded-xl p-3", fb.level === "good" ? "bg-slate-50" : "bg-sun-100")}>
+                      <p className="text-xs font-black text-navy-700">{fb.level === "good" ? "💡 キープのコツ" : "⚠️ 気をつけたい点"}</p>
+                      <p className="mt-0.5">{fb.caution}</p>
+                    </div>
+                    {fb.clinic && (
+                      <p className="rounded-xl border border-dashed border-brand-300 p-3 text-sm">
+                        <span className="font-black text-brand-700">🩺 整骨院で確認できること：</span>
+                        {fb.clinic}
+                      </p>
                     )}
                   </div>
-                  {item.score !== null && (
-                    <div className="mt-1 h-2 overflow-hidden rounded-full bg-brand-100" aria-hidden="true">
-                      <div className="h-full rounded-full bg-gradient-to-r from-brand-400 to-brand-600" style={{ width: `${percent}%` }} />
-                    </div>
-                  )}
-                  <p className="mt-1 truncate text-sm text-slate-700">{item.summary}</p>
-                </div>
+                )}
               </Card>
             </li>
           );
         })}
       </ul>
+    </section>
+  );
+}
+
+function BookingButton({ url, onClick, label = "身体の相談・WEB予約はこちら" }: { url: string; onClick: () => void; label?: string }) {
+  return (
+    <a href={url} target="_blank" rel="noopener noreferrer" onClick={onClick} className={cx(buttonStyles.accent, "mt-4")}>
+      {label}
+      <span className="sr-only">（新しいタブで開きます）</span>
+    </a>
+  );
+}
+
+/** 結果に合わせて「予約すると何をしてもらえるか」を具体的に示す */
+function ConsultSection({
+  feedback,
+  symptoms,
+  url,
+  onClick,
+}: {
+  feedback: DetailedFeedback;
+  symptoms: string[];
+  url: string | null;
+  onClick: () => void;
+}) {
+  if (feedback.items.length === 0) return null;
+  const points = feedback.consultPoints.slice(0, 3);
+  return (
+    <section
+      aria-labelledby="consult-heading"
+      className="rounded-[2rem] bg-gradient-to-br from-navy-900 to-brand-700 p-6 text-white shadow-[0_10px_24px_rgba(30,58,95,0.25)]"
+    >
+      <p className="text-xs font-bold tracking-widest text-sun-300">FOR YOU</p>
+      <h2 id="consult-heading" className="mt-1 text-xl font-black leading-snug">
+        {points.length > 0 ? "あなたの結果から、専門スタッフが詳しく確認したいこと" : "良い状態を、これからも保つために"}
+      </h2>
+      {symptoms.length > 0 && (
+        <p className="mt-2 text-sm leading-relaxed text-white/85">
+          気になる症状（{symptoms.join("・")}）とあわせて、原因を一緒に確認します。
+        </p>
+      )}
+      {points.length > 0 ? (
+        <ol className="mt-4 space-y-3">
+          {points.map((p, i) => (
+            <li key={p.id} className="rounded-2xl bg-white/10 p-3">
+              <p className="text-sm font-black text-sun-300">
+                {i + 1}. {p.title}
+              </p>
+              <p className="mt-1 text-[15px] leading-relaxed">{p.text}</p>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="mt-3 text-[15px] leading-relaxed">{feedback.allGoodMessage}</p>
+      )}
+      {feedback.painNote && <p className="mt-3 rounded-2xl bg-white/15 p-3 text-sm font-bold">{feedback.painNote}</p>}
+      {url && (
+        <>
+          <BookingButton url={url} onClick={onClick} label="この内容で相談・予約する" />
+          <p className="mt-2 text-center text-xs text-white/75">チェック結果は予約フォームに引き継がれます／ご予約は任意です</p>
+        </>
+      )}
     </section>
   );
 }
@@ -391,10 +493,7 @@ function BookingSection({ url, onClick }: { url: string | null; onClick: () => v
         セルフチェックでは分からない身体の動きや状態を、専門スタッフが確認します。
       </p>
       {url ? (
-        <a href={url} target="_blank" rel="noopener noreferrer" onClick={onClick} className={cx(buttonStyles.accent, "mt-5")}>
-          身体の相談・WEB予約はこちら
-          <span className="sr-only">（新しいタブで開きます）</span>
-        </a>
+        <BookingButton url={url} onClick={onClick} />
       ) : (
         <>
           <button type="button" disabled className={cx(buttonStyles.primary, "mt-5")} aria-describedby="booking-unavailable">
