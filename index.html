@@ -224,7 +224,8 @@ const BASE_STAFF_ACCOUNTS = [
 let STAFF_ACCOUNTS = [...BASE_STAFF_ACCOUNTS];
 function updateStaffAccounts(dynamicStaffRows){
   const extra=(dynamicStaffRows||[])
-    .filter(r=>r.name&&!BASE_STAFF_ACCOUNTS.some(s=>s.id===r.id||s.name===r.name))
+    // 名前が「（未使用）」で始まる行は、使わなくなったスタッフ枠なので表示しない
+    .filter(r=>r.name&&!String(r.name).startsWith("（未使用）")&&!BASE_STAFF_ACCOUNTS.some(s=>s.id===r.id||s.name===r.name))
     .map(r=>({
       id:r.id,name:r.name,email:r.email||"",
       role:r.role||"staff",color:r.color||"#64748b",initial:r.initial||(r.name?r.name.charAt(0):"?"),
