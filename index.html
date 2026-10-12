@@ -7028,38 +7028,63 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
   const selBks=selPatient?bookings.filter(b=>b.patient_name===selPatient).sort((a,b)=>b.date.localeCompare(a.date)):[];
   const firstBk=selBks.length>0?selBks[selBks.length-1]:null;
 
+  // 患者情報（フリガナ・電話・住所・カルテNo.）は予約ごとに保存されているため、
+  // 新しい予約から順に見て、値が入っている最新のものを表示する（編集した内容がすぐ反映されるように）
+  const infoOf=f=>{ const hit=selBks.find(b=>!b.cancelled&&b[f])||selBks.find(b=>b[f]); return hit?hit[f]:""; };
+  const patientInfo=selPatient?{patient_kana:infoOf("patient_kana"),phone:infoOf("phone"),address:infoOf("address"),karte_no:infoOf("karte_no")}:null;
+
   function openEdit(){
     if(!firstBk) return;
-    setEditForm({name:firstBk.patient_name||"",kana:firstBk.patient_kana||"",phone:firstBk.phone||"",address:firstBk.address||"",karte_no:firstBk.karte_no||""});
+    setEditForm({name:selPatient||"",kana:patientInfo.patient_kana||"",phone:patientInfo.phone||"",address:patientInfo.address||"",karte_no:patientInfo.karte_no||""});
     setEditMode(true);
   }
 
-  // 編集で実際に上書きされる予約（今日以降・キャンセル済みを除く）
-  // 過去の来院記録・カルテは書き換えない＝別人の予約が同じ名前で紛れ込んでいても、過去分は保護される
+  // 編集で連絡先などを上書きする予約：今日以降の予約（キャンセル除く）。
+  // 次回予約がない方は、いちばん新しい来院の予約1件に保存する（過去の予約・カルテ全体は書き換えない）
   const editableBks=selBks.filter(b=>!b.cancelled&&b.date>=todayStr);
+  const latestBk=selBks.find(b=>!b.cancelled)||selBks[0]||null;
 
   async function saveEdit(){
-    if(!editForm.name.trim()) return;
-    if(editableBks.length===0){ alert("更新対象の今後の予約がありません（過去の予約は保護のため変更されません）"); return; }
-    const nameChanged=editForm.name.trim()!==selPatient;
-    const karteChanged=(editForm.karte_no||"").trim()!==(firstBk.karte_no||"");
-    const kanaChanged=(editForm.kana||"").trim()!==(firstBk.patient_kana||"");
+    const newName=editForm.name.trim();
+    if(!newName||!latestBk) return;
+    const targets=editableBks.length>0?editableBks:[latestBk];
+    const nameChanged=newName!==selPatient;
+    const kanaChanged=(editForm.kana||"").trim()!==(patientInfo.patient_kana||"");
+    const karteChanged=(editForm.karte_no||"").trim()!==(patientInfo.karte_no||"");
     const confirmMsg=
-      `以下の${editableBks.length}件の今後の予約に反映します（過去の予約・カルテは変更されません）。\n\n`+
-      editableBks.slice(0,10).map(b=>`・${b.date} ${b.time}`).join("\n")+
-      (editableBks.length>10?`\n…他${editableBks.length-10}件`:"")+
-      (nameChanged?`\n\n名前を「${selPatient}」→「${editForm.name.trim()}」に変更します。`:"")+
-      (kanaChanged?`\n\nフリガナを「${firstBk.patient_kana||"（未設定）"}」→「${editForm.kana.trim()||"（未設定）"}」に変更します。`:"")+
-      (karteChanged?`\n\nカルテ番号を「${firstBk.karte_no||"（未設定）"}」→「${editForm.karte_no.trim()||"（未設定）"}」に変更します。`:"")+
+      (editableBks.length>0
+        ?`以下の${targets.length}件の今後の予約に反映します。\n\n`+targets.slice(0,10).map(b=>`・${b.date} ${b.time}`).join("\n")+(targets.length>10?`\n…他${targets.length-10}件`:"")
+        :`次回予約がないため、最新の来院（${latestBk.date} ${latestBk.time}）の記録に保存します。`)+
+      (nameChanged?`\n\n名前を「${selPatient}」→「${newName}」に変更します（来院履歴・会計・回数券がばらばらにならないよう、この方の全${selBks.length}件の予約と会計・回数券の名前もまとめて変更します）。`:"")+
+      (kanaChanged?`\n\nフリガナを「${patientInfo.patient_kana||"（未設定）"}」→「${editForm.kana.trim()||"（未設定）"}」に変更します。`:"")+
+      (karteChanged?`\n\nカルテ番号を「${patientInfo.karte_no||"（未設定）"}」→「${editForm.karte_no.trim()||"（未設定）"}」に変更します。`:"")+
       `\n\nよろしいですか？`;
     if(!window.confirm(confirmMsg)) return;
+    // 更新できなかった場合（権限がない等）に「保存できたように見えて実は変わっていない」を防ぐため、結果を確かめる
+    const check=(res)=>{ if(!Array.isArray(res)||res.length===0) throw new Error((res&&res.message)||"更新できませんでした（権限がない可能性があります）"); return res; };
     try{
-      for(const b of editableBks){
-        await sb.update("bookings",b.id,{patient_name:editForm.name,patient_kana:editForm.kana.trim()||null,phone:editForm.phone,address:editForm.address,karte_no:editForm.karte_no.trim()||null});
+      const info={patient_name:newName,patient_kana:editForm.kana.trim()||null,phone:editForm.phone.trim(),address:editForm.address.trim(),karte_no:editForm.karte_no.trim()||null};
+      const changed={};
+      for(const b of targets){
+        check(await sb.update("bookings",b.id,info));
+        changed[b.id]=info;
       }
+      if(nameChanged){
+        const targetIds=new Set(targets.map(b=>b.id));
+        for(const b of selBks){
+          if(targetIds.has(b.id)) continue;
+          check(await sb.update("bookings",b.id,{patient_name:newName}));
+          changed[b.id]={patient_name:newName};
+        }
+        const enc=encodeURIComponent(selPatient);
+        await sb.query("payments","PATCH",{patient_name:newName},`?patient_name=eq.${enc}`);
+        await sb.query("passes","PATCH",{patient_name:newName},`?patient_name=eq.${enc}`);
+        if(typeof setAllPayments==="function") setAllPayments(prev=>(prev||[]).map(p=>p.patient_name===selPatient?{...p,patient_name:newName}:p));
+      }
+      if(typeof setAllBookings==="function") setAllBookings(prev=>(prev||[]).map(b=>changed[b.id]?{...b,...changed[b.id]}:b));
       setEditMode(false);
-      selectPatient(editForm.name);
-    }catch(e){alert("更新に失敗しました");}
+      selectPatient(newName);
+    }catch(e){alert("更新に失敗しました："+e.message);}
   }
 
   // ===== 誤って二重登録してしまった患者を削除する =====
@@ -7226,11 +7251,11 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
             <div style={{background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)",padding:"14px 18px",flexShrink:0}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
                 <div>
-                  <div style={{fontWeight:800,fontSize:17,color:"white"}}>{selPatient} 様{firstBk?.patient_kana&&<span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.75)",marginLeft:8}}>（{firstBk.patient_kana}）</span>}</div>
+                  <div style={{fontWeight:800,fontSize:17,color:"white"}}>{selPatient} 様{patientInfo?.patient_kana&&<span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,.75)",marginLeft:8}}>（{patientInfo.patient_kana}）</span>}</div>
                   <div style={{fontSize:12,color:"rgba(255,255,255,.7)",marginTop:2}}>
-                    {firstBk?.karte_no&&<span>🗂 カルテNo.{firstBk.karte_no}</span>}
-                    {firstBk?.phone&&<span style={{marginLeft:firstBk?.karte_no?10:0}}>📞 {firstBk.phone}</span>}
-                    {firstBk?.address&&<span style={{marginLeft:10}}>📍 {firstBk.address}</span>}
+                    {patientInfo?.karte_no&&<span>🗂 カルテNo.{patientInfo.karte_no}</span>}
+                    {patientInfo?.phone&&<span style={{marginLeft:patientInfo?.karte_no?10:0}}>📞 {patientInfo.phone}</span>}
+                    {patientInfo?.address&&<span style={{marginLeft:10}}>📍 {patientInfo.address}</span>}
                     {firstBk?.line_user_id&&<span style={{marginLeft:8,background:"rgba(6,199,85,.3)",borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>LINE連携</span>}
                   </div>
                 </div>
@@ -7314,7 +7339,10 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
                   </div>
                 </div>
                 <div style={{fontSize:11,color:"#92400e",background:"#fef3c7",border:"1px solid #fde68a",borderRadius:8,padding:"8px 10px",marginBottom:12,lineHeight:1.6}}>
-                  ⚠️ この内容は「{selPatient}」の<b>今後の予約（{editableBks.length}件）にのみ</b>反映されます。過去の来院記録・カルテは変更されません。
+                  {editableBks.length>0
+                    ?<>⚠️ この内容は「{selPatient}」の<b>今後の予約（{editableBks.length}件）</b>に反映されます。過去の来院記録・カルテは変更されません。</>
+                    :<>ℹ️ 次回予約がないため、<b>最新の来院（{latestBk?.date}）の記録</b>に保存します（それより前の来院記録は変更されません）。</>}
+                  {editForm.name.trim()&&editForm.name.trim()!==selPatient&&<div style={{marginTop:4}}>名前を変えると、来院履歴・会計・回数券の名前もまとめて変更されます。</div>}
                 </div>
                 <div style={{display:"flex",gap:8}}>
                   <button onClick={()=>setEditMode(false)} style={{flex:1,padding:"8px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>キャンセル</button>
