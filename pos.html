@@ -1274,6 +1274,58 @@ function fmtPaidAt(pay){
   return `${t.getMonth()+1}/${t.getDate()} ${String(t.getHours()).padStart(2,"0")}:${String(t.getMinutes()).padStart(2,"0")}`;
 }
 
+// ===== 回数券・フリーパスの登録 =====
+// 自費項目のラベル（「姿勢矯正等 8回券」「フリーパス 3ヶ月」など）から passes に登録する内容を作る
+function passRowsFromItems(items,dateStr){
+  const rows=[];
+  for(const item of (items||[])){
+    const label=String(item.label||"");
+    const kaisu=label.match(/(.+?)(\d+)回券/);
+    const fp=label.match(/(?:FP|フリーパス)\s*(\d+)\s*ヶ月/);
+    if(!kaisu&&!fp) continue;
+    const expiry=new Date(dateStr);
+    let count;
+    if(kaisu){ count=parseInt(kaisu[2]); expiry.setFullYear(expiry.getFullYear()+1); } // 回数券：購入日から1年
+    else{ const months=parseInt(fp[1]); count=months*30; expiry.setMonth(expiry.getMonth()+months); } // FP：日数換算
+    rows.push({
+      patient_name:booking.patient_name,phone:booking.phone||null,pass_type:label,
+      total_count:count,remaining_count:count,amount:parseInt(item.amount)||0,
+      purchased_date:dateStr,expiry_date:expiry.toISOString().split("T")[0],
+      staff_id:booking.staff_id,active:true,is_training:!!booking.is_training,
+    });
+  }
+  return rows;
+}
+// 登録して、失敗したもののラベルを返す（sbPost はエラーでも例外を出さないため、結果を確かめる）
+async function registerPasses(rows){
+  const failed=[];
+  for(const r of rows){
+    try{
+      const res=await sbPost("passes",r);
+      if(!Array.isArray(res)||res.length===0) failed.push(r.pass_type);
+    }catch(e){ failed.push(r.pass_type); }
+  }
+  return failed;
+}
+// 会計済みの予約で、購入した回数券・FPが登録されていないものを探す（登録漏れの発見用）
+async function findMissingPasses(pay){
+  const rows=passRowsFromItems(pay.jifee_items,pay.payment_date||booking.date);
+  if(rows.length===0) return [];
+  const have=await sbGet("passes",`?patient_name=eq.${encodeURIComponent(booking.patient_name)}&purchased_date=eq.${rows[0].purchased_date}`);
+  const list=Array.isArray(have)?have:[];
+  return rows.filter(r=>!list.some(h=>h.pass_type===r.pass_type));
+}
+async function registerMissingPasses(){
+  const rows=state.missingPasses||[];
+  if(rows.length===0) return;
+  if(!confirm(`次の回数券・フリーパスを登録します。\n${rows.map(r=>`・${r.pass_type}（購入日 ${r.purchased_date}・期限 ${r.expiry_date}）`).join("\n")}\n\nよろしいですか？`)) return;
+  const failed=await registerPasses(rows);
+  if(failed.length>0){ alert("登録に失敗しました："+failed.join("、")+"\nログイン状態を確認して、もう一度お試しください。"); return; }
+  state.missingPasses=[];
+  alert("登録しました");
+  render();
+}
+
 // ===== 会計後の修正（金額・内訳・支払方法） =====
 // 新しい会計を作らずに、確定済みの会計そのものを書き換える。変更前後は payment_corrections に記録する
 function startFix(){
@@ -1378,49 +1430,11 @@ async function save(){
     }
 
     // ===== 回数券・FP購入をpassesテーブルに自動登録 =====
-    for(const item of state.jifeeItems){
-      // 回数券の判定
-      const kaisuMatch=item.label.match(/(.+?)(\d+)回券/);
-      if(kaisuMatch){
-        const count=parseInt(kaisuMatch[2]);
-        // 有効期限：購入日から1年
-        const expiry=new Date(booking.date);expiry.setFullYear(expiry.getFullYear()+1);
-        const expiryStr=expiry.toISOString().split("T")[0];
-        await sbPost("passes",{
-          patient_name:booking.patient_name,
-          phone:booking.phone||null,
-          pass_type:item.label,
-          total_count:count,
-          remaining_count:count,
-          amount:item.amount,
-          purchased_date:booking.date,
-          expiry_date:expiryStr,
-          staff_id:booking.staff_id,
-          active:true,
-          is_training:!!booking.is_training,
-        });
-      }
-      // FPの判定（自費項目ボタンのラベルは「フリーパス 3ヶ月」のような表記のため、FP表記とフリーパス表記の両方に対応する）
-      const fpMatch=item.label.match(/(?:FP|フリーパス)\s*(\d+)\s*ヶ月/);
-      if(fpMatch){
-        const months=parseInt(fpMatch[1]);
-        const expiry=new Date(booking.date);expiry.setMonth(expiry.getMonth()+months);
-        const expiryStr=expiry.toISOString().split("T")[0];
-        await sbPost("passes",{
-          patient_name:booking.patient_name,
-          phone:booking.phone||null,
-          pass_type:item.label,
-          total_count:months*30, // 日数換算
-          remaining_count:months*30,
-          amount:item.amount,
-          purchased_date:booking.date,
-          expiry_date:expiryStr,
-          staff_id:booking.staff_id,
-          active:true,
-          is_training:!!booking.is_training,
-        });
-      }
-    }
+    // 登録に失敗しても会計は保存済みのため、ここでは止めずに知らせる（会計済み画面から再登録できる）
+    try{
+      const failed=await registerPasses(passRowsFromItems(state.jifeeItems,booking.date));
+      if(failed.length>0) alert(`会計は保存されましたが、次の回数券・フリーパスの登録に失敗しました。\n${failed.join("\n")}\n\nこの予約の会計画面をもう一度開くと「登録する」ボタンから登録できます。`);
+    }catch(e){ console.error("回数券・FPの登録に失敗しました",e); }
 
     // ===== 回数券消費：会計完了のタイミングで、選択されていた回数券の残数を1減らす =====
     // 会計画面の「回数券・フリーパス」カードで選ばれたもの（予約時に選択済みの場合は最初から選択状態）を対象にする
@@ -1480,6 +1494,9 @@ function render(){
           <div style="font-size:44px;margin-bottom:6px;">🧾</div>
           <div style="font-size:18px;font-weight:800;color:#1e3a5f;">この予約は会計済みです</div>
           <div style="color:#666;font-size:13px;margin-top:4px;">${escH(booking.patient_name)} 様　${fmt(calcTotal())}（${fmtPaidAt(state.alreadyPaid)} 会計）</div>
+          ${(state.missingPasses||[]).length>0?`<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:10px;padding:10px 12px;margin-top:10px;font-size:12px;color:#991b1b;text-align:left;">
+            <b>⚠ 購入した回数券・フリーパスが登録されていません</b><br>${state.missingPasses.map(r=>escH(r.pass_type)).join("、")}（このままだと次回以降の会計で使えません）
+            <button onclick="registerMissingPasses()" style="display:block;width:100%;margin-top:8px;padding:9px;border-radius:8px;border:none;background:#dc2626;color:white;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;">🎫 回数券・フリーパスを登録する</button></div>`:""}
           ${state.fixedMessage?`<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 12px;margin-top:10px;font-size:12px;font-weight:700;color:#1e40af;">✏️ ${escH(state.fixedMessage)}</div>`:""}
           <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;padding:10px 12px;margin-top:10px;font-size:12px;color:#065f46;">会計をやり直さずに、下からレシートを再発行できます（売上は増えません）</div>
           <button onclick="startFix()" style="width:100%;margin-top:10px;padding:11px;border-radius:10px;border:1.5px solid #2563eb;background:white;color:#2563eb;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;">✏️ 会計内容を修正する（金額・項目・支払方法）</button>
@@ -1764,6 +1781,7 @@ async function init(){
         if(paidList.length>0){
           state.paidList=paidList;
           restorePaidState(paidList[paidList.length-1]);
+          try{ state.missingPasses=await findMissingPasses(state.alreadyPaid); }catch(e){ state.missingPasses=[]; }
           // 患者管理の「金額修正」から開いた場合は、そのまま修正モードにする
           if(new URLSearchParams(location.search).get("fix")==="1") state.fixing=state.alreadyPaid;
           // 回数券・フリーパスを使っていた場合は、レシートに利用内容を載せる
