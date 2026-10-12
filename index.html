@@ -503,6 +503,75 @@ const sb = {
   },
 };
 
+// ===== 全端末で共有する設定（月次シフト・休暇残・売上目標） =====
+// 以前はブラウザ（localStorage）にだけ保存していたため、端末ごとに設定し直す必要があった。
+// サーバー（app_settings）を正として、localStorage はその写し（すぐ読めるようにするための控え）として使う。
+const SHARED_SETTING_PREFIXES=["shifts_","holiday_balance","ando_sales_target_"];
+function isSharedSettingKey(k){ return SHARED_SETTING_PREFIXES.some(p=>String(k).startsWith(p)); }
+const sharedSettings={
+  migrated:false,
+  pending:{},   // サーバーへの保存待ち（入力中の連打をまとめる）
+  timers:{},
+  // サーバーの値を取り込む。変わったものがあれば画面に知らせる
+  async pull(){
+    const rows=await sb.select("app_settings","?select=key,value");
+    if(!Array.isArray(rows)) return;
+    const server={};
+    rows.forEach(r=>{ server[r.key]=r.value; });
+    let changed=false;
+    try{
+      Object.keys(server).forEach(k=>{
+        if(this.pending[k]!==undefined) return; // この端末で保存中のものは上書きしない
+        if(localStorage.getItem(k)!==server[k]){ localStorage.setItem(k,server[k]); changed=true; }
+      });
+      // 初回だけ：この端末にだけ残っている古い設定をサーバーへ引き継ぐ（サーバーにすでにあるものは上書きしない）
+      if(!this.migrated){
+        this.migrated=true;
+        for(let i=0;i<localStorage.length;i++){
+          const k=localStorage.key(i);
+          if(isSharedSettingKey(k)&&server[k]===undefined) this.push(k,localStorage.getItem(k),true);
+        }
+      }
+    }catch(e){}
+    if(changed) window.dispatchEvent(new Event("ando-shared-settings"));
+  },
+  // 端末に保存して、サーバーにも保存する（入力中の連打は0.8秒まとめて送る）
+  set(key,val){
+    const v=String(val==null?"":val);
+    try{ localStorage.setItem(key,v); }catch(e){}
+    this.pending[key]=v;
+    clearTimeout(this.timers[key]);
+    this.timers[key]=setTimeout(()=>this.push(key,v),800);
+  },
+  async push(key,v,onlyIfMissing){
+    try{
+      const {data:{session}}=await supabaseClient.auth.getSession();
+      if(!session) return;
+      const res=await fetch(`${SUPABASE_URL}/rest/v1/app_settings?on_conflict=key`,{
+        method:"POST",
+        headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${session.access_token}`,"Content-Type":"application/json",
+          Prefer:onlyIfMissing?"resolution=ignore-duplicates":"resolution=merge-duplicates"},
+        body:JSON.stringify({key,value:v,updated_at:new Date().toISOString()}),
+      });
+      if(!res.ok) throw new Error("HTTP "+res.status);
+      if(this.pending[key]===v) delete this.pending[key];
+    }catch(e){
+      console.error("設定の保存に失敗しました",key,e);
+      if(!onlyIfMissing) alert("設定をサーバーに保存できませんでした（この端末には保存済み）。通信状態を確認して、もう一度保存してください。");
+    }
+  },
+};
+// 他の端末で変えた設定が届いたら再描画するためのフック
+function useSharedSettingsVersion(){
+  const [v,setV]=React.useState(0);
+  React.useEffect(()=>{
+    const on=()=>setV(x=>x+1);
+    window.addEventListener("ando-shared-settings",on);
+    return()=>window.removeEventListener("ando-shared-settings",on);
+  },[]);
+  return v;
+}
+
 // 予約の追加・変更・キャンセルをスタッフのLINEグループへ自動共有するためのヘルパー。
 // line_groupsテーブルに登録されているグループ（現状「スタッフグループ」）へ送信する。
 // 失敗しても予約自体の保存処理には影響させない（best-effort・非同期で投げっぱなし）。
@@ -1758,12 +1827,13 @@ function IndivSimCard({baselineTaiou,baselineHokenTanka,fmt}){
 function StaffSalesRow({row,maxStaffSales,fmt,isExpanded,onToggle,selStatsStoreId,range,elapsedRangeDays,totalRangeDays,rangeProgressPct,DeltaTag}){
   const targetKey=`ando_sales_target_staff_${selStatsStoreId||"all"}_${row.staffId}_${range.start.slice(0,7)}`;
   const [target,setTarget]=React.useState("");
+  const sharedSettingsVersion=useSharedSettingsVersion();
   React.useEffect(()=>{
     try{ setTarget(localStorage.getItem(targetKey)||""); }catch(e){ setTarget(""); }
-  },[targetKey]);
+  },[targetKey,sharedSettingsVersion]);
   function updateTarget(val){
     setTarget(val);
-    try{ localStorage.setItem(targetKey,val); }catch(e){}
+    sharedSettings.set(targetKey,val);
   }
   const targetNum=Number(target)||0;
   const achievePct=targetNum>0?Math.round(row.total/targetNum*100):null;
@@ -3653,14 +3723,15 @@ function StatsPanel({bookings,payments,stores,todayStr}){
   const elapsedBusinessDays=countBusinessDays(range.start,range.end,selStatsStoreId);
 
   // ===== 月間売上目標（院＝店舗全体、個人＝選択中スタッフ、それぞれ別々にブラウザへ保存） =====
+  const sharedSettingsVersion=useSharedSettingsVersion();
   const storeTargetKey=`ando_sales_target_store_${selStatsStoreId||"all"}_${range.start.slice(0,7)}`;
   const [storeSalesTarget,setStoreSalesTarget]=React.useState("");
   React.useEffect(()=>{
     try{ setStoreSalesTarget(localStorage.getItem(storeTargetKey)||""); }catch(e){ setStoreSalesTarget(""); }
-  },[storeTargetKey]);
+  },[storeTargetKey,sharedSettingsVersion]);
   function updateStoreSalesTarget(val){
     setStoreSalesTarget(val);
-    try{ localStorage.setItem(storeTargetKey,val); }catch(e){}
+    sharedSettings.set(storeTargetKey,val);
   }
 
   const staffTargetKey=selStatsStaffId!=null?`ando_sales_target_staff_${selStatsStoreId||"all"}_${selStatsStaffId}_${range.start.slice(0,7)}`:null;
@@ -3668,11 +3739,11 @@ function StatsPanel({bookings,payments,stores,todayStr}){
   React.useEffect(()=>{
     if(!staffTargetKey){ setStaffSalesTarget(""); return; }
     try{ setStaffSalesTarget(localStorage.getItem(staffTargetKey)||""); }catch(e){ setStaffSalesTarget(""); }
-  },[staffTargetKey]);
+  },[staffTargetKey,sharedSettingsVersion]);
   function updateStaffSalesTarget(val){
     setStaffSalesTarget(val);
     if(!staffTargetKey) return;
-    try{ localStorage.setItem(staffTargetKey,val); }catch(e){}
+    sharedSettings.set(staffTargetKey,val);
   }
 
   // 期間内の予約・会計
@@ -6387,8 +6458,8 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
 
   function saveMonthShifts(){
     try{
-      localStorage.setItem(`shifts_${selMonth}`,JSON.stringify(monthShifts));
-      localStorage.setItem("holiday_balance",JSON.stringify(monthHolidays));
+      sharedSettings.set(`shifts_${selMonth}`,JSON.stringify(monthShifts));
+      sharedSettings.set("holiday_balance",JSON.stringify(monthHolidays));
       showToast("保存しました");
     }catch{showToast("エラー");}
   }
@@ -7580,8 +7651,8 @@ function ShiftPanel({currentUser}){
 
   function save(){
     try{
-      localStorage.setItem(`shifts_${selMonth}`,JSON.stringify(shifts));
-      localStorage.setItem("holiday_balance",JSON.stringify(holidays));
+      sharedSettings.set(`shifts_${selMonth}`,JSON.stringify(shifts));
+      sharedSettings.set("holiday_balance",JSON.stringify(holidays));
       setToast("保存しました");setTimeout(()=>setToast(""),2000);
     }catch{setToast("エラー");}
   }
@@ -9902,10 +9973,11 @@ function StaffOffConflictsPanel({bookings,weeklyShifts,dateOverrides,storeStaff,
     if(ws) return ws.is_working!==false;
     return true;
   }
+  const sharedSettingsVersion=useSharedSettingsVersion();
   const conflicts=React.useMemo(()=>{
     return bookings.filter(b=>!b.cancelled&&b.date>=todayStr&&!isWorkingLocal(b.staff_id,b.date))
       .sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time));
-  },[bookings,weeklyShifts,todayStr]);
+  },[bookings,weeklyShifts,todayStr,sharedSettingsVersion]);
   async function reassign(booking,newStaffId){
     setSavingId(booking.id);
     await onReassign(booking,Number(newStaffId));
@@ -11683,56 +11755,12 @@ function Dashboard({user,onLogout}){
     return staffLaneMap[staffId]||1;
   }
 
-  // ===== カレンダーの表示状態（見ている日付・店舗・スタッフ）をPCとスマホなど別端末間で連動させる =====
-  // 同じログインユーザーが別の端末で見ている表示を、Supabaseのadmin_view_stateテーブルに保存しておき、
-  // 30秒ごとの自動更新（fetchAll）のタイミングで他端末での変更を取り込む。予約データ本体には一切影響しない。
-  const viewStateSyncRef=React.useRef({loaded:false,applyingRemote:false,lastWritten:null});
+  // カレンダーの表示（見ている日付・店舗・スタッフ）は端末ごとに自由に動かせるよう、端末間では連動させない。
+  // （以前は admin_view_state で同じログインの端末どうしを連動させていたが、共有IDでは全端末が動いてしまうため廃止）
   // selStoreId===nullは「全店舗」表示を表す正当な値なので、初期デフォルト店舗の割り当ては一度だけ行う
   const storeIdInitRef=React.useRef(false);
-  // fetchAllはマウント時に一度だけ登録したsetIntervalから繰り返し呼ばれるため、
-  // その時点のbaseDate等を直接読むと古い値のままになってしまう。常に最新の値を読めるようrefで持っておく。
-  const currentViewRef=React.useRef({baseDate,selStoreId,selStaff});
-  React.useEffect(()=>{ currentViewRef.current={baseDate,selStoreId,selStaff}; },[baseDate,selStoreId,selStaff]);
-
-  async function writeViewState(values){
-    if(!user||!user.id) return;
-    const payload={user_id:user.id,base_date:values.base_date,sel_store_id:values.sel_store_id,sel_staff:values.sel_staff,updated_at:new Date().toISOString()};
-    viewStateSyncRef.current.lastWritten=payload;
-    try{
-      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
-      await fetch(`${SUPABASE_URL}/rest/v1/admin_view_state?on_conflict=user_id`,{
-        method:"POST",
-        headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates"},
-        body:JSON.stringify(payload),
-      });
-    }catch(e){ console.error("表示状態の保存に失敗しました",e); }
-  }
-
-  async function syncViewStateFromServer(){
-    if(!user||!user.id) return;
-    try{
-      const rows=await sb.select("admin_view_state",`?user_id=eq.${user.id}&limit=1`);
-      const row=Array.isArray(rows)&&rows.length>0?rows[0]:null;
-      if(row){
-        const last=viewStateSyncRef.current.lastWritten;
-        // 自分がこれまでに書き込んだ内容と同じ（＝他端末からの変更ではない）場合は何もしない
-        if(!last||last.updated_at!==row.updated_at){
-          viewStateSyncRef.current.applyingRemote=true;
-          storeIdInitRef.current=true; // 他端末の値を適用したので、以後デフォルト店舗の上書きは行わない
-          if(row.base_date) setBaseDate(new Date(row.base_date+"T00:00:00"));
-          setSelStoreId(row.sel_store_id===undefined?null:row.sel_store_id);
-          setSelStaff(row.sel_staff===undefined?null:row.sel_staff);
-          viewStateSyncRef.current.lastWritten={base_date:row.base_date,sel_store_id:row.sel_store_id,sel_staff:row.sel_staff,updated_at:row.updated_at};
-          setTimeout(()=>{viewStateSyncRef.current.applyingRemote=false;},0);
-        }
-      }else if(!viewStateSyncRef.current.loaded){
-        // まだ誰の表示状態も保存されていない＝初回。今見ている内容をそのまま保存しておく
-        const v=currentViewRef.current;
-        writeViewState({base_date:fmtDate(v.baseDate),sel_store_id:v.selStoreId,sel_staff:v.selStaff});
-      }
-    }catch(e){ console.error("表示状態の取得に失敗しました",e); }
-    viewStateSyncRef.current.loaded=true;
-  }
+  // 他の端末で変えたシフト・目標などの共有設定が届いたら再計算する
+  const sharedSettingsVersion=useSharedSettingsVersion();
 
   // 指定した日だけ、同時受付レーン数を変更する（他の日には影響しない）
   async function changeLaneCount(staffId,delta,dateStr){
@@ -11764,9 +11792,8 @@ function Dashboard({user,onLogout}){
 
   async function fetchAll(){
     reloadRefunds();
-    // PC・スマホなど別端末で見ている表示（日付・店舗・スタッフ）との連動チェックも、
-    // このfetchAllの30秒ごとの自動更新に相乗りさせる（他の通信を止めないようawaitはしない）
-    syncViewStateFromServer();
+    // シフト・目標などの共有設定も30秒ごとに取り込む（他の通信を止めないようawaitはしない）
+    sharedSettings.pull().catch(()=>{});
     try{
       const [b,br,py,st,ws,cs,mn,dov]=await Promise.all([sb.select("bookings","?order=date.asc,time.asc"),sb.select("staff_breaks","?order=date.asc,time.asc"),sb.select("payments","?order=payment_date.desc"),sb.select("stores","?order=id.asc"),sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc"),sb.select("clinic_staff","?select=id,store_ids,allowed_menus,lane_count,name,email,password,role,color,initial,event_only"),sb.select("menus","?active=eq.true&order=display_order.asc,id.asc"),sb.select("staff_date_overrides","?order=date.asc")]);
       setAllBookings(Array.isArray(b)?b:[]);setBreaks(Array.isArray(br)?br:[]);setAllPayments(Array.isArray(py)?py:[]);
@@ -11881,31 +11908,6 @@ function Dashboard({user,onLogout}){
   },[selStoreId]);
 
   React.useEffect(()=>{fetchAll();const t=setInterval(fetchAll,30000);return()=>clearInterval(t);},[]);
-
-  // タブを離れて別端末を操作し、また戻ってきた時に最大30秒待たされないよう、
-  // 画面がアクティブになった瞬間にも表示状態の同期だけ即座に行う（予約データ等の全体再取得は待たない）
-  React.useEffect(()=>{
-    function onFocusOrVisible(){
-      if(document.visibilityState&&document.visibilityState!=="visible") return;
-      syncViewStateFromServer();
-    }
-    window.addEventListener("focus",onFocusOrVisible);
-    document.addEventListener("visibilitychange",onFocusOrVisible);
-    return()=>{
-      window.removeEventListener("focus",onFocusOrVisible);
-      document.removeEventListener("visibilitychange",onFocusOrVisible);
-    };
-  },[]);
-
-  // この端末で日付・店舗・スタッフの表示を切り替えたら、すぐにサーバーへ保存する
-  // （他端末からの変更を取り込んだ直後の場合は、書き戻して無限ループにならないようスキップする）
-  React.useEffect(()=>{
-    if(!viewStateSyncRef.current.loaded||viewStateSyncRef.current.applyingRemote) return;
-    const baseDateStr=fmtDate(baseDate);
-    const last=viewStateSyncRef.current.lastWritten;
-    if(last&&last.base_date===baseDateStr&&last.sel_store_id===selStoreId&&last.sel_staff===selStaff) return;
-    writeViewState({base_date:baseDateStr,sel_store_id:selStoreId,sel_staff:selStaff});
-  },[baseDate,selStoreId,selStaff]);
 
   function showToast(msg,type="success"){setToast({msg,type});setTimeout(()=>setToast(null),3000);}
 
@@ -12596,7 +12598,7 @@ function Dashboard({user,onLogout}){
       return true;
     }
     return bookings.filter(b=>!b.cancelled&&b.date>=todayStr&&!isWorkingLocal(b.staff_id,b.date)).length;
-  },[bookings,weeklyShifts,dateOverrides,todayStr]);
+  },[bookings,weeklyShifts,dateOverrides,todayStr,sharedSettingsVersion]);
 
   // ===== サイドバーメニュー定義 =====
   const SvgPlus=()=><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
