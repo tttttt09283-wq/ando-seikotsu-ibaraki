@@ -1222,11 +1222,75 @@ async function onNBDateChange(i, date){
   render();
 }
 
+// ===== 会計済みの予約を開いたとき（レシート再発行モード） =====
+// 「レシートを出すためにもう一度会計する」と二重会計になってしまうため、会計済みなら確定内容を読み込んで
+// 新しい会計を作らずにレシートだけ出せるようにする
+const EXTRA_PAYMENT_MODE=new URLSearchParams(location.search).get("extra")==="1";
+// 「現金:¥5,000・カード:¥1,000」→ [{method:"現金",amount:5000},{method:"カード",amount:1000}]
+function parsePaymentMethods(str){
+  return String(str||"").split("・").map(s=>{
+    const i=s.indexOf(":");
+    if(i<0) return null;
+    return {method:s.slice(0,i),amount:parseInt(s.slice(i+1).replace(/[^\d]/g,""))||0};
+  }).filter(Boolean);
+}
+// この予約の会計（全額返金済みのものは除く）。古い順
+async function loadExistingPayments(bookingId){
+  const rows=await sbGet("payments",`?booking_id=eq.${bookingId}&order=id.asc`);
+  const list=(Array.isArray(rows)?rows:[]).filter(p=>!!p.is_training===!!(booking&&booking.is_training));
+  if(list.length===0) return [];
+  let refs=[];
+  try{ refs=await sbGet("refunds",`?payment_id=in.(${list.map(p=>p.id).join(",")})&voided=eq.false`); }catch(e){ refs=[]; }
+  const refunded={};
+  (Array.isArray(refs)?refs:[]).forEach(r=>{ refunded[r.payment_id]=(refunded[r.payment_id]||0)+(parseInt(r.amount)||0); });
+  return list.filter(p=>!((p.total_amount||0)>0&&(refunded[p.id]||0)>=(p.total_amount||0)));
+}
+// 会計データから画面の状態を復元する（レシートは確定時と同じ内容で出る）
+function restorePaidState(pay){
+  state.insuranceAmount=parseInt(pay.insurance_amount)||0;
+  if(Array.isArray(pay.jifee_items)&&pay.jifee_items.length>0){
+    state.jifeeItems=pay.jifee_items.map(i=>({label:i.label,amount:parseInt(i.amount)||0}));
+  }else if((pay.jifee_amount||0)>0){
+    state.jifeeItems=[{label:pay.memo||"自費",amount:parseInt(pay.jifee_amount)||0}];
+  }else{
+    state.jifeeItems=[];
+  }
+  state.payments=parsePaymentMethods(pay.payment_method);
+  state.insuranceType=pay.insurance_type||null;
+  state.alreadyPaid=pay;
+  state.done=true;
+}
+function selectPaidPayment(id){
+  const pay=(state.paidList||[]).find(p=>p.id===id);
+  if(pay){ restorePaidState(pay); render(); }
+}
+function startExtraPayment(){
+  if(!confirm("この予約はすでに会計済みです。\n\n物販の追加など、別の会計として新しく記録しますか？\n（レシートを出すだけなら、この画面の「領収書を印刷」を使ってください）")) return;
+  location.href=`pos.html?id=${booking.id}&extra=1`;
+}
+function fmtPaidAt(pay){
+  const t=pay.created_at?new Date(pay.created_at):null;
+  if(!t||isNaN(t)) return fmtMD(pay.payment_date);
+  return `${t.getMonth()+1}/${t.getDate()} ${String(t.getHours()).padStart(2,"0")}:${String(t.getMinutes()).padStart(2,"0")}`;
+}
+
 async function save(){
   if(state.saving) return;
   const total=calcTotal();const paid=calcPaid();
   if(state.payments.length===0){alert("支払方法を追加してください");return;}
   if(paid<total&&!confirm(`支払合計(${fmt(paid)})が請求額(${fmt(total)})より少ないですが確定しますか？`)) return;
+  // 別のタブや端末ですでに会計されていないか、確定直前にもう一度確認する（二重会計の防止）
+  if(!EXTRA_PAYMENT_MODE){
+    try{
+      const existing=await loadExistingPayments(booking.id);
+      if(existing.length>0&&!confirm(`この予約はすでに会計済みです（${fmt(existing[existing.length-1].total_amount||0)}）。\n\nレシートを出すだけなら「キャンセル」を押してください（会計済みの画面に切り替わります）。\n別の会計として追加で記録する場合だけ「OK」を押してください。`)){
+        state.paidList=existing;
+        restorePaidState(existing[existing.length-1]);
+        render();
+        return;
+      }
+    }catch(e){}
+  }
   state.saving=true;render();
   try{
     const methodStr=state.payments.map(p=>`${p.method}:${fmt(p.amount)}`).join("・");
@@ -1346,14 +1410,24 @@ function render(){
     const change=calcChange();
     root.innerHTML=`
       <div style="padding:16px;">
+        ${state.alreadyPaid?`
+        <div style="text-align:center;margin-bottom:16px;">
+          <div style="font-size:44px;margin-bottom:6px;">🧾</div>
+          <div style="font-size:18px;font-weight:800;color:#1e3a5f;">この予約は会計済みです</div>
+          <div style="color:#666;font-size:13px;margin-top:4px;">${escH(booking.patient_name)} 様　${fmt(calcTotal())}（${fmtPaidAt(state.alreadyPaid)} 会計）</div>
+          <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;padding:10px 12px;margin-top:10px;font-size:12px;color:#065f46;">会計をやり直さずに、下からレシートを再発行できます（売上は増えません）</div>
+          ${(state.paidList||[]).length>1?`<div style="margin-top:10px;font-size:11px;color:#64748b;">この予約には会計が${state.paidList.length}件あります：
+            ${state.paidList.map(p=>`<button onclick="selectPaidPayment(${p.id})" style="margin:4px 2px 0;padding:5px 10px;border-radius:16px;border:1.5px solid ${p.id===state.alreadyPaid.id?"#2563eb":"#cbd5e1"};background:${p.id===state.alreadyPaid.id?"#eff6ff":"white"};color:#1e293b;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;">${fmtPaidAt(p)} ${fmt(p.total_amount||0)}</button>`).join("")}</div>`:""}
+        </div>`:`
         <div style="text-align:center;margin-bottom:16px;">
           <div style="font-size:48px;margin-bottom:8px;">✅</div>
           <div style="font-size:18px;font-weight:800;color:#1e3a5f;">会計完了</div>
           <div style="color:#666;font-size:13px;margin-top:4px;">${booking.patient_name} 様　${fmt(calcTotal())}</div>
           ${change>0?`<div class="change-box" style="margin-top:10px;"><span style="font-size:13px;font-weight:700;color:#059669;">現金お釣り</span><span style="font-size:24px;font-weight:800;color:#059669;">${fmt(change)}</span></div>`:""}
-        </div>
+        </div>`}
         ${renderReceiptSection()}
         ${renderNextBookings()}
+        ${state.alreadyPaid?`<button onclick="startExtraPayment()" style="width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1.5px dashed #94a3b8;background:white;color:#64748b;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">＋ 別の会計を追加する（物販など・通常は不要）</button>`:""}
         <button class="btn-back" onclick="goBackToCalendar()" style="margin-top:8px;">← カレンダーへ戻る</button>
       </div>`;
     return;
@@ -1610,6 +1684,30 @@ async function init(){
         closures=Array.isArray(tc)?tc:[];
       }
     }catch(e){businessHours=[];closures=[];}
+    // すでに会計済みなら、確定した内容でレシート再発行の画面を出す（二重会計の防止）
+    if(!EXTRA_PAYMENT_MODE){
+      try{
+        const paidList=await loadExistingPayments(booking.id);
+        if(paidList.length>0){
+          state.paidList=paidList;
+          restorePaidState(paidList[paidList.length-1]);
+          // 回数券・フリーパスを使っていた場合は、レシートに利用内容を載せる
+          try{
+            const uses=await sbGet("pass_usages",`?booking_id=eq.${booking.id}&order=id.desc&limit=1`);
+            const passId=(Array.isArray(uses)&&uses[0]&&uses[0].pass_id)||booking.consumed_pass_id||null;
+            if(passId){
+              const pr=await sbGet("passes",`?id=eq.${passId}`);
+              const p=Array.isArray(pr)&&pr[0];
+              if(p){
+                const ticket=isTicketPass(p);
+                state.passUsedInfo={kind:ticket?"回数券":"フリーパス",label:p.pass_type,
+                  remainingAfter:ticket?Math.max(0,p.remaining_count||0):null,total:p.total_count||null,expiry:p.expiry_date||null};
+              }
+            }
+          }catch(e){}
+        }
+      }catch(e){ console.error("会計済みかどうかの確認に失敗しました",e); }
+    }
     render();
   }catch(e){document.getElementById("root").innerHTML=`<div style="text-align:center;padding:60px;color:#ef4444;">❌ エラー：${e.message}</div>`;}
 }
