@@ -1429,12 +1429,21 @@ async function save(){
       openCashDrawer();
     }
 
-    // ===== 回数券・FP購入をpassesテーブルに自動登録 =====
-    // 登録に失敗しても会計は保存済みのため、ここでは止めずに知らせる（会計済み画面から再登録できる）
+    // ===== 回数券・FP購入の登録 =====
+    // 会計がデータベースに入った時点で、データベース側（create_passes_from_payment）が自動登録する。
+    // 念のため登録されたかを確かめ、無ければこの画面から登録する（会計は保存済みなので止めない）
     try{
-      const failed=await registerPasses(passRowsFromItems(state.jifeeItems,booking.date));
-      if(failed.length>0) alert(`会計は保存されましたが、次の回数券・フリーパスの登録に失敗しました。\n${failed.join("\n")}\n\nこの予約の会計画面をもう一度開くと「登録する」ボタンから登録できます。`);
-    }catch(e){ console.error("回数券・FPの登録に失敗しました",e); }
+      const inserted=Array.isArray(result)&&result[0]?result[0]:null;
+      if(inserted){
+        let missing=await findMissingPasses(inserted);
+        if(missing.length>0){
+          const failed=await registerPasses(missing);
+          if(failed.length>0) alert(`会計は保存されましたが、次の回数券・フリーパスの登録に失敗しました。\n${failed.join("\n")}\n\n会計完了画面の「登録する」ボタンから登録してください。`);
+          missing=await findMissingPasses(inserted);
+        }
+        state.missingPasses=missing;
+      }
+    }catch(e){ console.error("回数券・FPの登録確認に失敗しました",e); }
 
     // ===== 回数券消費：会計完了のタイミングで、選択されていた回数券の残数を1減らす =====
     // 会計画面の「回数券・フリーパス」カードで選ばれたもの（予約時に選択済みの場合は最初から選択状態）を対象にする
@@ -1494,9 +1503,6 @@ function render(){
           <div style="font-size:44px;margin-bottom:6px;">🧾</div>
           <div style="font-size:18px;font-weight:800;color:#1e3a5f;">この予約は会計済みです</div>
           <div style="color:#666;font-size:13px;margin-top:4px;">${escH(booking.patient_name)} 様　${fmt(calcTotal())}（${fmtPaidAt(state.alreadyPaid)} 会計）</div>
-          ${(state.missingPasses||[]).length>0?`<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:10px;padding:10px 12px;margin-top:10px;font-size:12px;color:#991b1b;text-align:left;">
-            <b>⚠ 購入した回数券・フリーパスが登録されていません</b><br>${state.missingPasses.map(r=>escH(r.pass_type)).join("、")}（このままだと次回以降の会計で使えません）
-            <button onclick="registerMissingPasses()" style="display:block;width:100%;margin-top:8px;padding:9px;border-radius:8px;border:none;background:#dc2626;color:white;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;">🎫 回数券・フリーパスを登録する</button></div>`:""}
           ${state.fixedMessage?`<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 12px;margin-top:10px;font-size:12px;font-weight:700;color:#1e40af;">✏️ ${escH(state.fixedMessage)}</div>`:""}
           <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;padding:10px 12px;margin-top:10px;font-size:12px;color:#065f46;">会計をやり直さずに、下からレシートを再発行できます（売上は増えません）</div>
           <button onclick="startFix()" style="width:100%;margin-top:10px;padding:11px;border-radius:10px;border:1.5px solid #2563eb;background:white;color:#2563eb;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;">✏️ 会計内容を修正する（金額・項目・支払方法）</button>
@@ -1509,6 +1515,11 @@ function render(){
           <div style="color:#666;font-size:13px;margin-top:4px;">${booking.patient_name} 様　${fmt(calcTotal())}</div>
           ${change>0?`<div class="change-box" style="margin-top:10px;"><span style="font-size:13px;font-weight:700;color:#059669;">現金お釣り</span><span style="font-size:24px;font-weight:800;color:#059669;">${fmt(change)}</span></div>`:""}
         </div>`}
+<div style="margin-bottom:12px;">
+          ${(state.missingPasses||[]).length>0?`<div style="background:#fef2f2;border:1.5px solid #fecaca;border-radius:10px;padding:10px 12px;margin-top:10px;font-size:12px;color:#991b1b;text-align:left;">
+            <b>⚠ 購入した回数券・フリーパスが登録されていません</b><br>${state.missingPasses.map(r=>escH(r.pass_type)).join("、")}（このままだと次回以降の会計で使えません）
+            <button onclick="registerMissingPasses()" style="display:block;width:100%;margin-top:8px;padding:9px;border-radius:8px;border:none;background:#dc2626;color:white;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;">🎫 回数券・フリーパスを登録する</button></div>`:""}
+        </div>
         ${renderReceiptSection()}
         ${renderNextBookings()}
         ${state.alreadyPaid?`<button onclick="startExtraPayment()" style="width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1.5px dashed #94a3b8;background:white;color:#64748b;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">＋ 別の会計を追加する（物販など・通常は不要）</button>`:""}
