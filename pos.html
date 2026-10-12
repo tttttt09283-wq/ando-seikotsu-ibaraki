@@ -1274,8 +1274,73 @@ function fmtPaidAt(pay){
   return `${t.getMonth()+1}/${t.getDate()} ${String(t.getHours()).padStart(2,"0")}:${String(t.getMinutes()).padStart(2,"0")}`;
 }
 
+// ===== 会計後の修正（金額・内訳・支払方法） =====
+// 新しい会計を作らずに、確定済みの会計そのものを書き換える。変更前後は payment_corrections に記録する
+function startFix(){
+  if(!state.alreadyPaid) return;
+  state.fixing=state.alreadyPaid;
+  state.done=false;
+  render();
+  window.scrollTo(0,0);
+}
+function cancelFix(){
+  const pay=state.fixing;
+  state.fixing=null;
+  if(pay) restorePaidState(pay);
+  render();
+}
+function currentStaffName(){
+  try{ const u=JSON.parse(sessionStorage.getItem("ando_user")||"null"); if(u&&u.name) return u.name; }catch(e){}
+  return null;
+}
+function paySnapshot(p){
+  return {insurance_amount:p.insurance_amount||0,jifee_amount:p.jifee_amount||0,total_amount:p.total_amount||0,
+    payment_method:p.payment_method||"",jifee_items:p.jifee_items||[],insurance_type:p.insurance_type||null,memo:p.memo||null};
+}
+async function saveFix(){
+  const before=state.fixing;
+  const total=calcTotal();const paid=calcPaid();
+  if(state.payments.length===0){alert("支払方法を追加してください");return;}
+  if(paid<total&&!confirm(`支払合計(${fmt(paid)})が請求額(${fmt(total)})より少ないですが保存しますか？`)) return;
+  const after={
+    insurance_amount:parseInt(state.insuranceAmount)||0,
+    jifee_amount:state.jifeeItems.reduce((s,i)=>s+(parseInt(i.amount)||0),0),
+    total_amount:total,
+    payment_method:state.payments.map(p=>`${p.method}:${fmt(p.amount)}`).join("・"),
+    jifee_items:state.jifeeItems.map(i=>({label:i.label,amount:parseInt(i.amount)||0})),
+    insurance_type:state.insuranceType||null,
+    memo:state.jifeeItems.map(i=>i.label).join("・")||null,
+  };
+  const b=paySnapshot(before);
+  if(JSON.stringify(b)===JSON.stringify(after)){ alert("変更がありません"); return; }
+  const isPassItem=l=>/(\d+)回券|(?:FP|フリーパス)\s*\d+\s*ヶ月/.test(l||"");
+  const passChanged=JSON.stringify((b.jifee_items||[]).filter(i=>isPassItem(i.label)).map(i=>i.label).sort())!==JSON.stringify(after.jifee_items.filter(i=>isPassItem(i.label)).map(i=>i.label).sort());
+  const reason=prompt(`会計を修正します。\n\n合計 ${fmt(b.total_amount)} → ${fmt(after.total_amount)}\n\n修正の理由を入力してください（例：金額の打ち間違い）`,"");
+  if(reason===null) return;
+  state.saving=true;render();
+  try{
+    const res=await sbPatch("payments",before.id,after);
+    if(!Array.isArray(res)||res.length===0) throw new Error((res&&res.message)||"更新できませんでした（権限がない可能性があります）");
+    try{
+      await sbPost("payment_corrections",{payment_id:before.id,booking_id:booking.id,before_data:b,after_data:after,reason:reason.trim()||null,staff_name:currentStaffName()});
+    }catch(e){ console.error("修正履歴の保存に失敗しました",e); }
+    const updated=res[0];
+    state.paidList=(state.paidList||[]).map(p=>p.id===updated.id?updated:p);
+    state.fixing=null;
+    state.saving=false;
+    restorePaidState(updated);
+    state.fixedMessage=`会計を修正しました（${fmt(b.total_amount)} → ${fmt(after.total_amount)}）`;
+    if(passChanged) alert("回数券・フリーパスの購入内容が変わりました。\n回数券・フリーパスの登録（残り回数・期限）は自動では変わらないため、管理画面の回数券管理で確認してください。");
+  }catch(e){
+    alert("修正の保存に失敗しました："+e.message);
+    state.saving=false;
+  }
+  render();
+}
+
 async function save(){
   if(state.saving) return;
+  if(state.fixing) return saveFix();
   const total=calcTotal();const paid=calcPaid();
   if(state.payments.length===0){alert("支払方法を追加してください");return;}
   if(paid<total&&!confirm(`支払合計(${fmt(paid)})が請求額(${fmt(total)})より少ないですが確定しますか？`)) return;
@@ -1415,7 +1480,9 @@ function render(){
           <div style="font-size:44px;margin-bottom:6px;">🧾</div>
           <div style="font-size:18px;font-weight:800;color:#1e3a5f;">この予約は会計済みです</div>
           <div style="color:#666;font-size:13px;margin-top:4px;">${escH(booking.patient_name)} 様　${fmt(calcTotal())}（${fmtPaidAt(state.alreadyPaid)} 会計）</div>
+          ${state.fixedMessage?`<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px;padding:10px 12px;margin-top:10px;font-size:12px;font-weight:700;color:#1e40af;">✏️ ${escH(state.fixedMessage)}</div>`:""}
           <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:10px;padding:10px 12px;margin-top:10px;font-size:12px;color:#065f46;">会計をやり直さずに、下からレシートを再発行できます（売上は増えません）</div>
+          <button onclick="startFix()" style="width:100%;margin-top:10px;padding:11px;border-radius:10px;border:1.5px solid #2563eb;background:white;color:#2563eb;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;">✏️ 会計内容を修正する（金額・項目・支払方法）</button>
           ${(state.paidList||[]).length>1?`<div style="margin-top:10px;font-size:11px;color:#64748b;">この予約には会計が${state.paidList.length}件あります：
             ${state.paidList.map(p=>`<button onclick="selectPaidPayment(${p.id})" style="margin:4px 2px 0;padding:5px 10px;border-radius:16px;border:1.5px solid ${p.id===state.alreadyPaid.id?"#2563eb":"#cbd5e1"};background:${p.id===state.alreadyPaid.id?"#eff6ff":"white"};color:#1e293b;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;">${fmtPaidAt(p)} ${fmt(p.total_amount||0)}</button>`).join("")}</div>`:""}
         </div>`:`
@@ -1434,6 +1501,12 @@ function render(){
   }
   root.innerHTML=`
     <div class="container" style="padding:12px 0;">
+      ${state.fixing?`<div class="card" style="border:2px solid #2563eb;">
+        <div class="card-body" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+          <div style="font-size:13px;font-weight:800;color:#1e40af;">✏️ 会計の修正中（${fmtPaidAt(state.fixing)} の会計・修正前 ${fmt(state.fixing.total_amount||0)}）<div style="font-size:11px;font-weight:600;color:#64748b;margin-top:2px;">内容を直して下の「修正を保存する」を押してください。新しい会計は作られません。</div></div>
+          <button onclick="cancelFix()" style="padding:7px 14px;border-radius:8px;border:1.5px solid #cbd5e1;background:white;color:#475569;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">修正をやめる</button>
+        </div>
+      </div>`:""}
       <div class="card">
         <div class="card-header blue" style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
           <span>👤 ${booking.patient_name} 様　${booking.date} ${booking.time}　${STAFF[booking.staff_id]||""}先生　${visitCount}回目来院</span>
@@ -1445,7 +1518,7 @@ function render(){
       <div class="main-grid">
         <div class="left-col">
           ${renderPrevPayments()}
-          ${isPreOpenPeriod()?`
+          ${isPreOpenPeriod()&&!state.fixing?`
           <div class="card" style="border:2px solid #f59e0b;">
             <div class="card-header" style="background:#fef3c7;color:#92400e;">🎁 プレオープン特典（10/1〜10/4）</div>
             <div class="card-body">
@@ -1455,7 +1528,7 @@ function render(){
             </div>
           </div>
           `:``}
-          ${state.passes.length>0?`
+          ${state.passes.length>0&&!state.fixing?`
           <div class="card" style="border:2px solid #7c3aed;">
             <div class="card-header" style="background:#f5f3ff;color:#6d28d9;">🎫 回数券・フリーパス（お持ちの分）</div>
             <div class="card-body">
@@ -1586,7 +1659,7 @@ function render(){
               ${state.payments.length===0?`<div style="text-align:center;color:#d1d5db;font-size:12px;padding:6px;">上のボタンから追加</div>`:""}
             </div>
           </div>
-          <button class="btn-confirm" onclick="save()" ${state.saving?"disabled":""} style="opacity:${state.saving?0.7:1};">${state.saving?"処理中...":"✅ 会計を確定する"}</button>
+          <button class="btn-confirm" onclick="save()" ${state.saving?"disabled":""} style="opacity:${state.saving?0.7:1};">${state.saving?"処理中...":(state.fixing?"💾 修正を保存する":"✅ 会計を確定する")}</button>
           <button class="btn-back" onclick="goBackToCalendar()">← カレンダーへ戻る</button>
         </div>
       </div>
@@ -1691,6 +1764,8 @@ async function init(){
         if(paidList.length>0){
           state.paidList=paidList;
           restorePaidState(paidList[paidList.length-1]);
+          // 患者管理の「金額修正」から開いた場合は、そのまま修正モードにする
+          if(new URLSearchParams(location.search).get("fix")==="1") state.fixing=state.alreadyPaid;
           // 回数券・フリーパスを使っていた場合は、レシートに利用内容を載せる
           try{
             const uses=await sbGet("pass_usages",`?booking_id=eq.${booking.id}&order=id.desc&limit=1`);
@@ -1708,6 +1783,7 @@ async function init(){
         }
       }catch(e){ console.error("会計済みかどうかの確認に失敗しました",e); }
     }
+    if(state.fixing) state.done=false;
     render();
   }catch(e){document.getElementById("root").innerHTML=`<div style="text-align:center;padding:60px;color:#ef4444;">❌ エラー：${e.message}</div>`;}
 }
