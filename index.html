@@ -2706,6 +2706,8 @@ function RefundPanel({bookings,payments,refunds,allRefunds,stores,todayStr,user,
 const LAUNCH_CATS=["広告・集客費","販促物（チラシ・看板等）","人件費","内装・設備","備品・消耗品","その他"];
 const LAUNCH_AD_CATS=["広告・集客費","販促物（チラシ・看板等）"];
 const LAUNCH_CHANNELS=["チラシ①","チラシ②","Threads","Instagram","Google検索","看板","通りがかり","紹介","その他"];
+// 費用がかかっていない（無料で運用している）集客チャネル。費用対効果の表で「¥0（無料）」と表示する
+const LAUNCH_FREE_CHANNELS=["Instagram","Threads"];
 
 function LaunchROIPanel({bookings,payments,stores,todayStr,user,trainingMode}){
   const fmt=n=>"¥"+Math.round(Number(n)||0).toLocaleString();
@@ -2799,6 +2801,7 @@ function LaunchROIPanel({bookings,payments,stores,todayStr,user,trainingMode}){
     const ensure=n=>(ch[n]=ch[n]||{newN:0,sales:0,cost:0});
     newKeys.forEach(k=>{const n=channelBy[k]||"不明（未入力）";const e=ensure(n);e.newN++;e.sales+=salesByKey[k]||0;});
     storeCosts.forEach(c=>{if(c.channel) ensure(c.channel).cost+=c.amount||0;});
+    LAUNCH_FREE_CHANNELS.forEach(n=>ensure(n));
     // 営業日あたり売上（直近＝期間内で会計のあった日数で割る）
     const days=new Set(periodPays.filter(p=>!p.is_refund).map(p=>p.payment_date)).size;
     return {sales,refunds,visitCount,newCount:newKeys.length,returnedCount:returned.length,passSales,passBuyerCount:passBuyers.size,
@@ -2872,13 +2875,15 @@ function LaunchROIPanel({bookings,payments,stores,todayStr,user,trainingMode}){
           <tbody>{chNames.map(n=>{const e=calc.ch[n];return(<tr key={n} style={{borderTop:"1px solid #f1f5f9"}}>
             <td style={{padding:"6px 8px",fontWeight:700}}>{n}</td>
             <td style={{padding:"6px 8px",textAlign:"right"}}>{e.newN}人</td>
-            <td style={{padding:"6px 8px",textAlign:"right"}}>{e.cost>0?fmt(e.cost):"-"}</td>
-            <td style={{padding:"6px 8px",textAlign:"right"}}>{e.cost>0&&e.newN>0?fmt(e.cost/e.newN):"-"}</td>
+            {(()=>{const free=e.cost===0&&LAUNCH_FREE_CHANNELS.includes(n);return(<>
+            <td style={{padding:"6px 8px",textAlign:"right"}}>{e.cost>0?fmt(e.cost):free?"¥0（無料）":"-"}</td>
+            <td style={{padding:"6px 8px",textAlign:"right"}}>{e.cost>0&&e.newN>0?fmt(e.cost/e.newN):free?"¥0":"-"}</td>
             <td style={{padding:"6px 8px",textAlign:"right"}}>{fmt(e.sales)}</td>
-            <td style={{padding:"6px 8px",textAlign:"right",fontWeight:800,color:e.cost>0&&e.sales>=e.cost?"#059669":"#475569"}}>{e.cost>0?(e.sales/e.cost*100).toFixed(0)+"%":"-"}</td>
+            <td style={{padding:"6px 8px",textAlign:"right",fontWeight:800,color:(e.cost>0&&e.sales>=e.cost)||(free&&e.sales>0)?"#059669":"#475569"}}>{e.cost>0?(e.sales/e.cost*100).toFixed(0)+"%":free?(e.sales>0?"費用ゼロで売上":"費用ゼロ"):"-"}</td>
+            </>);})()}
           </tr>);})}</tbody>
         </table></div>)}
-        <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>来院経路は予約時・問診票の「何を見て来院したか」の回答です。費用は、入力時にチャネルを選んだ分だけがここに入ります。</div>
+        <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>来院経路は予約時・問診票の「何を見て来院したか」の回答です。費用は、入力時にチャネルを選んだ分だけがここに入ります。Instagram・Threadsは費用ゼロ（無料運用）として表示しています。</div>
       </div>
 
       <div style={card}>
