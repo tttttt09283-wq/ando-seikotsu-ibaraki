@@ -2057,16 +2057,17 @@ function MoneyCalcPanel({bookings,payments,refunds,stores,todayStr,user,training
     });
     const refs=(refunds||[]).filter(r=>r.refund_date>=start&&r.refund_date<=end&&(r.store_id||firstStoreId)===storeId);
     let refund=0;
+    const refList=[...refs].sort((a,b)=>String(a.refund_date).localeCompare(String(b.refund_date))||a.id-b.id);
     refs.forEach(r=>{const a=n(r.amount);refund+=a;const m=r.refund_method||"その他";byMethod[m]=(byMethod[m]||0)-a;
       const d=r.refund_date;byDay[d]=byDay[d]||{n:0,paid:0,total:0,ins:0,jifee:0,refund:0};byDay[d].refund+=a;});
-    return {count:pays.length,paidN,total,ins,jifee,refund,net:total-refund,byMethod,byStaff,byDay};
+    return {count:pays.length,paidN,total,ins,jifee,refund,refList,net:total-refund,byMethod,byStaff,byDay};
   },[bookings,payments,refunds,start,end,storeId,firstStoreId]);
 
   // ===== ② 小口現金 =====
   const [petty,setPetty]=React.useState([]);
   const [pettyLoading,setPettyLoading]=React.useState(true);
   const [pMonth,setPMonth]=React.useState(todayStr.slice(0,7));
-  const [pf,setPf]=React.useState({entry_date:todayStr,kind:"out",amount:"",category:PETTY_CATS[0],item:"",memo:"",has_receipt:true});
+  const [pf,setPf]=React.useState({entry_date:todayStr,kind:"out",amount:"",category:PETTY_CATS[0],item:"",memo:"",has_receipt:true,source:"register"});
   const [pSaving,setPSaving]=React.useState(false);
   const [pMsg,setPMsg]=React.useState("");
   function loadPetty(){
@@ -2091,12 +2092,14 @@ function MoneyCalcPanel({bookings,payments,refunds,stores,todayStr,user,training
   async function addPetty(){
     const amt=n(pf.amount);
     if(amt<=0){setPMsg("金額を入力してください");return;}
-    if(!pf.item.trim()){setPMsg("内容（何に使ったか／どこから入れたか）を入力してください");return;}
+    if(!pf.item.trim()&&!(pf.kind==="in"&&pf.source==="register")){setPMsg("内容（何に使ったか／どこから入れたか）を入力してください");return;}
+    const itemText=pf.item.trim()||(pf.kind==="in"&&pf.source==="register"?"売上（レジの現金）から補充":"");
     if(pf.kind==="out"&&amt>pettyCalc.now&&!window.confirm(`小口現金の残高（${fmt(pettyCalc.now)}）より多い出金です。このまま記録しますか？`)) return;
     setPSaving(true);setPMsg("");
     try{
       const res=await sb.insert("petty_cash_entries",{store_id:storeId,entry_date:pf.entry_date,kind:pf.kind,amount:amt,
-        category:pf.kind==="out"?pf.category:null,item:pf.item.trim(),memo:pf.memo.trim()||null,has_receipt:!!pf.has_receipt,
+        category:pf.kind==="out"?pf.category:null,item:itemText,memo:pf.memo.trim()||null,has_receipt:!!pf.has_receipt,
+        source:pf.kind==="in"?pf.source:null,
         created_by_name:(user&&user.name)||null,is_training:!!trainingMode});
       if(!Array.isArray(res)||!res[0]) throw new Error((res&&res.message)||"保存できませんでした");
       setPetty(p=>[...p,res[0]].sort((a,b)=>a.entry_date.localeCompare(b.entry_date)||a.id-b.id));
@@ -2108,6 +2111,11 @@ function MoneyCalcPanel({bookings,payments,refunds,stores,todayStr,user,training
     if(!window.confirm(`${e.entry_date}「${e.item}」${fmt(e.amount)} を削除しますか？`)) return;
     try{await sb.delete("petty_cash_entries",e.id);setPetty(p=>p.filter(x=>x.id!==e.id));}catch(err){window.alert("削除に失敗しました");}
   }
+
+  // 売上（レジの現金）から小口へ移した額（期間内）
+  const toPetty=React.useMemo(()=>petty.filter(e=>!!e.is_training===!!trainingMode&&(e.store_id||firstStoreId)===storeId&&e.kind==="in"&&e.source==="register"&&e.entry_date>=start&&e.entry_date<=end),[petty,trainingMode,storeId,firstStoreId,start,end]);
+  const toPettySum=toPetty.reduce((s,e)=>s+n(e.amount),0);
+  const cashSales=sales.byMethod["現金"]||0;
 
   // ===== ③ 計算メモ（かんたん電卓） =====
   const [memoRows,setMemoRows]=React.useState([{label:"",amount:"",sign:1},{label:"",amount:"",sign:1},{label:"",amount:"",sign:1}]);
@@ -2149,7 +2157,7 @@ function MoneyCalcPanel({bookings,payments,refunds,stores,todayStr,user,training
           <div style={h}>合計（{start}〜{end}）</div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             {big("売上合計",fmt(sales.total),"#1e3a5f",`会計${sales.count}件（うち有料${sales.paidN}件）`)}
-            {big("返金",sales.refund?fmt(-sales.refund):"¥0","#dc2626")}
+            {big("返金",sales.refund?fmt(-sales.refund):"¥0","#dc2626",`${sales.refList.length}件`)}
             {big("差引（売上−返金）",fmt(sales.net),"#059669")}
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:8}}>
@@ -2166,6 +2174,30 @@ function MoneyCalcPanel({bookings,payments,refunds,stores,todayStr,user,training
           </tbody></table>}
           <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>現金は「会計の合計−現金以外」で計算しています（お預かり・お釣りは含めません）。</div>
         </div>
+        <div style={card}>
+          <div style={h}>現金の流れ（小口へ移した分を含む）</div>
+          <table style={{width:"100%",borderCollapse:"collapse"}}><tbody>
+            <tr><td style={{...td,textAlign:"left"}}>現金売上（返金を差し引き後）</td><td style={td}>{fmt(cashSales)}</td></tr>
+            <tr><td style={{...td,textAlign:"left"}}>− 売上から小口現金へ移した額{toPetty.length>0&&<span style={{fontSize:11,color:"#94a3b8",marginLeft:6}}>{toPetty.length}件</span>}</td><td style={{...td,color:"#b45309"}}>{toPettySum?fmt(-toPettySum):"¥0"}</td></tr>
+            <tr><td style={{...td,textAlign:"left",fontWeight:800}}>＝ 手元に残る現金売上（入金・保管する額）</td><td style={{...td,fontWeight:800,color:"#1e3a5f"}}>{fmt(cashSales-toPettySum)}</td></tr>
+          </tbody></table>
+          {toPetty.length>0&&<div style={{marginTop:6}}>{toPetty.map(e=><div key={e.id} style={{fontSize:12,color:"#64748b",display:"flex",justifyContent:"space-between"}}><span>{e.entry_date.slice(5).replace("-","/")} {e.item}</span><span>{fmt(e.amount)}</span></div>)}</div>}
+          <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>小口へ移しても売上は減りません（お金の置き場所が変わるだけ）。小口現金タブで「入金 → 売上（レジの現金）から」と記録した分がここに出ます。</div>
+        </div>
+        {sales.refList.length>0&&<div style={card}>
+          <div style={h}>返金の明細（{sales.refList.length}件・合計 {fmt(-sales.refund)}）</div>
+          <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:520}}><thead><tr>
+            {["日付","患者様","返金方法","理由","金額"].map(t=><th key={t} style={{...th,textAlign:t==="金額"?"right":"left"}}>{t}</th>)}</tr></thead><tbody>
+            {sales.refList.map(r=><tr key={r.id}>
+              <td style={{...td,textAlign:"left"}}>{String(r.refund_date).slice(5).replace("-","/")}</td>
+              <td style={{...td,textAlign:"left"}}>{r.patient_name||"-"}</td>
+              <td style={{...td,textAlign:"left"}}>{r.refund_method||"-"}</td>
+              <td style={{...td,textAlign:"left",whiteSpace:"normal",color:"#64748b"}}>{r.reason_category||""}{r.target?`（${r.target}）`:""}</td>
+              <td style={{...td,color:"#dc2626",fontWeight:700}}>{fmt(-n(r.amount))}</td>
+            </tr>)}
+          </tbody></table></div>
+          <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>返金は「返金管理」で登録したものです。売上合計から差し引いて「差引」を出しています。</div>
+        </div>}
         <div style={card}>
           <div style={h}>担当の先生別</div>
           <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><th style={{...th,textAlign:"left"}}>先生</th><th style={th}>会計件数</th><th style={th}>売上</th></tr></thead><tbody>
@@ -2196,8 +2228,9 @@ function MoneyCalcPanel({bookings,payments,refunds,stores,todayStr,user,training
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:8}}>
             <label style={{fontSize:12,fontWeight:700}}>日付<br/><input type="date" value={pf.entry_date} onChange={e=>setPf(f=>({...f,entry_date:e.target.value}))} style={{...inp,width:"100%"}}/></label>
             <label style={{fontSize:12,fontWeight:700}}>金額（円）<br/><input inputMode="numeric" value={pf.amount} onChange={e=>setPf(f=>({...f,amount:e.target.value.replace(/[^\d]/g,"")}))} placeholder="例：1200" style={{...inp,width:"100%",textAlign:"right"}}/></label>
+            {pf.kind==="in"&&<label style={{fontSize:12,fontWeight:700}}>どこから補充した？<br/><select value={pf.source} onChange={e=>setPf(f=>({...f,source:e.target.value}))} style={{...inp,width:"100%"}}><option value="register">売上（レジの現金）から</option><option value="other">その他（口座・本部など）</option></select></label>}
             {pf.kind==="out"&&<label style={{fontSize:12,fontWeight:700}}>分類<br/><select value={pf.category} onChange={e=>setPf(f=>({...f,category:e.target.value}))} style={{...inp,width:"100%"}}>{PETTY_CATS.map(c=><option key={c}>{c}</option>)}</select></label>}
-            <label style={{fontSize:12,fontWeight:700,gridColumn:"1/-1"}}>内容<br/><input value={pf.item} onChange={e=>setPf(f=>({...f,item:e.target.value}))} placeholder={pf.kind==="out"?"例：ティッシュ・ゴミ袋（ダイソー）":"例：本部から補充"} style={{...inp,width:"100%"}}/></label>
+            <label style={{fontSize:12,fontWeight:700,gridColumn:"1/-1"}}>内容<br/><input value={pf.item} onChange={e=>setPf(f=>({...f,item:e.target.value}))} placeholder={pf.kind==="out"?"例：ティッシュ・ゴミ袋（ダイソー）":(pf.source==="register"?"空欄なら「売上（レジの現金）から補充」":"例：口座から引き出して補充")} style={{...inp,width:"100%"}}/></label>
             <label style={{fontSize:12,fontWeight:700,gridColumn:"1/-1"}}>メモ（任意）<br/><input value={pf.memo} onChange={e=>setPf(f=>({...f,memo:e.target.value}))} style={{...inp,width:"100%"}}/></label>
             {pf.kind==="out"&&<label style={{fontSize:13,fontWeight:700,display:"flex",alignItems:"center",gap:6}}><input type="checkbox" checked={pf.has_receipt} onChange={e=>setPf(f=>({...f,has_receipt:e.target.checked}))}/>レシート・領収書あり</label>}
           </div>
@@ -2222,7 +2255,7 @@ function MoneyCalcPanel({bookings,payments,refunds,stores,todayStr,user,training
             {pettyCalc.rows.map(e=><tr key={e.id}>
               <td style={{...td,textAlign:"left"}}>{e.entry_date.slice(5).replace("-","/")}</td>
               <td style={{...td,textAlign:"left",whiteSpace:"normal"}}>{e.item}{e.kind==="out"&&!e.has_receipt&&<span style={{marginLeft:4,fontSize:10,color:"#b45309",fontWeight:700}}>レシートなし</span>}{e.memo&&<div style={{fontSize:11,color:"#94a3b8"}}>{e.memo}</div>}</td>
-              <td style={{...td,textAlign:"left",color:"#64748b"}}>{e.kind==="out"?(e.category||"-"):"補充"}</td>
+              <td style={{...td,textAlign:"left",color:"#64748b"}}>{e.kind==="out"?(e.category||"-"):(e.source==="register"?"補充（売上から）":"補充")}</td>
               <td style={{...td,color:"#059669"}}>{e.kind==="in"?fmt(e.amount):""}</td>
               <td style={{...td,color:"#dc2626"}}>{e.kind==="out"?fmt(e.amount):""}</td>
               <td style={{...td,fontWeight:800}}>{fmt(e.balance)}</td>
@@ -2277,6 +2310,14 @@ function RegisterCashPanel({bookings,payments,stores,todayStr,currentUser,refund
   const [loading,setLoading]=React.useState(true);
   const [saving,setSaving]=React.useState(false);
   const [msg,setMsg]=React.useState("");
+  // この日に「売上（レジの現金）から」小口現金へ移した額（小口現金の画面で記録したもの）
+  const [pettyOut,setPettyOut]=React.useState([]);
+  React.useEffect(()=>{
+    let alive=true;
+    sb.select("petty_cash_entries",`?entry_date=eq.${date}&store_id=eq.${storeId}&kind=eq.in&source=eq.register`).then(r=>{if(alive)setPettyOut(Array.isArray(r)?r.filter(e=>!e.is_training):[]);}).catch(()=>{if(alive)setPettyOut([]);});
+    return ()=>{alive=false;};
+  },[storeId,date]);
+  const pettyOutSum=pettyOut.reduce((s,e)=>s+(parseInt(e.amount)||0),0);
 
   // その日の現金売上（現金＝合計−現金以外。お釣り分は含めない）
   const cashInfo=React.useMemo(()=>{
@@ -2328,7 +2369,7 @@ function RegisterCashPanel({bookings,payments,stores,todayStr,currentUser,refund
   const n=v=>parseInt(v,10)||0;
   const inTotal=adj.filter(a=>a.type==="in").reduce((s,a)=>s+n(a.amount),0);
   const outTotal=adj.filter(a=>a.type==="out").reduce((s,a)=>s+n(a.amount),0);
-  const expected=n(floatStart)+cashInfo.cash+inTotal-outTotal;
+  const expected=n(floatStart)+cashInfo.cash+inTotal-outTotal-pettyOutSum;
   const actual=DENOMS.reduce((s,d)=>s+d*n(counts[d]),0);
   const counted=DENOMS.some(d=>n(counts[d])>0);
   const diff=actual-expected;
@@ -2409,6 +2450,7 @@ function RegisterCashPanel({bookings,payments,stores,todayStr,currentUser,refund
           ))}
           <button onClick={()=>setAdj(p=>[...p,{type:"out",amount:"",reason:""}])} style={{border:"1.5px dashed #94a3b8",background:"white",color:"#475569",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:12,fontWeight:700}}>＋ 入出金を追加</button>
         </div>
+        {pettyOutSum>0&&<div style={{...row,fontSize:13,color:"#b45309"}}><span>− 売上から小口現金へ移した額（小口現金の画面で記録・{pettyOut.length}件）</span><span>−{fmt(pettyOutSum)}</span></div>}
         {(inTotal>0||outTotal>0)&&<div style={{...row,fontSize:13,color:"#475569"}}><span>入金 {fmt(inTotal)} ／ 出金 {fmt(outTotal)}</span><span>{inTotal-outTotal>=0?"+":"−"}{fmt(Math.abs(inTotal-outTotal))}</span></div>}
         <div style={{...row,borderTop:"2px solid #1e3a5f",marginTop:8,paddingTop:10,fontSize:16,fontWeight:800,color:"#1e3a5f"}}>
           <span>あるべきレジ金</span><span>{fmt(expected)}</span>
