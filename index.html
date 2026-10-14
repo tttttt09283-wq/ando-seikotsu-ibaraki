@@ -317,6 +317,7 @@ const MENU_CATEGORIES = [
           {name:"ストレッチ",               duration:30, price:3600},
           {name:"手技療法（マッサージ）",   duration:30, price:3600},
           {name:"鍼",                       duration:30, price:3600},
+          {name:"美容鍼",                   duration:60, price:6600},
           {name:"アジャスト・超音波",       duration:20, price:1100},
           {name:"鍼治療・ハイボルテージ",   duration:20, price:1650},
           {name:"手技療法（施術料）",       duration:20, price:3600},
@@ -10820,7 +10821,8 @@ function BulkReceiptPanel({payments,bookings}){
 }
 // スタッフKPIの集計開始日（これより前＝プレオープン／イベント期間の予約・来院は集計に含めない）
 const STAFF_KPI_START="2026-10-05";
-function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainingMode}){
+function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainingMode,onOpenPatient}){
+  const [openRow,setOpenRow]=React.useState(null); // 内訳を開いている行（「表の名前|スタッフID」）
   const [selMonth,setSelMonth]=React.useState(todayStr.slice(0,7)<STAFF_KPI_START.slice(0,7)?STAFF_KPI_START.slice(0,7):todayStr.slice(0,7));
   const [treatments,setTreatments]=React.useState([]);
   const [passesRaw,setPassesRaw]=React.useState([]);
@@ -10919,7 +10921,7 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
   function calcCategory(kind){
     const list=visitsInMonth.filter(v=>kind==="new"?v.isFirstVisitEver:kind==="return"?(!v.isFirstVisitEver&&v.isReturnAfterGap):(!v.isFirstVisitEver&&!v.isReturnAfterGap));
     const byStaff={};
-    storeStaff.forEach(s=>{ byStaff[s.id]={staff:s,taiou:0,nextYes:0,jifeeCount:0,contractCount:0,fpLongCount:0,fpMonthCount:0,ticketCount:0,jifeeContinueCount:0}; });
+    storeStaff.forEach(s=>{ byStaff[s.id]={staff:s,taiou:0,nextYes:0,jifeeCount:0,contractCount:0,fpLongCount:0,fpMonthCount:0,ticketCount:0,jifeeContinueCount:0,list:[]}; });
     list.forEach(v=>{
       const sid=v.booking.staff_id;
       if(!byStaff[sid]) return; // 対象店舗のスタッフでなければスキップ
@@ -10940,9 +10942,14 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
         }
       });
       // 自費単発継続：パス購入なしで自費を実施し、かつ過去にも自費単発の来院歴がある場合
-      if(v.didJifee&&boughtPasses.length===0&&priorJifeeSingleCount(v.booking.patient_name,v.booking.date)>0){
+      const jifeeContinue=v.didJifee&&boughtPasses.length===0&&priorJifeeSingleCount(v.booking.patient_name,v.booking.date)>0;
+      if(jifeeContinue){
         row.jifeeContinueCount++;
       }
+      // 内訳（誰が・いつ・どうだったか）を表で開けるように控えておく
+      const pay=paymentByBookingId[v.booking.id];
+      row.list.push({booking:v.booking,hasNext:v.hasNext,didJifee:v.didJifee,isContracted:v.isContracted,jifeeContinue,
+        payTotal:pay?(pay.total_amount||0):0,passes:boughtPasses.map(p=>p.pass_type)});
     });
     return Object.values(byStaff);
   }
@@ -10967,9 +10974,9 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
               </tr>
             </thead>
             <tbody>
-              {rows.map(r=>(
-                <tr key={r.staff.id} style={{borderBottom:"1px solid #f1f5f9"}}>
-                  <td style={{padding:"8px 10px",fontWeight:700}}>{r.staff.name}</td>
+              {rows.map(r=>{const rk=title+"|"+r.staff.id;const isOpen=openRow===rk;return(<React.Fragment key={r.staff.id}>
+                <tr onClick={()=>r.taiou>0&&setOpenRow(isOpen?null:rk)} title={r.taiou>0?"押すと内訳（患者様の一覧）を表示":""} style={{borderBottom:"1px solid #f1f5f9",cursor:r.taiou>0?"pointer":"default",background:isOpen?"#eff6ff":"white"}}>
+                  <td style={{padding:"8px 10px",fontWeight:700,whiteSpace:"nowrap"}}>{r.taiou>0&&<span style={{display:"inline-block",width:12,color:"#2563eb"}}>{isOpen?"▼":"▶"}</span>}{r.staff.name}</td>
                   <td style={{padding:"8px 10px"}}>{r.taiou}</td>
                   <td style={{padding:"8px 10px"}}>{r.nextYes}</td>
                   <td style={{padding:"8px 10px"}}>{pct(r.nextYes,r.taiou)}%</td>
@@ -10987,7 +10994,24 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
                   <td style={{padding:"8px 10px"}}>{r.jifeeContinueCount}</td>
                   <td style={{padding:"8px 10px"}}>{pct(r.jifeeContinueCount,r.taiou)}%</td>
                 </tr>
-              ))}
+                {isOpen&&(
+                <tr><td colSpan={17} style={{padding:"6px 10px 12px 28px",background:"#f8fafc"}}>
+                  <div style={{fontSize:12,fontWeight:800,color:"#1e3a5f",margin:"4px 0 6px"}}>{r.staff.name}の内訳（{r.list.length}名）</div>
+                  <table style={{borderCollapse:"collapse",fontSize:12,background:"white",border:"1px solid #e2e8f0",borderRadius:8}}>
+                    <thead><tr style={{background:"#f1f5f9"}}>{["来院日","患者様","メニュー","会計","次回予約","自費","成約（その日に購入）"].map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",fontWeight:800,color:"#64748b",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+                    <tbody>{[...r.list].sort((a,b)=>String(a.booking.date).localeCompare(String(b.booking.date))||String(a.booking.time).localeCompare(String(b.booking.time))).map(x=>(
+                      <tr key={x.booking.id} style={{borderTop:"1px solid #f1f5f9"}}>
+                        <td style={{padding:"5px 10px",whiteSpace:"nowrap"}}>{String(x.booking.date).slice(5).replace("-","/")} {x.booking.time||""}</td>
+                        <td style={{padding:"5px 10px",fontWeight:700,whiteSpace:"nowrap"}}>{onOpenPatient?<button onClick={e=>{e.stopPropagation();onOpenPatient(x.booking.patient_name);}} style={{border:"none",background:"none",padding:0,color:"#2563eb",fontWeight:700,cursor:"pointer",textDecoration:"underline",fontFamily:"inherit",fontSize:"inherit"}}>{x.booking.patient_name}</button>:x.booking.patient_name}</td>
+                        <td style={{padding:"5px 10px",color:"#64748b"}}>{x.booking.menu||""}</td>
+                        <td style={{padding:"5px 10px",whiteSpace:"nowrap"}}>¥{(x.payTotal||0).toLocaleString()}</td>
+                        <td style={{padding:"5px 10px",whiteSpace:"nowrap",color:x.hasNext?"#059669":"#dc2626",fontWeight:700}}>{x.hasNext?"あり":"なし"}</td>
+                        <td style={{padding:"5px 10px",whiteSpace:"nowrap"}}>{x.didJifee?(x.jifeeContinue?"実施（単発継続）":"実施"):"-"}</td>
+                        <td style={{padding:"5px 10px",color:x.passes.length?"#7c3aed":"#94a3b8",fontWeight:x.passes.length?700:400}}>{x.passes.length?x.passes.join("・"):(x.isContracted?"成約（施術記録）":"-")}</td>
+                      </tr>))}</tbody>
+                  </table>
+                </td></tr>)}
+              </React.Fragment>);})}
               <tr style={{background:"#f0fdf4",borderTop:"2px solid #86efac"}}>
                 <td style={{padding:"10px",fontWeight:800,color:"#065f46"}}>合計</td>
                 <td style={{padding:"10px",fontWeight:800}}>{total.taiou||0}</td>
@@ -13746,7 +13770,7 @@ function Dashboard({user,onLogout}){
           {/* 離反防止アラート */}
           {view==="churn_alert"&&<ChurnAlertPanel bookings={bookings} todayStr={todayStr}/>}
                     {view==="line_link_check"&&<LineLinkCheckPanel bookings={bookings}/>}
-                             {view==="staff_kpi"&&<StaffKPIPanel bookings={bookings} payments={paymentsNet} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr} trainingMode={trainingMode}/>}
+                             {view==="staff_kpi"&&<StaffKPIPanel onOpenPatient={openPatientByName} bookings={bookings} payments={paymentsNet} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr} trainingMode={trainingMode}/>}
                              {view==="pass_holders"&&<PassHoldersPanel payments={payments} bookings={bookings} trainingMode={trainingMode} onOpenPatient={openPatientByName}/>}
                              {view==="referral_mgmt"&&<ReferralMgmtPanel bookings={bookings} payments={payments}/>}
                     {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} todayStr={todayStr} onRestore={restoreBooking} onDelete={deleteCancelledBooking}/>}
