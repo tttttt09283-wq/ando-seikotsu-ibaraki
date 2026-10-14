@@ -220,7 +220,8 @@ async function save() {
         staff_id: booking.staff_id,
         date: state.nextDate,
         time: state.nextTime,
-        menu: "再診（30分）",
+        menu: "再診（20分）",
+        duration: 20,
         line_notify: !!booking.line_user_id,
         line_user_id: booking.line_user_id || null,
         reminded: false,
@@ -259,7 +260,7 @@ function render() {
         <div class="section-title">📅 次回予約</div>
         <div class="info-row"><span class="info-label">患者名</span><span class="info-value">${booking.patient_name} 様</span></div>
         <div class="info-row"><span class="info-label">日時</span><span class="info-value">${state.nextDate} ${state.nextTime}</span></div>
-        <div class="info-row"><span class="info-label">メニュー</span><span class="info-value">再診（30分）</span></div>
+        <div class="info-row"><span class="info-label">メニュー</span><span class="info-value">再診（20分）</span></div>
         <div class="info-row"><span class="info-label">担当</span><span class="info-value">${STAFF[booking.staff_id]||"未定"} 先生</span></div>
       `;
       wrap.appendChild(box);

@@ -218,7 +218,7 @@ function goToCalendarForDate(dateStr){
 
 const STAFF_LIST=[{id:1,name:"奥田",color:"#2563eb"},{id:2,name:"佐藤",color:"#059669"},{id:3,name:"細永",color:"#d97706"},{id:4,name:"田中",color:"#7c3aed"},{id:5,name:"岩永",color:"#dc2626"}];
 const STAFF={1:"奥田",2:"佐藤",3:"細永",4:"田中",5:"岩永"};
-const INSURANCE_PRICES={"無料施術体験会（60分）":0,"初診（60分）":0,"再診（30分）":0};
+const INSURANCE_PRICES={"無料施術体験会（60分）":0,"初診（60分）":0,"再診（30分）":0,"再診（20分）":0};
 // 保険（鍼灸・手技療法）：負担割合×回数ごとの金額（直接引き当て）
 const INSURANCE_AMOUNT_TABLE={
   "鍼灸併用":{"3割":{"初診":1150,"2回目以降":600},"2割":{"初診":780,"2回目以降":600},"1割":{"初診":400,"2回目以降":400}},
@@ -315,7 +315,7 @@ const TIME_OPTS = (()=>{
 })();
 const PAY_METHODS=[{id:"現金",icon:"💴"},{id:"カード",icon:"💳"},{id:"PayPay",icon:"📱"}];
 const INSURANCE_RATES={"3割":0.3,"2割":0.2,"1割":0.1};
-const BASE_PRICES={"無料施術体験会（60分）":0,"初診（60分）":1530,"再診（30分）":1130,"3回目以降":980};
+const BASE_PRICES={"無料施術体験会（60分）":0,"初診（60分）":1530,"再診（30分）":1130,"再診（20分）":1130,"3回目以降":980};
 
 async function getAuthToken(){
   const {data:{session}} = await supabaseClient.auth.getSession();
@@ -466,7 +466,9 @@ function renderPrevPaymentsInner(){
 let state={passes:[],usePassId:null,passUsedInfo:null,insuranceAmount:0,insuranceType:null,insuranceRate:null,insuranceTier:null,jifeeItems:[],payments:[],done:false,saving:false,nextBookings:[],savingBookings:false,bookingsSaved:false,jifeeTab:isPreOpenPeriod()?"kaisu":"spot",receiptFrequency:null,receiptFrequencyKnown:false,savingReceiptPref:false};
 const CLINIC_NAME_FALLBACK="あんど整骨院";
 
-function getMenuByVisit(visit){if(visit===1) return "初診（60分）";if(visit===2) return "初診（60分）";return "再診（30分）";}
+// 次回予約の枠：2回目以降の来院は基本20分（初めての来院だけ60分）
+function getMenuByVisit(visit){return visit<=1?"初診（60分）":"再診（20分）";}
+function getDurationByVisit(visit){return visit<=1?60:20;}
 function getInsMenuByVisit(visit){if(visit===1) return "初診";if(visit===2) return "2回目";if(visit===3) return "3回目";return "4回目以降";}
 function calcInsuranceAmount(menuName, rate){
   const table=INSURANCE_AMOUNT_TABLE["手技療法"];
@@ -591,7 +593,7 @@ async function saveNextBookings(){
     let lineUserId=booking.line_user_id||null;
     if(!lineUserId) lineUserId=await findLinkedLineUserId(booking.phone);
     for(const nb of valid){
-      await sbPost("bookings",{patient_name: booking.patient_name,phone: booking.phone,staff_id: nb.staffId,date: nb.date,time: nb.time,menu: nb.menu,insurance_rate: nb.insRate,line_notify: !!lineUserId,line_user_id: lineUserId,reminded: false});
+      await sbPost("bookings",{patient_name: booking.patient_name,phone: booking.phone,staff_id: nb.staffId,date: nb.date,time: nb.time,menu: nb.menu,duration: getDurationByVisit(nb.visitNum||2),insurance_rate: nb.insRate,line_notify: !!lineUserId,line_user_id: lineUserId,reminded: false});
       if(!booking.is_training){
         notifyStaffGroup(`🆕 新規予約（次回予約）\n${booking.patient_name||""} 様\n${nb.date} ${nb.time}\n担当：${STAFF[nb.staffId]||"担当未定"}`);
       }
