@@ -2007,7 +2007,7 @@ function KarteListPanel({bookings,payments,stores,todayStr}){
 // ② 小口現金：小口現金の入金・出金を記録し、残高を自動で計算する（petty_cash_entries）
 // ③ 計算メモ：金額を並べて足し引きできる、かんたん電卓
 const PETTY_CATS=["消耗品","事務用品","交通費","郵送・宅配","飲食・お茶代","清掃・衛生","修繕","その他"];
-function MoneyCalcPanel({bookings,payments,refunds,stores,todayStr,user,trainingMode}){
+function MoneyCalcPanel({bookings,payments,refunds,stores,todayStr,user,trainingMode,onOpenRefund}){
   const fmt=n=>(Number(n)<0?"−":"")+"¥"+Math.abs(Math.round(Number(n)||0)).toLocaleString();
   const n=v=>parseInt(String(v).replace(/[^\d-]/g,""),10)||0;
   const firstStoreId=(stores&&stores[0]&&stores[0].id)||1;
@@ -2164,6 +2164,7 @@ function MoneyCalcPanel({bookings,payments,refunds,stores,todayStr,user,training
             {big("保険",fmt(sales.ins))}
             {big("自費",fmt(sales.jifee))}
           </div>
+          {onOpenRefund&&<button onClick={()=>onOpenRefund(null)} style={{width:"100%",marginTop:10,padding:"10px",borderRadius:10,border:"1.5px solid #dc2626",background:"white",color:"#dc2626",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>↩️ 返金を登録する</button>}
         </div>
         <div style={card}>
           <div style={h}>支払方法別（返金を差し引いた金額）</div>
@@ -2759,7 +2760,7 @@ function PatientMergePanel({bookings,user,isAdmin,onChanged}){
   );
 }
 
-function RefundPanel({bookings,payments,refunds,allRefunds,stores,todayStr,user,isAdmin,onChanged,trainingMode}){
+function RefundPanel({bookings,payments,refunds,allRefunds,stores,todayStr,user,isAdmin,onChanged,trainingMode,initialPaymentId,onConsumeInitial}){
   const fmt=n=>"¥"+Number(n||0).toLocaleString();
   const firstStoreId=(stores&&stores[0]&&stores[0].id)||1;
   const [tab,setTab]=React.useState("register");
@@ -2806,6 +2807,14 @@ function RefundPanel({bookings,payments,refunds,allRefunds,stores,todayStr,user,
     setTarget((p.jifee_amount||0)>0||(p.insurance_amount||0)===0?"自費":"保険窓口負担");
     setCat("");setDetail("");setApprover("");setRdate(todayStr);
   }
+
+  // 他の画面（患者管理の来院履歴など）の「返金」ボタンから開いたときは、その会計を最初から選んでおく
+  React.useEffect(()=>{
+    if(!initialPaymentId) return;
+    const p=payments.find(x=>x.id===initialPaymentId);
+    if(p){ setTab("register"); pick(p); }
+    if(onConsumeInitial) onConsumeInitial();
+  },[initialPaymentId,payments]);
 
   async function submit(){
     if(!sel) return;
@@ -7307,7 +7316,7 @@ function StoreMgmtPanel(){
 }
 
 // ===== 患者管理パネル =====
-function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,selStoreId,setAllBookings,allPayments,setAllPayments,initialPatient,onConsumeInitialPatient,onOpenPos}){
+function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,selStoreId,setAllBookings,allPayments,setAllPayments,initialPatient,onConsumeInitialPatient,onOpenPos,onOpenRefund}){
   const [patientQ,setPatientQ]=React.useState("");
   const [selPatient,setSelPatient]=React.useState(null);
   const [activeTab,setActiveTab]=React.useState("intake");
@@ -7899,6 +7908,10 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
                                     style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:5,border:"1px solid #ddd6fe",background:"#f5f3ff",color:"#7c3aed",cursor:"pointer",marginLeft:2}}>
                                     ✏️ 金額修正
                                   </button>
+                                  {onOpenRefund&&(pay.total_amount||0)>0&&<button onClick={()=>onOpenRefund(pay.id)} title="この会計を返金します（返金管理が開きます）"
+                                    style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:5,border:"1px solid #fecaca",background:"#fef2f2",color:"#dc2626",cursor:"pointer",marginLeft:2}}>
+                                    ↩️ 返金
+                                  </button>}
                                 </>
                               )}
                             </div>
@@ -12021,6 +12034,8 @@ function Dashboard({user,onLogout}){
   const [resizeDeltaPx,setResizeDeltaPx]=React.useState(0); // 見た目の追従用（横方向の移動量）
   const resizeRef=React.useRef({startX:0,deltaPx:0});
   const [historyPatient,setHistoryPatient]=React.useState(null);
+  const [refundPaymentId,setRefundPaymentId]=React.useState(null); // 「返金」ボタンから返金管理を開いたときの対象会計
+  function openRefund(paymentId){ setRefundPaymentId(paymentId||null); setView("refund"); }
   const [allPayments,setAllPayments]=React.useState([]);
   const [allRefunds,setAllRefunds]=React.useState([]);
   const payments=React.useMemo(()=>allPayments.filter(p=>!!p.is_training===trainingMode),[allPayments,trainingMode]);
@@ -12929,6 +12944,7 @@ function Dashboard({user,onLogout}){
       {id:"daily_report",label:"日計表（自動集計）",icon:"bar-chart",special:""},
       {id:"register_cash",label:"レジ金（レジ締め）",icon:"receipt",special:""},
       {id:"money_calc",label:"金額計算・小口現金",icon:"receipt",special:""},
+      {id:"refund",label:"返金する（返金管理）",icon:"receipt",special:""},
       {id:"stats",label:"予約分析・サマリー",icon:"bar-chart",special:""},
       {id:"staff_kpi",label:"スタッフKPI管理",icon:"trending",special:""},
       {id:"churn_alert",label:"離反防止アラート",icon:"bell",special:""},
@@ -12949,7 +12965,6 @@ function Dashboard({user,onLogout}){
       {id:"patient_merge",label:"患者名の統合",icon:"users",special:""},
       {id:"bulk_receipt",label:"まとめレシート発行",icon:"receipt",special:""},
       {id:"karte_list",label:"カルテ番号一覧（保険請求）",icon:"clipboard-list",special:""},
-      {id:"refund",label:"返金管理",icon:"receipt",special:""},
       {id:"pass_holders",label:"回数券・FP対象者",icon:"receipt",special:""},
       {id:"line_link_check",label:"LINE連携チェック",icon:"link",special:""},
       {id:"preopen_stats",label:"イベント期間集計",icon:"bar-chart",special:""},
@@ -13535,15 +13550,15 @@ function Dashboard({user,onLogout}){
                          {view==="checkin"&&<CheckInPanel bookings={bookings} onOpenPatient={(patientName)=>{setView("patients");}} onCheckedIn={fetchAll} onGoToCalendar={()=>setView("calendar")} weeklyShifts={weeklyShifts} dateOverrides={dateOverrides} storeStaff={storeStaff} getLaneCount={getLaneCount}/>}
 
           {/* 患者管理 */}
-          {view==="patients"&&<PatientsPanel bookings={bookings} setView={setView} setForm={setForm} setEditId={setEditId} setConflict={setConflict} todayStr={todayStr} selStoreId={selStoreId} setAllBookings={setAllBookings} allPayments={allPayments} setAllPayments={setAllPayments} initialPatient={historyPatient} onConsumeInitialPatient={()=>setHistoryPatient(null)} onOpenPos={(b,opt)=>setIframeModal({url:`pos.html?id=${b.id}${opt&&opt.fix?"&fix=1":""}`,title:opt&&opt.fix?"会計の修正":"会計"})}/>}
+          {view==="patients"&&<PatientsPanel bookings={bookings} setView={setView} setForm={setForm} setEditId={setEditId} setConflict={setConflict} todayStr={todayStr} selStoreId={selStoreId} setAllBookings={setAllBookings} allPayments={allPayments} setAllPayments={setAllPayments} initialPatient={historyPatient} onConsumeInitialPatient={()=>setHistoryPatient(null)} onOpenRefund={openRefund} onOpenPos={(b,opt)=>setIframeModal({url:`pos.html?id=${b.id}${opt&&opt.fix?"&fix=1":""}`,title:opt&&opt.fix?"会計の修正":"会計"})}/>}
 
           {/* サマリー */}
           {view==="stats"&&<StatsPanel bookings={bookings} payments={paymentsNet} todayStr={todayStr} stores={stores}/>}
           {view==="karte_list"&&<KarteListPanel bookings={bookings} payments={payments} stores={stores} todayStr={todayStr}/>}
           {view==="daily_report"&&<DailyReportPanel bookings={bookings} payments={paymentsNet} stores={stores} todayStr={todayStr}/>}
           {view==="register_cash"&&<RegisterCashPanel bookings={bookings} payments={payments} refunds={refunds} stores={stores} todayStr={todayStr} currentUser={user}/>}
-          {view==="money_calc"&&<MoneyCalcPanel bookings={bookings} payments={payments} refunds={refunds} stores={stores} todayStr={todayStr} user={user} trainingMode={trainingMode}/>}
-          {view==="refund"&&<RefundPanel bookings={bookings} payments={payments} refunds={refunds} allRefunds={allRefunds} stores={stores} todayStr={todayStr} user={user} isAdmin={isAdmin} onChanged={reloadRefunds} trainingMode={trainingMode}/>}
+          {view==="money_calc"&&<MoneyCalcPanel bookings={bookings} payments={payments} refunds={refunds} stores={stores} todayStr={todayStr} user={user} trainingMode={trainingMode} onOpenRefund={openRefund}/>}
+          {view==="refund"&&<RefundPanel bookings={bookings} payments={payments} refunds={refunds} allRefunds={allRefunds} stores={stores} todayStr={todayStr} user={user} isAdmin={isAdmin} onChanged={reloadRefunds} trainingMode={trainingMode} initialPaymentId={refundPaymentId} onConsumeInitial={()=>setRefundPaymentId(null)}/>}
           {view==="launch_roi"&&<LaunchROIPanel bookings={bookings} payments={paymentsNet} stores={stores} todayStr={todayStr} user={user} trainingMode={trainingMode}/>}
           {view==="patient_merge"&&<PatientMergePanel bookings={bookings} user={user} isAdmin={isAdmin} onChanged={fetchAll}/>}
           {view==="learning"&&<LearningPanel user={user} isAdmin={isAdmin}/>}

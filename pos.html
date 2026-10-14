@@ -1262,7 +1262,7 @@ function restorePaidState(pay){
 }
 function selectPaidPayment(id){
   const pay=(state.paidList||[]).find(p=>p.id===id);
-  if(pay){ restorePaidState(pay); render(); }
+  if(pay){ restorePaidState(pay); state.refundForm=null; loadRefundsFor(pay).then(render); }
 }
 function startExtraPayment(){
   if(!confirm("この予約はすでに会計済みです。\n\n物販の追加など、別の会計として新しく記録しますか？\n（レシートを出すだけなら、この画面の「領収書を印刷」を使ってください）")) return;
@@ -1326,6 +1326,79 @@ async function registerMissingPasses(){
   state.missingPasses=[];
   alert("登録しました");
   render();
+}
+
+// ===== 返金（会計済み画面から、その会計をそのまま返金する） =====
+// 管理画面「返金管理」と同じ refunds テーブルに記録する（売上はマイナスで反映される）
+const REFUND_REASONS=["施術内容へのご不満","会計ミス（二重請求・金額誤り）","来院されなかった・キャンセル","体調不良等で施術中止","回数券・FPの返金","保険請求の訂正","その他"];
+const REFUND_METHODS=["現金","カード","PayPay","その他"];
+function localToday(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;}
+async function loadRefundsFor(pay){
+  try{const r=await sbGet("refunds",`?payment_id=eq.${pay.id}&voided=eq.false&order=id.asc`);state.payRefunds=Array.isArray(r)?r:[];}catch(e){state.payRefunds=[];}
+}
+function refundRemain(){const pay=state.alreadyPaid;if(!pay)return 0;return (pay.total_amount||0)-(state.payRefunds||[]).reduce((s,r)=>s+(r.amount||0),0);}
+async function openRefund(){
+  const pay=state.alreadyPaid; if(!pay) return;
+  await loadRefundsFor(pay);
+  const first=String(pay.payment_method||"").split("・").map(x=>x.split(":")[0].trim()).find(m=>m&&m!=="現金"&&REFUND_METHODS.includes(m))||"現金";
+  state.refundForm={amount:String(Math.max(refundRemain(),0)),method:first,target:(pay.jifee_amount||0)>0||(pay.insurance_amount||0)===0?"自費":"保険窓口負担",cat:"",detail:"",approver:"",msg:""};
+  render();
+}
+function closeRefund(){state.refundForm=null;render();}
+function setRefundField(k,v,rerender){if(!state.refundForm)return;state.refundForm[k]=v;if(rerender)render();}
+async function submitRefund(){
+  const f=state.refundForm, pay=state.alreadyPaid; if(!f||!pay) return;
+  const amt=parseInt(String(f.amount).replace(/[^\d]/g,""),10)||0;
+  const remain=refundRemain();
+  const fail=m=>{f.msg=m;render();};
+  if(amt<=0) return fail("返金額を入力してください");
+  if(amt>remain) return fail(`返金できる残り金額（${fmt(remain)}）を超えています`);
+  if(!f.cat) return fail("返金の理由（分類）を選んでください");
+  if(String(f.detail).trim().length<5) return fail("理由の詳細を5文字以上で書いてください（何が起きたか／誰が判断したか）");
+  if(!confirm(`${booking.patient_name}様\n${pay.payment_date}の会計 ${fmt(pay.total_amount)} のうち\n${fmt(amt)} を「${f.method}」で返金します（売上はマイナスになります）。\n\n理由：${f.cat}\n${String(f.detail).trim()}\n\nよろしいですか？`)) return;
+  let u=null;try{u=JSON.parse(sessionStorage.getItem("ando_user")||"null");}catch(e){}
+  f.saving=true;f.msg="";render();
+  try{
+    const res=await sbPost("refunds",{payment_id:pay.id,booking_id:booking.id,store_id:booking.store_id||1,patient_name:booking.patient_name,
+      refund_date:localToday(),amount:amt,refund_method:f.method,target:f.target,reason_category:f.cat,reason_detail:String(f.detail).trim(),
+      original_total:pay.total_amount||0,original_staff_id:booking.staff_id||null,processed_by:(u&&u.id)||null,processed_by_name:(u&&u.name)||null,
+      approved_by:String(f.approver||"").trim()||null,is_training:!!booking.is_training});
+    if(!Array.isArray(res)||!res[0]) throw new Error((res&&res.message)||"保存できませんでした");
+    if(f.method==="現金") openCashDrawer();
+    await loadRefundsFor(pay);
+    state.refundForm=null;
+    state.fixedMessage=`${fmt(amt)} を返金しました（${f.method}）`;
+  }catch(e){f.saving=false;f.msg="返金の記録に失敗しました："+e.message;}
+  render();
+}
+function renderRefundSection(){
+  const pay=state.alreadyPaid; if(!pay) return "";
+  const refs=state.payRefunds||[];
+  const done=refs.length>0?`<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:8px 12px;margin-bottom:8px;font-size:12px;color:#991b1b;">↩️ この会計の返金：${refs.map(r=>`${String(r.refund_date).slice(5).replace("-","/")} ${fmt(r.amount)}（${escH(r.refund_method)}）`).join("、")}　<b>返金できる残り ${fmt(refundRemain())}</b></div>`:"";
+  const f=state.refundForm;
+  if(!f){
+    if(refundRemain()<=0) return done;
+    return done+`<button onclick="openRefund()" style="width:100%;margin-bottom:8px;padding:11px;border-radius:10px;border:1.5px solid #dc2626;background:white;color:#dc2626;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;">↩️ この会計を返金する</button>`;
+  }
+  const inp="padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box;";
+  return done+`<div style="border:2px solid #fecaca;border-radius:12px;padding:12px;margin-bottom:10px;background:white;text-align:left;">
+    <div style="font-size:14px;font-weight:800;color:#dc2626;margin-bottom:8px;">↩️ 返金する（返金できる残り ${fmt(refundRemain())}）</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+      <label style="font-size:12px;font-weight:700;">返金額<br><input inputmode="numeric" value="${escH(f.amount)}" oninput="setRefundField('amount',this.value)" style="${inp}width:120px;text-align:right;"></label>
+      <label style="font-size:12px;font-weight:700;">返金方法<br><select onchange="setRefundField('method',this.value)" style="${inp}">${REFUND_METHODS.map(m=>`<option ${m===f.method?"selected":""}>${m}</option>`).join("")}</select></label>
+      <label style="font-size:12px;font-weight:700;">返金する部分<br><select onchange="setRefundField('target',this.value)" style="${inp}">${["自費","保険窓口負担"].map(m=>`<option ${m===f.target?"selected":""}>${m}</option>`).join("")}</select></label>
+    </div>
+    <div style="font-size:12px;font-weight:700;margin-bottom:4px;">理由（分類）<span style="color:#dc2626;"> 必須</span></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">${REFUND_REASONS.map((r,i)=>`<button onclick="setRefundField('cat',REFUND_REASONS[${i}],true)" style="padding:6px 10px;border-radius:16px;border:1.5px solid ${f.cat===r?"#dc2626":"#e2e8f0"};background:${f.cat===r?"#fee2e2":"white"};color:${f.cat===r?"#dc2626":"#374151"};font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">${r}</button>`).join("")}</div>
+    <div style="font-size:12px;font-weight:700;margin-bottom:4px;">理由の詳細<span style="color:#dc2626;"> 必須</span>（何が起きたか／誰が判断したか）</div>
+    <textarea rows="2" oninput="setRefundField('detail',this.value)" placeholder="例：二重に会計していたため1回分を返金（院長確認）" style="${inp}width:100%;resize:vertical;margin-bottom:8px;">${escH(f.detail)}</textarea>
+    <label style="font-size:12px;font-weight:700;">確認・承認した人（任意）<br><input value="${escH(f.approver)}" oninput="setRefundField('approver',this.value)" placeholder="例：岩永" style="${inp}width:100%;"></label>
+    ${f.msg?`<div style="color:#dc2626;font-size:12px;font-weight:700;margin-top:8px;">${escH(f.msg)}</div>`:""}
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <button onclick="closeRefund()" style="flex:1;padding:10px;border-radius:10px;border:1.5px solid #e2e8f0;background:white;color:#475569;font-weight:700;cursor:pointer;font-family:inherit;">やめる</button>
+      <button onclick="submitRefund()" ${f.saving?"disabled":""} style="flex:2;padding:10px;border-radius:10px;border:none;background:#dc2626;color:white;font-weight:800;cursor:pointer;font-family:inherit;opacity:${f.saving?0.6:1};">${f.saving?"記録中...":"返金を記録する"}</button>
+    </div>
+  </div>`;
 }
 
 // ===== 会計後の修正（金額・内訳・支払方法） =====
@@ -1522,6 +1595,7 @@ function render(){
             <b>⚠ 購入した回数券・フリーパスが登録されていません</b><br>${state.missingPasses.map(r=>escH(r.pass_type)).join("、")}（このままだと次回以降の会計で使えません）
             <button onclick="registerMissingPasses()" style="display:block;width:100%;margin-top:8px;padding:9px;border-radius:8px;border:none;background:#dc2626;color:white;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;">🎫 回数券・フリーパスを登録する</button></div>`:""}
         </div>
+        ${renderRefundSection()}
         ${renderReceiptSection()}
         ${renderNextBookings()}
         ${state.alreadyPaid?`<button onclick="startExtraPayment()" style="width:100%;margin-top:8px;padding:10px;border-radius:10px;border:1.5px dashed #94a3b8;background:white;color:#64748b;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">＋ 別の会計を追加する（物販など・通常は不要）</button>`:""}
@@ -1795,6 +1869,7 @@ async function init(){
           state.paidList=paidList;
           restorePaidState(paidList[paidList.length-1]);
           try{ state.missingPasses=await findMissingPasses(state.alreadyPaid); }catch(e){ state.missingPasses=[]; }
+          await loadRefundsFor(state.alreadyPaid);
           // 患者管理の「金額修正」から開いた場合は、そのまま修正モードにする
           if(new URLSearchParams(location.search).get("fix")==="1") state.fixing=state.alreadyPaid;
           // 回数券・フリーパスを使っていた場合は、レシートに利用内容を載せる
