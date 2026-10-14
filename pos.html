@@ -1279,7 +1279,9 @@ function fmtPaidAt(pay){
 function passRowsFromItems(items,dateStr){
   const rows=[];
   for(const item of (items||[])){
-    const label=String(item.label||"");
+    // 「無料体験会（プレオープン特典）・フリーパス 6ヶ月」のように先頭に無料体験がつながった項目は、その部分を外す
+    // （データベース側の自動登録 create_passes_from_payment と同じ判定にする）
+    const label=String(item.label||"").replace(/^無料[^・]*・/,"");
     const kaisu=label.match(/(.+?)(\d+)回券/);
     const fp=label.match(/(?:FP|フリーパス)\s*(\d+)\s*ヶ月/);
     if(!kaisu&&!fp) continue;
