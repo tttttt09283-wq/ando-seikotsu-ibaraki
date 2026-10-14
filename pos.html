@@ -1867,7 +1867,9 @@ async function init(){
         const paidList=await loadExistingPayments(booking.id);
         if(paidList.length>0){
           state.paidList=paidList;
-          restorePaidState(paidList[paidList.length-1]);
+          // 患者管理から特定の会計を指定して開いた場合（?pid=）は、その会計を表示する。指定がなければ最新の会計
+          const pidParam=parseInt(new URLSearchParams(location.search).get("pid")||"",10);
+          restorePaidState(paidList.find(x=>x.id===pidParam)||paidList[paidList.length-1]);
           try{ state.missingPasses=await findMissingPasses(state.alreadyPaid); }catch(e){ state.missingPasses=[]; }
           await loadRefundsFor(state.alreadyPaid);
           // 患者管理の「金額修正」から開いた場合は、そのまま修正モードにする

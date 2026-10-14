@@ -1914,8 +1914,7 @@ function KarteListPanel({bookings,payments,stores,todayStr}){
       const k=(b.karte_no||"").trim();
       if(k) karteByPatient[patientKey(b)]=k;
     });
-    const payByBooking={};
-    payments.forEach(p=>{ if(p.booking_id!=null) payByBooking[p.booking_id]=p; });
+    const payByBooking=mergePaymentsByBooking(payments);
     const list=bookings
       .filter(b=>b.date===date&&!b.cancelled&&(b.store_id||firstStoreId)===storeId)
       .map(b=>{
@@ -2002,6 +2001,24 @@ function KarteListPanel({bookings,payments,stores,todayStr}){
 
 // ===== 日計表（スプレッドシートの日計表と同じ項目を、会計データから自動集計して日別に表示） =====
 // 巻き爪・自賠は、POS会計の「巻き爪・自賠」ボタンで追加した自費項目（payments.jifee_items）から集計する。
+// ===== 1つの予約に会計が複数ある場合（体験¥0＋FP購入、物販の追加会計など）は、全部の会計を合計して1件として扱う =====
+// （以前は最初に見つかった1件だけを見ていたため、¥0の方が表示されて「修正が反映されていない」ように見えることがあった）
+function mergePaymentsByBooking(list){
+  const m={};
+  (list||[]).forEach(p=>{
+    if(p.booking_id==null) return;
+    const c=m[p.booking_id];
+    if(!c){ m[p.booking_id]={...p,_count:1}; return; }
+    c.total_amount=(c.total_amount||0)+(p.total_amount||0);
+    c.insurance_amount=(c.insurance_amount||0)+(p.insurance_amount||0);
+    c.jifee_amount=(c.jifee_amount||0)+(p.jifee_amount||0);
+    c.payment_method=[c.payment_method,p.payment_method].filter(Boolean).join("・");
+    c.memo=[c.memo,p.memo].filter(Boolean).join("・")||null;
+    c._count++;
+  });
+  return m;
+}
+
 // ===== 金額計算・小口現金 =====
 // ① 売上の金額計算：期間を選ぶと、売上を支払方法別・保険/自費別・先生別・日別に合計する（返金は差し引く）
 // ② 小口現金：小口現金の入金・出金を記録し、残高を自動で計算する（petty_cash_entries）
@@ -7851,8 +7868,9 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
                     const treat=treatments.find(t=>t.booking_id===b.id);
                     const usedPass=(()=>{ const u=passUsages.find(x=>x.booking_id===b.id); return u?patientPasses.find(x=>x.id===u.pass_id):null; })();
                     const isFirst=i===selBks.length-1;
-                    const pay=(allPayments||[]).find(p=>p.booking_id===b.id);
-                    const isEditingThis=editingPaymentId===(pay&&pay.id);
+                    // 1つの予約に会計が複数ある場合（体験¥0＋FP購入など）は、全部の会計を表示する
+                    const pays=(allPayments||[]).filter(p=>p.booking_id===b.id).sort((x,y)=>x.id-y.id);
+                    const pay=pays.length>0?pays[pays.length-1]:null;
                     return(
                       <div key={b.id} style={{display:"flex",gap:10,padding:"10px 0",borderBottom:"1px solid #f1f5f9",opacity:b.cancelled?0.7:1}}>
                         <div style={{width:8,height:8,borderRadius:"50%",background:b.cancelled?"#ef4444":(treat?"#059669":"#e2e8f0"),flexShrink:0,marginTop:5}}/>
@@ -7883,9 +7901,9 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
                               {pay?"会計を開く":"会計する"}
                             </button>
                           )}
-                          {pay&&(
-                            <div style={{display:"flex",alignItems:"center",gap:6,marginTop:4,background:"#f8fafc",borderRadius:6,padding:"4px 7px"}}>
-                              <span style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>💰 会計</span>
+                          {pays.map((pay,pi)=>{const isEditingThis=editingPaymentId===pay.id;return(
+                            <div key={pay.id} style={{display:"flex",alignItems:"center",gap:6,marginTop:4,background:"#f8fafc",borderRadius:6,padding:"4px 7px",flexWrap:"wrap"}}>
+                              <span style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>💰 会計{pays.length>1?`${pi+1}`:""}</span>
                               {isEditingThis?(
                                 <>
                                   <input type="number" value={editingPaymentAmount} onChange={e=>setEditingPaymentAmount(e.target.value)}
@@ -7904,7 +7922,7 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
                                 <>
                                   <span style={{fontSize:12,fontWeight:800,color:"#1e293b"}}>{(pay.total_amount||0).toLocaleString()}円</span>
                                   <span style={{fontSize:10,color:"#9ca3af"}}>（{pay.payment_method||""}）</span>
-                                  <button onClick={()=>onOpenPos?onOpenPos(b,{fix:true}):startEditPayment(pay)} title="会計画面で金額・項目・支払方法をあとから修正します（修正履歴が残ります）"
+                                  <button onClick={()=>onOpenPos?onOpenPos(b,{fix:true,pid:pay.id}):startEditPayment(pay)} title="会計画面で金額・項目・支払方法をあとから修正します（修正履歴が残ります）"
                                     style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:5,border:"1px solid #ddd6fe",background:"#f5f3ff",color:"#7c3aed",cursor:"pointer",marginLeft:2}}>
                                     ✏️ 金額修正
                                   </button>
@@ -7915,7 +7933,8 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
                                 </>
                               )}
                             </div>
-                          )}
+                          );})}
+                          {pays.length>1&&<div style={{fontSize:11,fontWeight:800,color:"#1e293b",marginTop:3,paddingLeft:7}}>この日の会計合計：{pays.reduce((s2,x)=>s2+(x.total_amount||0),0).toLocaleString()}円（{pays.length}件）</div>}
                         </div>
                       </div>
                     );
@@ -10720,7 +10739,7 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
 
   const paymentByBookingId=React.useMemo(()=>{
     const map={};
-    payments.forEach(p=>{ if(!map[p.booking_id]) map[p.booking_id]=p; });
+    Object.assign(map,mergePaymentsByBooking(payments));
     return map;
   },[payments]);
 
@@ -10933,7 +10952,11 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
     </div>
   );
 }
-function PassHoldersPanel({payments,bookings,trainingMode}){
+function PassHoldersPanel({payments,bookings,trainingMode,onOpenPatient}){
+  // 患者様の名前を押すと、患者管理のその方の画面を開く
+  const nameCell=name=>onOpenPatient?(
+    <button onClick={()=>onOpenPatient(name)} title="患者情報を開く" style={{border:"none",background:"none",padding:0,color:"#2563eb",fontWeight:700,fontSize:"inherit",cursor:"pointer",textDecoration:"underline",fontFamily:"inherit",textAlign:"left"}}>{name}</button>
+  ):name;
   const [passes,setPasses]=React.useState([]);
   const [loading,setLoading]=React.useState(true);
   const [selMonth,setSelMonth]=React.useState(()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
@@ -11036,7 +11059,7 @@ function PassHoldersPanel({payments,bookings,trainingMode}){
                 {ticketPasses.map(p=>(
                   <tr key={"t"+p.id} style={{borderBottom:"1px solid #f1f5f9"}}>
                     <td style={{padding:"8px 10px"}}><span className="badge badge-orange">回数券</span></td>
-                    <td style={{padding:"8px 10px",fontWeight:700}}>{p.patient_name}</td>
+                    <td style={{padding:"8px 10px",fontWeight:700}}>{nameCell(p.patient_name)}</td>
                     <td style={{padding:"8px 10px",color:"#64748b"}}>{p.phone||"—"}</td>
                     <td style={{padding:"8px 10px"}}>{p.pass_type}</td>
                     <td style={{padding:"8px 10px",fontWeight:700,color:"#1e293b"}}>{(p.amount||0).toLocaleString()}円</td>
@@ -11048,7 +11071,7 @@ function PassHoldersPanel({payments,bookings,trainingMode}){
                   return(
                     <tr key={"f"+p.id} style={{borderBottom:"1px solid #f1f5f9"}}>
                       <td style={{padding:"8px 10px"}}><span className="badge badge-purple">フリーパス</span></td>
-                      <td style={{padding:"8px 10px",fontWeight:700}}>{p.patient_name}</td>
+                      <td style={{padding:"8px 10px",fontWeight:700}}>{nameCell(p.patient_name)}</td>
                       <td style={{padding:"8px 10px",color:"#64748b"}}>{p.phone||"—"}</td>
                       <td style={{padding:"8px 10px"}}>{p.pass_type}</td>
                       <td style={{padding:"8px 10px",fontWeight:700,color:"#1e293b"}}>{(p.amount||0).toLocaleString()}円</td>
@@ -11127,7 +11150,7 @@ function ReferralMgmtPanel({bookings,payments}){
   const campaignReferrals=filtered.filter(r=>r.is_event_campaign);
 
   const bookingById={}; (bookings||[]).forEach(b=>{bookingById[b.id]=b;});
-  const paymentByBookingId={}; (payments||[]).forEach(p=>{ if(p.booking_id!=null) paymentByBookingId[p.booking_id]=p; });
+  const paymentByBookingId=mergePaymentsByBooking(payments);
 
   function currentTierFor(phone){
     const count=referrals.filter(r=>r.referrer_phone===phone&&r.is_event_campaign&&r.visited_at).length;
@@ -12036,6 +12059,13 @@ function Dashboard({user,onLogout}){
   const [historyPatient,setHistoryPatient]=React.useState(null);
   const [refundPaymentId,setRefundPaymentId]=React.useState(null); // 「返金」ボタンから返金管理を開いたときの対象会計
   function openRefund(paymentId){ setRefundPaymentId(paymentId||null); setView("refund"); }
+  // 名前から患者管理を開く（回数券・FPの登録名と予約の名前で空白の有無が違っても、同じ方として探す）
+  function openPatientByName(name){
+    const norm=v=>String(v||"").replace(/[\s　]/g,"");
+    const hit=(allBookings||[]).filter(b=>norm(b.patient_name)===norm(name)).sort((a,b)=>String(b.date).localeCompare(String(a.date)))[0];
+    setHistoryPatient(hit?hit.patient_name:name);
+    setView("patients");
+  }
   const [allPayments,setAllPayments]=React.useState([]);
   const [allRefunds,setAllRefunds]=React.useState([]);
   const payments=React.useMemo(()=>allPayments.filter(p=>!!p.is_training===trainingMode),[allPayments,trainingMode]);
@@ -13550,7 +13580,7 @@ function Dashboard({user,onLogout}){
                          {view==="checkin"&&<CheckInPanel bookings={bookings} onOpenPatient={(patientName)=>{setView("patients");}} onCheckedIn={fetchAll} onGoToCalendar={()=>setView("calendar")} weeklyShifts={weeklyShifts} dateOverrides={dateOverrides} storeStaff={storeStaff} getLaneCount={getLaneCount}/>}
 
           {/* 患者管理 */}
-          {view==="patients"&&<PatientsPanel bookings={bookings} setView={setView} setForm={setForm} setEditId={setEditId} setConflict={setConflict} todayStr={todayStr} selStoreId={selStoreId} setAllBookings={setAllBookings} allPayments={allPayments} setAllPayments={setAllPayments} initialPatient={historyPatient} onConsumeInitialPatient={()=>setHistoryPatient(null)} onOpenRefund={openRefund} onOpenPos={(b,opt)=>setIframeModal({url:`pos.html?id=${b.id}${opt&&opt.fix?"&fix=1":""}`,title:opt&&opt.fix?"会計の修正":"会計"})}/>}
+          {view==="patients"&&<PatientsPanel bookings={bookings} setView={setView} setForm={setForm} setEditId={setEditId} setConflict={setConflict} todayStr={todayStr} selStoreId={selStoreId} setAllBookings={setAllBookings} allPayments={allPayments} setAllPayments={setAllPayments} initialPatient={historyPatient} onConsumeInitialPatient={()=>setHistoryPatient(null)} onOpenRefund={openRefund} onOpenPos={(b,opt)=>setIframeModal({url:`pos.html?id=${b.id}${opt&&opt.fix?"&fix=1":""}${opt&&opt.pid?"&pid="+opt.pid:""}`,title:opt&&opt.fix?"会計の修正":"会計"})}/>}
 
           {/* サマリー */}
           {view==="stats"&&<StatsPanel bookings={bookings} payments={paymentsNet} todayStr={todayStr} stores={stores}/>}
@@ -13573,7 +13603,7 @@ function Dashboard({user,onLogout}){
           {view==="churn_alert"&&<ChurnAlertPanel bookings={bookings} todayStr={todayStr}/>}
                     {view==="line_link_check"&&<LineLinkCheckPanel bookings={bookings}/>}
                              {view==="staff_kpi"&&<StaffKPIPanel bookings={bookings} payments={paymentsNet} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr} trainingMode={trainingMode}/>}
-                             {view==="pass_holders"&&<PassHoldersPanel payments={payments} bookings={bookings} trainingMode={trainingMode}/>}
+                             {view==="pass_holders"&&<PassHoldersPanel payments={payments} bookings={bookings} trainingMode={trainingMode} onOpenPatient={openPatientByName}/>}
                              {view==="referral_mgmt"&&<ReferralMgmtPanel bookings={bookings} payments={payments}/>}
                     {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} todayStr={todayStr} onRestore={restoreBooking} onDelete={deleteCancelledBooking}/>}
                            {view==="staff_off_conflicts"&&<StaffOffConflictsPanel bookings={bookings} weeklyShifts={weeklyShifts} dateOverrides={dateOverrides} storeStaff={storeStaff} onReassign={reassignStaffForBooking} onReschedule={rescheduleBooking} todayStr={todayStr}/>}
