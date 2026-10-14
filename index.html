@@ -13137,13 +13137,18 @@ function Dashboard({user,onLogout}){
       {id:"cancelled_list",label:"キャンセル一覧",icon:"x-circle",special:""},
       {id:"staff_off_conflicts",label:"休みスタッフの予約",icon:"alert",special:""},
     ]},
-    {id:"analysis",label:"数字・集客",color:"#059669",items:[
+    // 数字まわりは「分析・レポート」「お金・会計」「集客・フォロー」に分けて、探しやすくする
+    {id:"analysis",label:"分析・レポート",color:"#059669",items:[
       {id:"daily_report",label:"日計表（自動集計）",icon:"bar-chart",special:""},
-      {id:"register_cash",label:"レジ金（レジ締め）",icon:"receipt",special:""},
-      {id:"money_calc",label:"当日の会計明細・金額計算・小口",icon:"receipt",special:""},
-      {id:"refund",label:"返金する（返金管理）",icon:"receipt",special:""},
       {id:"stats",label:"予約分析・サマリー",icon:"bar-chart",special:""},
       {id:"staff_kpi",label:"スタッフKPI管理",icon:"trending",special:""},
+    ]},
+    {id:"money",label:"お金・会計",color:"#b45309",items:[
+      {id:"money_calc",label:"当日の会計明細・金額計算・小口",icon:"receipt",special:""},
+      {id:"register_cash",label:"レジ金（レジ締め）",icon:"receipt",special:""},
+      {id:"refund",label:"返金する（返金管理）",icon:"receipt",special:""},
+    ]},
+    {id:"marketing",label:"集客・フォロー",color:"#0891b2",items:[
       {id:"churn_alert",label:"離反防止アラート",icon:"bell",special:""},
       {id:"referral_mgmt",label:"紹介キャンペーン管理",icon:"users",special:""},
     ]},
