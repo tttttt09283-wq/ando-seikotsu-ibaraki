@@ -2002,6 +2002,264 @@ function KarteListPanel({bookings,payments,stores,todayStr}){
 
 // ===== 日計表（スプレッドシートの日計表と同じ項目を、会計データから自動集計して日別に表示） =====
 // 巻き爪・自賠は、POS会計の「巻き爪・自賠」ボタンで追加した自費項目（payments.jifee_items）から集計する。
+// ===== 金額計算・小口現金 =====
+// ① 売上の金額計算：期間を選ぶと、売上を支払方法別・保険/自費別・先生別・日別に合計する（返金は差し引く）
+// ② 小口現金：小口現金の入金・出金を記録し、残高を自動で計算する（petty_cash_entries）
+// ③ 計算メモ：金額を並べて足し引きできる、かんたん電卓
+const PETTY_CATS=["消耗品","事務用品","交通費","郵送・宅配","飲食・お茶代","清掃・衛生","修繕","その他"];
+function MoneyCalcPanel({bookings,payments,refunds,stores,todayStr,user,trainingMode}){
+  const fmt=n=>(Number(n)<0?"−":"")+"¥"+Math.abs(Math.round(Number(n)||0)).toLocaleString();
+  const n=v=>parseInt(String(v).replace(/[^\d-]/g,""),10)||0;
+  const firstStoreId=(stores&&stores[0]&&stores[0].id)||1;
+  const [tab,setTab]=React.useState("sales");
+  const [storeId,setStoreId]=React.useState(firstStoreId);
+  const card={background:"white",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px rgba(0,0,0,.06)",marginBottom:12};
+  const h={fontSize:13,fontWeight:800,color:"#1e3a5f",marginBottom:10};
+  const inp={padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontFamily:"inherit",boxSizing:"border-box",maxWidth:"100%"};
+  const th={padding:"6px 8px",textAlign:"right",whiteSpace:"nowrap",background:"#f1f5f9",color:"#475569",fontSize:12};
+  const td={padding:"6px 8px",textAlign:"right",borderTop:"1px solid #f1f5f9",fontSize:13,whiteSpace:"nowrap"};
+  const ymd=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  const monthStart=todayStr.slice(0,8)+"01";
+
+  // ===== ① 売上の金額計算 =====
+  const [start,setStart]=React.useState(monthStart);
+  const [end,setEnd]=React.useState(todayStr);
+  function preset(k){
+    const t=new Date(todayStr+"T00:00:00");
+    if(k==="today"){setStart(todayStr);setEnd(todayStr);}
+    if(k==="yesterday"){t.setDate(t.getDate()-1);setStart(ymd(t));setEnd(ymd(t));}
+    if(k==="week"){const s=new Date(t);s.setDate(s.getDate()-((s.getDay()+6)%7));setStart(ymd(s));setEnd(todayStr);}
+    if(k==="month"){setStart(monthStart);setEnd(todayStr);}
+    if(k==="lastmonth"){const s=new Date(t.getFullYear(),t.getMonth()-1,1),e=new Date(t.getFullYear(),t.getMonth(),0);setStart(ymd(s));setEnd(ymd(e));}
+    if(k==="preopen"){setStart("2026-10-01");setEnd("2026-10-04");}
+  }
+  const sales=React.useMemo(()=>{
+    const bk={};(bookings||[]).forEach(b=>{bk[b.id]=b;});
+    const inStore=p=>{const b=bk[p.booking_id];return (b?(b.store_id||firstStoreId):firstStoreId)===storeId;};
+    const pays=(payments||[]).filter(p=>p.payment_date>=start&&p.payment_date<=end&&inStore(p));
+    const byMethod={},byStaff={},byDay={};
+    let total=0,ins=0,jifee=0,paidN=0;
+    pays.forEach(p=>{
+      const tot=n(p.total_amount);total+=tot;ins+=n(p.insurance_amount);jifee+=n(p.jifee_amount);if(tot>0)paidN++;
+      // 支払方法別：現金以外は記録された金額、現金は「合計−現金以外」（お釣りを含めない）
+      let nonCash=0;
+      String(p.payment_method||"").split("・").forEach(part=>{
+        const i=part.indexOf(":");if(i<0)return;
+        const nm=part.slice(0,i).trim();const amt=n(part.slice(i+1));
+        if(nm&&nm!=="現金"){nonCash+=amt;byMethod[nm]=(byMethod[nm]||0)+amt;}
+      });
+      if(tot-nonCash>0) byMethod["現金"]=(byMethod["現金"]||0)+(tot-nonCash);
+      const b=bk[p.booking_id];const sid=b?b.staff_id:p.staff_id;
+      const sname=(STAFF_ACCOUNTS.find(s=>s.id===sid)||{}).name||"不明";
+      byStaff[sname]=byStaff[sname]||{n:0,total:0};byStaff[sname].n++;byStaff[sname].total+=tot;
+      const d=p.payment_date;byDay[d]=byDay[d]||{n:0,paid:0,total:0,ins:0,jifee:0,refund:0};
+      byDay[d].n++;if(tot>0)byDay[d].paid++;byDay[d].total+=tot;byDay[d].ins+=n(p.insurance_amount);byDay[d].jifee+=n(p.jifee_amount);
+    });
+    const refs=(refunds||[]).filter(r=>r.refund_date>=start&&r.refund_date<=end&&(r.store_id||firstStoreId)===storeId);
+    let refund=0;
+    refs.forEach(r=>{const a=n(r.amount);refund+=a;const m=r.refund_method||"その他";byMethod[m]=(byMethod[m]||0)-a;
+      const d=r.refund_date;byDay[d]=byDay[d]||{n:0,paid:0,total:0,ins:0,jifee:0,refund:0};byDay[d].refund+=a;});
+    return {count:pays.length,paidN,total,ins,jifee,refund,net:total-refund,byMethod,byStaff,byDay};
+  },[bookings,payments,refunds,start,end,storeId,firstStoreId]);
+
+  // ===== ② 小口現金 =====
+  const [petty,setPetty]=React.useState([]);
+  const [pettyLoading,setPettyLoading]=React.useState(true);
+  const [pMonth,setPMonth]=React.useState(todayStr.slice(0,7));
+  const [pf,setPf]=React.useState({entry_date:todayStr,kind:"out",amount:"",category:PETTY_CATS[0],item:"",memo:"",has_receipt:true});
+  const [pSaving,setPSaving]=React.useState(false);
+  const [pMsg,setPMsg]=React.useState("");
+  function loadPetty(){
+    setPettyLoading(true);
+    sb.select("petty_cash_entries","?order=entry_date.asc,id.asc").then(r=>{setPetty(Array.isArray(r)?r:[]);setPettyLoading(false);}).catch(()=>setPettyLoading(false));
+  }
+  React.useEffect(()=>{loadPetty();},[]);
+  const pettyCalc=React.useMemo(()=>{
+    const list=petty.filter(e=>!!e.is_training===!!trainingMode&&(e.store_id||firstStoreId)===storeId);
+    const mStart=pMonth+"-01";
+    const sign=e=>e.kind==="in"?n(e.amount):-n(e.amount);
+    const carry=list.filter(e=>e.entry_date<mStart).reduce((s,e)=>s+sign(e),0);
+    let bal=carry;
+    const rows=list.filter(e=>e.entry_date.slice(0,7)===pMonth).map(e=>{bal+=sign(e);return {...e,balance:bal};});
+    const inSum=rows.filter(e=>e.kind==="in").reduce((s,e)=>s+n(e.amount),0);
+    const outSum=rows.filter(e=>e.kind==="out").reduce((s,e)=>s+n(e.amount),0);
+    const byCat={};rows.filter(e=>e.kind==="out").forEach(e=>{const c=e.category||"その他";byCat[c]=(byCat[c]||0)+n(e.amount);});
+    const now=list.reduce((s,e)=>s+sign(e),0);
+    const noReceipt=rows.filter(e=>e.kind==="out"&&!e.has_receipt).length;
+    return {carry,rows,inSum,outSum,end:carry+inSum-outSum,byCat,now,noReceipt};
+  },[petty,pMonth,storeId,trainingMode,firstStoreId]);
+  async function addPetty(){
+    const amt=n(pf.amount);
+    if(amt<=0){setPMsg("金額を入力してください");return;}
+    if(!pf.item.trim()){setPMsg("内容（何に使ったか／どこから入れたか）を入力してください");return;}
+    if(pf.kind==="out"&&amt>pettyCalc.now&&!window.confirm(`小口現金の残高（${fmt(pettyCalc.now)}）より多い出金です。このまま記録しますか？`)) return;
+    setPSaving(true);setPMsg("");
+    try{
+      const res=await sb.insert("petty_cash_entries",{store_id:storeId,entry_date:pf.entry_date,kind:pf.kind,amount:amt,
+        category:pf.kind==="out"?pf.category:null,item:pf.item.trim(),memo:pf.memo.trim()||null,has_receipt:!!pf.has_receipt,
+        created_by_name:(user&&user.name)||null,is_training:!!trainingMode});
+      if(!Array.isArray(res)||!res[0]) throw new Error((res&&res.message)||"保存できませんでした");
+      setPetty(p=>[...p,res[0]].sort((a,b)=>a.entry_date.localeCompare(b.entry_date)||a.id-b.id));
+      setPf(f=>({...f,amount:"",item:"",memo:""}));setPMsg("✅ 記録しました");
+    }catch(e){setPMsg("記録に失敗しました："+e.message);}
+    setPSaving(false);
+  }
+  async function delPetty(e){
+    if(!window.confirm(`${e.entry_date}「${e.item}」${fmt(e.amount)} を削除しますか？`)) return;
+    try{await sb.delete("petty_cash_entries",e.id);setPetty(p=>p.filter(x=>x.id!==e.id));}catch(err){window.alert("削除に失敗しました");}
+  }
+
+  // ===== ③ 計算メモ（かんたん電卓） =====
+  const [memoRows,setMemoRows]=React.useState([{label:"",amount:"",sign:1},{label:"",amount:"",sign:1},{label:"",amount:"",sign:1}]);
+  const memoTotal=memoRows.reduce((s,r)=>s+r.sign*n(r.amount),0);
+  function setMemoAt(i,patch){setMemoRows(p=>p.map((r,k)=>k===i?{...r,...patch}:r));}
+
+  const tabBtn=(id,label)=>(
+    <button key={id} onClick={()=>setTab(id)} style={{flex:"1 1 120px",whiteSpace:"nowrap",padding:"10px 8px",borderRadius:10,border:"none",cursor:"pointer",fontFamily:"inherit",fontWeight:800,fontSize:13,
+      background:tab===id?"#1e3a5f":"white",color:tab===id?"white":"#475569",boxShadow:tab===id?"none":"0 1px 3px rgba(0,0,0,.08)"}}>{label}</button>);
+  const big=(label,value,color,sub)=>(
+    <div style={{flex:"1 1 140px",background:"#f8fafc",borderRadius:10,padding:"10px 12px",minWidth:0}}>
+      <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>{label}</div>
+      <div style={{fontSize:20,fontWeight:800,color:color||"#1e293b",marginTop:2,overflowWrap:"anywhere"}}>{value}</div>
+      {sub&&<div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>{sub}</div>}
+    </div>);
+  const days=Object.keys(sales.byDay).sort();
+
+  return(
+    <div style={{maxWidth:900,margin:"0 auto"}}>
+      <div style={{...card,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f",flex:1}}>🧮 金額計算・小口現金</div>
+        {stores&&stores.length>1&&<select value={storeId} onChange={e=>setStoreId(Number(e.target.value))} style={inp}>{stores.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select>}
+      </div>
+      <div style={{display:"flex",gap:8,marginBottom:12,flexWrap:"wrap"}}>{tabBtn("sales","💴 売上の金額計算")}{tabBtn("petty","👛 小口現金")}{tabBtn("memo","🧮 計算メモ")}</div>
+
+      {tab==="sales"&&(<>
+        <div style={card}>
+          <div style={h}>期間を選ぶ</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+            {[["today","今日"],["yesterday","昨日"],["week","今週"],["month","今月"],["lastmonth","先月"],["preopen","プレオープン（10/1〜10/4）"]].map(([k,l])=>
+              <button key={k} onClick={()=>preset(k)} style={{padding:"6px 12px",borderRadius:16,border:"1.5px solid #cbd5e1",background:"white",color:"#334155",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>)}
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <input type="date" value={start} onChange={e=>setStart(e.target.value)} style={inp}/><span>〜</span>
+            <input type="date" value={end} onChange={e=>setEnd(e.target.value)} style={inp}/>
+          </div>
+        </div>
+        <div style={card}>
+          <div style={h}>合計（{start}〜{end}）</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {big("売上合計",fmt(sales.total),"#1e3a5f",`会計${sales.count}件（うち有料${sales.paidN}件）`)}
+            {big("返金",sales.refund?fmt(-sales.refund):"¥0","#dc2626")}
+            {big("差引（売上−返金）",fmt(sales.net),"#059669")}
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:8}}>
+            {big("保険",fmt(sales.ins))}
+            {big("自費",fmt(sales.jifee))}
+          </div>
+        </div>
+        <div style={card}>
+          <div style={h}>支払方法別（返金を差し引いた金額）</div>
+          {Object.keys(sales.byMethod).length===0?<div style={{fontSize:13,color:"#94a3b8"}}>この期間の会計はありません</div>:
+          <table style={{width:"100%",borderCollapse:"collapse"}}><tbody>
+            {Object.entries(sales.byMethod).sort((a,b)=>b[1]-a[1]).map(([m,v])=><tr key={m}><td style={{...td,textAlign:"left",fontWeight:700}}>{m}</td><td style={td}>{fmt(v)}</td></tr>)}
+            <tr><td style={{...td,textAlign:"left",fontWeight:800}}>合計</td><td style={{...td,fontWeight:800}}>{fmt(Object.values(sales.byMethod).reduce((s,v)=>s+v,0))}</td></tr>
+          </tbody></table>}
+          <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>現金は「会計の合計−現金以外」で計算しています（お預かり・お釣りは含めません）。</div>
+        </div>
+        <div style={card}>
+          <div style={h}>担当の先生別</div>
+          <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><th style={{...th,textAlign:"left"}}>先生</th><th style={th}>会計件数</th><th style={th}>売上</th></tr></thead><tbody>
+            {Object.entries(sales.byStaff).sort((a,b)=>b[1].total-a[1].total).map(([s,v])=><tr key={s}><td style={{...td,textAlign:"left",fontWeight:700}}>{s}</td><td style={td}>{v.n}件</td><td style={td}>{fmt(v.total)}</td></tr>)}
+          </tbody></table>
+        </div>
+        <div style={card}>
+          <div style={h}>日別</div>
+          <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:520}}><thead><tr>
+            {["日付","会計","有料","保険","自費","返金","売上"].map(t=><th key={t} style={{...th,textAlign:t==="日付"?"left":"right"}}>{t}</th>)}</tr></thead><tbody>
+            {days.map(d=>{const v=sales.byDay[d];return <tr key={d}><td style={{...td,textAlign:"left"}}>{d.slice(5).replace("-","/")}</td><td style={td}>{v.n}</td><td style={td}>{v.paid}</td><td style={td}>{fmt(v.ins)}</td><td style={td}>{fmt(v.jifee)}</td><td style={{...td,color:v.refund?"#dc2626":"#94a3b8"}}>{v.refund?fmt(-v.refund):"-"}</td><td style={{...td,fontWeight:800}}>{fmt(v.total-v.refund)}</td></tr>;})}
+          </tbody></table></div>
+        </div>
+      </>)}
+
+      {tab==="petty"&&(<>
+        <div style={card}>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {big("今の小口現金の残高",fmt(pettyCalc.now),pettyCalc.now<0?"#dc2626":"#059669","すべての記録から計算")}
+          </div>
+        </div>
+        <div style={card}>
+          <div style={h}>入金・出金を記録する</div>
+          <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
+            {[["out","出金（使った）","#dc2626"],["in","入金（補充した）","#059669"]].map(([k,l,c])=>
+              <button key={k} onClick={()=>setPf(f=>({...f,kind:k}))} style={{flex:"1 1 120px",whiteSpace:"nowrap",padding:"9px",borderRadius:10,border:`2px solid ${pf.kind===k?c:"#e2e8f0"}`,background:pf.kind===k?c:"white",color:pf.kind===k?"white":"#475569",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>)}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:8}}>
+            <label style={{fontSize:12,fontWeight:700}}>日付<br/><input type="date" value={pf.entry_date} onChange={e=>setPf(f=>({...f,entry_date:e.target.value}))} style={{...inp,width:"100%"}}/></label>
+            <label style={{fontSize:12,fontWeight:700}}>金額（円）<br/><input inputMode="numeric" value={pf.amount} onChange={e=>setPf(f=>({...f,amount:e.target.value.replace(/[^\d]/g,"")}))} placeholder="例：1200" style={{...inp,width:"100%",textAlign:"right"}}/></label>
+            {pf.kind==="out"&&<label style={{fontSize:12,fontWeight:700}}>分類<br/><select value={pf.category} onChange={e=>setPf(f=>({...f,category:e.target.value}))} style={{...inp,width:"100%"}}>{PETTY_CATS.map(c=><option key={c}>{c}</option>)}</select></label>}
+            <label style={{fontSize:12,fontWeight:700,gridColumn:"1/-1"}}>内容<br/><input value={pf.item} onChange={e=>setPf(f=>({...f,item:e.target.value}))} placeholder={pf.kind==="out"?"例：ティッシュ・ゴミ袋（ダイソー）":"例：本部から補充"} style={{...inp,width:"100%"}}/></label>
+            <label style={{fontSize:12,fontWeight:700,gridColumn:"1/-1"}}>メモ（任意）<br/><input value={pf.memo} onChange={e=>setPf(f=>({...f,memo:e.target.value}))} style={{...inp,width:"100%"}}/></label>
+            {pf.kind==="out"&&<label style={{fontSize:13,fontWeight:700,display:"flex",alignItems:"center",gap:6}}><input type="checkbox" checked={pf.has_receipt} onChange={e=>setPf(f=>({...f,has_receipt:e.target.checked}))}/>レシート・領収書あり</label>}
+          </div>
+          <button onClick={addPetty} disabled={pSaving} style={{width:"100%",marginTop:10,padding:"11px",borderRadius:10,border:"none",background:"#1e3a5f",color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",opacity:pSaving?.6:1}}>{pSaving?"記録中...":"記録する"}</button>
+          {pMsg&&<div style={{fontSize:12,marginTop:6,color:pMsg.startsWith("✅")?"#059669":"#dc2626",fontWeight:700}}>{pMsg}</div>}
+        </div>
+        <div style={card}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+            <div style={{...h,marginBottom:0,flex:1}}>小口現金出納帳</div>
+            <input type="month" value={pMonth} onChange={e=>setPMonth(e.target.value)} style={inp}/>
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+            {big("前月からの繰越",fmt(pettyCalc.carry))}
+            {big("入金",fmt(pettyCalc.inSum),"#059669")}
+            {big("出金",fmt(pettyCalc.outSum),"#dc2626")}
+            {big("月末の残高",fmt(pettyCalc.end),"#1e3a5f")}
+          </div>
+          {pettyCalc.noReceipt>0&&<div style={{fontSize:12,color:"#b45309",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8,padding:"6px 10px",marginBottom:8}}>⚠ レシート・領収書がない出金が {pettyCalc.noReceipt} 件あります</div>}
+          {pettyLoading?<div style={{fontSize:13,color:"#94a3b8"}}>読み込み中...</div>:pettyCalc.rows.length===0?<div style={{fontSize:13,color:"#94a3b8"}}>この月の記録はありません</div>:
+          <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:600}}><thead><tr>
+            {["日付","内容","分類","入金","出金","残高",""].map((t,i)=><th key={i} style={{...th,textAlign:i<3?"left":"right"}}>{t}</th>)}</tr></thead><tbody>
+            {pettyCalc.rows.map(e=><tr key={e.id}>
+              <td style={{...td,textAlign:"left"}}>{e.entry_date.slice(5).replace("-","/")}</td>
+              <td style={{...td,textAlign:"left",whiteSpace:"normal"}}>{e.item}{e.kind==="out"&&!e.has_receipt&&<span style={{marginLeft:4,fontSize:10,color:"#b45309",fontWeight:700}}>レシートなし</span>}{e.memo&&<div style={{fontSize:11,color:"#94a3b8"}}>{e.memo}</div>}</td>
+              <td style={{...td,textAlign:"left",color:"#64748b"}}>{e.kind==="out"?(e.category||"-"):"補充"}</td>
+              <td style={{...td,color:"#059669"}}>{e.kind==="in"?fmt(e.amount):""}</td>
+              <td style={{...td,color:"#dc2626"}}>{e.kind==="out"?fmt(e.amount):""}</td>
+              <td style={{...td,fontWeight:800}}>{fmt(e.balance)}</td>
+              <td style={td}><button onClick={()=>delPetty(e)} title="削除" style={{border:"none",background:"none",color:"#94a3b8",cursor:"pointer",fontSize:14}}>✕</button></td>
+            </tr>)}
+          </tbody></table></div>}
+          {Object.keys(pettyCalc.byCat).length>0&&<div style={{marginTop:10}}>
+            <div style={{fontSize:12,fontWeight:800,color:"#475569",marginBottom:4}}>分類別の出金</div>
+            {Object.entries(pettyCalc.byCat).sort((a,b)=>b[1]-a[1]).map(([c,v])=><div key={c} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"3px 0"}}><span>{c}</span><b>{fmt(v)}</b></div>)}
+          </div>}
+        </div>
+      </>)}
+
+      {tab==="memo"&&(
+        <div style={card}>
+          <div style={h}>計算メモ（足し算・引き算）</div>
+          {memoRows.map((r,i)=>(
+            <div key={i} style={{display:"flex",gap:6,marginBottom:6,alignItems:"center"}}>
+              <button onClick={()=>setMemoAt(i,{sign:-r.sign})} style={{width:36,height:36,borderRadius:8,border:"1.5px solid #cbd5e1",background:r.sign>0?"#ecfdf5":"#fef2f2",color:r.sign>0?"#059669":"#dc2626",fontWeight:800,fontSize:16,cursor:"pointer"}}>{r.sign>0?"＋":"−"}</button>
+              <input value={r.label} onChange={e=>setMemoAt(i,{label:e.target.value})} placeholder="メモ（任意）" style={{...inp,flex:1,minWidth:0}}/>
+              <input inputMode="numeric" value={r.amount} onChange={e=>setMemoAt(i,{amount:e.target.value.replace(/[^\d]/g,"")})} placeholder="金額" style={{...inp,width:120,textAlign:"right"}}/>
+              <button onClick={()=>setMemoRows(p=>p.filter((_,k)=>k!==i))} style={{border:"none",background:"none",color:"#94a3b8",cursor:"pointer",fontSize:14}}>✕</button>
+            </div>))}
+          <div style={{display:"flex",gap:6,marginTop:4}}>
+            <button onClick={()=>setMemoRows(p=>[...p,{label:"",amount:"",sign:1}])} style={{border:"1.5px dashed #94a3b8",background:"white",color:"#475569",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:12,fontWeight:700}}>＋ 行を追加</button>
+            <button onClick={()=>setMemoRows([{label:"",amount:"",sign:1},{label:"",amount:"",sign:1},{label:"",amount:"",sign:1}])} style={{border:"1.5px solid #e2e8f0",background:"white",color:"#64748b",borderRadius:8,padding:"6px 12px",cursor:"pointer",fontSize:12,fontWeight:700}}>クリア</button>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12,padding:"12px 14px",background:"#1e3a5f",borderRadius:10,color:"white"}}>
+            <span style={{fontWeight:700}}>合計</span><span style={{fontSize:24,fontWeight:800}}>{fmt(memoTotal)}</span>
+          </div>
+          <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>このメモは保存されません（画面を閉じると消えます）。</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ===== レジ金（レジ締め）：釣銭準備金＋現金売上±入出金＝あるべきレジ金 と、実際に数えた現金の差額を出す =====
 function RegisterCashPanel({bookings,payments,stores,todayStr,currentUser,refunds}){
   const fmt=n=>"¥"+Number(n||0).toLocaleString();
@@ -12628,6 +12886,7 @@ function Dashboard({user,onLogout}){
     {id:"analysis",label:"数字・集客",color:"#059669",items:[
       {id:"daily_report",label:"日計表（自動集計）",icon:"bar-chart",special:""},
       {id:"register_cash",label:"レジ金（レジ締め）",icon:"receipt",special:""},
+      {id:"money_calc",label:"金額計算・小口現金",icon:"receipt",special:""},
       {id:"stats",label:"予約分析・サマリー",icon:"bar-chart",special:""},
       {id:"staff_kpi",label:"スタッフKPI管理",icon:"trending",special:""},
       {id:"churn_alert",label:"離反防止アラート",icon:"bell",special:""},
@@ -13241,6 +13500,7 @@ function Dashboard({user,onLogout}){
           {view==="karte_list"&&<KarteListPanel bookings={bookings} payments={payments} stores={stores} todayStr={todayStr}/>}
           {view==="daily_report"&&<DailyReportPanel bookings={bookings} payments={paymentsNet} stores={stores} todayStr={todayStr}/>}
           {view==="register_cash"&&<RegisterCashPanel bookings={bookings} payments={payments} refunds={refunds} stores={stores} todayStr={todayStr} currentUser={user}/>}
+          {view==="money_calc"&&<MoneyCalcPanel bookings={bookings} payments={payments} refunds={refunds} stores={stores} todayStr={todayStr} user={user} trainingMode={trainingMode}/>}
           {view==="refund"&&<RefundPanel bookings={bookings} payments={payments} refunds={refunds} allRefunds={allRefunds} stores={stores} todayStr={todayStr} user={user} isAdmin={isAdmin} onChanged={reloadRefunds} trainingMode={trainingMode}/>}
           {view==="launch_roi"&&<LaunchROIPanel bookings={bookings} payments={paymentsNet} stores={stores} todayStr={todayStr} user={user} trainingMode={trainingMode}/>}
           {view==="patient_merge"&&<PatientMergePanel bookings={bookings} user={user} isAdmin={isAdmin} onChanged={fetchAll}/>}
