@@ -2001,6 +2001,18 @@ function KarteListPanel({bookings,payments,stores,todayStr}){
 
 // ===== 日計表（スプレッドシートの日計表と同じ項目を、会計データから自動集計して日別に表示） =====
 // 巻き爪・自賠は、POS会計の「巻き爪・自賠」ボタンで追加した自費項目（payments.jifee_items）から集計する。
+// ===== 巻き爪・美容鍼の予約を見分ける（カレンダーで色と目印を変える） =====
+// メニュー・メモ・症状のどこかに該当する言葉があれば対象（美容鍼はメニュー・コース管理で追加すれば自動で対象になる）
+const SPECIAL_BOOKING_KINDS=[
+  {key:"nail",label:"巻き爪",icon:"🦶",color:"#0d9488",grad:"linear-gradient(135deg,#14b8a6,#0f766e)",re:/巻き爪|陥入爪|肥厚爪|爪切り|爪ケア|タコ|魚の目/},
+  {key:"beauty",label:"美容鍼",icon:"✨",color:"#db2777",grad:"linear-gradient(135deg,#f472b6,#be185d)",re:/美容鍼|美容はり|美容針/},
+];
+function specialBookingKind(b){
+  if(!b) return null;
+  const text=[b.menu,...(Array.isArray(b.menus)?b.menus:[]),b.memo,b.symptoms,b.notes].filter(Boolean).join(" ");
+  return SPECIAL_BOOKING_KINDS.find(k=>k.re.test(text))||null;
+}
+
 // ===== 1つの予約に会計が複数ある場合（体験¥0＋FP購入、物販の追加会計など）は、全部の会計を合計して1件として扱う =====
 // （以前は最初に見つかった1件だけを見ていたため、¥0の方が表示されて「修正が反映されていない」ように見えることがあった）
 function mergePaymentsByBooking(list){
@@ -2017,6 +2029,101 @@ function mergePaymentsByBooking(list){
     c._count++;
   });
   return m;
+}
+
+// ===== その日の会計明細（日計表・金額計算の両方で使う） =====
+function DayPaymentDetail({bookings,payments,refunds,storeId,firstStoreId,date,onOpenPos,onOpenRefund}){
+  const fmt=v=>(Number(v)<0?"−":"")+"¥"+Math.abs(Math.round(Number(v)||0)).toLocaleString();
+  const n=v=>parseInt(String(v).replace(/[^\d-]/g,""),10)||0;
+  const dDate=date;
+  const card={background:"white",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px rgba(0,0,0,.06)",marginBottom:12};
+  const h={fontSize:13,fontWeight:800,color:"#1e3a5f",marginBottom:10};
+  const big=(label,value,color,sub)=>(
+    <div style={{flex:"1 1 140px",background:"#f8fafc",borderRadius:10,padding:"10px 12px",minWidth:0}}>
+      <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>{label}</div>
+      <div style={{fontSize:20,fontWeight:800,color:color||"#1e293b",marginTop:2,overflowWrap:"anywhere"}}>{value}</div>
+      {sub&&<div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>{sub}</div>}
+    </div>);
+  const day=React.useMemo(()=>{
+    const bk={};(bookings||[]).forEach(b=>{bk[b.id]=b;});
+    const inStore=p=>{const b=bk[p.booking_id];return (b?(b.store_id||firstStoreId):firstStoreId)===storeId;};
+    const refByPay={};(refunds||[]).forEach(r=>{if(r.payment_id)(refByPay[r.payment_id]=refByPay[r.payment_id]||[]).push(r);});
+    // 日計表から渡される会計には返金がマイナス行（is_refund）として混ざっているため除く（返金は下で別に数える）
+    const rows=(payments||[]).filter(p=>!p.is_refund&&p.payment_date===dDate&&inStore(p)).map(p=>{
+      const b=bk[p.booking_id]||null;
+      const items=[];
+      if(n(p.insurance_amount)>0) items.push({label:"保険"+(p.insurance_type?`（${p.insurance_type}）`:""),amount:n(p.insurance_amount)});
+      if(Array.isArray(p.jifee_items)&&p.jifee_items.length>0) p.jifee_items.forEach(i=>items.push({label:i.label,amount:n(i.amount)}));
+      else if(n(p.jifee_amount)>0) items.push({label:p.memo||"自費",amount:n(p.jifee_amount)});
+      const methods=String(p.payment_method||"").split("・").map(x=>{const i=x.indexOf(":");return i<0?null:{m:x.slice(0,i).trim(),a:n(x.slice(i+1))};}).filter(Boolean);
+      const nonCash=methods.filter(x=>x.m!=="現金").reduce((s2,x)=>s2+x.a,0);
+      const cashPaid=methods.filter(x=>x.m==="現金").reduce((s2,x)=>s2+x.a,0);
+      const cashSale=Math.max(0,n(p.total_amount)-nonCash);
+      const refs=refByPay[p.id]||[];
+      return {p,b,time:b?b.time:"",staff:b?((STAFF_ACCOUNTS.find(s2=>s2.id===b.staff_id)||{}).name||""):"",items,methods,cashSale,change:cashPaid>0?Math.max(0,cashPaid-cashSale):0,refs,refundSum:refs.reduce((s2,r)=>s2+n(r.amount),0)};
+    }).sort((a,b2)=>String(a.time).localeCompare(String(b2.time))||a.p.id-b2.p.id);
+    // その日に登録された返金（元の会計が別の日のものも含む）
+    const dayRefunds=(refunds||[]).filter(r=>r.refund_date===dDate&&(r.store_id||firstStoreId)===storeId);
+    // その日の予約で、まだ会計がないもの（キャンセル除く）
+    const paidIds=new Set((payments||[]).filter(p=>!p.is_refund).map(p=>p.booking_id));
+    const unpaid=(bookings||[]).filter(b=>b.date===dDate&&!b.cancelled&&(b.store_id||firstStoreId)===storeId&&!paidIds.has(b.id)).sort((a,b2)=>String(a.time).localeCompare(String(b2.time)));
+    const total=rows.reduce((s2,r)=>s2+n(r.p.total_amount),0);
+    const cash=rows.reduce((s2,r)=>s2+r.cashSale,0);
+    const byM={};rows.forEach(r=>r.methods.filter(x=>x.m!=="現金").forEach(x=>{byM[x.m]=(byM[x.m]||0)+x.a;}));
+    const refundSum=dayRefunds.reduce((s2,r)=>s2+n(r.amount),0);
+    const refundCash=dayRefunds.filter(r=>r.refund_method==="現金").reduce((s2,r)=>s2+n(r.amount),0);
+    return {rows,dayRefunds,unpaid,total,cash,byM,refundSum,refundCash,paidN:rows.filter(r=>n(r.p.total_amount)>0).length};
+  },[bookings,payments,refunds,dDate,storeId,firstStoreId]);
+
+  return(<>
+        <div style={card}>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {big("売上",fmt(day.total),"#1e3a5f",`会計${day.rows.length}件（有料${day.paidN}件）`)}
+            {big("現金",fmt(day.cash),"#059669",day.refundCash?`現金の返金 ${fmt(-day.refundCash)} は含まず`:"お釣りは含めない")}
+            {big("現金以外",fmt(Object.values(day.byM).reduce((s2,v)=>s2+v,0)),"#2563eb",Object.entries(day.byM).map(([k,v])=>`${k} ${fmt(v)}`).join("／")||"-")}
+            {big("返金",day.refundSum?fmt(-day.refundSum):"¥0","#dc2626",`${day.dayRefunds.length}件`)}
+            {big("差引（売上−返金）",fmt(day.total-day.refundSum),"#059669")}
+          </div>
+        </div>
+        <div style={card}>
+          <div style={h}>会計の明細（{day.rows.length}件）</div>
+          {day.rows.length===0?<div style={{fontSize:13,color:"#94a3b8"}}>この日の会計はありません</div>:
+          day.rows.map(r=>(
+            <div key={r.p.id} style={{borderTop:"1px solid #f1f5f9",padding:"10px 2px"}}>
+              <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
+                <span style={{fontSize:12,color:"#64748b",minWidth:40}}>{r.time||"--:--"}</span>
+                <b style={{fontSize:14}}>{r.p.patient_name||(r.b&&r.b.patient_name)||"-"} 様</b>
+                {r.staff&&<span style={{fontSize:11,color:"#64748b"}}>担当：{r.staff}</span>}
+                <span style={{marginLeft:"auto",fontSize:16,fontWeight:800,color:n(r.p.total_amount)>0?"#1e293b":"#94a3b8"}}>{fmt(r.p.total_amount)}</span>
+              </div>
+              <div style={{marginLeft:48,marginTop:4}}>
+                {r.items.length===0?<div style={{fontSize:12,color:"#94a3b8"}}>{r.p.memo||"（0円の会計）"}</div>:
+                r.items.map((it,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#475569"}}><span>・{it.label}</span><span>{fmt(it.amount)}</span></div>)}
+                <div style={{fontSize:12,color:"#64748b",marginTop:3}}>
+                  支払：{r.methods.map(x=>`${x.m} ${fmt(x.a)}`).join("／")||"-"}{r.change>0&&<span style={{marginLeft:6}}>（お釣り {fmt(r.change)}）</span>}
+                </div>
+                {r.refs.length>0&&<div style={{fontSize:12,color:"#dc2626",fontWeight:700,marginTop:3}}>↩️ 返金 {r.refs.map(x=>`${String(x.refund_date).slice(5).replace("-","/")} ${fmt(x.amount)}（${x.refund_method}）`).join("、")}</div>}
+                {onOpenPos&&r.b&&<div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap"}}>
+                  <button onClick={()=>onOpenPos(r.b,{pid:r.p.id})} style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:6,border:"1px solid #cbd5e1",background:"white",color:"#334155",cursor:"pointer"}}>🧾 会計を開く（レシート）</button>
+                  <button onClick={()=>onOpenPos(r.b,{fix:true,pid:r.p.id})} style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:6,border:"1px solid #ddd6fe",background:"#f5f3ff",color:"#7c3aed",cursor:"pointer"}}>✏️ 金額修正</button>
+                  {onOpenRefund&&n(r.p.total_amount)>r.refundSum&&<button onClick={()=>onOpenRefund(r.p.id)} style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:6,border:"1px solid #fecaca",background:"#fef2f2",color:"#dc2626",cursor:"pointer"}}>↩️ 返金</button>}
+                </div>}
+              </div>
+            </div>))}
+        </div>
+        {day.dayRefunds.length>0&&<div style={card}>
+          <div style={h}>この日に登録した返金（{day.dayRefunds.length}件）</div>
+          {day.dayRefunds.map(r=><div key={r.id} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"4px 0",borderTop:"1px solid #f1f5f9"}}><span>{r.patient_name||"-"} 様（{r.refund_method}）<span style={{fontSize:11,color:"#94a3b8",marginLeft:6}}>{r.reason_category||""}</span></span><b style={{color:"#dc2626"}}>{fmt(-n(r.amount))}</b></div>)}
+        </div>}
+        {day.unpaid.length>0&&<div style={{...card,border:"1.5px solid #fde68a"}}>
+          <div style={h}>⚠ まだ会計がない予約（{day.unpaid.length}件）</div>
+          {day.unpaid.map(b=><div key={b.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,padding:"5px 0",borderTop:"1px solid #f1f5f9"}}>
+            <span style={{color:"#64748b",minWidth:40}}>{b.time}</span><b>{b.patient_name} 様</b><span style={{fontSize:11,color:"#94a3b8"}}>{b.menu}</span>
+            {onOpenPos&&<button onClick={()=>onOpenPos(b,{})} style={{marginLeft:"auto",fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:6,border:"none",background:"#059669",color:"white",cursor:"pointer"}}>会計する</button>}
+          </div>)}
+          <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>来院されなかった方は、カレンダーでキャンセルにしておくとここに出なくなります。</div>
+        </div>}
+        </>);
 }
 
 // ===== 金額計算・小口現金 =====
@@ -2080,38 +2187,9 @@ function MoneyCalcPanel({bookings,payments,refunds,stores,todayStr,user,training
     return {count:pays.length,paidN,total,ins,jifee,refund,refList,net:total-refund,byMethod,byStaff,byDay};
   },[bookings,payments,refunds,start,end,storeId,firstStoreId]);
 
-  // ===== 当日の会計明細：その日の会計を1件ずつ（時間・患者様・担当・内容・支払方法・金額・返金）=====
+  // ===== 当日の会計明細（中身は DayPaymentDetail。日計表でも同じものを使う） =====
   const [dDate,setDDate]=React.useState(todayStr);
   function shiftDay(delta){const d=new Date(dDate+"T00:00:00");d.setDate(d.getDate()+delta);setDDate(ymd(d));}
-  const day=React.useMemo(()=>{
-    const bk={};(bookings||[]).forEach(b=>{bk[b.id]=b;});
-    const inStore=p=>{const b=bk[p.booking_id];return (b?(b.store_id||firstStoreId):firstStoreId)===storeId;};
-    const refByPay={};(refunds||[]).forEach(r=>{if(r.payment_id)(refByPay[r.payment_id]=refByPay[r.payment_id]||[]).push(r);});
-    const rows=(payments||[]).filter(p=>p.payment_date===dDate&&inStore(p)).map(p=>{
-      const b=bk[p.booking_id]||null;
-      const items=[];
-      if(n(p.insurance_amount)>0) items.push({label:"保険"+(p.insurance_type?`（${p.insurance_type}）`:""),amount:n(p.insurance_amount)});
-      if(Array.isArray(p.jifee_items)&&p.jifee_items.length>0) p.jifee_items.forEach(i=>items.push({label:i.label,amount:n(i.amount)}));
-      else if(n(p.jifee_amount)>0) items.push({label:p.memo||"自費",amount:n(p.jifee_amount)});
-      const methods=String(p.payment_method||"").split("・").map(x=>{const i=x.indexOf(":");return i<0?null:{m:x.slice(0,i).trim(),a:n(x.slice(i+1))};}).filter(Boolean);
-      const nonCash=methods.filter(x=>x.m!=="現金").reduce((s2,x)=>s2+x.a,0);
-      const cashPaid=methods.filter(x=>x.m==="現金").reduce((s2,x)=>s2+x.a,0);
-      const cashSale=Math.max(0,n(p.total_amount)-nonCash);
-      const refs=refByPay[p.id]||[];
-      return {p,b,time:b?b.time:"",staff:b?((STAFF_ACCOUNTS.find(s2=>s2.id===b.staff_id)||{}).name||""):"",items,methods,cashSale,change:cashPaid>0?Math.max(0,cashPaid-cashSale):0,refs,refundSum:refs.reduce((s2,r)=>s2+n(r.amount),0)};
-    }).sort((a,b2)=>String(a.time).localeCompare(String(b2.time))||a.p.id-b2.p.id);
-    // その日に登録された返金（元の会計が別の日のものも含む）
-    const dayRefunds=(refunds||[]).filter(r=>r.refund_date===dDate&&(r.store_id||firstStoreId)===storeId);
-    // その日の予約で、まだ会計がないもの（キャンセル除く）
-    const paidIds=new Set((payments||[]).map(p=>p.booking_id));
-    const unpaid=(bookings||[]).filter(b=>b.date===dDate&&!b.cancelled&&(b.store_id||firstStoreId)===storeId&&!paidIds.has(b.id)).sort((a,b2)=>String(a.time).localeCompare(String(b2.time)));
-    const total=rows.reduce((s2,r)=>s2+n(r.p.total_amount),0);
-    const cash=rows.reduce((s2,r)=>s2+r.cashSale,0);
-    const byM={};rows.forEach(r=>r.methods.filter(x=>x.m!=="現金").forEach(x=>{byM[x.m]=(byM[x.m]||0)+x.a;}));
-    const refundSum=dayRefunds.reduce((s2,r)=>s2+n(r.amount),0);
-    const refundCash=dayRefunds.filter(r=>r.refund_method==="現金").reduce((s2,r)=>s2+n(r.amount),0);
-    return {rows,dayRefunds,unpaid,total,cash,byM,refundSum,refundCash,paidN:rows.filter(r=>n(r.p.total_amount)>0).length};
-  },[bookings,payments,refunds,dDate,storeId,firstStoreId]);
 
   // ===== ② 小口現金 =====
   const [petty,setPetty]=React.useState([]);
@@ -2198,53 +2276,7 @@ function MoneyCalcPanel({bookings,payments,refunds,stores,todayStr,user,training
           <button onClick={()=>shiftDay(1)} style={{padding:"6px 12px",borderRadius:8,border:"1.5px solid #e2e8f0",background:"white",cursor:"pointer"}}>▶</button>
           {dDate!==todayStr&&<button onClick={()=>setDDate(todayStr)} style={{padding:"6px 12px",borderRadius:8,border:"1.5px solid #cbd5e1",background:"white",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>今日</button>}
         </div>
-        <div style={card}>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            {big("売上",fmt(day.total),"#1e3a5f",`会計${day.rows.length}件（有料${day.paidN}件）`)}
-            {big("現金",fmt(day.cash),"#059669",day.refundCash?`現金の返金 ${fmt(-day.refundCash)} は含まず`:"お釣りは含めない")}
-            {big("現金以外",fmt(Object.values(day.byM).reduce((s2,v)=>s2+v,0)),"#2563eb",Object.entries(day.byM).map(([k,v])=>`${k} ${fmt(v)}`).join("／")||"-")}
-            {big("返金",day.refundSum?fmt(-day.refundSum):"¥0","#dc2626",`${day.dayRefunds.length}件`)}
-            {big("差引（売上−返金）",fmt(day.total-day.refundSum),"#059669")}
-          </div>
-        </div>
-        <div style={card}>
-          <div style={h}>会計の明細（{day.rows.length}件）</div>
-          {day.rows.length===0?<div style={{fontSize:13,color:"#94a3b8"}}>この日の会計はありません</div>:
-          day.rows.map(r=>(
-            <div key={r.p.id} style={{borderTop:"1px solid #f1f5f9",padding:"10px 2px"}}>
-              <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
-                <span style={{fontSize:12,color:"#64748b",minWidth:40}}>{r.time||"--:--"}</span>
-                <b style={{fontSize:14}}>{r.p.patient_name||(r.b&&r.b.patient_name)||"-"} 様</b>
-                {r.staff&&<span style={{fontSize:11,color:"#64748b"}}>担当：{r.staff}</span>}
-                <span style={{marginLeft:"auto",fontSize:16,fontWeight:800,color:n(r.p.total_amount)>0?"#1e293b":"#94a3b8"}}>{fmt(r.p.total_amount)}</span>
-              </div>
-              <div style={{marginLeft:48,marginTop:4}}>
-                {r.items.length===0?<div style={{fontSize:12,color:"#94a3b8"}}>{r.p.memo||"（0円の会計）"}</div>:
-                r.items.map((it,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#475569"}}><span>・{it.label}</span><span>{fmt(it.amount)}</span></div>)}
-                <div style={{fontSize:12,color:"#64748b",marginTop:3}}>
-                  支払：{r.methods.map(x=>`${x.m} ${fmt(x.a)}`).join("／")||"-"}{r.change>0&&<span style={{marginLeft:6}}>（お釣り {fmt(r.change)}）</span>}
-                </div>
-                {r.refs.length>0&&<div style={{fontSize:12,color:"#dc2626",fontWeight:700,marginTop:3}}>↩️ 返金 {r.refs.map(x=>`${String(x.refund_date).slice(5).replace("-","/")} ${fmt(x.amount)}（${x.refund_method}）`).join("、")}</div>}
-                {onOpenPos&&r.b&&<div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap"}}>
-                  <button onClick={()=>onOpenPos(r.b,{pid:r.p.id})} style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:6,border:"1px solid #cbd5e1",background:"white",color:"#334155",cursor:"pointer"}}>🧾 会計を開く（レシート）</button>
-                  <button onClick={()=>onOpenPos(r.b,{fix:true,pid:r.p.id})} style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:6,border:"1px solid #ddd6fe",background:"#f5f3ff",color:"#7c3aed",cursor:"pointer"}}>✏️ 金額修正</button>
-                  {onOpenRefund&&n(r.p.total_amount)>r.refundSum&&<button onClick={()=>onOpenRefund(r.p.id)} style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:6,border:"1px solid #fecaca",background:"#fef2f2",color:"#dc2626",cursor:"pointer"}}>↩️ 返金</button>}
-                </div>}
-              </div>
-            </div>))}
-        </div>
-        {day.dayRefunds.length>0&&<div style={card}>
-          <div style={h}>この日に登録した返金（{day.dayRefunds.length}件）</div>
-          {day.dayRefunds.map(r=><div key={r.id} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"4px 0",borderTop:"1px solid #f1f5f9"}}><span>{r.patient_name||"-"} 様（{r.refund_method}）<span style={{fontSize:11,color:"#94a3b8",marginLeft:6}}>{r.reason_category||""}</span></span><b style={{color:"#dc2626"}}>{fmt(-n(r.amount))}</b></div>)}
-        </div>}
-        {day.unpaid.length>0&&<div style={{...card,border:"1.5px solid #fde68a"}}>
-          <div style={h}>⚠ まだ会計がない予約（{day.unpaid.length}件）</div>
-          {day.unpaid.map(b=><div key={b.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,padding:"5px 0",borderTop:"1px solid #f1f5f9"}}>
-            <span style={{color:"#64748b",minWidth:40}}>{b.time}</span><b>{b.patient_name} 様</b><span style={{fontSize:11,color:"#94a3b8"}}>{b.menu}</span>
-            {onOpenPos&&<button onClick={()=>onOpenPos(b,{})} style={{marginLeft:"auto",fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:6,border:"none",background:"#059669",color:"white",cursor:"pointer"}}>会計する</button>}
-          </div>)}
-          <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>来院されなかった方は、カレンダーでキャンセルにしておくとここに出なくなります。</div>
-        </div>}
+        <DayPaymentDetail bookings={bookings} payments={payments} refunds={refunds} storeId={storeId} firstStoreId={firstStoreId} date={dDate} onOpenPos={onOpenPos} onOpenRefund={onOpenRefund}/>
       </>)}
 
       {tab==="sales"&&(<>
@@ -3846,13 +3878,14 @@ function LearningPanel({user,isAdmin}){
 }
 
 
-function DailyReportPanel({bookings,payments,stores,todayStr}){
+function DailyReportPanel({bookings,payments,stores,todayStr,refunds,onOpenPos,onOpenRefund}){
   const fmt=n=>"¥"+Number(n||0).toLocaleString();
   const DAYS_JP=["日","月","火","水","木","金","土"];
   const firstStoreId=(stores&&stores[0]&&stores[0].id)||1;
   const [storeId,setStoreId]=React.useState(firstStoreId);
   const [ym,setYm]=React.useState(todayStr.slice(0,7)); // "2026-10"
   const [copied,setCopied]=React.useState(false);
+  const [selDate,setSelDate]=React.useState(todayStr); // 表の日付を押すと、その日の会計明細を下に出す
 
   function shiftMonth(delta){
     const [y,m]=ym.split("-").map(Number);
@@ -4007,8 +4040,8 @@ function DailyReportPanel({bookings,payments,stores,todayStr}){
               const isFuture=r.date>todayStr;
               const color=r.dow===0?"#dc2626":r.dow===6?"#7c3aed":"#1e293b";
               return(
-                <tr key={r.date} style={{opacity:isFuture?0.35:1,background:r.date===todayStr?"#fffbeb":"white"}}>
-                  <td style={{...td,textAlign:"left",fontWeight:700,color,position:"sticky",left:0,background:r.date===todayStr?"#fffbeb":"white"}}>
+                <tr key={r.date} onClick={()=>setSelDate(r.date)} title="押すと、この日の会計明細を下に表示します" style={{cursor:"pointer",opacity:isFuture?0.35:1,background:r.date===selDate?"#dbeafe":r.date===todayStr?"#fffbeb":"white"}}>
+                  <td style={{...td,textAlign:"left",fontWeight:700,color,position:"sticky",left:0,background:r.date===selDate?"#dbeafe":r.date===todayStr?"#fffbeb":"white",textDecoration:"underline",textDecorationColor:"#cbd5e1"}}>
                     {Number(r.date.slice(5,7))}/{Number(r.date.slice(8,10))}（{DAYS_JP[r.dow]}）
                   </td>
                   {COLS.map(c=><td key={c.h} style={td}>{c.f(r)}</td>)}
@@ -4021,6 +4054,15 @@ function DailyReportPanel({bookings,payments,stores,todayStr}){
             </tr>
           </tbody>
         </table>
+      </div>
+      <div style={{marginTop:16}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+          <span style={{fontWeight:800,fontSize:15,color:"#1e3a5f"}}>🧾 {Number(selDate.slice(5,7))}/{Number(selDate.slice(8,10))} の会計明細</span>
+          <input type="date" value={selDate} onChange={e=>e.target.value&&setSelDate(e.target.value)} style={{padding:"5px 8px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13}}/>
+          {selDate!==todayStr&&<button onClick={()=>setSelDate(todayStr)} style={{padding:"5px 10px",borderRadius:8,border:"1.5px solid #cbd5e1",background:"white",fontSize:12,fontWeight:700,cursor:"pointer"}}>今日</button>}
+          <span style={{fontSize:11,color:"#94a3b8"}}>上の表の日付を押しても切り替わります</span>
+        </div>
+        <DayPaymentDetail bookings={bookings} payments={payments} refunds={refunds||[]} storeId={storeId} firstStoreId={firstStoreId} date={selDate} onOpenPos={onOpenPos} onOpenRefund={onOpenRefund}/>
       </div>
     </div>
   );
@@ -5151,7 +5193,7 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
       // パス消費は同時に1件だけ（既に選んでいた別のパス消費ラベルは自動で外す）
       const withoutOtherPassLabels=selectedMenus.filter(m=>!m.startsWith("回数券消費：")&&!m.startsWith("フリーパス利用："));
       const next=[...withoutOtherPassLabels,label];
-      const maxDur=Math.max(30,...next.map(m=>DURATION[m]||30));
+      const maxDur=baseSlotMinutes()!=null?calcSlotDuration(next):Math.max(30,...next.map(m=>DURATION[m]||30));
       setForm(f=>({...f,menus:next,menu:next[0]||"",duration:maxDur,consumed_pass_id:pass.id,consumed_pass_type:isTicket?"回数券":"フリーパス"}));
     }
   }
@@ -5199,21 +5241,33 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
     return true;
   }
 
-  // 10/5以降の枠の長さ：新規の患者様は60分、2回目以降の患者様は20分（これより長いメニュー＝30分の自費などは、そのメニューの時間を優先）
+  // 10/5以降の枠の長さ：新規の患者様は60分、2回目以降の患者様は基本20分
+  // （2回目以降は30分の自費メニューでも20分。40分以上のメニュー＝カウンセリング等だけはその時間を優先。必要なら時間欄で手動変更できる）
   function baseSlotMinutes(){
     if(!form.date||form.date<SLOT_RULE_START) return null; // 10/5より前は従来どおりメニューの時間
-    const name=(form.name||"").trim(), phone=(form.phone||"").trim();
+    const name=(form.patient_name||"").trim(), phone=(form.phone||"").trim();
     if(!name) return null;
     const hasPast=(bookings||[]).some(b=>!b.cancelled&&b.id!==editId&&b.patient_name===name&&(!phone||!b.phone||b.phone===phone)&&b.date<=form.date);
     return hasPast?20:60;
   }
+  function calcSlotDuration(menus,fallback){
+    const base=baseSlotMinutes();
+    const ds=(menus||[]).map(m=>DURATION[m]||0);
+    if(base===20){ const long=ds.filter(d=>d>=40); return long.length>0?Math.max(...long):20; }
+    if(base===60) return Math.max(60,...ds);
+    return ds.length>0?Math.max(...ds.map(d=>d||30)):(fallback||30);
+  }
   function toggleMenu(name,dur){
     const next=selectedMenus.includes(name)?selectedMenus.filter(m=>m!==name):[...selectedMenus,name];
-    const base=baseSlotMinutes();
-    let maxDur=next.length>0?Math.max(...next.map(m=>DURATION[m]||30)):dur;
-    if(base!=null) maxDur=Math.max(base,next.length>0?Math.max(...next.map(m=>DURATION[m]||0)):0);
-    setForm(f=>({...f,menus:next,menu:next[0]||"",duration:maxDur}));
+    setForm(f=>({...f,menus:next,menu:next[0]||"",duration:calcSlotDuration(next,dur)}));
   }
+  // 新規予約で患者様・日付が決まったら、枠の長さを自動で合わせる（2回目以降＝20分／新規＝60分）
+  React.useEffect(()=>{
+    if(editId!==null) return;
+    if(baseSlotMinutes()==null) return;
+    const d=calcSlotDuration(selectedMenus);
+    if(d&&d!==form.duration) setForm(f=>({...f,duration:d}));
+  },[form.patient_name,form.phone,form.date]);
 
   async function searchPatients(q){
     if(!q.trim()){setSearchResults([]);return;}
@@ -13601,6 +13655,7 @@ function Dashboard({user,onLogout}){
                                     // トレーニングモード中、カレンダーの背景として見えている本番予約（練習対象ではない）は
                                     // 見た目を少し薄くして区別し、ドラッグ移動・リサイズのハンドルも出さない（タップして閲覧はできる）
                                     const isReadOnlyReal=trainingMode&&!b.is_training;
+                                    const sp=specialBookingKind(b);
                                     return(
                                       <div key={b.id}
                                         title={(isReadOnlyReal?"🔒本番の予約（閲覧のみ）\n":"")+(sameDay?"⚡当日予約\n":"")+(b.memo?`📝 メモ：${b.memo}`:"")||undefined}
@@ -13612,7 +13667,7 @@ function Dashboard({user,onLogout}){
                                           setDragBooking(b);
                                         }}
                                         onClick={e=>{e.stopPropagation();}}
-                                        style={{position:"absolute",left:x,top:lane*laneH+3,height:laneH-6,width:Math.max(liveW-2,20),background:isPaid?"linear-gradient(135deg,#9ca3af,#6b7280)":isNewPatient?"linear-gradient(135deg,#f97316,#ea580c)":`linear-gradient(135deg,${staff.color},${staff.color}bb)`,borderRadius:6,padding:"2px 5px",cursor:isReadOnlyReal?"pointer":"grab",touchAction:"none",boxShadow:isBeingResized?"0 0 0 2px #2563eb,0 2px 8px rgba(37,99,235,.5)":sameDay?"0 0 0 2px #eab308,0 2px 6px rgba(234,179,8,.5)":isCheckedIn?"0 0 0 2px #facc15,0 2px 6px rgba(0,0,0,.3)":isNewPatient?"0 2px 8px rgba(249,115,22,.6)":(isPaid?"0 1px 3px rgba(0,0,0,.2)":`0 2px 6px ${staff.color}44`),display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden",zIndex:isBeingResized?4:isNewPatient?3:2,opacity:isBeingDragged?.35:isReadOnlyReal?.6:isPaid?.75:1,filter:isReadOnlyReal?"grayscale(35%)":"none"}}>
+                                        style={{position:"absolute",left:x,top:lane*laneH+3,height:laneH-6,width:Math.max(liveW-2,20),background:isPaid?"linear-gradient(135deg,#9ca3af,#6b7280)":sp?sp.grad:isNewPatient?"linear-gradient(135deg,#f97316,#ea580c)":`linear-gradient(135deg,${staff.color},${staff.color}bb)`,outline:sp?`2px dashed ${isPaid?"#9ca3af":"#ffffff"}`:"none",outlineOffset:-4,borderRadius:6,padding:"2px 5px",cursor:isReadOnlyReal?"pointer":"grab",touchAction:"none",boxShadow:isBeingResized?"0 0 0 2px #2563eb,0 2px 8px rgba(37,99,235,.5)":sameDay?"0 0 0 2px #eab308,0 2px 6px rgba(234,179,8,.5)":isCheckedIn?"0 0 0 2px #facc15,0 2px 6px rgba(0,0,0,.3)":isNewPatient?"0 2px 8px rgba(249,115,22,.6)":(isPaid?"0 1px 3px rgba(0,0,0,.2)":`0 2px 6px ${staff.color}44`),display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden",zIndex:isBeingResized?4:isNewPatient?3:2,opacity:isBeingDragged?.35:isReadOnlyReal?.6:isPaid?.75:1,filter:isReadOnlyReal?"grayscale(35%)":"none"}}>
                                         {isReadOnlyReal&&<div style={{position:"absolute",top:-1,right:-1,background:"#fff",color:"#475569",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"0 6px 0 4px",lineHeight:1,letterSpacing:0}}>🔒本番</div>}
                                         {!isReadOnlyReal&&isNewPatient&&<div style={{position:"absolute",top:-1,right:-1,background:"#fff",color:"#ea580c",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"0 6px 0 4px",lineHeight:1,letterSpacing:0}}>NEW</div>}
                                         {sameDay&&<div style={{position:"absolute",top:-1,left:-1,background:"#fff",color:"#a16207",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"6px 0 4px 0",lineHeight:1,letterSpacing:0}}>⚡当日</div>}
@@ -13626,8 +13681,8 @@ function Dashboard({user,onLogout}){
                                             setHistoryPatient(b.patient_name);
                                             setView("patients");
                                           }}
-                                          title="ダブルクリックで患者情報を見る"
-                                          style={{fontWeight:800,fontSize:12,color:"white",textShadow:"0 1px 2px rgba(0,0,0,.55)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",letterSpacing:0.2,textDecoration:"underline",textDecorationColor:"rgba(255,255,255,.35)",textUnderlineOffset:2,cursor:"pointer"}}>{isCheckedIn?"📷":""}{isPaid?"✓ ":""}{b.patient_name}</div>
+                                          title={(sp?`${sp.icon}${sp.label}の予約\n`:"")+"ダブルクリックで患者情報を見る"}
+                                          style={{fontWeight:800,fontSize:12,color:"white",textShadow:"0 1px 2px rgba(0,0,0,.55)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",letterSpacing:0.2,textDecoration:"underline",textDecorationColor:"rgba(255,255,255,.35)",textUnderlineOffset:2,cursor:"pointer"}}>{sp&&<span style={{display:"inline-block",background:"white",color:sp.color,borderRadius:4,padding:"0 3px",marginRight:3,fontSize:10,fontWeight:900,textShadow:"none",textDecoration:"none",verticalAlign:"1px"}}>{sp.icon}{sp.label}</span>}{isCheckedIn?"📷":""}{isPaid?"✓ ":""}{b.patient_name}</div>
                                         {/* 時間などの詳細は、普段は隠して名前だけのすっきり表示にし、バーをタップ（予約ポップアップ表示中）または対応時間をリサイズ中だけ表示する */}
                                         {(isBeingResized||(bookingPopup&&bookingPopup.booking&&bookingPopup.booking.id===b.id))&&(
                                         <div style={{fontSize:10,color:"rgba(255,255,255,.95)",textShadow:"0 1px 2px rgba(0,0,0,.45)",fontWeight:700}}>{b.time}{cnt>1&&<span style={{marginLeft:2,background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}{isBeingResized&&<span style={{marginLeft:2,fontWeight:800}}>{Math.max(10,(b.duration||DURATION[b.menu]||30)+Math.round(resizeDeltaPx/CELL_W)*10)}分</span>}</div>
@@ -13674,7 +13729,7 @@ function Dashboard({user,onLogout}){
           {/* サマリー */}
           {view==="stats"&&<StatsPanel bookings={bookings} payments={paymentsNet} todayStr={todayStr} stores={stores}/>}
           {view==="karte_list"&&<KarteListPanel bookings={bookings} payments={payments} stores={stores} todayStr={todayStr}/>}
-          {view==="daily_report"&&<DailyReportPanel bookings={bookings} payments={paymentsNet} stores={stores} todayStr={todayStr}/>}
+          {view==="daily_report"&&<DailyReportPanel bookings={bookings} payments={paymentsNet} stores={stores} todayStr={todayStr} refunds={refunds} onOpenRefund={openRefund} onOpenPos={(b,opt)=>setIframeModal({url:`pos.html?id=${b.id}${opt&&opt.fix?"&fix=1":""}${opt&&opt.pid?"&pid="+opt.pid:""}`,title:opt&&opt.fix?"会計の修正":"会計"})}/>}
           {view==="register_cash"&&<RegisterCashPanel bookings={bookings} payments={payments} refunds={refunds} stores={stores} todayStr={todayStr} currentUser={user}/>}
           {view==="money_calc"&&<MoneyCalcPanel bookings={bookings} payments={payments} refunds={refunds} stores={stores} todayStr={todayStr} user={user} trainingMode={trainingMode} onOpenRefund={openRefund} onOpenPos={(b,opt)=>setIframeModal({url:`pos.html?id=${b.id}${opt&&opt.fix?"&fix=1":""}${opt&&opt.pid?"&pid="+opt.pid:""}`,title:opt&&opt.fix?"会計の修正":"会計"})}/>}
           {view==="refund"&&<RefundPanel bookings={bookings} payments={payments} refunds={refunds} allRefunds={allRefunds} stores={stores} todayStr={todayStr} user={user} isAdmin={isAdmin} onChanged={reloadRefunds} trainingMode={trainingMode} initialPaymentId={refundPaymentId} onConsumeInitial={()=>setRefundPaymentId(null)}/>}
