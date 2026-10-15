@@ -356,6 +356,14 @@ const MENU_CATEGORIES = [
           {name:"無料施術体験会（約60分・カウンセリング込み）",   duration:40, price:0},
           {name:"補正具取り外し",                 duration:10, price:0},
         ]},
+      {id:"beauty_web", label:"美容メニュー（Web予約）",
+        items:[
+          // 美容メニュー専用の予約ページ（beauty.html）から入る予約。初診80分／2回目以降60分
+          {name:"美容鍼（初診）",          duration:80, price:6600},
+          {name:"美容鍼（2回目以降）",     duration:60, price:6600},
+          {name:"巻き爪施術（初診）",      duration:80, price:0},
+          {name:"巻き爪施術（2回目以降）", duration:60, price:0},
+        ]},
       {id:"other_nail", label:"巻き爪・爪ケア",
         items:[
           {name:"巻き爪矯正（陥入爪含む）1箇所",  duration:30, price:6600},
@@ -2008,6 +2016,14 @@ const SPECIAL_BOOKING_KINDS=[
   {key:"nail",label:"巻き爪",icon:"🦶",color:"#0d9488",grad:"linear-gradient(135deg,#14b8a6,#0f766e)",re:/巻き爪|陥入爪|肥厚爪|爪切り|爪ケア|タコ|魚の目/},
   {key:"beauty",label:"美容鍼",icon:"✨",color:"#db2777",grad:"linear-gradient(135deg,#f472b6,#be185d)",re:/美容鍼|美容はり|美容針/},
 ];
+// 予約のメニュー・初診/再診・所要時間を1行で表す（美容メニューは「美容鍼／初診／80分」のように分けて表示）
+function bookingMenuSummary(b){
+  if(!b) return "";
+  const dur=b.duration||DURATION[b.menu]||30;
+  const m=String(b.menu||"").match(/^(美容鍼|巻き爪施術|小顔矯正)（(初診|2回目以降)）$/);
+  const end=b.time?(()=>{const t=b.time.split(":").map(Number);const e=t[0]*60+t[1]+dur;return String(Math.floor(e/60)).padStart(2,"0")+":"+String(e%60).padStart(2,"0");})():"";
+  return (m?`${m[1]}／${m[2]==="初診"?"初診":"2回目以降"}`:(b.menu||"メニュー未設定"))+`／${dur}分`+(end?`（${b.time}〜${end}）`:"");
+}
 function specialBookingKind(b){
   if(!b) return null;
   const text=[b.menu,...(Array.isArray(b.menus)?b.menus:[]),b.memo,b.symptoms,b.notes].filter(Boolean).join(" ");
@@ -5749,6 +5765,36 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
   );
 }
 
+// ===== 美容メニュー（beauty.html）の担当スタッフ設定 =====
+// app_settings の beauty_menu_staff に {"biyoshin":[スタッフID…],"makizume":[…]} として保存。
+// 誰も選ばれていないメニューは、出勤しているスタッフ全員が担当できる扱い（予約ページ側の判定は public_booking_config）
+const BEAUTY_MENU_LIST=[{id:"biyoshin",label:"✨ 美容鍼"},{id:"makizume",label:"🦶 巻き爪施術"},{id:"kogao",label:"🌸 小顔矯正（準備中）"}];
+function BeautyStaffSettings(){
+  const read=()=>{ try{ const v=JSON.parse(localStorage.getItem("beauty_menu_staff")||"{}"); return v&&typeof v==="object"?v:{}; }catch(e){ return {}; } };
+  const [val,setVal]=React.useState(read);
+  const ver=useSharedSettingsVersion();
+  React.useEffect(()=>{ setVal(read()); },[ver]);
+  const staff=STAFF_ACCOUNTS.filter(s=>s.id<100&&!s.eventOnly);
+  function toggle(menuId,staffId){
+    const cur=Array.isArray(val[menuId])?val[menuId]:[];
+    const next={...val,[menuId]:cur.includes(staffId)?cur.filter(x=>x!==staffId):[...cur,staffId]};
+    setVal(next); sharedSettings.set("beauty_menu_staff",JSON.stringify(next));
+  }
+  return(
+    <div style={{background:"white",borderRadius:12,boxShadow:"0 1px 4px rgba(0,0,0,.06)",padding:"14px 16px",marginBottom:14}}>
+      <div style={{fontWeight:800,fontSize:14,color:"#1e3a5f"}}>💖 美容メニューの担当スタッフ</div>
+      <div style={{fontSize:12,color:"#64748b",margin:"4px 0 10px",lineHeight:1.6}}>美容メニュー予約ページ（/beauty.html）で、空き枠を出すスタッフを選びます。誰も選ばない場合は、出勤しているスタッフ全員の空きで受け付けます。</div>
+      {BEAUTY_MENU_LIST.map(m=>(
+        <div key={m.id} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"6px 0",borderTop:"1px solid #f1f5f9"}}>
+          <span style={{fontWeight:700,fontSize:13,minWidth:140}}>{m.label}</span>
+          {staff.map(s=>{const on=Array.isArray(val[m.id])&&val[m.id].includes(s.id);return(
+            <button key={s.id} onClick={()=>toggle(m.id,s.id)} style={{padding:"5px 12px",borderRadius:16,border:`1.5px solid ${on?s.color:"#e2e8f0"}`,background:on?s.color:"white",color:on?"white":"#475569",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{on?"✓ ":""}{s.name}</button>);})}
+          {!(Array.isArray(val[m.id])&&val[m.id].length>0)&&<span style={{fontSize:11,color:"#94a3b8"}}>（未設定＝全員）</span>}
+        </div>))}
+    </div>
+  );
+}
+
 function SettingsPanel(){
   const [stores,setStores]=React.useState([]);
   const [selStoreId,setSelStoreId]=React.useState(1);
@@ -5861,6 +5907,8 @@ function SettingsPanel(){
   return(
     <div style={{maxWidth:1300,margin:"0 auto"}}>
       {toast&&<div style={{background:"#f0fdf4",border:"1px solid #86efac",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#15803d",fontWeight:700,fontSize:13}}>{toast}</div>}
+
+      <BeautyStaffSettings/>
 
       {/* 店舗選択 */}
       {stores.length>0&&(
@@ -14078,6 +14126,7 @@ function Dashboard({user,onLogout}){
               <div style={{background:`linear-gradient(135deg,${s.color},${s.color}cc)`,padding:"10px 14px",borderRadius:"14px 14px 0 0"}}>
                 <div style={{fontWeight:800,fontSize:14,color:"white"}}>{b.patient_name}</div>
                 <div style={{fontSize:11,color:"rgba(255,255,255,.8)",marginTop:2}}>{b.date}　{b.time}　{s.name}</div>
+                <div style={{fontSize:11,fontWeight:700,color:"white",marginTop:3,lineHeight:1.4}}>{specialBookingKind(b)?specialBookingKind(b).icon+" ":"💆 "}{bookingMenuSummary(b)}</div>
                 {cnt>1&&<div style={{fontSize:10,color:"rgba(255,255,255,.7)",marginTop:1}}>{cnt}回目</div>}
                 {cnt===1&&<div style={{fontSize:10,fontWeight:800,color:"#7c2d12",background:"#fed7aa",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4}}>🆕 初診</div>}
                 {b.checked_in_at&&<div style={{fontSize:10,fontWeight:800,color:"#111",background:"#facc15",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4}}>📷 来院済み</div>}
