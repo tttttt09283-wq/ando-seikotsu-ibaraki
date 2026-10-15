@@ -40,13 +40,17 @@ const SLOT_UNIT = 20; // 予約時間の刻み（分）。通常予約ページ�
 const BEAUTY_MENUS = [
   {id:"biyoshin", name:"美容鍼", icon:"✨", color:"#db2777", soft:"#fdf2f8", enabled:true,
    durations:{first:80, repeat:60},
-   catchCopy:"お顔のハリ・むくみ・くすみが気になる方に", price:"料金の目安：60分 6,600円（税込）"},
+   catchCopy:"お顔のハリ・むくみ・くすみが気になる方に", price:"料金：6,600円（税込）"},
   {id:"makizume", name:"巻き爪施術", icon:"🦶", color:"#0f766e", soft:"#f0fdfa", enabled:true,
    durations:{first:80, repeat:60},
    catchCopy:"巻き爪・陥入爪の痛みでお困りの方に", price:"料金は爪の状態により異なります（施術前にご説明します）"},
+  // 小顔矯正・美容鍼＋小顔矯正は所要時間が決まったら durations を入れて enabled:true にすると予約受付が始まります
   {id:"kogao", name:"小顔矯正", icon:"🌸", color:"#7c3aed", soft:"#f5f3ff", enabled:false,
    durations:null,
-   catchCopy:"ただいま準備中です。受付開始まで今しばらくお待ちください", price:""},
+   catchCopy:"ただいま準備中です。受付開始まで今しばらくお待ちください", price:"料金：5,500円（税込）"},
+  {id:"biyoshin_kogao", name:"美容鍼＋小顔矯正", icon:"💐", color:"#9333ea", soft:"#faf5ff", enabled:false,
+   durations:null,
+   catchCopy:"ただいま準備中です。受付開始まで今しばらくお待ちください", price:"料金：9,900円（税込）"},
 ];
 const VISIT_TYPES = [
   {key:"first", label:"初診", desc:"このメニューを当院で初めて受ける方"},
@@ -93,10 +97,8 @@ var sb = {
 // ===== 空き判定（画面表示と、予約確定直前の再確認の両方で同じ関数を使う） =====
 // ctx = {config, businessHours, closures, bookings(その日), breaks(その日)}
 function staffCandidates(config, menuId){
-  var all=(config&&Array.isArray(config.staff)?config.staff:[]).map(function(s){return s.id;});
-  var assign=config&&config.beauty_staff&&Array.isArray(config.beauty_staff[menuId])?config.beauty_staff[menuId]:null;
-  if(assign&&assign.length>0) return all.filter(function(id){return assign.indexOf(id)>-1;});
-  return all;
+  // 担当は固定せず、シフトで出勤しているスタッフ全員を候補にする（出勤判定は isStaffWorking）
+  return (config&&Array.isArray(config.staff)?config.staff:[]).map(function(s){return s.id;});
 }
 function closureFor(closures, ds){ return (closures||[]).find(function(c){return c.date===ds;})||null; }
 function isClosedDay(ctx, d){
@@ -406,7 +408,7 @@ function App(){
                 </div>
                 <div style={{fontSize:12,color:"#6b7280",marginTop:3,lineHeight:1.5}}>{m.catchCopy}</div>
                 {m.enabled&&m.durations&&<div style={{fontSize:12,color:m.color,fontWeight:700,marginTop:4}}>初診 {m.durations.first}分／2回目以降 {m.durations.repeat}分</div>}
-                {m.enabled&&m.price&&<div style={{fontSize:11,color:"#9ca3af",marginTop:2}}>{m.price}</div>}
+                {m.price&&<div style={{fontSize:11,color:"#9ca3af",marginTop:2}}>{m.price}</div>}
               </div>
               {m.enabled&&<div style={{color:m.color,fontSize:20,fontWeight:800}}>›</div>}
             </div>
