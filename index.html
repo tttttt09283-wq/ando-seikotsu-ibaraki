@@ -2032,6 +2032,185 @@ function mergePaymentsByBooking(list){
   return m;
 }
 
+// ===== 口コミの推移・近隣店舗との比較 =====
+// Googleマップの口コミ件数・評価を記録（review_snapshots）し、月ごとの増減と近隣店舗との差を見る。
+// 自動取得には Google の API キー（有料・要設定）が必要なため、今は月1回程度の手入力で記録する。
+function ReviewTrackerPanel({stores,user,todayStr}){
+  const firstStore=(stores&&stores[0])||{id:1,name:"自院"};
+  const [storeId,setStoreId]=React.useState(firstStore.id||1);
+  const store=(stores||[]).find(s=>s.id===storeId)||firstStore;
+  const ownName=store.name||"自院";
+  const [rows,setRows]=React.useState([]);
+  const [loading,setLoading]=React.useState(true);
+  const [msg,setMsg]=React.useState("");
+  const [saving,setSaving]=React.useState(false);
+  const [f,setF]=React.useState({shop:"__own__",newName:"",date:todayStr,count:"",rating:"",url:"",memo:""});
+  const [showAll,setShowAll]=React.useState(false);
+  function load(){setLoading(true);sb.select("review_snapshots","?order=snapshot_date.asc,id.asc").then(r=>{setRows(Array.isArray(r)?r:[]);setLoading(false);}).catch(()=>setLoading(false));}
+  React.useEffect(()=>{load();},[]);
+  const mine=rows.filter(r=>(r.store_id||1)===storeId);
+  const own=mine.filter(r=>r.is_own);
+  const competitorNames=[...new Set(mine.filter(r=>!r.is_own).map(r=>r.shop_name))];
+  const ym=d=>String(d).slice(0,7);
+  const fmtD=d=>String(d).slice(5).replace("-","/");
+  const n=v=>v===""||v==null?null:Number(v);
+
+  // 月ごと（その月の最後の記録）に集計し、前月末からの増減を出す
+  function monthly(list){
+    if(list.length===0) return [];
+    const byM={};list.forEach(r=>{byM[ym(r.snapshot_date)]=r;}); // 日付順なので最後が月末の値
+    const months=[];const [sy,sm]=ym(list[0].snapshot_date).split("-").map(Number);const [ey,em]=ym(todayStr).split("-").map(Number);
+    for(let y=sy,m=sm;y<ey||(y===ey&&m<=em);m===12?(y++,m=1):m++) months.push(`${y}-${String(m).padStart(2,"0")}`);
+    let prev=null;
+    return months.map(mo=>{const r=byM[mo]||null;const cur=r||prev;
+      const out={month:mo,row:r,count:cur?cur.review_count:null,rating:cur&&cur.rating!=null?Number(cur.rating):null,
+        diff:(r&&prev)?r.review_count-prev.review_count:null,rdiff:(r&&prev&&r.rating!=null&&prev.rating!=null)?Math.round((Number(r.rating)-Number(prev.rating))*10)/10:null,first:r&&!prev};
+      if(r) prev=r; return out;});
+  }
+  const ownMonths=monthly(own);
+  const latestOwn=own[own.length-1]||null;
+  const thisMonth=ym(todayStr);
+  function monthGain(list){
+    const before=list.filter(r=>ym(r.snapshot_date)<thisMonth).slice(-1)[0];
+    const last=list[list.length-1];
+    if(!last||!before||ym(last.snapshot_date)!==thisMonth) return null;
+    return last.review_count-before.review_count;
+  }
+  const compare=[{name:ownName,own:true,list:own},...competitorNames.map(nm=>({name:nm,own:false,list:mine.filter(r=>!r.is_own&&r.shop_name===nm)}))]
+    .map(x=>{const last=x.list[x.list.length-1]||null;return {...x,last,gain:monthGain(x.list),url:(x.list.slice().reverse().find(r=>r.maps_url)||{}).maps_url||null};})
+    .sort((a,b)=>((b.last?b.last.review_count:-1)-(a.last?a.last.review_count:-1)));
+
+  async function save(){
+    const isOwn=f.shop==="__own__", isNew=f.shop==="__new__";
+    const name=isOwn?ownName:isNew?f.newName.trim():f.shop;
+    const count=parseInt(String(f.count).replace(/[^\d]/g,""),10);
+    const rating=f.rating===""?null:Number(f.rating);
+    if(!name){setMsg("店舗名を入力してください");return;}
+    if(isNaN(count)){setMsg("口コミ件数を入力してください");return;}
+    if(rating!=null&&(isNaN(rating)||rating<0||rating>5)){setMsg("評価は0〜5の数字で入力してください（例：4.6）");return;}
+    setSaving(true);setMsg("");
+    try{
+      const res=await sb.insert("review_snapshots",{store_id:storeId,shop_name:name,is_own:isOwn,snapshot_date:f.date,review_count:count,rating,
+        maps_url:f.url.trim()||null,memo:f.memo.trim()||null,created_by_name:(user&&user.name)||null});
+      if(!Array.isArray(res)||!res[0]) throw new Error((res&&res.message)||"保存できませんでした");
+      setRows(p=>[...p,res[0]].sort((a,b)=>String(a.snapshot_date).localeCompare(String(b.snapshot_date))||a.id-b.id));
+      setF(x=>({...x,count:"",rating:"",url:"",memo:"",newName:"",shop:isNew?name:x.shop}));setMsg("✅ 記録しました");
+    }catch(e){setMsg("記録に失敗しました："+e.message);}
+    setSaving(false);
+  }
+  async function del(r){
+    if(!window.confirm(`${r.shop_name}（${r.snapshot_date}）の記録を削除しますか？`)) return;
+    try{await sb.delete("review_snapshots",r.id);setRows(p=>p.filter(x=>x.id!==r.id));}catch(e){window.alert("削除に失敗しました");}
+  }
+
+  const card={background:"white",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px rgba(0,0,0,.06)",marginBottom:12};
+  const h={fontSize:13,fontWeight:800,color:"#1e3a5f",marginBottom:10};
+  const inp={padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontFamily:"inherit",boxSizing:"border-box",maxWidth:"100%"};
+  const th={padding:"6px 8px",textAlign:"right",whiteSpace:"nowrap",background:"#f1f5f9",color:"#475569",fontSize:12};
+  const td={padding:"6px 8px",textAlign:"right",borderTop:"1px solid #f1f5f9",fontSize:13,whiteSpace:"nowrap"};
+  const signed=v=>v==null?"-":(v>0?"+":v<0?"−":"±")+Math.abs(v);
+  const diffColor=v=>v==null||v===0?"#64748b":v>0?"#047857":"#b91c1c";
+  const mapsSearch=q=>`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
+  const gains=ownMonths.filter(m=>m.diff!=null);
+  const maxGain=Math.max(1,...gains.map(m=>Math.abs(m.diff)));
+
+  return(
+    <div style={{maxWidth:900,margin:"0 auto"}}>
+      <div style={{...card,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f",flex:1}}>⭐ 口コミの推移・近隣店舗</div>
+        {stores&&stores.length>1&&<select value={storeId} onChange={e=>setStoreId(Number(e.target.value))} style={inp}>{stores.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select>}
+      </div>
+
+      <div style={card}>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {[["今の口コミ件数",latestOwn?`${latestOwn.review_count}件`:"-",latestOwn?`${fmtD(latestOwn.snapshot_date)} 時点`:"まだ記録がありません"],
+            ["今の評価",latestOwn&&latestOwn.rating!=null?`★${Number(latestOwn.rating).toFixed(1)}`:"-",""],
+            ["今月の増加",monthGain(own)==null?"-":`${signed(monthGain(own))}件`,"前月末の記録との差"]].map(([l,v,sub])=>(
+            <div key={l} style={{flex:"1 1 160px",background:"#f8fafc",borderRadius:10,padding:"10px 12px"}}>
+              <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>{l}</div>
+              <div style={{fontSize:22,fontWeight:800,color:"#1e293b"}}>{v}</div>
+              {sub&&<div style={{fontSize:11,color:"#94a3b8"}}>{sub}</div>}
+            </div>))}
+        </div>
+      </div>
+
+      <div style={card}>
+        <div style={h}>口コミ件数・評価を記録する（月1回が目安）</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:8}}>
+          <label style={{fontSize:12,fontWeight:700}}>店舗<br/><select value={f.shop} onChange={e=>setF(x=>({...x,shop:e.target.value}))} style={{...inp,width:"100%"}}>
+            <option value="__own__">自院（{ownName}）</option>
+            {competitorNames.map(nm=><option key={nm} value={nm}>{nm}</option>)}
+            <option value="__new__">＋ 近隣店舗を追加</option></select></label>
+          {f.shop==="__new__"&&<label style={{fontSize:12,fontWeight:700}}>近隣店舗の名前<br/><input value={f.newName} onChange={e=>setF(x=>({...x,newName:e.target.value}))} placeholder="例：〇〇整骨院 香里園院" style={{...inp,width:"100%"}}/></label>}
+          <label style={{fontSize:12,fontWeight:700}}>確認した日<br/><input type="date" value={f.date} onChange={e=>setF(x=>({...x,date:e.target.value}))} style={{...inp,width:"100%"}}/></label>
+          <label style={{fontSize:12,fontWeight:700}}>口コミ件数<br/><input inputMode="numeric" value={f.count} onChange={e=>setF(x=>({...x,count:e.target.value.replace(/[^\d]/g,"")}))} placeholder="例：52" style={{...inp,width:"100%",textAlign:"right"}}/></label>
+          <label style={{fontSize:12,fontWeight:700}}>評価（★）<br/><input inputMode="decimal" value={f.rating} onChange={e=>setF(x=>({...x,rating:e.target.value.replace(/[^\d.]/g,"")}))} placeholder="例：4.8" style={{...inp,width:"100%",textAlign:"right"}}/></label>
+          {f.shop!=="__own__"&&<label style={{fontSize:12,fontWeight:700,gridColumn:"1/-1"}}>GoogleマップのURL（任意）<br/><input value={f.url} onChange={e=>setF(x=>({...x,url:e.target.value}))} placeholder="https://maps.app.goo.gl/..." style={{...inp,width:"100%"}}/></label>}
+          <label style={{fontSize:12,fontWeight:700,gridColumn:"1/-1"}}>メモ（任意）<br/><input value={f.memo} onChange={e=>setF(x=>({...x,memo:e.target.value}))} placeholder="例：口コミキャンペーン開始" style={{...inp,width:"100%"}}/></label>
+        </div>
+        <button onClick={save} disabled={saving} style={{width:"100%",marginTop:10,padding:11,borderRadius:10,border:"none",background:"#1e3a5f",color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",opacity:saving?.6:1}}>{saving?"記録中...":"記録する"}</button>
+        {msg&&<div style={{fontSize:12,marginTop:6,fontWeight:700,color:msg.startsWith("✅")?"#047857":"#b91c1c"}}>{msg}</div>}
+        <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>Googleマップで店舗を開き、店名の下にある「★4.8（52）」の数字をそのまま入れてください。</div>
+      </div>
+
+      <div style={card}>
+        <div style={h}>自院の口コミ：月ごとの増減</div>
+        {loading?<div style={{fontSize:13,color:"#94a3b8"}}>読み込み中...</div>:ownMonths.length===0?<div style={{fontSize:13,color:"#94a3b8"}}>まだ記録がありません。上の欄から今の件数を記録すると、翌月から増減が出ます。</div>:<>
+          {gains.length>0&&<div role="img" aria-label="月ごとの口コミ増加件数" style={{display:"flex",alignItems:"flex-end",gap:10,height:120,padding:"8px 4px 0",borderBottom:"1px solid #e2e8f0",marginBottom:6,overflowX:"auto"}}>
+            {ownMonths.map(m=>{const v=m.diff;const hgt=v==null?0:Math.max(2,Math.round(Math.abs(v)/maxGain*90));return(
+              <div key={m.month} title={`${m.month.replace("-","年")}月：${v==null?"記録なし":signed(v)+"件"}（累計 ${m.count??"-"}件）`} style={{flex:"0 0 44px",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"flex-end",height:"100%",cursor:"default"}}>
+                <div style={{fontSize:11,fontWeight:700,color:"#334155",marginBottom:2}}>{v==null?"":signed(v)}</div>
+                <div style={{width:14,height:hgt,background:v!=null&&v<0?"#b91c1c":"#2563eb",borderRadius:"4px 4px 0 0"}}/>
+              </div>);})}
+          </div>}
+          {gains.length>0&&<div style={{display:"flex",gap:10,overflowX:"auto",padding:"0 4px",marginBottom:10}}>{ownMonths.map(m=><div key={m.month} style={{flex:"0 0 44px",textAlign:"center",fontSize:11,color:"#64748b"}}>{Number(m.month.slice(5))}月</div>)}</div>}
+          <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:420}}><thead><tr>
+            {["月","口コミ件数（月末）","前月からの増減","評価","評価の変化"].map((t,i)=><th key={t} style={{...th,textAlign:i===0?"left":"right"}}>{t}</th>)}</tr></thead><tbody>
+            {[...ownMonths].reverse().map(m=><tr key={m.month}>
+              <td style={{...td,textAlign:"left",fontWeight:700}}>{m.month.replace("-","年")}月</td>
+              <td style={td}>{m.count==null?"-":`${m.count}件`}{!m.row&&m.count!=null&&<span style={{fontSize:10,color:"#94a3b8",marginLeft:4}}>（記録なし）</span>}</td>
+              <td style={{...td,fontWeight:800,color:diffColor(m.diff)}}>{m.first?"記録開始":m.diff==null?"-":`${signed(m.diff)}件`}</td>
+              <td style={td}>{m.rating==null?"-":`★${m.rating.toFixed(1)}`}</td>
+              <td style={{...td,color:diffColor(m.rdiff)}}>{m.rdiff==null?"-":signed(m.rdiff)}</td>
+            </tr>)}
+          </tbody></table></div>
+        </>}
+      </div>
+
+      <div style={card}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+          <div style={{...h,marginBottom:0,flex:1}}>近隣店舗との比較</div>
+          <a href={mapsSearch(`整骨院 ${store.address||ownName}`)} target="_blank" rel="noopener noreferrer" style={{fontSize:12,fontWeight:700,color:"#2563eb",textDecoration:"none",border:"1.5px solid #bfdbfe",borderRadius:8,padding:"6px 10px"}}>🗺 近隣の整骨院をGoogleマップで見る</a>
+        </div>
+        {compare.length<=1?<div style={{fontSize:13,color:"#94a3b8"}}>上の記録欄で「＋ 近隣店舗を追加」を選ぶと、ここで件数・評価・今月の増加を比べられます。</div>:
+        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:560}}><thead><tr>
+          {["店舗","口コミ件数","評価","今月の増加","最終確認",""].map((t,i)=><th key={i} style={{...th,textAlign:i===0?"left":"right"}}>{t}</th>)}</tr></thead><tbody>
+          {compare.map(c=><tr key={c.name} style={{background:c.own?"#eff6ff":"white"}}>
+            <td style={{...td,textAlign:"left",fontWeight:800}}>{c.own?"🏠 ":""}{c.name}</td>
+            <td style={td}>{c.last?`${c.last.review_count}件`:"-"}</td>
+            <td style={td}>{c.last&&c.last.rating!=null?`★${Number(c.last.rating).toFixed(1)}`:"-"}</td>
+            <td style={{...td,fontWeight:700,color:diffColor(c.gain)}}>{c.gain==null?"-":`${signed(c.gain)}件`}</td>
+            <td style={{...td,color:"#64748b"}}>{c.last?fmtD(c.last.snapshot_date):"-"}</td>
+            <td style={td}><a href={c.url||mapsSearch(c.name)} target="_blank" rel="noopener noreferrer" style={{fontSize:12,color:"#2563eb"}}>地図</a></td>
+          </tr>)}
+        </tbody></table></div>}
+        <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>「今月の増加」は、今月の最新の記録と前月までの最後の記録との差です。</div>
+      </div>
+
+      <div style={card}>
+        <div style={{display:"flex",alignItems:"center",marginBottom:6}}><div style={{...h,marginBottom:0,flex:1}}>記録の履歴</div>
+          <button onClick={()=>setShowAll(v=>!v)} style={{fontSize:12,border:"none",background:"none",color:"#2563eb",cursor:"pointer",fontWeight:700}}>{showAll?"閉じる":`すべて表示（${mine.length}件）`}</button></div>
+        {(showAll?[...mine].reverse():[...mine].reverse().slice(0,5)).map(r=><div key={r.id} style={{display:"flex",alignItems:"center",gap:8,fontSize:13,padding:"5px 0",borderTop:"1px solid #f1f5f9"}}>
+          <span style={{color:"#64748b",minWidth:44}}>{fmtD(r.snapshot_date)}</span>
+          <b style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.is_own?"🏠 ":""}{r.shop_name}</b>
+          <span>{r.review_count}件{r.rating!=null&&` ★${Number(r.rating).toFixed(1)}`}</span>
+          <button onClick={()=>del(r)} title="削除" style={{border:"none",background:"none",color:"#94a3b8",cursor:"pointer"}}>✕</button>
+        </div>)}
+      </div>
+    </div>
+  );
+}
+
 // ===== その日の会計明細（日計表・金額計算の両方で使う） =====
 function DayPaymentDetail({bookings,payments,refunds,storeId,firstStoreId,date,onOpenPos,onOpenRefund}){
   const fmt=v=>(Number(v)<0?"−":"")+"¥"+Math.abs(Math.round(Number(v)||0)).toLocaleString();
@@ -13151,6 +13330,7 @@ function Dashboard({user,onLogout}){
     {id:"marketing",label:"集客・フォロー",color:"#0891b2",items:[
       {id:"churn_alert",label:"離反防止アラート",icon:"bell",special:""},
       {id:"referral_mgmt",label:"紹介キャンペーン管理",icon:"users",special:""},
+      {id:"reviews",label:"口コミの推移・近隣店舗",icon:"trending",special:""},
     ]},
     {id:"clinical",label:"臨床サポート",color:"#7c3aed",defaultCollapsed:true,items:[
       {id:"symptom_checker",label:"症状チェッカー（試験運用）",icon:"search",special:"",action:()=>window.open("/symptom-checker.html","_blank")},
@@ -13760,6 +13940,7 @@ function Dashboard({user,onLogout}){
           {view==="karte_list"&&<KarteListPanel bookings={bookings} payments={payments} stores={stores} todayStr={todayStr}/>}
           {view==="daily_report"&&<DailyReportPanel bookings={bookings} payments={paymentsNet} stores={stores} todayStr={todayStr} refunds={refunds} onOpenRefund={openRefund} onOpenPos={(b,opt)=>setIframeModal({url:`pos.html?id=${b.id}${opt&&opt.fix?"&fix=1":""}${opt&&opt.pid?"&pid="+opt.pid:""}`,title:opt&&opt.fix?"会計の修正":"会計"})}/>}
           {view==="register_cash"&&<RegisterCashPanel bookings={bookings} payments={payments} refunds={refunds} stores={stores} todayStr={todayStr} currentUser={user}/>}
+          {view==="reviews"&&<ReviewTrackerPanel stores={stores} user={user} todayStr={todayStr}/>}
           {view==="money_calc"&&<MoneyCalcPanel bookings={bookings} payments={payments} refunds={refunds} stores={stores} todayStr={todayStr} user={user} trainingMode={trainingMode} onOpenRefund={openRefund} onOpenPos={(b,opt)=>setIframeModal({url:`pos.html?id=${b.id}${opt&&opt.fix?"&fix=1":""}${opt&&opt.pid?"&pid="+opt.pid:""}`,title:opt&&opt.fix?"会計の修正":"会計"})}/>}
           {view==="refund"&&<RefundPanel bookings={bookings} payments={payments} refunds={refunds} allRefunds={allRefunds} stores={stores} todayStr={todayStr} user={user} isAdmin={isAdmin} onChanged={reloadRefunds} trainingMode={trainingMode} initialPaymentId={refundPaymentId} onConsumeInitial={()=>setRefundPaymentId(null)}/>}
           {view==="launch_roi"&&<LaunchROIPanel bookings={bookings} payments={paymentsNet} stores={stores} todayStr={todayStr} user={user} trainingMode={trainingMode}/>}
