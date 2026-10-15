@@ -364,6 +364,9 @@ function App(){
   // スタッフの週固定シフト（曜日ごとの出勤・休みの設定。管理画面の「スタッフ・シフト管理」と同じデータ）
   var weeklyShiftsState = useState([]);
   var weeklyShifts = weeklyShiftsState[0]; var setWeeklyShifts = weeklyShiftsState[1];
+  // 管理画面の「シフト」（日付ごとの出勤・休み）。public_booking_config から読み込む
+  var shiftDaysState = useState({overrides:[], monthly:[]});
+  var shiftDays = shiftDaysState[0]; var setShiftDays = shiftDaysState[1];
 
   // 管理画面の「各種設定」から読み込む、患者様向け予約ページの動的設定
   // （Supabaseから取得できるまでは、デフォルト値で動作します）
@@ -466,7 +469,10 @@ function App(){
         sb.select("business_hours","?store_id=eq."+usedStoreId+"&order=day_of_week.asc"),
         sb.select("temp_closures","?store_id=eq."+usedStoreId),
         sb.select("store_settings","?store_id=eq."+usedStoreId+"&order=updated_at.desc.nullslast,id.desc&limit=1"),
-        sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc")
+        sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc"),
+        // シフト表は一般公開の権限では直接読めないため、出勤情報だけを返す専用の関数で取得する
+        fetch(SUPABASE_URL+"/rest/v1/rpc/public_booking_config",{method:"POST",headers:{"apikey":SUPABASE_ANON_KEY,"Authorization":"Bearer "+SUPABASE_ANON_KEY,"Content-Type":"application/json"},body:JSON.stringify({p_store_id:usedStoreId})})
+          .then(function(r){ if(!r.ok) throw new Error("public_booking_config "+r.status); return r.json(); })
       ]);
     }).then(function(results){
       // Promise.allSettledなので、3つのうちどれか1つが失敗しても、成功した分だけは反映する
@@ -477,7 +483,16 @@ function App(){
 
       setBusinessHours((businessHoursResult.status==="fulfilled"&&Array.isArray(businessHoursResult.value))?businessHoursResult.value:[]);
       setClosures((closuresResult.status==="fulfilled"&&Array.isArray(closuresResult.value))?closuresResult.value:[]);
-      setWeeklyShifts((weeklyShiftsResult.status==="fulfilled"&&Array.isArray(weeklyShiftsResult.value))?weeklyShiftsResult.value:[]);
+      var shiftConfig=(results[4].status==="fulfilled"&&results[4].value&&typeof results[4].value==="object")?results[4].value:null;
+      if(shiftConfig&&Array.isArray(shiftConfig.weekly_shifts)){
+        setWeeklyShifts(shiftConfig.weekly_shifts);
+        setShiftDays({
+          overrides:Array.isArray(shiftConfig.date_overrides)?shiftConfig.date_overrides:[],
+          monthly:Array.isArray(shiftConfig.monthly_shifts)?shiftConfig.monthly_shifts:[]
+        });
+      }else{
+        setWeeklyShifts((weeklyShiftsResult.status==="fulfilled"&&Array.isArray(weeklyShiftsResult.value))?weeklyShiftsResult.value:[]);
+      }
 
       if(settingsResult.status==="fulfilled"){
         var settingsRows=settingsResult.value;
@@ -669,7 +684,13 @@ function App(){
   // 指定したスタッフが指定日に出勤しているか（staff_weekly_shiftsに設定が無いスタッフはフェイルセーフで出勤扱い）
   // t・durationMinutes を渡すと、その施術時間ぶん（t〜t+施術時間）がスタッフの勤務時間（開始〜終了）に収まっているかも見る。
   // ※以前は「その日に出勤か」しか見ておらず、勤務終了後（例：18:00上がりのスタッフの19:00）にも空きが出てしまっていた。
+  // 優先順位：日付ごとの個別設定 → 管理画面のシフト表（出勤/休み） → 曜日ごとの基本シフト
   function isStaffWorkingOnDate(staffId,d,t,durationMinutes){
+    var ds0 = fmtDate(d);
+    var ov = shiftDays.overrides.find(function(o){return o.staff_id===staffId && String(o.date).slice(0,10)===ds0;});
+    if(ov) return ov.is_working!==false;
+    var ms = shiftDays.monthly.find(function(o){return o.staff_id===staffId && o.date===ds0;});
+    if(ms) return !!ms.is_working;
     var dow = d.getDay();
     var found = null;
     for(var i=0;i<weeklyShifts.length;i++){
