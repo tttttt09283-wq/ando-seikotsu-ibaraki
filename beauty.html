@@ -36,7 +36,7 @@ const SLOT_UNIT = 20; // 予約時間の刻み（分）。通常予約ページ�
 
 // ===== 美容メニューの設定 =====
 // enabled:false のメニューは一覧に「準備中」として表示するだけで、予約は受け付けない。
-// 小顔矯正は所要時間が決まったら durations を入れて enabled:true にすれば受付を開始できる。
+// 新しいメニューは durations（初診／2回目以降の分数）を入れて enabled:true にすると受付を開始できる。
 const BEAUTY_MENUS = [
   // staffIds：そのメニューを担当できるスタッフ（1=奥田 2=佐藤 3=細永 4=田中 5=岩永）。この中でシフト出勤の人だけ空きを出す
   {id:"biyoshin", name:"美容鍼", icon:"✨", color:"#db2777", soft:"#fdf2f8", enabled:true, staffIds:[1,4],
@@ -45,13 +45,12 @@ const BEAUTY_MENUS = [
   {id:"makizume", name:"巻き爪施術", icon:"🦶", color:"#0f766e", soft:"#f0fdfa", enabled:true, staffIds:[5],
    durations:{first:80, repeat:60},
    catchCopy:"巻き爪・陥入爪の痛みでお困りの方に", price:"料金は爪の状態により異なります（施術前にご説明します）"},
-  // 小顔矯正・美容鍼＋小顔矯正は所要時間が決まったら durations を入れて enabled:true にすると予約受付が始まります
-  {id:"kogao", name:"小顔矯正", icon:"🌸", color:"#7c3aed", soft:"#f5f3ff", enabled:false, staffIds:[4,3],
-   durations:null,
-   catchCopy:"ただいま準備中です。受付開始まで今しばらくお待ちください", price:"料金：5,500円（税込）"},
-  {id:"biyoshin_kogao", name:"美容鍼＋小顔矯正", icon:"💐", color:"#9333ea", soft:"#faf5ff", enabled:false, staffIds:[4], // 両方できる田中のみ
-   durations:null,
-   catchCopy:"ただいま準備中です。受付開始まで今しばらくお待ちください", price:"料金：9,900円（税込）"},
+  {id:"kogao", name:"小顔矯正", icon:"🌸", color:"#7c3aed", soft:"#f5f3ff", enabled:true, staffIds:[4,3],
+   durations:{first:60, repeat:20},
+   catchCopy:"お顔の大きさ・左右差・むくみが気になる方に", price:"料金：5,500円（税込）"},
+  {id:"biyoshin_kogao", name:"美容鍼＋小顔矯正", icon:"💐", color:"#9333ea", soft:"#faf5ff", enabled:true, staffIds:[4], // 両方できる田中のみ
+   durations:{first:100, repeat:80},
+   catchCopy:"美容鍼と小顔矯正をまとめて受けたい方に", price:"料金：9,900円（税込）"},
 ];
 const VISIT_TYPES = [
   {key:"first", label:"初診", desc:"このメニューを当院で初めて受ける方"},
@@ -68,6 +67,7 @@ const DURATION_MAP = {
   "無料施術体験会（約60分・カウンセリング込み）":40,"無料カウンセリング":60,"体験施術":60,
   "姿勢矯正":30,"骨盤矯正":30,"ストレッチ":30,"手技療法（マッサージ）":30,"鍼":30,"美容鍼":60,
   "美容鍼（初診）":80,"美容鍼（2回目以降）":60,"巻き爪施術（初診）":80,"巻き爪施術（2回目以降）":60,
+  "小顔矯正（初診）":60,"小顔矯正（2回目以降）":20,"美容鍼＋小顔矯正（初診）":100,"美容鍼＋小顔矯正（2回目以降）":80,
 };
 function bookingDuration(b){ return b.duration || DURATION_MAP[b.menu] || (/初診/.test(b.menu||"")?20:30); }
 
