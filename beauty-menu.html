@@ -24,7 +24,14 @@ a{color:inherit;}
 .nav a{flex-shrink:0;text-decoration:none;font-size:12.5px;font-weight:800;padding:7px 12px;border-radius:20px;background:white;border:1.5px solid var(--line);color:var(--pink-d);white-space:nowrap;}
 .intro{padding:22px 0 6px;font-size:14px;color:#4b5563;}
 .menu{background:white;border-radius:20px;margin:18px 0;box-shadow:0 4px 18px rgba(190,24,93,.07);overflow:hidden;scroll-margin-top:60px;}
-.menu-head{padding:20px 18px 16px;}
+.menu-head{display:block;width:100%;text-align:left;border:none;cursor:pointer;font-family:inherit;color:inherit;padding:18px 18px 14px;position:relative;}
+.menu-head .sum{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:10px;font-size:12.5px;font-weight:800;}
+.menu-head .toggle{display:flex;align-items:center;justify-content:center;gap:6px;margin-top:12px;padding:9px;border-radius:12px;background:white;font-size:13px;font-weight:800;}
+.menu-head .toggle .arr{display:inline-block;transition:transform .25s;}
+.menu.open .menu-head .toggle .arr{transform:rotate(180deg);}
+.detail{display:none;}
+.menu.open .detail{display:block;animation:fadein .25s ease;}
+@keyframes fadein{from{opacity:0;transform:translateY(-6px);}to{opacity:1;transform:none;}}
 .menu-head .icon{font-size:30px;}
 .menu-head h2{font-size:21px;font-weight:800;margin-top:2px;}
 .menu-head .catch{font-size:14px;font-weight:700;margin-top:6px;line-height:1.6;}
@@ -63,7 +70,7 @@ details[open] summary::after{content:"－";}
 details p{font-size:13.5px;color:#374151;margin-top:8px;}
 .contact{text-align:center;}
 .contact a.tel{display:inline-block;margin-top:8px;font-size:20px;font-weight:800;color:var(--pink-d);text-decoration:none;}
-.foot{text-align:center;font-size:11px;color:var(--sub);padding:18px 0 110px;line-height:1.8;}
+.foot{text-align:center;font-size:11px;color:var(--sub);padding:18px 0 40px;line-height:1.8;}
 .float{position:fixed;left:0;right:0;bottom:0;z-index:20;background:rgba(255,255,255,.96);border-top:1px solid var(--line);padding:10px 16px calc(10px + env(safe-area-inset-bottom));}
 .float .btn{max-width:528px;margin:0 auto;background:linear-gradient(135deg,#ec4899,#be185d);}
 </style>
@@ -78,7 +85,7 @@ details p{font-size:13.5px;color:#374151;margin-top:8px;}
 </header>
 <nav class="nav"><div class="wrap" id="nav"></div></nav>
 <main class="wrap">
-  <p class="intro">整骨院ならではの、骨格・筋肉・姿勢の知識を活かした美容メニューです。気になるメニューの「予約する」ボタンから、そのままご予約いただけます。</p>
+  <p class="intro">整骨院ならではの、骨格・筋肉・姿勢の知識を活かした美容メニューです。<b>気になるメニューを押すと、詳しい内容とご予約ボタンが表示されます。</b></p>
   <div id="menus"></div>
 
   <section class="block" id="flow">
@@ -108,7 +115,6 @@ details p{font-size:13.5px;color:#374151;margin-top:8px;}
   </section>
   <p class="foot">※ 施術の感じ方・変化には個人差があります。<br/>※ 妊娠中の方、持病のある方、お薬を飲んでいる方は、ご予約時またはカウンセリングの際にお知らせください。<br/>あんど整骨院 香里園院</p>
 </main>
-<div class="float"><a class="btn" href="/beauty.html">📅 美容メニューを予約する</a></div>
 
 <script>
 const SUPABASE_URL="https://dctlirxcwitcupaewiyt.supabase.co";
@@ -148,16 +154,20 @@ const MENUS=[
    priceText:"料金は爪の状態により異なります（施術前にご説明します）",durations:{first:80,repeat:60}},
 ];
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+let openId=null; // 開いているメニュー（1つだけ開く）
 function render(){
-  document.getElementById("nav").innerHTML=MENUS.map(m=>`<a href="#${m.id}">${m.icon} ${esc(m.name)}</a>`).join("")+`<a href="#flow">流れ</a><a href="#faq">よくある質問</a>`;
+  document.getElementById("nav").innerHTML=MENUS.map(m=>`<a href="#${m.id}" data-open="${m.id}">${m.icon} ${esc(m.name)}</a>`).join("")+`<a href="#flow">流れ</a><a href="#faq">よくある質問</a>`;
   document.getElementById("menus").innerHTML=MENUS.map(m=>`
-    <section class="menu" id="${m.id}">
-      <div class="menu-head" style="background:${m.soft};">
+    <section class="menu${openId===m.id?" open":""}" id="${m.id}">
+      <button class="menu-head" style="background:${m.soft};" data-toggle="${m.id}" aria-expanded="${openId===m.id}" aria-controls="detail_${m.id}">
         <div class="icon">${m.icon}</div>
         <h2 style="color:${m.color};">${esc(m.name)}</h2>
         <div class="catch">${esc(m.catch)}</div>
         <div class="tags">${m.tags.map(t=>`<span style="color:${m.color};">#${esc(t)}</span>`).join("")}</div>
-      </div>
+        <div class="sum" style="color:${m.color};">${m.durations?`<span>⏱ 約${m.durations.first}分〜</span>`:""}<span>💴 ${esc(m.priceText.replace(/^料金：/,""))}</span>${m.enabled===false?`<span style="color:#9ca3af;">（受付停止中）</span>`:""}</div>
+        <div class="toggle" style="color:${m.color};">${openId===m.id?"閉じる":"詳しく見る・予約する"} <span class="arr">▼</span></div>
+      </button>
+      <div class="detail" id="detail_${m.id}">
       <div class="sec"><h3 style="color:${m.color};">📖 どんなメニュー？</h3><p>${esc(m.about)}</p></div>
       <div class="sec"><h3 style="color:${m.color};">✨ 特徴</h3><ul class="points" style="color:${m.color};">${m.points.map(p=>`<li style="--c:${m.color};"><span style="color:#374151;">${esc(p)}</span></li>`).join("")}</ul></div>
       <div class="sec"><h3 style="color:${m.color};">💡 こんな方におすすめ</h3><ul class="for" style="color:${m.color};">${m.forWho.map(p=>`<li><span style="color:#374151;">${esc(p)}</span></li>`).join("")}</ul></div>
@@ -173,9 +183,22 @@ function render(){
       <div class="cta">${m.enabled===false
         ?`<span class="btn off">ただいま受付を停止しています</span>`
         :`<a class="btn" style="background:linear-gradient(135deg,${m.color},${m.color}cc);" href="/beauty.html?menu=${m.id}">📅 ${esc(m.name)}を予約する</a>`}</div>
+      </div>
     </section>`).join("");
 }
+function openMenu(id,scroll){
+  openId=openId===id&&!scroll?null:id;
+  render();
+  if(openId&&scroll!==false){ const el=document.getElementById(openId); if(el) el.scrollIntoView({behavior:"smooth",block:"start"}); }
+}
+document.addEventListener("click",e=>{
+  const t=e.target.closest("[data-toggle]"); if(t){ openMenu(t.dataset.toggle); return; }
+  const n=e.target.closest("[data-open]"); if(n){ e.preventDefault(); openMenu(n.dataset.open,true); history.replaceState(null,"","#"+n.dataset.open); }
+});
+// URLに #メニューID が付いていたら、そのメニューを開いた状態で表示（LINEからメニューごとに案内する場合など）
+if(location.hash&&MENUS.some(m=>"#"+m.id===location.hash)) openId=location.hash.slice(1);
 render();
+window.addEventListener("hashchange",()=>{ const id=location.hash.slice(1); if(MENUS.some(m=>m.id===id)&&openId!==id) openMenu(id,true); });
 // 管理画面で変えた所要時間・料金の案内・受付のON/OFFを反映する（読み込めなくても紹介文はそのまま表示）
 fetch(SUPABASE_URL+"/rest/v1/rpc/public_booking_config",{method:"POST",headers:{apikey:SUPABASE_ANON_KEY,Authorization:"Bearer "+SUPABASE_ANON_KEY,"Content-Type":"application/json"},body:JSON.stringify({p_store_id:1})})
   .then(r=>r.ok?r.json():null).then(cfg=>{
@@ -185,7 +208,7 @@ fetch(SUPABASE_URL+"/rest/v1/rpc/public_booking_config",{method:"POST",headers:{
       if(typeof o.price==="string"&&o.price.trim()) m.priceText=o.price;
       if(typeof o.enabled==="boolean") m.enabled=o.enabled; });
     render();
-    if(location.hash){ const el=document.querySelector(location.hash); if(el) el.scrollIntoView(); }
+    if(openId){ const el=document.getElementById(openId); if(el) el.scrollIntoView(); }
   }).catch(()=>{});
 </script>
 </body>
