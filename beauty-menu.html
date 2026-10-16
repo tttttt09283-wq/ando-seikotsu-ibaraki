@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+<title>美容メニューのご案内｜あんど整骨院 香里園院</title>
+<meta name="description" content="あんど整骨院 香里園院の美容メニュー（美容鍼・小顔矯正・美容鍼＋小顔矯正・巻き爪施術）のご案内。内容・特徴・こんな方におすすめ・料金と所要時間をご紹介します。"/>
+<style>
+:root{
+  --pink:#db2777;--pink-d:#9d174d;--pink-s:#fdf2f8;--ink:#1f2937;--sub:#6b7280;--line:#f3e8ee;--bg:#fff8fb;
+}
+*{box-sizing:border-box;margin:0;padding:0;}
+html{scroll-behavior:smooth;}
+body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:var(--bg);color:var(--ink);line-height:1.75;-webkit-text-size-adjust:100%;}
+a{color:inherit;}
+.wrap{max-width:560px;margin:0 auto;padding:0 16px;}
+.hero{background:linear-gradient(160deg,#f9a8d4 0%,#db2777 55%,#9d174d 100%);color:white;padding:34px 0 30px;text-align:center;}
+.hero .clinic{font-size:12px;letter-spacing:.12em;opacity:.9;}
+.hero h1{font-size:25px;font-weight:800;margin-top:6px;line-height:1.45;}
+.hero p{font-size:13.5px;opacity:.95;margin-top:10px;}
+.nav{position:sticky;top:0;z-index:10;background:rgba(255,248,251,.96);backdrop-filter:blur(6px);border-bottom:1px solid var(--line);}
+.nav .wrap{display:flex;gap:6px;overflow-x:auto;padding:10px 16px;scrollbar-width:none;}
+.nav .wrap::-webkit-scrollbar{display:none;}
+.nav a{flex-shrink:0;text-decoration:none;font-size:12.5px;font-weight:800;padding:7px 12px;border-radius:20px;background:white;border:1.5px solid var(--line);color:var(--pink-d);white-space:nowrap;}
+.intro{padding:22px 0 6px;font-size:14px;color:#4b5563;}
+.menu{background:white;border-radius:20px;margin:18px 0;box-shadow:0 4px 18px rgba(190,24,93,.07);overflow:hidden;scroll-margin-top:60px;}
+.menu-head{padding:20px 18px 16px;}
+.menu-head .icon{font-size:30px;}
+.menu-head h2{font-size:21px;font-weight:800;margin-top:2px;}
+.menu-head .catch{font-size:14px;font-weight:700;margin-top:6px;line-height:1.6;}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;}
+.tags span{font-size:12px;font-weight:800;padding:4px 10px;border-radius:14px;background:white;}
+.sec{padding:14px 18px;border-top:1px solid #f8eef3;}
+.sec h3{font-size:14px;font-weight:800;margin-bottom:6px;display:flex;align-items:center;gap:6px;}
+.sec p{font-size:13.5px;color:#374151;}
+.points{list-style:none;display:grid;gap:8px;}
+.points li{font-size:13.5px;padding-left:22px;position:relative;color:#374151;}
+.points li::before{content:"✓";position:absolute;left:0;top:0;font-weight:800;}
+.for{list-style:none;display:grid;gap:7px;}
+.for li{font-size:13.5px;background:#fff7fb;border-radius:10px;padding:9px 12px 9px 36px;position:relative;}
+.for li::before{content:"";position:absolute;left:12px;top:13px;width:14px;height:14px;border-radius:4px;border:2px solid currentColor;}
+.price{display:flex;gap:8px;flex-wrap:wrap;}
+.price div{flex:1 1 140px;border-radius:12px;padding:10px 12px;background:#fafafa;}
+.price .l{font-size:11.5px;color:var(--sub);font-weight:700;}
+.price .v{font-size:17px;font-weight:800;margin-top:2px;}
+.note{font-size:11.5px;color:var(--sub);margin-top:8px;line-height:1.7;}
+.cta{padding:16px 18px 20px;}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:15px;border-radius:14px;font-size:16px;font-weight:800;color:white;text-decoration:none;border:none;cursor:pointer;font-family:inherit;box-shadow:0 6px 16px rgba(190,24,93,.25);}
+.btn.off{background:#d1d5db !important;box-shadow:none;cursor:default;}
+.badge-deal{display:inline-block;background:#fef3c7;color:#92400e;font-size:12px;font-weight:800;border-radius:10px;padding:3px 10px;margin-top:8px;}
+.block{background:white;border-radius:20px;margin:18px 0;padding:20px 18px;box-shadow:0 4px 18px rgba(190,24,93,.05);}
+.block h2{font-size:18px;font-weight:800;color:var(--pink-d);margin-bottom:12px;}
+.flow{list-style:none;display:grid;gap:10px;counter-reset:f;}
+.flow li{position:relative;padding:10px 12px 10px 48px;background:var(--pink-s);border-radius:12px;font-size:13.5px;}
+.flow li::before{counter-increment:f;content:counter(f);position:absolute;left:12px;top:10px;width:26px;height:26px;border-radius:50%;background:var(--pink);color:white;font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center;}
+.flow b{display:block;font-size:14px;}
+details{border-bottom:1px solid #f8eef3;padding:12px 0;}
+details:last-child{border-bottom:none;}
+summary{font-size:14px;font-weight:800;cursor:pointer;list-style:none;display:flex;justify-content:space-between;gap:10px;}
+summary::-webkit-details-marker{display:none;}
+summary::after{content:"＋";color:var(--pink);font-weight:800;}
+details[open] summary::after{content:"－";}
+details p{font-size:13.5px;color:#374151;margin-top:8px;}
+.contact{text-align:center;}
+.contact a.tel{display:inline-block;margin-top:8px;font-size:20px;font-weight:800;color:var(--pink-d);text-decoration:none;}
+.foot{text-align:center;font-size:11px;color:var(--sub);padding:18px 0 110px;line-height:1.8;}
+.float{position:fixed;left:0;right:0;bottom:0;z-index:20;background:rgba(255,255,255,.96);border-top:1px solid var(--line);padding:10px 16px calc(10px + env(safe-area-inset-bottom));}
+.float .btn{max-width:528px;margin:0 auto;background:linear-gradient(135deg,#ec4899,#be185d);}
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="wrap">
+    <div class="clinic">あんど整骨院 香里園院</div>
+    <h1>美容メニューのご案内</h1>
+    <p>体のプロが、お顔と足元の悩みに<br/>やさしく寄りそいます</p>
+  </div>
+</header>
+<nav class="nav"><div class="wrap" id="nav"></div></nav>
+<main class="wrap">
+  <p class="intro">整骨院ならではの、骨格・筋肉・姿勢の知識を活かした美容メニューです。気になるメニューの「予約する」ボタンから、そのままご予約いただけます。</p>
+  <div id="menus"></div>
+
+  <section class="block" id="flow">
+    <h2>🌷 ご来院から施術までの流れ</h2>
+    <ol class="flow">
+      <li><b>ご予約</b>このページの「予約する」から、空いている日時を選んでご予約ください。</li>
+      <li><b>カウンセリング</b>お悩みやご希望、体の状態をお伺いします（初めての方は少しお時間をいただきます）。</li>
+      <li><b>施術</b>お一人おひとりの状態に合わせて施術します。気になることはいつでもお声がけください。</li>
+      <li><b>アフターケアのご説明</b>施術後の過ごし方や、おうちでできるセルフケアをお伝えします。</li>
+    </ol>
+  </section>
+
+  <section class="block" id="faq">
+    <h2>💬 よくあるご質問</h2>
+    <details><summary>美容鍼は痛くないですか？</summary><p>髪の毛ほどの細い鍼を使うため、痛みはほとんど感じないという方が多いです。チクッとする感覚が苦手な方は、遠慮なくお伝えください。刺激の強さを調整します。</p></details>
+    <details><summary>美容鍼のあと、内出血はしますか？</summary><p>まれに小さな内出血が出ることがあります。多くは1〜2週間ほどで自然に消えます。大切な予定の直前は、念のため日にちに余裕をもってのご来院がおすすめです。</p></details>
+    <details><summary>健康保険は使えますか？</summary><p>美容メニューは自費（保険適用外）の施術です。料金は各メニューの欄をご覧ください。</p></details>
+    <details><summary>メイクをしたままでも大丈夫ですか？</summary><p>美容鍼・小顔矯正はお顔に直接施術するため、メイクを落としていただきます。クレンジングはご用意しています。</p></details>
+    <details><summary>巻き爪施術は、爪を切ったり手術をしたりしますか？</summary><p>爪を大きく切ったり、手術をしたりはしません。爪の状態に合わせて、食い込みの負担をやわらげる施術を行います。強い炎症や化膿がある場合は、医療機関の受診をおすすめすることがあります。</p></details>
+    <details><summary>どのくらいの間隔で通えばいいですか？</summary><p>お悩みや目的によって変わります。初回のカウンセリングで、あなたに合った通い方をご提案します。</p></details>
+  </section>
+
+  <section class="block contact">
+    <h2>📞 ご不明な点はお気軽に</h2>
+    <p style="font-size:13.5px;color:#374151;">お電話でもご相談・ご予約を承っています。</p>
+    <a class="tel" href="tel:09040363071">090-4036-3071</a>
+  </section>
+  <p class="foot">※ 施術の感じ方・変化には個人差があります。<br/>※ 妊娠中の方、持病のある方、お薬を飲んでいる方は、ご予約時またはカウンセリングの際にお知らせください。<br/>あんど整骨院 香里園院</p>
+</main>
+<div class="float"><a class="btn" href="/beauty.html">📅 美容メニューを予約する</a></div>
+
+<script>
+const SUPABASE_URL="https://dctlirxcwitcupaewiyt.supabase.co";
+const SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
+// メニューの紹介文。所要時間・料金の案内・受付のON/OFFは、管理画面「美容メニュー管理」の設定で上書きされる
+const MENUS=[
+  {id:"biyoshin",name:"美容鍼",icon:"✨",color:"#db2777",soft:"#fdf2f8",
+   catch:"細い鍼で、お顔の内側からハリとすっきり感を",
+   tags:["むくみ","ハリ・たるみ","くすみ・血色"],
+   about:"お顔や頭に、髪の毛ほどの細い鍼をやさしく刺していきます。筋肉や皮膚に直接アプローチし、血の巡りを促すことで、お顔のむくみやハリ不足、くすみなどのお悩みにはたらきかけます。",
+   points:["髪の毛ほどの細い使い捨ての鍼を使用","表情筋やお顔のこわばりにも直接アプローチ","首・肩まわりの状態もあわせて確認できるのは整骨院ならでは"],
+   forWho:["朝起きたときの顔のむくみが気になる","フェイスラインのたるみ・ハリ不足が気になってきた","顔色が暗く、くすみがち","パソコン・スマホで目や顔まわりが疲れやすい","大切な予定の前に、すっきりした印象で過ごしたい"],
+   priceText:"料金：6,600円（税込）",durations:{first:80,repeat:60}},
+  {id:"kogao",name:"小顔矯正",icon:"🌸",color:"#7c3aed",soft:"#f5f3ff",
+   catch:"骨格のバランスを整えて、すっきりしたフェイスラインへ",
+   tags:["顔の大きさ","左右差","エラ・食いしばり"],
+   about:"手技（手による施術）で、お顔・頭・首まわりの筋肉や筋膜をほぐし、骨格のバランスを整えていきます。むくみや左右差、食いしばりによる張りなどにアプローチし、すっきりとした印象を目指します。",
+   points:["鍼を使わない、手による施術","体の土台（首・姿勢）からお顔のバランスを考えます","痛みの少ない、やさしい力加減"],
+   forWho:["顔が大きく見える・むくみやすい","顔の左右差（目の高さ・口角など）が気になる","エラの張りや、食いしばりのクセがある","写真に写った自分の顔が気になる","鍼は少し不安。手の施術でケアしたい"],
+   priceText:"料金：5,500円（税込）",durations:{first:60,repeat:20}},
+  {id:"biyoshin_kogao",name:"美容鍼＋小顔矯正",icon:"💐",color:"#9333ea",soft:"#faf5ff",
+   catch:"内側（美容鍼）と骨格（小顔矯正）の両方から、トータルケア",
+   tags:["いちばん人気の組み合わせ","まとめてケア"],
+   about:"小顔矯正で骨格のバランスやお顔まわりの筋肉を整えたうえで、美容鍼で内側からアプローチする、ぜいたくなセットメニューです。1回の来院で、両方のケアをまとめて受けられます。",
+   points:["小顔矯正と美容鍼を1回でまとめて受けられる","それぞれ単品で受けるよりお得な料金","しっかりケアしたい方・効果を実感したい方に"],
+   forWho:["むくみ・たるみ・顔の大きさなど、悩みがいくつかある","せっかくなら、しっかりまとめてケアしたい","大切なイベント（結婚式・撮影など）を控えている","どちらのメニューにするか迷っている"],
+   priceText:"料金：9,900円（税込）",deal:"単品で受けるより 2,200円 お得",durations:{first:100,repeat:80}},
+  {id:"makizume",name:"巻き爪施術",icon:"🦶",color:"#0f766e",soft:"#f0fdfa",
+   catch:"爪の食い込みの痛みに。切らずにやさしくケア",
+   tags:["巻き爪","陥入爪（食い込み）","足元のお悩み"],
+   about:"爪の状態を確認したうえで、専用の器具で爪のカーブを整え、皮膚への食い込みによる負担をやわらげていきます。爪を大きく切ったり、手術をしたりする施術ではありません。歩き方や足の使い方もあわせて確認します。",
+   points:["爪を大きく切らない・手術をしない施術","施術中の痛みが少ない","歩き方・姿勢など、巻き爪の原因になりやすいクセも確認"],
+   forWho:["爪が皮膚に食い込んで痛い","靴を履くと足の指が痛む","巻き爪をくり返している","深爪をしてしまうクセがある","病院で爪を切る以外の方法を探している"],
+   priceText:"料金は爪の状態により異なります（施術前にご説明します）",durations:{first:80,repeat:60}},
+];
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function render(){
+  document.getElementById("nav").innerHTML=MENUS.map(m=>`<a href="#${m.id}">${m.icon} ${esc(m.name)}</a>`).join("")+`<a href="#flow">流れ</a><a href="#faq">よくある質問</a>`;
+  document.getElementById("menus").innerHTML=MENUS.map(m=>`
+    <section class="menu" id="${m.id}">
+      <div class="menu-head" style="background:${m.soft};">
+        <div class="icon">${m.icon}</div>
+        <h2 style="color:${m.color};">${esc(m.name)}</h2>
+        <div class="catch">${esc(m.catch)}</div>
+        <div class="tags">${m.tags.map(t=>`<span style="color:${m.color};">#${esc(t)}</span>`).join("")}</div>
+      </div>
+      <div class="sec"><h3 style="color:${m.color};">📖 どんなメニュー？</h3><p>${esc(m.about)}</p></div>
+      <div class="sec"><h3 style="color:${m.color};">✨ 特徴</h3><ul class="points" style="color:${m.color};">${m.points.map(p=>`<li style="--c:${m.color};"><span style="color:#374151;">${esc(p)}</span></li>`).join("")}</ul></div>
+      <div class="sec"><h3 style="color:${m.color};">💡 こんな方におすすめ</h3><ul class="for" style="color:${m.color};">${m.forWho.map(p=>`<li><span style="color:#374151;">${esc(p)}</span></li>`).join("")}</ul></div>
+      <div class="sec"><h3 style="color:${m.color};">⏱ 所要時間・料金</h3>
+        <div class="price">
+          ${m.durations?`<div><div class="l">初めての方</div><div class="v">約${m.durations.first}分</div></div><div><div class="l">2回目以降</div><div class="v">約${m.durations.repeat}分</div></div>`:""}
+        </div>
+        <p style="margin-top:10px;font-weight:800;color:${m.color};">${esc(m.priceText)}</p>
+        ${m.deal?`<span class="badge-deal">🎁 ${esc(m.deal)}</span>`:""}
+        <p class="note">※ 初めての方はカウンセリングを含みます。</p>
+      </div>
+      <div class="cta">${m.enabled===false
+        ?`<span class="btn off">ただいま受付を停止しています</span>`
+        :`<a class="btn" style="background:linear-gradient(135deg,${m.color},${m.color}cc);" href="/beauty.html?menu=${m.id}">📅 ${esc(m.name)}を予約する</a>`}</div>
+    </section>`).join("");
+}
+render();
+// 管理画面で変えた所要時間・料金の案内・受付のON/OFFを反映する（読み込めなくても紹介文はそのまま表示）
+fetch(SUPABASE_URL+"/rest/v1/rpc/public_booking_config",{method:"POST",headers:{apikey:SUPABASE_ANON_KEY,Authorization:"Bearer "+SUPABASE_ANON_KEY,"Content-Type":"application/json"},body:JSON.stringify({p_store_id:1})})
+  .then(r=>r.ok?r.json():null).then(cfg=>{
+    const bm=cfg&&cfg.beauty_menus&&cfg.beauty_menus.menus; if(!bm) return;
+    MENUS.forEach(m=>{ const o=bm[m.id]; if(!o) return;
+      if(o.durations&&Number(o.durations.first)>0&&Number(o.durations.repeat)>0) m.durations={first:Number(o.durations.first),repeat:Number(o.durations.repeat)};
+      if(typeof o.price==="string"&&o.price.trim()) m.priceText=o.price;
+      if(typeof o.enabled==="boolean") m.enabled=o.enabled; });
+    render();
+    if(location.hash){ const el=document.querySelector(location.hash); if(el) el.scrollIntoView(); }
+  }).catch(()=>{});
+</script>
+</body>
+</html>
