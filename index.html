@@ -9014,6 +9014,7 @@ const BODY_CHECK_KINDS=[
   {kind:"rom",label:"可動域",icon:"🤸",color:"#0891b2"},
   {kind:"legs",label:"O脚・X脚・骨盤",icon:"🦵",color:"#d97706"},
   {kind:"skeleton",label:"骨格タイプ",icon:"🧬",color:"#7c3aed"},
+  {kind:"face",label:"顔タイプ",icon:"💄",color:"#db2777"},
 ];
 function BodyCheckRecordsPanel({bookings}){
   const [query,setQuery]=React.useState("");
@@ -9039,7 +9040,7 @@ function BodyCheckRecordsPanel({bookings}){
       <div className="card" style={{marginBottom:14}}>
         <div style={{padding:"14px 16px",borderBottom:"1px solid #f1f5f9",background:"linear-gradient(135deg,#6d28d9,#7c3aed)"}}>
           <div style={{color:"white",fontWeight:800,fontSize:15}}>🩺 体のチェックの経過記録</div>
-          <div style={{color:"rgba(255,255,255,.8)",fontSize:12,marginTop:2}}>骨格タイプ・可動域・O脚X脚／骨盤・総合評価の結果と、点数の推移を見られます</div>
+          <div style={{color:"rgba(255,255,255,.8)",fontSize:12,marginTop:2}}>骨格タイプ・顔タイプ・可動域・O脚X脚／骨盤・総合評価の結果と、点数の推移を見られます（AI姿勢分析は「姿勢の経過記録」）</div>
         </div>
         <div style={{padding:16}}>
           <div style={{display:"flex",gap:8,alignItems:"flex-end",flexWrap:"wrap"}}>
@@ -9090,6 +9091,7 @@ function BodyCheckRecordsPanel({bookings}){
                       {k.kind==="total"&&Array.isArray(d.axes)&&<div>{d.axes.map(a=>`${a.label}：${a.score==null?"未測定":a.score+"点"}`).join("　")}{d.menus&&d.menus.length?<div>おすすめ：{d.menus.join("・")}</div>:null}</div>}
                       {k.kind==="rom"&&Array.isArray(d.tests)&&d.tests.map(t=>(<div key={t.key}>{t.name}：{(t.sides||[]).map(s=>(s.lab?s.lab+" ":"")+s.deg+"°").join("／")}（目安{t.ref}°）{t.reach?"・指先："+t.reach:""}　{t.score}点</div>))}
                       {k.kind==="legs"&&<div>ひざの角度 左{d.devL}°／右{d.devR}°（＋O脚・−X脚）　骨盤の傾き {d.pelvisTilt}°{d.pelvisHighSide?`（${d.pelvisHighSide}が高い）`:""}　肩の傾き {d.shoulderTilt}°</div>}
+                      {k.kind==="face"&&d.key&&<div>{d.ageScore<0?"子供顔":"大人顔"}（{d.ageScore}）・曲線↔直線 {d.lineScore}{d.photo?`　顔の縦横比 ${d.photo.aspect}`:""}</div>}
                       {k.kind==="skeleton"&&d.pct&&<div>ストレート {d.pct.S}%／ウェーブ {d.pct.W}%／ナチュラル {d.pct.N}%{d.photoRatio?`　肩幅÷股関節幅 ${d.photoRatio}`:""}</div>}
                       {Array.isArray(d.findings)&&d.findings.filter(f=>!f.ok).map((f,i)=>(<div key={i} style={{color:"#991b1b"}}>⚠️ {f.part}：{f.desc}</div>))}
                       {r.notes&&<div style={{marginTop:4}}>📝 {r.notes}</div>}
@@ -13459,7 +13461,7 @@ function Dashboard({user,onLogout}){
       {id:"symptom_checker",label:"症状チェッカー（試験運用）",icon:"search",special:"",action:()=>window.open("/symptom-checker.html","_blank")},
       {id:"posture_analysis",label:"姿勢評価",icon:"activity",special:"",action:()=>window.open("/posture-analysis.html","_blank")},
       {id:"posture_records",label:"姿勢の経過記録",icon:"activity",special:""},
-      {id:"body_check",label:"体のチェック（骨格・可動域・脚・総合）",icon:"activity",special:"",action:()=>window.open("/body-check.html","_blank")},
+      {id:"body_check",label:"体のチェック（AI姿勢・骨格・顔・可動域・脚・総合）",icon:"activity",special:"",action:()=>window.open("/body-check.html","_blank")},
       {id:"body_check_records",label:"体のチェックの経過記録",icon:"activity",special:""},
       {id:"treatment_plans",label:"施術計画書",icon:"clipboard-list",special:""},
     ]},
@@ -14276,7 +14278,7 @@ function Dashboard({user,onLogout}){
                   setBookingPopup(null);
                 }} style={{width:"100%",padding:"9px 12px",background:"linear-gradient(135deg,#7c3aed,#6d28d9)",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:800,fontSize:13,textAlign:"left",display:"flex",alignItems:"center",gap:8}}>
                   <span style={{fontSize:14}}>🩺</span>
-                  体のチェック（骨格・可動域・脚・総合）
+                  体のチェック（AI姿勢・骨格・顔タイプ・可動域・脚・総合）
                 </button>
                 )}
                 <button onClick={()=>{setHistoryPatient(b.patient_name);setView("patients");setBookingPopup(null);}} style={{width:"100%",padding:"9px 12px",background:"#f8fafc",color:"#374151",border:"1px solid #e2e8f0",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,textAlign:"left",display:"flex",alignItems:"center",gap:8}}>
