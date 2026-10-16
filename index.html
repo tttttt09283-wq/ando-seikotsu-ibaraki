@@ -9222,7 +9222,7 @@ function BeautyManagerPanel({bookings,payments,todayStr,onOpenPatient,storeStaff
         {dirty&&<button onClick={()=>{ setMenus(readBeautyMenuConfig()); setDirty(false); }} style={{border:"none",background:"none",color:"#64748b",fontSize:12,cursor:"pointer"}}>変更を取り消す</button>}
         <span style={{fontSize:12.5,fontWeight:700,color:"#059669"}}>{savedMsg}</span>
       </div>
-      <div style={{fontSize:11.5,color:"#94a3b8",margin:"10px 4px",lineHeight:1.7}}>※ メニュー名は予約・会計の記録と結びついているため、ここでは変えられません。会計（POS）の金額は会計画面のメニューの金額が使われます。<br/>※ 美容メニュー全体の予約ページ：<a href={`${base}/beauty`} target="_blank" rel="noreferrer">{base}/beauty</a></div>
+      <div style={{fontSize:11.5,color:"#94a3b8",margin:"10px 4px",lineHeight:1.7}}>※ メニュー名は予約・会計の記録と結びついているため、ここでは変えられません。会計（POS）の金額は会計画面のメニューの金額が使われます。<br/>※ メニュー紹介ページ（LINEリッチメニュー用）：<a href={`${base}/beauty-menu`} target="_blank" rel="noreferrer">{base}/beauty-menu</a>　／　予約ページ：<a href={`${base}/beauty`} target="_blank" rel="noreferrer">{base}/beauty</a></div>
     </>);
   }
   const TABS=[["dash","📊 ダッシュボード"],["list","📅 予約一覧"],["customers","👥 お客様"],["sales","💰 売上"],["settings","⚙️ メニュー設定"]];
@@ -9231,6 +9231,7 @@ function BeautyManagerPanel({bookings,payments,todayStr,onOpenPatient,storeStaff
       <div style={{background:"linear-gradient(135deg,#db2777,#9d174d)",borderRadius:14,padding:"16px 18px",color:"white",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
         <div><div style={{fontWeight:800,fontSize:17}}>💖 美容メニュー管理</div><div style={{fontSize:12,opacity:.85,marginTop:2}}>美容鍼・小顔矯正・巻き爪の予約・お客様・売上・メニュー設定をまとめて管理</div></div>
         <div style={{display:"flex",gap:8}}>
+          <a href="/beauty-menu" target="_blank" rel="noreferrer" style={{background:"rgba(255,255,255,.2)",color:"white",borderRadius:8,padding:"7px 12px",fontSize:12.5,fontWeight:800,textDecoration:"none"}}>メニュー紹介ページ ↗</a>
           <a href="/beauty" target="_blank" rel="noreferrer" style={{background:"rgba(255,255,255,.2)",color:"white",borderRadius:8,padding:"7px 12px",fontSize:12.5,fontWeight:800,textDecoration:"none"}}>予約ページを見る ↗</a>
           <a href="/body-check.html?check=face" target="_blank" rel="noreferrer" style={{background:"rgba(255,255,255,.2)",color:"white",borderRadius:8,padding:"7px 12px",fontSize:12.5,fontWeight:800,textDecoration:"none"}}>💄 顔タイプチェック ↗</a>
         </div>

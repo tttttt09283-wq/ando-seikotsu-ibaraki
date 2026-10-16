@@ -9,6 +9,10 @@
     {
       "source": "/beauty",
       "destination": "/beauty.html"
+    },
+    {
+      "source": "/beauty-menu",
+      "destination": "/beauty-menu.html"
     }
   ]
 }

@@ -414,7 +414,10 @@ function App(){
       {step>0&&<Summary/>}
 
       {step===0&&<div>
-        <div style={{fontSize:15,fontWeight:800,color:"#831843",margin:"2px 2px 10px"}}>ご希望のメニューをお選びください</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8,margin:"2px 2px 10px",flexWrap:"wrap"}}>
+          <div style={{fontSize:15,fontWeight:800,color:"#831843"}}>ご希望のメニューをお選びください</div>
+          <a href="/beauty-menu" style={{fontSize:12,fontWeight:700,color:"#be185d"}}>メニューの詳しい説明 ›</a>
+        </div>
         {BEAUTY_MENUS.map(function(m){
           var sel=menuId===m.id;
           return <button key={m.id} disabled={!m.enabled} onClick={function(){ if(!m.enabled) return; setMenuId(m.id); setVisit(null); setSelDate(null); setSelTime(null); setStep(1); }}
