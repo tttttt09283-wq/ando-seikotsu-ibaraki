@@ -187,7 +187,7 @@ function Reviews() {
   const [filter, setFilter] = React.useState<"unreplied" | "low" | "all">("unreplied");
   const [open, setOpen] = React.useState<string | null>(null);
   const pendingFor = new Map(
-    snapshot.approvals.filter((a) => a.status === "PENDING" && a.payload?.kind === "review_reply").map((a) => [a.payload!.reviewId, a.id]),
+    snapshot.approvals.flatMap((a) => (a.status === "PENDING" && a.payload?.kind === "review_reply" ? [[a.payload.reviewId, a.id] as const] : [])),
   );
   const list = r.reviews.filter(
     (x) =>

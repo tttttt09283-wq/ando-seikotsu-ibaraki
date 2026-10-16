@@ -85,7 +85,12 @@ export class FileStore implements CompanyStore {
       const raw = await fs.readFile(this.filePath, "utf8");
       const parsed = JSON.parse(raw) as CompanyData;
       const base = emptyCompanyData();
-      this.cache = { ...base, ...parsed, reputation: { ...base.reputation, ...(parsed.reputation ?? {}) } };
+      this.cache = {
+        ...base,
+        ...parsed,
+        reputation: { ...base.reputation, ...(parsed.reputation ?? {}) },
+        budget: { ...base.budget, ...(parsed.budget ?? {}) },
+      };
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "ENOENT") {
         // 壊れたファイルは上書きせず退避してから新規作成する

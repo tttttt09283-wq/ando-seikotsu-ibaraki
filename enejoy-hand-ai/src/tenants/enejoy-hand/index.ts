@@ -62,6 +62,7 @@ const enejoyHand: TenantConfig = {
   totalRowAliases: TOTAL_ROW_ALIASES,
   planHighlights: PLAN_HIGHLIGHTS,
   dailySheetName: "TOP",
+  budget: { standardPerClinicJpy: 3_500_000, label: "1院あたり月350万円（平均）" },
   teams: TEAMS,
   members: MEMBERS,
   reviewerByTeam: REVIEWER_BY_TEAM,

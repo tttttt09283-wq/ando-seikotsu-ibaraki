@@ -162,6 +162,18 @@ export function RevenueCard() {
             <p className="text-muted-foreground -mt-2 text-xs">
               着地見込み＝過ぎた月の実績＋今月の着地予想{r.hasPlan ? "＋これからの月の事業計画" : "（これからの月は事業計画を取り込むと加算されます）"}
             </p>
+            {(() => {
+              const b = snapshot.budget.confirmed;
+              return (
+                <p className="text-sm">
+                  <Link href="/numbers?tab=budget" className="hover:underline">
+                    院別予算{b.confirmed ? "" : "（未確定・基準額で計算）"}：年間 <strong>{formatOku(b.totalBudget)}</strong>（1院 月平均 {Math.round(b.averagePerClinicMonth / 10_000)}万円）
+                    {b.gapToTarget > 0 && <span className="text-amber-700 dark:text-amber-400"> ／ 3億円まで {formatOku(b.gapToTarget)} 不足（院平均 {Math.round(b.requiredAverageForTarget / 10_000)}万円が必要）</span>}
+                    {b.rateToDate != null && <span> ／ ここまでの予算達成見込み {b.rateToDate}%</span>}
+                  </Link>
+                </p>
+              );
+            })()}
             {r.missingMonths.length > 0 && (
               <p className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400">
                 <CircleAlert className="size-3.5" aria-hidden />

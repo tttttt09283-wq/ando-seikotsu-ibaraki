@@ -15,7 +15,7 @@ const lines = (...xs: string[]) => xs.join("\n");
 const RULES: { intent: string; pattern: RegExp }[] = [
   { intent: "status_report", pattern: /(報告して|報告を|進捗(を|は|どう)|今の状況|現状を教えて|どうなって)/ },
   { intent: "staffing", pattern: /(増員|AI社員を増|人を増|配置転換|体制を見直|人手が足りない)/ },
-  { intent: "revenue_plan", pattern: /(3億|３億|三億|300,?000,?000|売上目標|達成までの計画|売上計画)/ },
+  { intent: "revenue_plan", pattern: /(3億|３億|三億|300,?000,?000|売上目標|達成までの計画|売上計画|予算)/ },
   { intent: "grade", pattern: /(クラス|等級|キャリア(パス|アップ)|昇格|昇給|グレード)/ },
   { intent: "evaluation", pattern: /(評価制度|評価基準|人事評価|評価シート|スタッフの評価|評価を)/ },
   { intent: "succession", pattern: /(後継者|幹部候補|院長候補|リーダー育成|育成計画)/ },

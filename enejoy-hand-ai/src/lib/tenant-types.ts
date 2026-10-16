@@ -216,6 +216,8 @@ export type TenantConfig = {
   totalRowAliases: string[];
   /** 事業計画書の損益で、画面に表示する行（行名の前方一致） */
   planHighlights: string[];
+  /** 予算の基準（1院あたりの月の売上予算の平均） */
+  budget: { standardPerClinicJpy: number; label: string };
   /** 日計表で取り込むシート名（既定値） */
   dailySheetName: string;
   teams: Team[];

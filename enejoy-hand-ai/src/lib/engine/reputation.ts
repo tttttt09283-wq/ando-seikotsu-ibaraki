@@ -4,6 +4,7 @@ import { matchClinic } from "@/lib/import/daily-report";
 import { jstDayKey } from "@/lib/time";
 import type { CompanyData, Competitor, DataMode, RatingSnapshot } from "@/lib/types";
 import { COMMANDER_ID, TENANT } from "@/tenant";
+import { applyBudgetConfirm } from "./budget";
 import { audit, createApproval, EngineError, iso, log, name, newId, type EngineDeps } from "./engine";
 
 /**
@@ -208,7 +209,10 @@ export async function executeApprovedAction(deps: EngineDeps, approvalId: string
   const snap = await deps.store.read();
   const a = snap.approvals.find((x) => x.id === approvalId);
   if (!a || a.status !== "APPROVED" || !a.payload || a.execution) return null;
-  const review = snap.reputation.reviews.find((r) => r.id === a.payload!.reviewId);
+  // 予算の確定は社内の記録の更新なので、ここで反映する
+  if (a.payload.kind === "budget_confirm") return applyBudgetConfirm(deps, approvalId);
+  const payload = a.payload;
+  const review = snap.reputation.reviews.find((r) => r.id === payload.reviewId);
 
   let status: "done" | "failed" | "skipped";
   let message: string;
@@ -225,7 +229,7 @@ export async function executeApprovedAction(deps: EngineDeps, approvalId: string
     message = "Googleアカウントが接続されていないため投稿できませんでした。接続後に「投稿をやり直す」を押してください";
   } else {
     try {
-      updateTime = (await api.replyToReview(review.id, a.payload.comment)).updateTime;
+      updateTime = (await api.replyToReview(review.id, payload.comment)).updateTime;
       status = "done";
       message = "Googleに返信を投稿しました";
     } catch (e) {
@@ -239,8 +243,8 @@ export async function executeApprovedAction(deps: EngineDeps, approvalId: string
     const ap = data.approvals.find((x) => x.id === approvalId);
     if (!ap) return null;
     ap.execution = { status, at: iso(now), message };
-    const r = data.reputation.reviews.find((x) => x.id === ap.payload?.reviewId);
-    if (r && updateTime) r.reply = { comment: ap.payload!.comment, updateTime };
+    const r = data.reputation.reviews.find((x) => x.id === payload.reviewId);
+    if (r && updateTime) r.reply = { comment: payload.comment, updateTime };
     audit(data, now, "system", `review.reply.${status}`, `${ap.title}：${message}`);
     log(data, ap.mode, now, { actorId: COMMANDER_ID, type: status === "failed" ? "error" : "deliver", message: `口コミへの返信：${message}` });
     return ap.execution;

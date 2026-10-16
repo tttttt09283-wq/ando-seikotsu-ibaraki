@@ -33,6 +33,7 @@ import {
 } from "@/lib/types";
 import { COMMANDER_ID, PRESIDENT_ID, TENANT } from "@/tenant";
 import { competitorComparison, reputationMode, reviewStats } from "@/lib/engine/reputation-metrics";
+import { budgetTable } from "@/lib/engine/budget-metrics";
 
 /**
  * 表示する承認依頼：今のモードのもの＋本番の口コミへの返信など、実データへの書き込みを伴うもの
@@ -135,6 +136,13 @@ export type CompanySnapshot = {
     performance: PerformanceMonth[];
     stats: ReturnType<typeof reviewStats>;
     comparison: ReturnType<typeof competitorComparison>;
+  };
+  /** 院別売上予算（確定済み、または基準額で計算）と、編集中の案 */
+  budget: {
+    confirmed: ReturnType<typeof budgetTable>;
+    draft: ReturnType<typeof budgetTable> | null;
+    draftUpdatedAt: string | null;
+    pendingApprovalId: string | null;
   };
   /** 監査ログ（新しい順・統括責任者のみ） */
   audit: AuditEntry[];
@@ -351,6 +359,12 @@ export function buildSnapshot(data: CompanyData, mode: DataMode, now: Date, limi
         comparison: competitorComparison(data, rm, now),
       };
     })(),
+    budget: {
+      confirmed: budgetTable(data, now, "confirmed"),
+      draft: data.budget.draft ? budgetTable(data, now, "draft") : null,
+      draftUpdatedAt: data.budget.draft?.updatedAt ?? null,
+      pendingApprovalId: data.approvals.find((a) => a.status === "PENDING" && a.payload?.kind === "budget_confirm")?.id ?? null,
+    },
     audit: data.audit.slice(-150).reverse(),
     safety: data.safety,
     busy:

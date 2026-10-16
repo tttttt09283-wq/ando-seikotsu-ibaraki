@@ -243,7 +243,23 @@ export type Approval = {
   execution?: { status: "done" | "failed" | "skipped"; at: string; message: string };
 };
 
-export type ApprovalPayload = { kind: "review_reply"; reviewId: string; comment: string };
+export type ApprovalPayload =
+  | { kind: "review_reply"; reviewId: string; comment: string }
+  /** 院別予算の確定（承認された内容＝この payload の予算をそのまま確定する） */
+  | { kind: "budget_confirm"; standardJpy: number; cells: BudgetCell[] };
+
+/** 院・月ごとの売上予算 */
+export type BudgetCell = { month: string; clinicId: string; amountJpy: number };
+
+/**
+ * 会社の予算（院別・月別の売上予算）。
+ * confirmed = 承認を経て確定した予算 / draft = 編集中の案。
+ * 確定していない院・月は、基準額（1院あたりの月平均）で計算する。
+ */
+export type BudgetState = {
+  confirmed: { standardJpy: number; cells: BudgetCell[]; confirmedAt: string; approvalId: string } | null;
+  draft: { standardJpy: number; cells: BudgetCell[]; updatedAt: string; updatedBy: string } | null;
+};
 
 export type UsageRecord = {
   id: string;
@@ -441,6 +457,7 @@ export type CompanyData = {
   plan: PlanRecord[];
   dataSources: DataSourceState;
   reputation: ReputationData;
+  budget: BudgetState;
 };
 
 export function emptyCompanyData(): CompanyData {
@@ -460,6 +477,7 @@ export function emptyCompanyData(): CompanyData {
     plan: [],
     dataSources: { sheets: [] },
     reputation: emptyReputation(),
+    budget: { confirmed: null, draft: null },
   };
 }
 
@@ -546,3 +564,23 @@ export const snapshotInputSchema = z.object({
 export const placesSearchSchema = z.object({
   query: z.string().trim().min(1, "検索する言葉を入力してください").max(120),
 });
+
+// ---- 予算 ----
+
+const budgetAmount = z.number().int("予算は円単位の整数で入力してください").min(0).max(1_000_000_000);
+
+export const budgetInputSchema = z.discriminatedUnion("action", [
+  /** 案の編集（指定したセルだけ上書き。standardJpy を指定すると基準額も変える） */
+  z.object({
+    action: z.literal("edit"),
+    cells: z
+      .array(z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/), clinicId: z.string().min(1).max(40), amountJpy: budgetAmount }))
+      .max(500),
+    standardJpy: budgetAmount.optional(),
+  }),
+  /** すべての院・月を基準額で埋める */
+  z.object({ action: z.literal("fill_standard"), standardJpy: budgetAmount }),
+  z.object({ action: z.literal("discard") }),
+  /** 案の確定を承認依頼する */
+  z.object({ action: z.literal("request"), note: z.string().trim().max(300).optional() }),
+]);

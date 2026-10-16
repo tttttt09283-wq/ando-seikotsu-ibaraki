@@ -23,6 +23,7 @@ import {
 } from "@/lib/types";
 import type { CompanyContext, Executor, StaffingProposal, Usage } from "./executor";
 import { reputationMode, reviewStats } from "./reputation-metrics";
+import { budgetTable } from "./budget-metrics";
 import {
   costTotals,
   isMemberActive,
@@ -160,6 +161,14 @@ export function buildContext(data: CompanyData, mode: DataMode, now: Date): Comp
           })()}`,
         ]
       : []),
+    (() => {
+      const b = budgetTable(data, now);
+      const cur = b.monthTotals.find((m) => m.status === "current");
+      const head = `・予算${data.budget.confirmed ? "" : "（未確定・1院" + yen(b.standardJpy) + "で計算）"}：年間 ${yen(b.totalBudget)}`;
+      const gap = b.gapToTarget > 0 ? `／3億円まで${yen(b.gapToTarget)}不足（院平均${yen(b.requiredAverageForTarget)}が必要）` : "";
+      const rate = revenue.hasData && cur?.rate != null ? `／今月の予算達成見込み ${cur.rate}%` : "";
+      return head + gap + rate;
+    })(),
     `・Task：実行中 ${counts.active}件 / 着手待ち ${counts.queued}件 / 本日完了 ${counts.doneToday}件 / 累計完了 ${counts.doneTotal}件`,
     ...(doneToday.length ? [`・今日終えた仕事：${doneToday.slice(-5).map((t) => t.title).join("、")}`] : []),
     `・承認待ち：統括責任者 ${forOperator}件 / 代表 ${forPresident}件`,

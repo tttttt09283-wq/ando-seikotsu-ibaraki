@@ -1,6 +1,7 @@
 "use client";
 
 import { CircleAlert, CircleCheck, FileUp, Link2, LoaderCircle, PencilLine, RefreshCw } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import * as React from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,7 @@ import type { MetricDef } from "@/lib/tenant-types";
 import { formatDateTime, formatJpy } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { TENANT } from "@/tenant";
+import { BudgetView } from "./BudgetView";
 import { formatOku, monthLabel, MonthStrip } from "./RevenuePanel";
 import { useCompany } from "./StateProvider";
 
@@ -44,6 +46,14 @@ function ClinicTable({ month }: { month: string }) {
     plan: planSalesByMonth(planData, month, c.id),
   }));
   const totalPlan = rows.reduce((n, r) => n + (r.plan ?? 0), 0);
+  const budgetRows = snapshot.budget.confirmed.rows;
+  const mi = snapshot.budget.confirmed.months.indexOf(month);
+  const budgetOf = (clinicId: string) => (mi >= 0 ? budgetRows.find((r) => r.clinicId === clinicId)?.cells[mi]?.budget : undefined);
+  const totalBudget = mi >= 0 ? snapshot.budget.confirmed.monthTotals[mi].budget : undefined;
+  const budgetRate = (v: Record<string, number> | undefined, b?: number) => {
+    const basis = month < snapshot.revenue.currentMonth ? v?.salesActual : (v?.salesForecast ?? v?.salesActual);
+    return b && basis != null ? Math.round((basis / b) * 1000) / 10 : null;
+  };
   const rate = (v: Record<string, number> | undefined, plan?: number) => {
     const t = v?.salesTarget ?? plan;
     const f = v?.salesForecast;
@@ -79,6 +89,7 @@ function ClinicTable({ month }: { month: string }) {
             <thead>
               <tr className="text-muted-foreground border-b text-xs">
                 <th scope="col" className="py-2 pr-2 pl-1 text-left font-medium">院</th>
+                {showSales && <th scope="col" className="px-2 py-2 text-right font-medium">予算</th>}
                 {showSales && <th scope="col" className="px-2 py-2 text-right font-medium">事業計画</th>}
                 {metrics.map((m) => (
                   <th key={m.key} scope="col" className="px-2 py-2 text-right font-medium whitespace-nowrap">
@@ -86,6 +97,7 @@ function ClinicTable({ month }: { month: string }) {
                   </th>
                 ))}
                 {showSales && <th scope="col" className="px-2 py-2 text-right font-medium">着地率</th>}
+                {showSales && <th scope="col" className="px-2 py-2 text-right font-medium">予算比</th>}
               </tr>
             </thead>
             <tbody>
@@ -102,6 +114,7 @@ function ClinicTable({ month }: { month: string }) {
                       ))}
                       {r.notOpen && <span className="ml-1 text-[10px]">開院前</span>}
                     </th>
+                    {showSales && <td className="px-2 py-2 text-right tabular-nums">{fmt(budgetOf(r.id) || undefined, "yen")}</td>}
                     {showSales && <td className="px-2 py-2 text-right tabular-nums">{fmt(r.plan, "yen")}</td>}
                     {metrics.map((m) => (
                       <td key={m.key} className="px-2 py-2 text-right tabular-nums whitespace-nowrap">
@@ -113,11 +126,20 @@ function ClinicTable({ month }: { month: string }) {
                         {rr != null ? `${rr}%` : "—"}
                       </td>
                     )}
+                    {showSales && (() => {
+                      const br = budgetRate(r.rec?.values, budgetOf(r.id));
+                      return (
+                        <td className={cn("px-2 py-2 text-right font-semibold tabular-nums", br != null && br < 90 && "text-amber-700 dark:text-amber-400", br != null && br >= 100 && "text-emerald-700 dark:text-emerald-400")}>
+                          {br != null ? `${br}%` : "—"}
+                        </td>
+                      );
+                    })()}
                   </tr>
                 );
               })}
               <tr className="bg-secondary/60 font-semibold">
                 <th scope="row" className="py-2 pr-2 pl-1 text-left">全院合計</th>
+                {showSales && <td className="px-2 py-2 text-right tabular-nums">{totalBudget ? formatJpy(totalBudget) : "—"}</td>}
                 {showSales && <td className="px-2 py-2 text-right tabular-nums">{totalPlan ? formatJpy(totalPlan) : "—"}</td>}
                 {metrics.map((m) => (
                   <td key={m.key} className="px-2 py-2 text-right tabular-nums whitespace-nowrap">
@@ -125,12 +147,13 @@ function ClinicTable({ month }: { month: string }) {
                   </td>
                 ))}
                 {showSales && <td className="px-2 py-2 text-right tabular-nums">{(() => { const v = rate(totals.values, totalPlan || undefined); return v != null ? `${v}%` : "—"; })()}</td>}
+                {showSales && <td className="px-2 py-2 text-right tabular-nums">{(() => { const v = budgetRate(totals.values, totalBudget); return v != null ? `${v}%` : "—"; })()}</td>}
               </tr>
             </tbody>
           </table>
         </div>
         <p className="text-muted-foreground mt-2 text-xs">
-          全院合計は日計表の全院の行を優先し、ない項目は院の合計です（率・単価・LTVは全院の行がある場合のみ）。着地率＝着地予想÷目標売上（目標がなければ事業計画）。
+          全院合計は日計表の全院の行を優先し、ない項目は院の合計です（率・単価・LTVは全院の行がある場合のみ）。着地率＝着地予想÷目標売上（目標がなければ事業計画）。予算比＝実績（今月は着地予想）÷院別の売上予算。
         </p>
       </CardContent>
     </Card>
@@ -476,10 +499,20 @@ function ManualPanel() {
   );
 }
 
+const NUMBER_TABS = [
+  { id: "clinics", label: "院別の数字" },
+  { id: "budget", label: "予算" },
+  { id: "annual", label: "年間・損益" },
+  { id: "import", label: "データの取り込み" },
+] as const;
+
 export function NumbersView() {
   const { snapshot } = useCompany();
+  const params = useSearchParams();
   const current = snapshot.revenue.currentMonth;
   const [month, setMonth] = React.useState(MONTHS.includes(current) ? current : MONTHS[0]);
+  const initialTab = NUMBER_TABS.find((t) => t.id === params.get("tab"))?.id ?? "clinics";
+  const [tab, setTab] = React.useState<(typeof NUMBER_TABS)[number]["id"]>(initialTab);
 
   return (
     <div className="space-y-6">
@@ -487,37 +520,61 @@ export function NumbersView() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">数字（院別）</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            日計表・事業計画書・手入力の<strong>本番の数字</strong>です。AI部門のデモの成果物の数字は含みません。
+            日計表・事業計画書・予算・手入力の<strong>本番の数字</strong>です。AI部門のデモの成果物の数字は含みません。
           </p>
         </div>
-        <label className="text-sm">
-          <span className="text-muted-foreground mr-2 text-xs">表示する月</span>
-          <select value={month} onChange={(e) => setMonth(e.target.value)} className="h-9 rounded-md border bg-transparent px-2">
-            {MONTHS.map((m) => (
-              <option key={m} value={m}>
-                {ymLabel(m)}
-                {snapshot.clinicMonths.some((r) => r.month === m) ? "" : "（なし）"}
-              </option>
-            ))}
-          </select>
-        </label>
+        {tab === "clinics" && (
+          <label className="text-sm">
+            <span className="text-muted-foreground mr-2 text-xs">表示する月</span>
+            <select value={month} onChange={(e) => setMonth(e.target.value)} className="h-9 rounded-md border bg-transparent px-2">
+              {MONTHS.map((m) => (
+                <option key={m} value={m}>
+                  {ymLabel(m)}
+                  {snapshot.clinicMonths.some((r) => r.month === m) ? "" : "（なし）"}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
-      <ClinicTable month={month} />
-      <AnnualCard />
-      <PlanCard />
-      <Card>
-        <CardHeader>
-          <div>
-            <CardTitle>データの取り込み</CardTitle>
-            <CardDescription>取り込み・登録・手入力の操作はすべて監査ログに記録されます。数字はこのパソコンの中（.data フォルダ）に保存され、外部のAIには送信しません。</CardDescription>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-8">
-          <SheetsPanel />
-          <CsvPanel />
-          <ManualPanel />
-        </CardContent>
-      </Card>
+      <div className="flex gap-1 overflow-x-auto pb-1 [scrollbar-width:none]" role="tablist" aria-label="数字のメニュー">
+        {NUMBER_TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === t.id}
+            onClick={() => setTab(t.id)}
+            className={cn("shrink-0 rounded-full px-3.5 py-1.5 text-sm transition", tab === t.id ? "bg-primary text-primary-foreground" : "bg-secondary hover:bg-accent")}
+          >
+            {t.label}
+            {t.id === "budget" && snapshot.budget.pendingApprovalId && <span className="ml-1.5 rounded-full bg-amber-500 px-1.5 text-xs font-bold text-white">承認待ち</span>}
+          </button>
+        ))}
+      </div>
+      {tab === "clinics" && <ClinicTable month={month} />}
+      {tab === "budget" && <BudgetView />}
+      {tab === "annual" && (
+        <>
+          <AnnualCard />
+          <PlanCard />
+        </>
+      )}
+      {tab === "import" && (
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>データの取り込み</CardTitle>
+              <CardDescription>取り込み・登録・手入力の操作はすべて監査ログに記録されます。数字はこのパソコンの中（.data フォルダ）に保存され、外部のAIには送信しません。</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-8">
+            <SheetsPanel />
+            <CsvPanel />
+            <ManualPanel />
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

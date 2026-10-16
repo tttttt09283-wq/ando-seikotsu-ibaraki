@@ -83,7 +83,7 @@ export function PresidentView({ initial }: { initial: PresidentSnapshot }) {
       {snap.mode === "demo" && (
         <div className="bg-demo text-demo-foreground flex items-center justify-center gap-2 px-4 py-1.5 text-center text-xs font-semibold">
           <FlaskConical className="size-3.5 shrink-0" aria-hidden />
-          DEMO MODE ― 表示中の承認依頼はデモデータです。承認しても実際の送信・確定は行われません。
+          DEMO MODE ― 「DEMO」の印がある依頼はデモデータで、承認しても実際の送信・確定は行われません。印のない依頼（予算・本番の口コミへの返信など）は本番です。
         </div>
       )}
       {offline && (
