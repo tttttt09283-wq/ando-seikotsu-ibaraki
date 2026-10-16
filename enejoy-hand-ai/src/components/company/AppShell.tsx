@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  BarChart3,
   FlaskConical,
   History,
   LayoutDashboard,
@@ -22,6 +23,7 @@ import { useCompany } from "./StateProvider";
 
 const NAV = [
   { href: "/", label: "ダッシュボード", short: "ホーム", icon: LayoutDashboard },
+  { href: "/numbers", label: "数字（院別）", short: "数字", icon: BarChart3 },
   { href: "/commander", label: "司令塔との会話", short: "司令塔", icon: MessageSquare },
   { href: "/organization", label: "組織図と稼働状況", short: "組織", icon: Network },
   { href: "/approvals", label: "承認", short: "承認", icon: ShieldCheck },
@@ -153,7 +155,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* スマホ：下部ナビ */}
       <nav
-        className="bg-background/95 fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+        className="bg-background/95 fixed inset-x-0 bottom-0 z-40 grid grid-cols-6 border-t pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
         aria-label="メインメニュー"
       >
         {NAV.map((item) => {
@@ -163,7 +165,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               key={item.href}
               href={item.href}
               aria-current={active ? "page" : undefined}
-              className={cn("relative flex flex-col items-center gap-0.5 py-2 text-[11px]", active ? "text-brand font-semibold" : "text-muted-foreground")}
+              className={cn("relative flex flex-col items-center gap-0.5 py-2 text-[10px]", active ? "text-brand font-semibold" : "text-muted-foreground")}
             >
               <item.icon className="size-5" aria-hidden />
               {item.short}

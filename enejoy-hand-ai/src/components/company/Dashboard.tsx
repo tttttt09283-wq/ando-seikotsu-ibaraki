@@ -96,10 +96,11 @@ export function KpiTiles() {
       <Tile icon={Target} tone="brand" label="MISSION 001 進捗" value={`${p.percent}%`} sub={p.label} tag={demo ? "DEMO" : undefined} />
       <Tile
         icon={TrendingUp}
-        label="年間売上（累計）"
-        value={formatOku(r.actualJpy)}
-        sub={r.hasData ? `目標 ${formatOku(r.targetJpy)} の ${r.percent}%` : "実績が未入力です"}
+        label="年間売上の着地見込み"
+        value={r.hasData ? formatOku(r.landingJpy) : "—"}
+        sub={r.hasData ? `実績 ${formatOku(r.actualJpy)}・目標の${r.landingPercent}%` : "数字が未取り込みです"}
         tag="実績"
+        href="/numbers"
       />
       <Tile
         icon={ShieldCheck}

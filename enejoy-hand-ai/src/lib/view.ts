@@ -4,6 +4,7 @@ import {
   isMemberActive,
   issueViews,
   missionProgress,
+  planHighlightRows,
   revenueProgress,
   taskCounts,
 } from "@/lib/engine/metrics";
@@ -20,7 +21,9 @@ import {
   type DataMode,
   type Project,
   type SafetyState,
-  type SalesRecord,
+  type ClinicMonthRecord,
+  type DataSourceState,
+  type PlanRecord,
   type Task,
   type TaskStatus,
 } from "@/lib/types";
@@ -103,7 +106,13 @@ export type CompanySnapshot = {
   messages: ChatMessage[];
   activities: Activity[];
   approvals: Approval[];
-  sales: SalesRecord[];
+  /** 院の数字（今年度分・本番の数字） */
+  clinicMonths: ClinicMonthRecord[];
+  /** 事業計画書：院の売上計画の行 */
+  clinicPlan: PlanRecord[];
+  /** 事業計画書：損益の主な行 */
+  planRows: ReturnType<typeof planHighlightRows>;
+  dataSources: DataSourceState;
   /** 監査ログ（新しい順・統括責任者のみ） */
   audit: AuditEntry[];
   safety: SafetyState;
@@ -297,7 +306,12 @@ export function buildSnapshot(data: CompanyData, mode: DataMode, now: Date, limi
       .filter((a) => a.mode === mode)
       .sort((a, b) => (a.status === "PENDING" ? -1 : 0) - (b.status === "PENDING" ? -1 : 0) || b.createdAt.localeCompare(a.createdAt))
       .slice(0, 40),
-    sales: [...data.sales].sort((a, b) => b.month.localeCompare(a.month) || a.unitId.localeCompare(b.unitId)).slice(0, 60),
+    clinicMonths: data.clinicMonths.filter(
+      (r) => r.month >= TENANT.revenueTarget.fromMonth && r.month <= TENANT.revenueTarget.toMonth,
+    ),
+    clinicPlan: data.plan.filter((p) => p.clinicId),
+    planRows: planHighlightRows(data),
+    dataSources: data.dataSources,
     audit: data.audit.slice(-150).reverse(),
     safety: data.safety,
     busy:
@@ -313,7 +327,7 @@ export type PresidentSnapshot = {
   pending: Approval[];
   decided: Approval[];
   mission: { code: string; title: string; percent: number; label: string };
-  revenue: { label: string; actualJpy: number; targetJpy: number; percent: number; hasData: boolean; paceTargetJpy: number };
+  revenue: { label: string; actualJpy: number; targetJpy: number; percent: number; hasData: boolean; landingJpy: number; landingPercent: number };
 };
 
 export function buildPresidentSnapshot(data: CompanyData, mode: DataMode, now: Date): PresidentSnapshot {
@@ -338,7 +352,8 @@ export function buildPresidentSnapshot(data: CompanyData, mode: DataMode, now: D
       targetJpy: revenue.targetJpy,
       percent: revenue.percent,
       hasData: revenue.hasData,
-      paceTargetJpy: revenue.paceTargetJpy,
+      landingJpy: revenue.landingJpy,
+      landingPercent: revenue.landingPercent,
     },
   };
 }

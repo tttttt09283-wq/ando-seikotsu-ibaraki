@@ -3,7 +3,10 @@ import { APPROVAL_CATEGORY_LABEL } from "@/config/approvals";
 import type { Limits } from "@/config/limits";
 import { approverMemberId, COMMANDER_ID, getMember, OPERATOR_ID, PRESIDENT_ID, TENANT } from "@/tenant";
 import type { CompanyStore } from "@/lib/store/store";
-import { jstDayKey } from "@/lib/time";
+import { parseBusinessPlan } from "@/lib/import/business-plan";
+import { parseDailyReport } from "@/lib/import/daily-report";
+import { extractGid, extractSpreadsheetId } from "@/lib/import/google-sheets-url";
+import { jstDayKey, jstMonthKey } from "@/lib/time";
 import {
   ACTIVE_TASK_STATUSES,
   TERMINAL_TASK_STATUSES,
@@ -14,8 +17,8 @@ import {
   type CommandInput,
   type CompanyData,
   type DataMode,
-  type SalesInput,
-  type SalesRecord,
+  type ManualInput,
+  type NumberSource,
   type Task,
 } from "@/lib/types";
 import type { CompanyContext, Executor, StaffingProposal, Usage } from "./executor";
@@ -24,6 +27,7 @@ import {
   isMemberActive,
   issueViews,
   missionProgress,
+  monthsBetween,
   revenueProgress,
   standbyMemberIds,
   taskCounts,
@@ -143,8 +147,16 @@ export function buildContext(data: CompanyData, mode: DataMode, now: Date): Comp
     `【司令塔 今日の報告${label}】`,
     `・MISSION 001（評価基準とクラスの確定）：${progress.label}`,
     revenue.hasData
-      ? `・${revenue.label}：実績 ${yen(revenue.actualJpy)}（${revenue.percent}%）／ここまでの目標ペース ${yen(revenue.paceTargetJpy)}`
-      : `・${revenue.label}：売上の実績がまだ入力されていません（ダッシュボードの「売上の実績」から入力できます）`,
+      ? `・${revenue.label}：累計実績 ${yen(revenue.actualJpy)}（${revenue.percent}%）／年間の着地見込み ${yen(revenue.landingJpy)}（${revenue.landingPercent}%）`
+      : `・${revenue.label}：売上の数字がまだ取り込まれていません（「数字」画面で日計表を登録できます）`,
+    ...(revenue.hasData && revenue.currentMonthForecastJpy != null
+      ? [
+          `・今月：着地予想 ${yen(revenue.currentMonthForecastJpy)}${revenue.currentMonthTargetJpy ? `／目標 ${yen(revenue.currentMonthTargetJpy)}` : ""}${(() => {
+            const low = revenue.byClinic.filter((c) => c.forecastRate != null && c.forecastRate < 90);
+            return low.length ? `（90%未満：${low.map((c) => `${c.name} ${c.forecastRate}%`).join("、")}）` : "";
+          })()}`,
+        ]
+      : []),
     `・Task：実行中 ${counts.active}件 / 着手待ち ${counts.queued}件 / 本日完了 ${counts.doneToday}件 / 累計完了 ${counts.doneTotal}件`,
     ...(doneToday.length ? [`・今日終えた仕事：${doneToday.slice(-5).map((t) => t.title).join("、")}`] : []),
     `・承認待ち：統括責任者 ${forOperator}件 / 代表 ${forPresident}件`,
@@ -950,25 +962,167 @@ export async function resetDemoData(deps: EngineDeps, actorId: string = OPERATOR
 }
 
 // ---------------------------------------------------------------------------
-// 売上実績の手入力（人が入力する本番の数字。デモの成果物とは別に保存）
+// 院の数字（日計表・事業計画書・手入力）。人が管理する本番の数字で、デモの成果物とは別に保存する
 // ---------------------------------------------------------------------------
 
-export async function recordSales(deps: EngineDeps, actorId: string, input: SalesInput): Promise<SalesRecord> {
-  if (!TENANT.businessUnits.some((u) => u.id === input.unitId)) {
-    throw new EngineError("部門が正しくありません", "INVALID_STATE");
+const fiscalMonths = () => monthsBetween(TENANT.revenueTarget.fromMonth, TENANT.revenueTarget.toMonth);
+
+function assertFiscalMonth(month: string) {
+  if (!fiscalMonths().includes(month)) {
+    throw new EngineError(`対象月は${TENANT.revenueTarget.fromMonth}〜${TENANT.revenueTarget.toMonth}の範囲で指定してください`, "INVALID_STATE");
   }
-  return deps.store.transact((data) => {
-    const now = deps.now();
-    const existing = data.sales.find((s) => s.month === input.month && s.unitId === input.unitId);
-    const unit = TENANT.businessUnits.find((u) => u.id === input.unitId)!.short;
-    const detail = `${input.month} ${unit}：¥${input.amountJpy.toLocaleString("ja-JP")}${existing ? `（修正前 ¥${existing.amountJpy.toLocaleString("ja-JP")}）` : ""}`;
-    audit(data, now, actorId, existing ? "sales.update" : "sales.create", detail);
-    if (existing) {
-      Object.assign(existing, { ...input, enteredBy: actorId, updatedAt: iso(now) });
-      return existing;
-    }
-    const rec: SalesRecord = { id: newId("sal"), source: "manual", enteredBy: actorId, updatedAt: iso(now), ...input };
-    data.sales.push(rec);
-    return rec;
+}
+
+function upsertClinicMonth(
+  data: CompanyData,
+  now: Date,
+  r: { month: string; clinicId: string; values: Record<string, number>; source: NumberSource; sourceLabel?: string; updatedBy: string },
+  merge: boolean,
+) {
+  const existing = data.clinicMonths.find((x) => x.month === r.month && x.clinicId === r.clinicId);
+  if (existing) {
+    existing.values = merge ? { ...existing.values, ...r.values } : r.values;
+    existing.source = r.source;
+    existing.sourceLabel = r.sourceLabel;
+    existing.updatedBy = r.updatedBy;
+    existing.updatedAt = iso(now);
+    return;
+  }
+  data.clinicMonths.push({ id: newId("clm"), updatedAt: iso(now), ...r });
+}
+
+export type DailyImportSummary = { month: string; clinics: string[]; metrics: number; unmatched: string[]; warnings: string[] };
+
+/** 日計表（TOPシート）の表を取り込む。同じ月の院の数字は置き換える */
+export async function importDailyReport(
+  deps: EngineDeps,
+  actorId: string,
+  input: { month: string; grid: string[][]; source: NumberSource; sourceLabel?: string },
+): Promise<DailyImportSummary> {
+  assertFiscalMonth(input.month);
+  const parsed = parseDailyReport(input.grid, {
+    clinics: TENANT.clinics,
+    metrics: TENANT.metrics,
+    totalRowAliases: TENANT.totalRowAliases,
   });
+  if (parsed.rows.length === 0) throw new EngineError(parsed.warnings.join(" ") || "取り込める行がありませんでした", "INVALID_STATE");
+  await deps.store.transact((data) => {
+    const now = deps.now();
+    for (const row of parsed.rows) {
+      upsertClinicMonth(data, now, { month: input.month, clinicId: row.clinicId, values: row.values, source: input.source, sourceLabel: input.sourceLabel, updatedBy: actorId }, false);
+    }
+    audit(data, now, actorId, `numbers.import.${input.source}`, `${input.month} 日計表（${input.sourceLabel ?? ""}）：${parsed.rows.length}行・指標${parsed.metrics.length}項目`);
+  });
+  return {
+    month: input.month,
+    clinics: parsed.rows.map((r) => r.clinicId),
+    metrics: parsed.metrics.length,
+    unmatched: parsed.unmatched,
+    warnings: parsed.warnings,
+  };
+}
+
+/** 事業計画書を取り込む（前回の計画はすべて置き換える） */
+export async function importBusinessPlan(deps: EngineDeps, actorId: string, input: { grid: string[][]; label?: string }) {
+  const parsed = parseBusinessPlan(input.grid, { clinics: TENANT.clinics, fromMonth: TENANT.revenueTarget.fromMonth });
+  if (parsed.records.length === 0) throw new EngineError(parsed.warnings.join(" ") || "取り込める行がありませんでした", "INVALID_STATE");
+  const months = new Set(fiscalMonths());
+  const records = parsed.records.filter((r) => months.has(r.month));
+  await deps.store.transact((data) => {
+    const now = deps.now();
+    data.plan = records;
+    data.dataSources.planImportedAt = iso(now);
+    data.dataSources.planLabel = input.label;
+    audit(data, now, actorId, "numbers.import.plan", `事業計画書（${input.label ?? ""}）：院${parsed.clinicRows}行・損益${parsed.plRows}行`);
+  });
+  return { months: parsed.months, clinicRows: parsed.clinicRows, plRows: parsed.plRows, records: records.length, warnings: parsed.warnings };
+}
+
+/** 院の数字の手入力（入力した項目だけ上書き） */
+export async function recordManual(deps: EngineDeps, actorId: string, input: ManualInput) {
+  assertFiscalMonth(input.month);
+  if (input.clinicId !== "all" && !TENANT.clinics.some((c) => c.id === input.clinicId)) {
+    throw new EngineError("院が正しくありません", "INVALID_STATE");
+  }
+  const known = new Set(TENANT.metrics.map((m) => m.key));
+  const values = Object.fromEntries(Object.entries(input.values).filter(([k]) => known.has(k)));
+  if (Object.keys(values).length === 0) throw new EngineError("入力された項目がありません", "INVALID_STATE");
+  await deps.store.transact((data) => {
+    const now = deps.now();
+    const before = data.clinicMonths.find((x) => x.month === input.month && x.clinicId === input.clinicId)?.values ?? {};
+    upsertClinicMonth(data, now, { month: input.month, clinicId: input.clinicId, values, source: "manual", updatedBy: actorId }, true);
+    const changes = Object.entries(values).map(([k, v]) => `${k}:${before[k] ?? "-"}→${v}`).join(" ");
+    audit(data, now, actorId, "numbers.manual", `${input.month} ${input.clinicId} ${changes}`);
+  });
+}
+
+/** 月ごとの日計表（スプレッドシート）の登録。url が空なら登録を外す */
+export async function setSheetSource(deps: EngineDeps, actorId: string, input: { month: string; url: string; sheetName?: string }) {
+  assertFiscalMonth(input.month);
+  const remove = input.url.trim() === "";
+  const spreadsheetId = remove ? null : extractSpreadsheetId(input.url);
+  if (!remove && !spreadsheetId) throw new EngineError("スプレッドシートのURLが正しくありません", "INVALID_STATE");
+  await deps.store.transact((data) => {
+    const now = deps.now();
+    data.dataSources.sheets = data.dataSources.sheets.filter((x) => x.month !== input.month);
+    if (spreadsheetId) {
+      data.dataSources.sheets.push({
+        month: input.month,
+        spreadsheetId,
+        sheetName: input.sheetName || TENANT.dailySheetName,
+        gid: extractGid(input.url),
+      });
+      data.dataSources.sheets.sort((a, b) => a.month.localeCompare(b.month));
+    }
+    audit(data, now, actorId, remove ? "numbers.sheet.remove" : "numbers.sheet.set", `${input.month} ${spreadsheetId ?? ""}`);
+  });
+}
+
+export type SheetFetcher = (spreadsheetId: string, sheetName: string, gid?: string) => Promise<string[][]>;
+
+/**
+ * 登録した日計表を読み取って取り込む。
+ * months を省略すると「今月」と「まだ一度も成功していない月」だけを読む（過去の月は確定済みのため）。
+ */
+export async function syncSheets(
+  deps: EngineDeps,
+  fetcher: SheetFetcher,
+  opts: { months?: string[]; actorId?: string } = {},
+): Promise<{ month: string; ok: boolean; message: string }[]> {
+  const snapshot = await deps.store.read();
+  const current = jstMonthKey(deps.now());
+  const targets = snapshot.dataSources.sheets.filter((s) =>
+    opts.months ? opts.months.includes(s.month) : s.month === current || s.lastStatus !== "ok",
+  );
+  const results: { month: string; ok: boolean; message: string }[] = [];
+  for (const src of targets) {
+    let message: string;
+    let ok = false;
+    try {
+      const grid = await fetcher(src.spreadsheetId, src.sheetName, src.gid);
+      const r = await importDailyReport(deps, opts.actorId ?? "system", {
+        month: src.month,
+        grid,
+        source: "sheet",
+        sourceLabel: `日計表 ${src.month}（${src.sheetName}）`,
+      });
+      ok = true;
+      message = `${r.clinics.length}行を取り込みました${r.unmatched.length ? `（院が分からない行：${r.unmatched.join("、")}）` : ""}`;
+    } catch (e) {
+      const err = e as Error;
+      message =
+        err.name === "TimeoutError" || err.message === "fetch failed"
+          ? "Googleに接続できませんでした。インターネット接続を確認してください（次回の同期で再試行します）"
+          : err.message;
+    }
+    await deps.store.transact((data) => {
+      const s = data.dataSources.sheets.find((x) => x.month === src.month && x.spreadsheetId === src.spreadsheetId);
+      if (!s) return;
+      s.lastSyncAt = iso(deps.now());
+      s.lastStatus = ok ? "ok" : "error";
+      s.lastMessage = message;
+    });
+    results.push({ month: src.month, ok, message });
+  }
+  return results;
 }

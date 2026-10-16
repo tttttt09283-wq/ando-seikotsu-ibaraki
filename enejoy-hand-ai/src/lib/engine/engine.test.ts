@@ -8,8 +8,12 @@ import { DemoExecutor } from "./demo-executor";
 import {
   decideApproval,
   EngineError,
-  recordSales,
+  importBusinessPlan,
+  importDailyReport,
+  recordManual,
   resetDemoData,
+  setSheetSource,
+  syncSheets,
   submitCommand,
   tick,
   type EngineDeps,
@@ -178,7 +182,7 @@ describe("AI部門のパイプライン（DEMO MODE）", () => {
     expect(data.tasks).toHaveLength(0);
     const text = data.messages.at(-1)!.text;
     expect(text).toContain("司令塔 今日の報告");
-    expect(text).toContain("売上の実績がまだ入力されていません");
+    expect(text).toContain("売上の数字がまだ取り込まれていません");
     expect(text).toContain("承認待ち：統括責任者 0件 / 代表 0件");
   });
 
@@ -293,33 +297,86 @@ function env_advance(deps: EngineDeps) {
   (deps as { now: () => Date }).now = () => next;
 }
 
-describe("売上の実績（手入力）", () => {
-  it("部門・月ごとに上書きし、目標の進捗は実績だけで計算する。デモの初期化では消えない", async () => {
+describe("院の数字（日計表・手入力）", () => {
+  const grid = [
+    ["", "", "", "", "基準：2500"],
+    ["", "院名", "", "統括", "単価", "累計目標", "累計実績", "差", "達成率", "目標売上", "着地予想", "差", "達成率", "新患数", "総来院数", "巻き爪\n（売上）"],
+    ["", "全院", "", "岩永", "¥2,090", "¥9,661,886", "¥9,350,924", "-¥310,962", "96.78%", "¥25,250,000", "¥24,448,207", "-¥801,793", "96.82%", "75", "2,659", "1,316,280"],
+    ["", "本院", "", "", "¥2,100", "", "¥1,500,000", "", "", "¥3,400,000", "¥3,300,000", "", "", "10", "400", "0"],
+    ["", "茨木院 巻き爪", "", "", "¥2,000", "", "¥1,600,000", "", "", "¥3,500,000", "¥3,600,000", "", "", "12", "420", "500,000"],
+  ];
+
+  it("日計表を取り込み、全院の行を優先して合計し、デモの初期化では消えない", async () => {
     const { deps, runUntilIdle } = setup();
     await submitCommand(deps, cmd("3億円達成までの計画を立てて"));
     await runUntilIdle();
-    // デモの成果物に数字があっても、売上の実績には入らない
-    expect(revenueProgress(await deps.store.read(), deps.now()).actualJpy).toBe(0);
+    // デモの成果物に数字があっても、売上の数字には入らない
+    expect(revenueProgress(await deps.store.read(), deps.now()).hasData).toBe(false);
 
-    await recordSales(deps, OPERATOR, { month: "2026-07", unitId: "seikotsu", amountJpy: 9_000_000, newPatients: 40 });
-    await recordSales(deps, OPERATOR, { month: "2026-07", unitId: "beauty", amountJpy: 2_000_000 });
-    await recordSales(deps, OPERATOR, { month: "2026-07", unitId: "seikotsu", amountJpy: 9_500_000 }); // 修正
-    await recordSales(deps, OPERATOR, { month: "2026-05", unitId: "seikotsu", amountJpy: 1_000_000 }); // 期間外
+    const r = await importDailyReport(deps, OPERATOR, { month: "2026-10", grid, source: "csv", sourceLabel: "TOP.csv" });
+    expect(r.clinics).toEqual(["all", "honin", "ibaraki"]);
     let d = await deps.store.read();
-    const r = revenueProgress(d, deps.now());
-    expect(r.actualJpy).toBe(11_500_000);
-    expect(r.byUnit.find((u) => u.unitId === "seikotsu")?.actualJpy).toBe(9_500_000);
-    expect(r.elapsedMonths).toBe(4); // 7〜10月
-    expect(r.paceTargetJpy).toBe(100_000_000);
-    expect(r.missingMonths).toEqual(["2026-08", "2026-09", "2026-10"]);
-    expect(d.audit.filter((a) => a.action === "sales.update")).toHaveLength(1);
+    const rev = revenueProgress(d, deps.now());
+    expect(rev.currentMonth).toBe("2026-10");
+    expect(rev.currentMonthActualJpy).toBe(9_350_924); // 全院の行を優先
+    expect(rev.currentMonthForecastJpy).toBe(24_448_207);
+    expect(rev.byClinic.find((c) => c.clinicId === "ibaraki")?.forecastRate).toBe(102.9);
+    expect(rev.missingMonths).toEqual(["2026-07", "2026-08", "2026-09"]);
 
-    await expect(recordSales(deps, OPERATOR, { month: "2026-07", unitId: "unknown", amountJpy: 1 })).rejects.toBeInstanceOf(EngineError);
+    // 過去の月（手入力）＋今月の着地予想＋事業計画で、年間の着地見込みを出す
+    await recordManual(deps, OPERATOR, { month: "2026-07", clinicId: "honin", values: { salesActual: 3_481_510 } });
+    await importBusinessPlan(deps, OPERATOR, {
+      grid: [
+        ["株式会社 Enejoy Hand", "事業計画書"],
+        ["科目/月", "7月", "8月", "9月", "10月", "11月"],
+        ["本院", "3,481,510", "3,587,895", "3,300,000", "3,400,000", "3,500,000"],
+        ["売上合計", "21,824,618", "20,792,497", "20,100,000", "24,350,000", "25,000,000"],
+      ],
+      label: "plan.csv",
+    });
+    d = await deps.store.read();
+    const rev2 = revenueProgress(d, deps.now());
+    expect(rev2.actualJpy).toBe(3_481_510 + 9_350_924);
+    // 7月 実績 ＋ 8・9月（未取り込み）0 ＋ 10月 着地予想 ＋ 11月 計画
+    expect(rev2.landingJpy).toBe(3_481_510 + 24_448_207 + 25_000_000);
+    expect(rev2.byMonth.find((m) => m.month === "2026-11")?.planJpy).toBe(25_000_000);
+
+    await expect(importDailyReport(deps, OPERATOR, { month: "2025-01", grid, source: "csv" })).rejects.toBeInstanceOf(EngineError);
+    expect(d.audit.some((a) => a.action === "numbers.import.csv")).toBe(true);
+    expect(d.audit.some((a) => a.action === "numbers.manual")).toBe(true);
 
     await resetDemoData(deps);
     d = await deps.store.read();
     expect(d.tasks).toHaveLength(0);
-    expect(d.sales).toHaveLength(3);
+    expect(d.clinicMonths).toHaveLength(4);
+    expect(d.plan.length).toBeGreaterThan(0);
+  });
+
+  it("登録した日計表を読み取り、失敗は記録して次回に再試行する", async () => {
+    const { deps } = setup();
+    await setSheetSource(deps, OPERATOR, { month: "2026-10", url: "https://docs.google.com/spreadsheets/d/1dM6Xrv0YjHC26QuF5wAKunaXve0JT0rQQfoGN_QbzDY/edit#gid=0" });
+    await setSheetSource(deps, OPERATOR, { month: "2026-09", url: "https://docs.google.com/spreadsheets/d/1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/edit" });
+    await expect(setSheetSource(deps, OPERATOR, { month: "2026-08", url: "https://example.com/x" })).rejects.toBeInstanceOf(EngineError);
+    let calls: string[] = [];
+    const fetcher = async (id: string, sheet: string, gid?: string) => {
+      calls.push(`${id.slice(0, 4)}:${sheet}:${gid ?? ""}`);
+      if (id.startsWith("1aaa")) throw new Error("シートを読めません");
+      return grid;
+    };
+    const res = await syncSheets(deps, fetcher);
+    expect(calls).toEqual(["1aaa:TOP:", "1dM6:TOP:0"]);
+    expect(res.map((r) => r.ok)).toEqual([false, true]);
+    let d = await deps.store.read();
+    expect(d.dataSources.sheets.find((s) => s.month === "2026-09")?.lastStatus).toBe("error");
+    expect(d.clinicMonths.filter((r) => r.month === "2026-10" && r.source === "sheet")).toHaveLength(3);
+
+    // 次回：今月と、まだ成功していない月だけを読む
+    calls = [];
+    await syncSheets(deps, fetcher);
+    expect(calls).toEqual(["1aaa:TOP:", "1dM6:TOP:0"]);
+    d = await deps.store.read();
+    // 手入力した項目は、日計表の再取り込みで置き換わる（日計表が正）
+    expect(d.clinicMonths.find((r) => r.month === "2026-10" && r.clinicId === "honin")?.values.salesActual).toBe(1_500_000);
   });
 });
 

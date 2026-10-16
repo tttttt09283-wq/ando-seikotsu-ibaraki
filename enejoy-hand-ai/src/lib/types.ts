@@ -273,22 +273,53 @@ export type SafetyState = {
 /** 有効化（承認済み）した社員のID。デモと本番で分けて保持する */
 export type StaffingState = Record<DataMode, string[]>;
 
+/** 数字の出どころ */
+export type NumberSource = "sheet" | "csv" | "manual";
+
 /**
- * 部門別の売上・患者数の実績（人が手入力した本番の数字）。
+ * 院（または全院合計 clinicId = "all"）の月ごとの指標。人が管理する本番の数字。
  * AIの成果物（デモ）とは別に保存し、デモの数字は混ぜない。
  */
-export type SalesRecord = {
+export type ClinicMonthRecord = {
   id: string;
   /** 対象月 YYYY-MM */
   month: string;
-  unitId: string;
-  amountJpy: number;
-  newPatients?: number;
-  repeatPatients?: number;
-  note?: string;
-  source: "manual";
-  enteredBy: string;
+  clinicId: string;
+  /** 指標 key → 値（円・件・%） */
+  values: Record<string, number>;
+  source: NumberSource;
+  /** 取り込み元の説明（ファイル名・シート名など） */
+  sourceLabel?: string;
+  updatedBy: string;
   updatedAt: string;
+};
+
+/** 事業計画書の1行×1か月（院別の売上計画 または 損益の行） */
+export type PlanRecord = {
+  month: string;
+  /** 事業計画書の行名（正規化前） */
+  label: string;
+  /** 院の売上計画の行なら院の id */
+  clinicId?: string;
+  amountJpy: number;
+};
+
+/** 月ごとの日計表（Googleスプレッドシート） */
+export type SheetSource = {
+  month: string;
+  spreadsheetId: string;
+  sheetName: string;
+  /** 公開リンクで読むときのタブ番号（URL の gid） */
+  gid?: string;
+  lastSyncAt?: string;
+  lastStatus?: "ok" | "error";
+  lastMessage?: string;
+};
+
+export type DataSourceState = {
+  sheets: SheetSource[];
+  planImportedAt?: string;
+  planLabel?: string;
 };
 
 export type CompanyData = {
@@ -303,7 +334,9 @@ export type CompanyData = {
   audit: AuditEntry[];
   safety: SafetyState;
   staffing: StaffingState;
-  sales: SalesRecord[];
+  clinicMonths: ClinicMonthRecord[];
+  plan: PlanRecord[];
+  dataSources: DataSourceState;
 };
 
 export function emptyCompanyData(): CompanyData {
@@ -319,7 +352,9 @@ export function emptyCompanyData(): CompanyData {
     audit: [],
     safety: { halted: false, consecutiveFailures: 0 },
     staffing: { demo: [], live: [] },
-    sales: [],
+    clinicMonths: [],
+    plan: [],
+    dataSources: { sheets: [] },
   };
 }
 
@@ -348,12 +383,30 @@ export const loginSchema = z.object({
   demo: z.boolean().optional(),
 });
 
-export const salesInputSchema = z.object({
-  month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "対象月が正しくありません"),
-  unitId: z.string().min(1).max(40),
-  amountJpy: z.number().int("売上は円単位の整数で入力してください").min(0).max(10_000_000_000),
-  newPatients: z.number().int().min(0).max(1_000_000).optional(),
-  repeatPatients: z.number().int().min(0).max(1_000_000).optional(),
-  note: z.string().trim().max(200).optional(),
+const monthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "対象月が正しくありません");
+
+/** CSVの取り込み（日計表のTOPシート または 事業計画書） */
+export const importInputSchema = z.object({
+  kind: z.enum(["daily", "plan"]),
+  /** 日計表の対象月（事業計画書では不要） */
+  month: monthSchema.optional(),
+  fileName: z.string().trim().max(200).optional(),
+  csv: z.string().min(1, "ファイルが空です").max(2_000_000, "ファイルが大きすぎます"),
 });
-export type SalesInput = z.infer<typeof salesInputSchema>;
+export type ImportInput = z.infer<typeof importInputSchema>;
+
+/** 月ごとの日計表（Googleスプレッドシート）の登録 */
+export const sheetInputSchema = z.object({
+  month: monthSchema,
+  /** スプレッドシートのURL または ID。空文字なら登録を外す */
+  url: z.string().trim().max(500),
+  sheetName: z.string().trim().max(100).optional(),
+});
+
+/** 院の数字の手入力（入力した項目だけ上書き） */
+export const manualInputSchema = z.object({
+  month: monthSchema,
+  clinicId: z.string().min(1).max(40),
+  values: z.record(z.string().max(40), z.number().finite().min(-10_000_000_000).max(10_000_000_000)),
+});
+export type ManualInput = z.infer<typeof manualInputSchema>;

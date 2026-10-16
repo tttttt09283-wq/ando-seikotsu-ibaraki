@@ -108,57 +108,126 @@ export function monthsBetween(from: string, to: string): string[] {
   return out;
 }
 
+type MonthRecords = Pick<CompanyData, "clinicMonths">;
+
 /**
- * 売上目標の進捗。人が手入力した本番の実績（data.sales）だけで計算する。
- * デモの成果物の数字は一切含めない。
+ * その月の全院の数字。日計表の全院合計の行があればそれを使い、
+ * ない指標は院の合計で補う（率・単価など合計できない指標は全院行のみ）。
  */
-export function revenueProgress(data: CompanyData, now: Date) {
+export function monthTotals(data: MonthRecords, month: string): { values: Record<string, number>; hasData: boolean } {
+  const rows = data.clinicMonths.filter((r) => r.month === month);
+  const all = rows.find((r) => r.clinicId === "all");
+  const clinics = rows.filter((r) => r.clinicId !== "all");
+  const values: Record<string, number> = { ...(all?.values ?? {}) };
+  for (const m of TENANT.metrics) {
+    if (m.total !== "sum" || values[m.key] !== undefined) continue;
+    const xs = clinics.map((r) => r.values[m.key]).filter((v): v is number => v !== undefined);
+    if (xs.length) values[m.key] = xs.reduce((a, b) => a + b, 0);
+  }
+  return { values, hasData: rows.length > 0 };
+}
+
+/** 事業計画書の月ごとの売上計画（「売上合計」の行、なければ院の行の合計） */
+export function planSalesByMonth(data: Pick<CompanyData, "plan">, month: string, clinicId?: string): number | undefined {
+  const rows = data.plan.filter((p) => p.month === month);
+  if (clinicId) return rows.find((p) => p.clinicId === clinicId)?.amountJpy;
+  const total = rows.find((p) => !p.clinicId && normalizePlanLabel(p.label).startsWith("売上合計"));
+  if (total) return total.amountJpy;
+  const clinicRows = rows.filter((p) => p.clinicId);
+  return clinicRows.length ? clinicRows.reduce((n, p) => n + p.amountJpy, 0) : undefined;
+}
+
+export const normalizePlanLabel = (s: string) => s.normalize("NFKC").replace(/[\s\u3000]/g, "");
+
+/** 事業計画書の損益で、画面に出す行（TENANT.planHighlights の順） */
+export function planHighlightRows(data: Pick<CompanyData, "plan">) {
+  const months = monthsBetween(TENANT.revenueTarget.fromMonth, TENANT.revenueTarget.toMonth);
+  return TENANT.planHighlights
+    .map((h) => {
+      const label = data.plan.find((p) => !p.clinicId && normalizePlanLabel(p.label).startsWith(normalizePlanLabel(h)))?.label;
+      if (!label) return null;
+      return {
+        label,
+        byMonth: months.map((m) => data.plan.find((p) => p.label === label && p.month === m)?.amountJpy ?? null),
+      };
+    })
+    .filter((x): x is { label: string; byMonth: (number | null)[] } => x !== null);
+}
+
+/**
+ * 年間売上目標の進捗。人が管理する本番の数字（日計表・手入力）と事業計画だけで計算する。
+ * デモの成果物の数字は一切含めない。
+ * 着地見込み ＝ 過ぎた月の実績 ＋ 今月の着地予想 ＋ これからの月の事業計画
+ */
+export function revenueProgress(data: Pick<CompanyData, "clinicMonths" | "plan">, now: Date) {
   const target = TENANT.revenueTarget;
   const months = monthsBetween(target.fromMonth, target.toMonth);
   const current = jstMonthKey(now);
   const elapsedMonths = months.filter((m) => m <= current).length;
-  const inRange = data.sales.filter((s) => months.includes(s.month));
+  const hasPlan = data.plan.length > 0;
 
-  const byUnit = TENANT.businessUnits.map((u) => {
-    const rows = inRange.filter((s) => s.unitId === u.id);
+  const byMonth = months.map((month) => {
+    const t = monthTotals(data, month);
+    const plan = planSalesByMonth(data, month);
+    const actual = t.hasData ? t.values.salesActual : undefined;
+    const monthTarget = t.values.salesTarget ?? plan;
+    const status: "past" | "current" | "future" = month < current ? "past" : month === current ? "current" : "future";
+    const forecast =
+      status === "past" ? actual : status === "current" ? (t.values.salesForecast ?? actual) : plan;
+    return { month, status, entered: t.hasData, actualJpy: actual ?? null, targetJpy: monthTarget ?? null, planJpy: plan ?? null, forecastJpy: forecast ?? null };
+  });
+
+  const actualJpy = byMonth.reduce((n, m) => n + (m.status !== "future" ? (m.actualJpy ?? 0) : 0), 0);
+  const landingJpy = byMonth.reduce((n, m) => n + (m.forecastJpy ?? 0), 0);
+  const planTotalJpy = byMonth.reduce((n, m) => n + (m.planJpy ?? 0), 0);
+  const knownToDate = byMonth.filter((m) => m.status !== "future").reduce((n, m) => n + (m.forecastJpy ?? 0), 0);
+  const remainingMonths = months.length - elapsedMonths;
+  const missingMonths = byMonth.filter((m) => m.status !== "future" && !m.entered).map((m) => m.month);
+
+  const cur = byMonth.find((m) => m.status === "current");
+  const curRecords = data.clinicMonths.filter((r) => r.month === current);
+  const byClinic = TENANT.clinics.map((c) => {
+    const v = curRecords.find((r) => r.clinicId === c.id)?.values ?? {};
+    const tgt = v.salesTarget ?? planSalesByMonth(data, current, c.id);
     return {
-      unitId: u.id,
-      name: u.short,
-      actualJpy: rows.reduce((n, s) => n + s.amountJpy, 0),
-      targetJpy: target.byUnitJpy[u.id] ?? null,
-      thisMonthJpy: rows.filter((s) => s.month === current).reduce((n, s) => n + s.amountJpy, 0),
-      newPatients: rows.reduce((n, s) => n + (s.newPatients ?? 0), 0),
-      repeatPatients: rows.reduce((n, s) => n + (s.repeatPatients ?? 0), 0),
+      clinicId: c.id,
+      name: c.short,
+      targetJpy: tgt ?? null,
+      actualJpy: v.salesActual ?? null,
+      forecastJpy: v.salesForecast ?? null,
+      forecastRate: tgt && v.salesForecast !== undefined ? Math.round((v.salesForecast / tgt) * 1000) / 10 : null,
     };
   });
-  const actualJpy = byUnit.reduce((n, u) => n + u.actualJpy, 0);
-  const monthsWithData = months.filter((m) => inRange.some((s) => s.month === m));
-  const remainingMonths = months.length - elapsedMonths;
-  const paceTargetJpy = Math.round((target.amountJpy * elapsedMonths) / months.length);
 
   return {
     label: target.label,
     scope: target.scope,
     fromMonth: target.fromMonth,
     toMonth: target.toMonth,
+    currentMonth: current,
     targetJpy: target.amountJpy,
+    /** 過ぎた月の実績＋今月の累計実績 */
     actualJpy,
     percent: target.amountJpy ? Math.round((actualJpy / target.amountJpy) * 1000) / 10 : 0,
+    /** 年間の着地見込み */
+    landingJpy,
+    landingPercent: target.amountJpy ? Math.round((landingJpy / target.amountJpy) * 1000) / 10 : 0,
+    planTotalJpy,
+    hasPlan,
     elapsedMonths,
     totalMonths: months.length,
-    paceTargetJpy,
-    /** 残り期間で必要な月平均（実績が入っている前提） */
-    requiredMonthlyJpy: remainingMonths > 0 ? Math.max(0, Math.round((target.amountJpy - actualJpy) / remainingMonths)) : 0,
-    monthsWithData: monthsWithData.length,
-    /** 経過月のうち未入力の月 */
-    missingMonths: months.filter((m) => m <= current && !monthsWithData.includes(m)),
-    hasData: inRange.length > 0,
-    byUnit,
-    byMonth: months.map((m) => ({
-      month: m,
-      totalJpy: inRange.filter((s) => s.month === m).reduce((n, s) => n + s.amountJpy, 0),
-      entered: inRange.some((s) => s.month === m),
-    })),
+    /** 3億円を12か月で按分した、ここまでのペース */
+    paceTargetJpy: Math.round((target.amountJpy * elapsedMonths) / months.length),
+    /** 3億円に届くために、残りの月で必要な月平均（今月までは見込みで計算） */
+    requiredMonthlyJpy: remainingMonths > 0 ? Math.max(0, Math.round((target.amountJpy - knownToDate) / remainingMonths)) : 0,
+    currentMonthTargetJpy: cur?.targetJpy ?? null,
+    currentMonthActualJpy: cur?.actualJpy ?? null,
+    currentMonthForecastJpy: cur?.forecastJpy ?? null,
+    monthsWithData: byMonth.filter((m) => m.entered).length,
+    missingMonths,
+    hasData: data.clinicMonths.length > 0,
+    byMonth,
+    byClinic,
     currentScale: target.currentScale,
   };
 }

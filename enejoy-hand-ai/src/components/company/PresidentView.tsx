@@ -120,7 +120,7 @@ export function PresidentView({ initial }: { initial: PresidentSnapshot }) {
             </div>
             <div className="mt-1 text-xl font-bold tabular-nums">{snap.revenue.hasData ? formatOku(snap.revenue.actualJpy) : "未入力"}</div>
             <div className="text-muted-foreground text-[11px]">
-              {snap.revenue.hasData ? `達成率 ${snap.revenue.percent}% ・ ペース目標 ${formatOku(snap.revenue.paceTargetJpy)}` : "実績（手入力）の入力待ち"}
+              {snap.revenue.hasData ? `実績（累計） ・ 着地見込み ${formatOku(snap.revenue.landingJpy)}（${snap.revenue.landingPercent}%）` : "数字の取り込み待ち"}
             </div>
           </div>
         </div>

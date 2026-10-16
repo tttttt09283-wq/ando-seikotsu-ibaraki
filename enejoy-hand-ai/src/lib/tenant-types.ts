@@ -33,8 +33,38 @@ export type Member = {
 
 export type Team = { id: string; name: string; short: string };
 
-/** 事業部門（売上・施策を分けて扱う単位） */
+/** 事業部門（施策を分けて扱う単位） */
 export type BusinessUnit = { id: string; name: string; short: string };
+
+/** 院（数字を管理する単位） */
+export type Clinic = {
+  id: string;
+  name: string;
+  short: string;
+  /** 日計表・事業計画書の行名と照合する文字列（含まれていれば一致） */
+  aliases: string[];
+  /** 開院月（YYYY-MM。これより前の月は対象外として表示） */
+  openedMonth?: string;
+  /** 院の特徴（例：巻き爪対応） */
+  tags?: string[];
+};
+
+/**
+ * 院ごとの指標の定義。日計表の見出しと照合して取り込む。
+ * key の salesActual / salesTarget / salesForecast は共通の仕組みが売上目標の進捗に使う。
+ */
+export type MetricDef = {
+  key: string;
+  label: string;
+  unit: "yen" | "count" | "percent";
+  group: string;
+  /** 見出し（全角・空白を正規化したもの）がこれで始まれば一致。長いものが優先 */
+  aliases: string[];
+  /** 全院合計の出し方：sum = 院の合計 / none = 合計しない（率・単価など） */
+  total: "sum" | "none";
+  /** 院別の表に既定で表示するか */
+  primary?: boolean;
+};
 
 export type Milestone = {
   id: string;
@@ -176,11 +206,18 @@ export type TenantConfig = {
     toMonth: string;
     scope: string;
     /** 部門別の目標（未確定なら null） */
-    byUnitJpy: Record<string, number | null>;
     /** 現在の規模（ヒアリング結果） */
     currentScale: string;
   };
   businessUnits: BusinessUnit[];
+  clinics: Clinic[];
+  metrics: MetricDef[];
+  /** 日計表の全院合計の行名（含まれていれば一致） */
+  totalRowAliases: string[];
+  /** 事業計画書の損益で、画面に表示する行（行名の前方一致） */
+  planHighlights: string[];
+  /** 日計表で取り込むシート名（既定値） */
+  dailySheetName: string;
   teams: Team[];
   members: Member[];
   /** チームごとのレビュー担当リーダー */

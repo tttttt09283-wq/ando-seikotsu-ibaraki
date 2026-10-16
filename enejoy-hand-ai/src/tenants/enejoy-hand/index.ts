@@ -1,6 +1,7 @@
 import type { TenantConfig } from "@/lib/tenant-types";
 import { recommendApprover } from "./approval-policy";
 import { MEMBERS, REVIEWER_BY_TEAM, TEAMS } from "./organization";
+import { CLINICS, METRICS, PLAN_HIGHLIGHTS, TOTAL_ROW_ALIASES } from "./numbers";
 import { PLAYBOOK } from "./playbook";
 
 /**
@@ -48,8 +49,7 @@ const enejoyHand: TenantConfig = {
     amountJpy: 300_000_000,
     fromMonth: "2026-07",
     toMonth: "2027-06",
-    scope: "全部門合計（鍼灸・整骨院／美容／巻き爪）",
-    byUnitJpy: { seikotsu: null, beauty: null, makizume: null },
+    scope: "全院合計（7院・鍼灸・整骨／美容／巻き爪を含む）",
     currentScale: "現在の年間売上：1億〜2億円（全部門合計・ヒアリング）",
   },
   businessUnits: [
@@ -57,6 +57,11 @@ const enejoyHand: TenantConfig = {
     { id: "beauty", name: "美容部門", short: "美容" },
     { id: "makizume", name: "巻き爪部門", short: "巻き爪" },
   ],
+  clinics: CLINICS,
+  metrics: METRICS,
+  totalRowAliases: TOTAL_ROW_ALIASES,
+  planHighlights: PLAN_HIGHLIGHTS,
+  dailySheetName: "TOP",
   teams: TEAMS,
   members: MEMBERS,
   reviewerByTeam: REVIEWER_BY_TEAM,
@@ -117,15 +122,24 @@ const enejoyHand: TenantConfig = {
   playbook: PLAYBOOK,
   dataSources: [
     {
-      name: "あんど整骨院 予約・会計（POS）・カルテシステム（同リポジトリ）",
-      detail:
-        "予約（予約数・来院・新患・キャンセル・次回予約・経路）、会計（売上・支払方法・保険／自費・担当者）、回数券、スタッフ・シフト、店舗、口コミ記録。Supabaseに保存。",
-      status: "一部の院で使用中。読み取り連携は代表の承認後に実装（患者情報は連携対象外とし、集計値のみを想定）",
+      name: "日計表（Googleスプレッドシート・月ごとのファイル）",
+      detail: "TOPシートの院別・全院の目標・累計実績・着地予想・新患・来院・巻き爪・自賠・口コミ・LTV・キャンセル。",
+      status: "読み取りのみで自動同期（数字画面で月ごとのファイルを登録）",
     },
     {
-      name: "上記システムを使っていない院",
-      detail: "部門別の月次売上・患者数を、ダッシュボードから手入力（またはCSV）で記録する。",
-      status: "手入力に対応済み",
+      name: "事業計画書（院別の月次売上計画・損益）",
+      detail: "Excel を CSV で保存して取り込む。院別の売上計画と、売上総利益・人件費・販管費などの損益。",
+      status: "CSV取り込みに対応",
+    },
+    {
+      name: "POS「サロエボ2」（エクストリンク）",
+      detail: "全院の売上・予約状況。CSV出力の項目を確認後、集計値のみを取り込む（患者個人の情報は取り込まない）。",
+      status: "CSVの見本を確認してから対応",
+    },
+    {
+      name: "あんど整骨院 予約・会計システム（同リポジトリ）",
+      detail: "予約・会計・回数券・スタッフ・口コミ記録（Supabase）。",
+      status: "一部の院で使用。連携は承認後",
     },
   ],
   privacy: [
