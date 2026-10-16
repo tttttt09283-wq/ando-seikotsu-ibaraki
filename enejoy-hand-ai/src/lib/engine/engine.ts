@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { getClinics } from "@/lib/clinics";
 import { APPROVAL_CATEGORY_LABEL } from "@/config/approvals";
 import type { Limits } from "@/config/limits";
 import { approverMemberId, COMMANDER_ID, getMember, OPERATOR_ID, PRESIDENT_ID, TENANT } from "@/tenant";
@@ -1024,7 +1025,7 @@ export async function importDailyReport(
 ): Promise<DailyImportSummary> {
   assertFiscalMonth(input.month);
   const parsed = parseDailyReport(input.grid, {
-    clinics: TENANT.clinics,
+    clinics: getClinics(await deps.store.read()),
     metrics: TENANT.metrics,
     totalRowAliases: TENANT.totalRowAliases,
   });
@@ -1047,7 +1048,7 @@ export async function importDailyReport(
 
 /** 事業計画書を取り込む（前回の計画はすべて置き換える） */
 export async function importBusinessPlan(deps: EngineDeps, actorId: string, input: { grid: string[][]; label?: string }) {
-  const parsed = parseBusinessPlan(input.grid, { clinics: TENANT.clinics, fromMonth: TENANT.revenueTarget.fromMonth });
+  const parsed = parseBusinessPlan(input.grid, { clinics: getClinics(await deps.store.read()), fromMonth: TENANT.revenueTarget.fromMonth });
   if (parsed.records.length === 0) throw new EngineError(parsed.warnings.join(" ") || "取り込める行がありませんでした", "INVALID_STATE");
   const months = new Set(fiscalMonths());
   const records = parsed.records.filter((r) => months.has(r.month));
@@ -1064,7 +1065,7 @@ export async function importBusinessPlan(deps: EngineDeps, actorId: string, inpu
 /** 院の数字の手入力（入力した項目だけ上書き） */
 export async function recordManual(deps: EngineDeps, actorId: string, input: ManualInput) {
   assertFiscalMonth(input.month);
-  if (input.clinicId !== "all" && !TENANT.clinics.some((c) => c.id === input.clinicId)) {
+  if (input.clinicId !== "all" && !getClinics(await deps.store.read()).some((c) => c.id === input.clinicId)) {
     throw new EngineError("院が正しくありません", "INVALID_STATE");
   }
   const known = new Set(TENANT.metrics.map((m) => m.key));

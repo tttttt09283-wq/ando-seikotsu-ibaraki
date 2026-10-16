@@ -14,7 +14,7 @@ import { formatDateTime } from "@/lib/time";
 import type { CustomerReview } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { TENANT } from "@/tenant";
-import { useCompany } from "./StateProvider";
+import { useClinics, useCompany } from "./StateProvider";
 
 const TABS = [
   { id: "overview", label: "概要" },
@@ -26,7 +26,7 @@ const TABS = [
 type TabId = (typeof TABS)[number]["id"];
 
 const inputCls = "h-9 w-full rounded-md border bg-transparent px-2.5 text-base outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 sm:text-sm";
-const clinicName = (id?: string) => TENANT.clinics.find((c) => c.id === id)?.name ?? "（院が未設定）";
+const clinicNameIn = (clinics: { id: string; name: string }[], id?: string) => clinics.find((c) => c.id === id)?.name ?? "（院が未設定）";
 const stars = (n: number | null | undefined) => (n == null ? "—" : `★${n.toFixed(1)}`);
 const num = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleString("ja-JP"));
 const signed = (n: number | null | undefined) => (n == null ? "—" : `${n > 0 ? "+" : ""}${n.toLocaleString("ja-JP")}`);
@@ -54,6 +54,7 @@ function StarRow({ rating }: { rating: number }) {
 // ---------------------------------------------------------------------------
 
 function Overview({ go }: { go: (t: TabId) => void }) {
+  const clinics = useClinics();
   const { snapshot } = useCompany();
   const r = snapshot.reputation;
   const cmp = new Map(r.comparison.map((c) => [c.clinicId, c]));
@@ -63,7 +64,7 @@ function Overview({ go }: { go: (t: TabId) => void }) {
         {[
           ["今月の新着口コミ", `${r.stats.newThisMonth}件`, "7院の合計"],
           ["未返信の口コミ", `${r.stats.unreplied}件`, r.stats.lowUnreplied ? `うち★2以下 ${r.stats.lowUnreplied}件` : "★2以下の未返信なし"],
-          ["接続中のプロフィール", `${r.locations.filter((l) => l.clinicId).length}/${TENANT.clinics.length}院`, r.mode === "demo" ? "デモデータ" : "Googleビジネスプロフィール"],
+          ["接続中のプロフィール", `${r.locations.filter((l) => l.clinicId).length}/${clinics.length}院`, r.mode === "demo" ? "デモデータ" : "Googleビジネスプロフィール"],
           ["登録した競合", `${r.comparison.reduce((n, c) => n + c.competitors.length, 0)}件`, "院ごとの近隣店舗"],
         ].map(([k, v, sub]) => (
           <div key={k} className={cn("bg-card rounded-xl border p-4", k === "未返信の口コミ" && r.stats.lowUnreplied > 0 && "border-amber-300 bg-amber-50/60 dark:border-amber-700 dark:bg-amber-950/40")}>
@@ -146,8 +147,9 @@ function Overview({ go }: { go: (t: TabId) => void }) {
 // ---------------------------------------------------------------------------
 
 function ReplyBox({ review, onDone }: { review: CustomerReview; onDone: () => void }) {
+  const clinics = useClinics();
   const { mutate } = useCompany();
-  const [text, setText] = React.useState(() => demoReplyDraft(review, clinicName(review.clinicId)));
+  const [text, setText] = React.useState(() => demoReplyDraft(review, clinicNameIn(clinics, review.clinicId)));
   const [pending, setPending] = React.useState(false);
   const [msg, setMsg] = React.useState<{ ok: boolean; text: string } | null>(null);
   return (
@@ -181,6 +183,7 @@ function ReplyBox({ review, onDone }: { review: CustomerReview; onDone: () => vo
 }
 
 function Reviews() {
+  const clinics = useClinics();
   const { snapshot } = useCompany();
   const r = snapshot.reputation;
   const [clinic, setClinic] = React.useState("all");
@@ -206,7 +209,7 @@ function Reviews() {
         <div className="flex flex-wrap gap-2">
           <select value={clinic} onChange={(e) => setClinic(e.target.value)} className="h-9 rounded-md border bg-transparent px-2 text-sm" aria-label="院">
             <option value="all">全院</option>
-            {TENANT.clinics.map((c) => (
+            {clinics.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
               </option>
@@ -230,7 +233,7 @@ function Reviews() {
                   <StarRow rating={x.rating} />
                   <span className="font-medium">{x.reviewerName}</span>
                   <Badge variant="outline" className="font-normal">
-                    {clinicName(x.clinicId)}
+                    {clinicNameIn(clinics, x.clinicId)}
                   </Badge>
                   <span className="text-muted-foreground text-xs">{formatDateTime(x.createTime)}</span>
                   {x.mode === "demo" && <Badge variant="demo">DEMO</Badge>}
@@ -266,6 +269,7 @@ function Reviews() {
 // ---------------------------------------------------------------------------
 
 function Performance() {
+  const clinics = useClinics();
   const { snapshot } = useCompany();
   const perf = snapshot.reputation.performance;
   const months = [...new Set(perf.map((p) => p.month))].sort();
@@ -307,13 +311,13 @@ function Performance() {
               </tr>
             </thead>
             <tbody>
-              {[...TENANT.clinics.map((c) => ({ id: c.id, name: c.name })), { id: "__total", name: "全院合計" }].map((c) => (
+              {[...clinics.map((c) => ({ id: c.id, name: c.name })), { id: "__total", name: "全院合計" }].map((c) => (
                 <tr key={c.id} className={cn("border-b last:border-0", c.id === "__total" && "bg-secondary/60 font-semibold")}>
                   <th scope="row" className="py-2 pr-2 pl-1 text-left font-medium whitespace-nowrap">{c.name}</th>
                   {PERFORMANCE_METRICS.map((m) => {
                     const get = (mm?: string) =>
                       c.id === "__total"
-                        ? TENANT.clinics.reduce<number | undefined>((n, x) => {
+                        ? clinics.reduce<number | undefined>((n, x) => {
                             const v = val(x.id, mm, m.key);
                             return v == null ? n : (n ?? 0) + v;
                           }, undefined)
@@ -373,8 +377,9 @@ function SnapshotForm({ subjectId, onDone }: { subjectId: string; onDone: () => 
 }
 
 function AddCompetitor({ clinicId }: { clinicId: string }) {
+  const clinics = useClinics();
   const { mutate, runtime } = useCompany();
-  const clinic = TENANT.clinics.find((c) => c.id === clinicId)!;
+  const clinic = clinics.find((c) => c.id === clinicId)!;
   const [query, setQuery] = React.useState(`整骨院 ${clinic.short}`);
   const [results, setResults] = React.useState<ApiPlace[] | null>(null);
   const [manual, setManual] = React.useState("");
@@ -444,8 +449,9 @@ function AddCompetitor({ clinicId }: { clinicId: string }) {
 }
 
 function Competitors() {
+  const clinics = useClinics();
   const { snapshot, mutate, runtime } = useCompany();
-  const [clinicId, setClinicId] = React.useState(TENANT.clinics[0].id);
+  const [clinicId, setClinicId] = React.useState(clinics[0].id);
   const [recording, setRecording] = React.useState<string | null>(null);
   const [msg, setMsg] = React.useState<{ ok: boolean; text: string } | null>(null);
   const [pending, setPending] = React.useState(false);
@@ -465,7 +471,7 @@ function Competitors() {
         </div>
         <div className="flex flex-wrap gap-2">
           <select value={clinicId} onChange={(e) => setClinicId(e.target.value)} className="h-9 rounded-md border bg-transparent px-2 text-sm" aria-label="院">
-            {TENANT.clinics.map((c) => (
+            {clinics.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
               </option>
@@ -572,6 +578,7 @@ const GOOGLE_RESULT: Record<string, { ok: boolean; text: string }> = {
 };
 
 function Settings() {
+  const clinics = useClinics();
   const { snapshot, runtime, mutate } = useCompany();
   const params = useSearchParams();
   const g = snapshot.reputation.google;
@@ -671,7 +678,7 @@ function Settings() {
                     aria-label={`${l.title}の院`}
                   >
                     <option value="">対応なし</option>
-                    {TENANT.clinics.map((c) => (
+                    {clinics.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
                       </option>

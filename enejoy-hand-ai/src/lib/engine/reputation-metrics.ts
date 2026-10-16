@@ -1,6 +1,6 @@
 import { jstDayKey, jstMonthKey } from "@/lib/time";
+import { getClinics } from "@/lib/clinics";
 import type { CompanyData, DataMode } from "@/lib/types";
-import { TENANT } from "@/tenant";
 
 /** 口コミ・競合の集計（保存データから算出する。通信はしない） */
 
@@ -19,12 +19,12 @@ export function reputationMode(data: Pick<CompanyData, "reputation">): DataMode 
 const daysBetween = (a: string, b: string) => (new Date(b).getTime() - new Date(a).getTime()) / 86_400_000;
 
 /** 院ごとの口コミの状況（指定した種類のデータのみ） */
-export function reviewStats(data: Pick<CompanyData, "reputation">, mode: DataMode, now: Date) {
+export function reviewStats(data: Pick<CompanyData, "reputation" | "clinicSetup">, mode: DataMode, now: Date) {
   const month = jstMonthKey(now);
   const since90 = new Date(now.getTime() - 90 * 86_400_000).toISOString();
   const rep = data.reputation;
   const reviews = rep.reviews.filter((r) => r.mode === mode);
-  const perClinic = TENANT.clinics.map((c) => {
+  const perClinic = getClinics(data).map((c) => {
     const mine = reviews.filter((r) => r.clinicId === c.id);
     const loc = rep.locations.find((l) => l.mode === mode && l.clinicId === c.id);
     const recent = mine.filter((r) => r.createTime >= since90);
@@ -52,7 +52,7 @@ export function reviewStats(data: Pick<CompanyData, "reputation">, mode: DataMod
 }
 
 /** 院ごとに、自院と競合の最新の星・件数と、1か月前からの増加 */
-export function competitorComparison(data: Pick<CompanyData, "reputation">, mode: DataMode, now: Date) {
+export function competitorComparison(data: Pick<CompanyData, "reputation" | "clinicSetup">, mode: DataMode, now: Date) {
   const rep = data.reputation;
   // 本番の記録（人の記録・取得した数字）はいつも含める
   const snaps = rep.snapshots.filter((s) => s.mode === mode || s.mode === "live");
@@ -70,7 +70,7 @@ export function competitorComparison(data: Pick<CompanyData, "reputation">, mode
       history: xs.map((s) => ({ date: s.date, rating: s.rating ?? null, reviewCount: s.reviewCount ?? null })),
     };
   };
-  return TENANT.clinics.map((c) => {
+  return getClinics(data).map((c) => {
     const loc = rep.locations.find((l) => l.mode === mode && l.clinicId === c.id);
     const own = latestOf(`clinic:${c.id}`);
     return {

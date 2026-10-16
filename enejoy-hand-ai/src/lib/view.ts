@@ -8,7 +8,8 @@ import {
   revenueProgress,
   taskCounts,
 } from "@/lib/engine/metrics";
-import type { Tier } from "@/lib/tenant-types";
+import type { Clinic, Tier } from "@/lib/tenant-types";
+import { getClinics } from "@/lib/clinics";
 import {
   ACTIVE_TASK_STATUSES,
   type Activity,
@@ -137,9 +138,12 @@ export type CompanySnapshot = {
     stats: ReturnType<typeof reviewStats>;
     comparison: ReturnType<typeof competitorComparison>;
   };
-  /** 院別売上予算（確定済み、または基準額で計算）と、編集中の案 */
+  /** 今の院の一覧（設定の院＋画面で追加した院。開院月・閉院月を反映） */
+  clinics: Clinic[];
+  /** 院別売上予算（確定済み、または基準額で計算）と、編集中の案・当初予算 */
   budget: {
     confirmed: ReturnType<typeof budgetTable>;
+    original: ReturnType<typeof budgetTable> | null;
     draft: ReturnType<typeof budgetTable> | null;
     draftUpdatedAt: string | null;
     pendingApprovalId: string | null;
@@ -359,8 +363,10 @@ export function buildSnapshot(data: CompanyData, mode: DataMode, now: Date, limi
         comparison: competitorComparison(data, rm, now),
       };
     })(),
+    clinics: getClinics(data),
     budget: {
       confirmed: budgetTable(data, now, "confirmed"),
+      original: data.budget.history.length > 1 ? budgetTable(data, now, 0) : null,
       draft: data.budget.draft ? budgetTable(data, now, "draft") : null,
       draftUpdatedAt: data.budget.draft?.updatedAt ?? null,
       pendingApprovalId: data.approvals.find((a) => a.status === "PENDING" && a.payload?.kind === "budget_confirm")?.id ?? null,

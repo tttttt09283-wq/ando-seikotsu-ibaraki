@@ -45,6 +45,10 @@ export type Clinic = {
   aliases: string[];
   /** 開院月（YYYY-MM。これより前の月は対象外として表示） */
   openedMonth?: string;
+  /** 閉院・統合した月（YYYY-MM。この月の翌月から対象外） */
+  closedMonth?: string;
+  /** 画面から追加した院（店舗展開） */
+  added?: boolean;
   /** 院の特徴（例：巻き爪対応） */
   tags?: string[];
 };
@@ -217,7 +221,12 @@ export type TenantConfig = {
   /** 事業計画書の損益で、画面に表示する行（行名の前方一致） */
   planHighlights: string[];
   /** 予算の基準（1院あたりの月の売上予算の平均） */
-  budget: { standardPerClinicJpy: number; label: string };
+  budget: {
+    standardPerClinicJpy: number;
+    label: string;
+    /** 人員から予算を計算するときの、施術者1人あたりの月の売上（初期値） */
+    perStaffJpy: number;
+  };
   /** 日計表で取り込むシート名（既定値） */
   dailySheetName: string;
   teams: Team[];

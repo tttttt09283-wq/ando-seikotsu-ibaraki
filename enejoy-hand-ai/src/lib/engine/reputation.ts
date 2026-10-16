@@ -1,4 +1,5 @@
 import type { ApiPlace, GoogleApi, PlacesApi } from "@/lib/google/client";
+import { getClinics } from "@/lib/clinics";
 import { buildDemoReputation } from "@/lib/google/demo";
 import { matchClinic } from "@/lib/import/daily-report";
 import { jstDayKey } from "@/lib/time";
@@ -71,7 +72,7 @@ export async function syncGoogle(deps: EngineDeps, api: GoogleApi, opts: { actor
 
   const before = await deps.store.read();
   const clinicOf = (locName: string, title: string) =>
-    before.reputation.locations.find((l) => l.name === locName)?.clinicId ?? matchClinic(title, TENANT.clinics)?.id;
+    before.reputation.locations.find((l) => l.name === locName)?.clinicId ?? matchClinic(title, getClinics(before))?.id;
 
   // 表示回数は、年度の初め（または13か月前の遅い方）から昨日まで
   const fyStart = new Date(`${TENANT.revenueTarget.fromMonth}-01T00:00:00Z`);
@@ -153,8 +154,8 @@ export async function syncGoogle(deps: EngineDeps, api: GoogleApi, opts: { actor
 
 /** ロケーション（Googleのプロフィール）と院の対応付け */
 export async function setLocationClinic(deps: EngineDeps, actorId: string, locationName: string, clinicId: string) {
-  if (clinicId && !TENANT.clinics.some((c) => c.id === clinicId)) throw new EngineError("院が正しくありません", "INVALID_STATE");
   await deps.store.transact((data) => {
+    if (clinicId && !getClinics(data).some((c) => c.id === clinicId)) throw new EngineError("院が正しくありません", "INVALID_STATE");
     const loc = data.reputation.locations.find((l) => l.name === locationName);
     if (!loc) throw new EngineError("ロケーションが見つかりません", "NOT_FOUND");
     loc.clinicId = clinicId || undefined;
@@ -175,7 +176,7 @@ export async function requestReviewReply(deps: EngineDeps, actorId: string, inpu
     if (!review) throw new EngineError("口コミが見つかりません", "NOT_FOUND");
     const dup = data.approvals.find((a) => a.status === "PENDING" && a.payload?.kind === "review_reply" && a.payload.reviewId === review.id);
     if (dup) throw new EngineError("この口コミへの返信は、すでに承認待ちです", "INVALID_STATE");
-    const clinic = TENANT.clinics.find((c) => c.id === review.clinicId)?.name ?? "院";
+    const clinic = getClinics(data).find((c) => c.id === review.clinicId)?.name ?? "院";
     const live = review.mode === "live";
     const quote = review.comment.length > 160 ? `${review.comment.slice(0, 160)}…` : review.comment;
     const approval = createApproval(data, now, {
@@ -271,9 +272,9 @@ export async function addCompetitor(
   input: { clinicId: string; name: string; placeId?: string; address?: string; mapsUri?: string; note?: string },
   place?: ApiPlace,
 ): Promise<Competitor> {
-  if (!TENANT.clinics.some((c) => c.id === input.clinicId)) throw new EngineError("院が正しくありません", "INVALID_STATE");
   return deps.store.transact((data) => {
     const now = deps.now();
+    if (!getClinics(data).some((c) => c.id === input.clinicId)) throw new EngineError("院が正しくありません", "INVALID_STATE");
     if (input.placeId && data.reputation.competitors.some((c) => c.mode === "live" && c.clinicId === input.clinicId && c.placeId === input.placeId)) {
       throw new EngineError("この競合はすでに登録されています", "INVALID_STATE");
     }
@@ -282,7 +283,7 @@ export async function addCompetitor(
     if (place && (place.rating != null || place.reviewCount != null)) {
       putSnapshot(data, { subjectId: c.id, date: jstDayKey(now), rating: place.rating, reviewCount: place.reviewCount, source: "places", mode: "live" });
     }
-    audit(data, now, actorId, "competitor.add", `${TENANT.clinics.find((x) => x.id === input.clinicId)?.name}：${input.name}`);
+    audit(data, now, actorId, "competitor.add", `${getClinics(data).find((x) => x.id === input.clinicId)?.name}：${input.name}`);
     return c;
   });
 }
@@ -328,7 +329,7 @@ export async function recordRatingSnapshot(deps: EngineDeps, actorId: string, in
     const now = deps.now();
     const isClinic = input.subjectId.startsWith("clinic:");
     const ok = isClinic
-      ? TENANT.clinics.some((c) => `clinic:${c.id}` === input.subjectId)
+      ? getClinics(data).some((c) => `clinic:${c.id}` === input.subjectId)
       : data.reputation.competitors.some((c) => c.id === input.subjectId);
     if (!ok) throw new EngineError("記録する相手が見つかりません", "NOT_FOUND");
     // 人が確認した数字は本番の記録（デモの競合への記録だけはデモとして扱う）
@@ -344,7 +345,7 @@ export async function loadDemoReputation(deps: EngineDeps, actorId: string) {
     const now = deps.now();
     const rep = data.reputation;
     const keepLive = <T extends { mode: DataMode }>(xs: T[]) => xs.filter((x) => x.mode === "live");
-    const demo = buildDemoReputation(TENANT.clinics, now);
+    const demo = buildDemoReputation(getClinics(data), now);
     rep.locations = [...keepLive(rep.locations), ...demo.locations];
     rep.reviews = [...keepLive(rep.reviews), ...demo.reviews];
     rep.performance = [...keepLive(rep.performance), ...demo.performance];

@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { TENANT } from "@/tenant";
 import { BudgetView } from "./BudgetView";
 import { formatOku, monthLabel, MonthStrip } from "./RevenuePanel";
-import { useCompany } from "./StateProvider";
+import { useClinics, useCompany } from "./StateProvider";
 
 const MONTHS = monthsBetween(TENANT.revenueTarget.fromMonth, TENANT.revenueTarget.toMonth);
 const GROUPS = [...new Set(TENANT.metrics.map((m) => m.group))];
@@ -30,6 +30,7 @@ function fmt(v: number | undefined | null, unit: MetricDef["unit"]): string {
 
 /** 院別の表：行＝院（＋全院合計）、列＝選んだグループの指標 */
 function ClinicTable({ month }: { month: string }) {
+  const clinics = useClinics();
   const { snapshot } = useCompany();
   const [group, setGroup] = React.useState(GROUPS[0]);
   const metrics = TENANT.metrics.filter((m) => m.group === group);
@@ -37,7 +38,7 @@ function ClinicTable({ month }: { month: string }) {
   const totals = monthTotals({ clinicMonths: snapshot.clinicMonths }, month);
   const planData = { plan: snapshot.clinicPlan };
   const showSales = group === "売上";
-  const rows = TENANT.clinics.map((c) => ({
+  const rows = clinics.map((c) => ({
     id: c.id,
     name: c.name,
     tags: c.tags,
@@ -428,9 +429,10 @@ function CsvPanel() {
 const MANUAL_KEYS = ["salesTarget", "salesActual", "salesForecast", "newPatients", "totalVisits", "makiSales", "jibaiSales"];
 
 function ManualPanel() {
+  const clinics = useClinics();
   const { snapshot, mutate } = useCompany();
   const [month, setMonth] = React.useState(snapshot.revenue.currentMonth);
-  const [clinicId, setClinicId] = React.useState(TENANT.clinics[0].id);
+  const [clinicId, setClinicId] = React.useState(clinics[0].id);
   const [vals, setVals] = React.useState<Record<string, string>>({});
   const [pending, setPending] = React.useState(false);
   const [msg, setMsg] = React.useState<{ ok: boolean; text: string } | null>(null);
@@ -469,7 +471,7 @@ function ManualPanel() {
             ))}
           </select>
           <select value={clinicId} onChange={(e) => setClinicId(e.target.value)} className={inputCls} aria-label="院">
-            {TENANT.clinics.map((c) => (
+            {clinics.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
               </option>

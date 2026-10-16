@@ -144,3 +144,8 @@ export function useNow(intervalMs = 1000): Date {
   }, [intervalMs]);
   return now;
 }
+
+/** 今の院の一覧（設定の院＋画面で追加した院） */
+export function useClinics() {
+  return useCompany().snapshot.clinics;
+}

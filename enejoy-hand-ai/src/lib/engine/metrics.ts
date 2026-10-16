@@ -1,4 +1,5 @@
 import { getMember, PRESIDENT_ID, TENANT } from "@/tenant";
+import { getClinics } from "@/lib/clinics";
 import { jstDayKey, jstMonthKey } from "@/lib/time";
 import type { CompanyData, DataMode } from "@/lib/types";
 import { ACTIVE_TASK_STATUSES, TERMINAL_TASK_STATUSES } from "@/lib/types";
@@ -159,7 +160,7 @@ export function planHighlightRows(data: Pick<CompanyData, "plan">) {
  * デモの成果物の数字は一切含めない。
  * 着地見込み ＝ 過ぎた月の実績 ＋ 今月の着地予想 ＋ これからの月の事業計画
  */
-export function revenueProgress(data: Pick<CompanyData, "clinicMonths" | "plan">, now: Date) {
+export function revenueProgress(data: Pick<CompanyData, "clinicMonths" | "plan" | "clinicSetup">, now: Date) {
   const target = TENANT.revenueTarget;
   const months = monthsBetween(target.fromMonth, target.toMonth);
   const current = jstMonthKey(now);
@@ -186,7 +187,7 @@ export function revenueProgress(data: Pick<CompanyData, "clinicMonths" | "plan">
 
   const cur = byMonth.find((m) => m.status === "current");
   const curRecords = data.clinicMonths.filter((r) => r.month === current);
-  const byClinic = TENANT.clinics.map((c) => {
+  const byClinic = getClinics(data).map((c) => {
     const v = curRecords.find((r) => r.clinicId === c.id)?.values ?? {};
     const tgt = v.salesTarget ?? planSalesByMonth(data, current, c.id);
     return {

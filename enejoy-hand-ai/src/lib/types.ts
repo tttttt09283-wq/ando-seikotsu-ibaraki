@@ -246,10 +246,27 @@ export type Approval = {
 export type ApprovalPayload =
   | { kind: "review_reply"; reviewId: string; comment: string }
   /** 院別予算の確定（承認された内容＝この payload の予算をそのまま確定する） */
-  | { kind: "budget_confirm"; standardJpy: number; cells: BudgetCell[] };
+  | { kind: "budget_confirm"; standardJpy: number; perStaffJpy: number; cells: BudgetCell[]; label: string; note?: string };
 
-/** 院・月ごとの売上予算 */
-export type BudgetCell = { month: string; clinicId: string; amountJpy: number };
+/** 院・月ごとの売上予算（staff = その月の施術者の人数。人員から予算を計算するときに使う） */
+export type BudgetCell = { month: string; clinicId: string; amountJpy: number; staff?: number };
+
+/** 確定した予算の版（当初予算・修正予算①…） */
+export type BudgetVersion = {
+  label: string;
+  standardJpy: number;
+  perStaffJpy: number;
+  cells: BudgetCell[];
+  confirmedAt: string;
+  approvalId: string;
+  note?: string;
+};
+
+/** 院の追加・開院月・閉院月の変更（設定ファイルの院に上書きする） */
+export type ClinicSetup = {
+  added: { id: string; name: string; short: string; aliases: string[]; openedMonth?: string; closedMonth?: string; tags?: string[] }[];
+  overrides: Record<string, { openedMonth?: string | null; closedMonth?: string | null }>;
+};
 
 /**
  * 会社の予算（院別・月別の売上予算）。
@@ -257,8 +274,11 @@ export type BudgetCell = { month: string; clinicId: string; amountJpy: number };
  * 確定していない院・月は、基準額（1院あたりの月平均）で計算する。
  */
 export type BudgetState = {
-  confirmed: { standardJpy: number; cells: BudgetCell[]; confirmedAt: string; approvalId: string } | null;
-  draft: { standardJpy: number; cells: BudgetCell[]; updatedAt: string; updatedBy: string } | null;
+  /** 今の確定予算（最新の版） */
+  confirmed: BudgetVersion | null;
+  /** これまでに確定した版（古い順。最初が当初予算） */
+  history: BudgetVersion[];
+  draft: { standardJpy: number; perStaffJpy: number; cells: BudgetCell[]; updatedAt: string; updatedBy: string } | null;
 };
 
 export type UsageRecord = {
@@ -458,6 +478,7 @@ export type CompanyData = {
   dataSources: DataSourceState;
   reputation: ReputationData;
   budget: BudgetState;
+  clinicSetup: ClinicSetup;
 };
 
 export function emptyCompanyData(): CompanyData {
@@ -477,7 +498,8 @@ export function emptyCompanyData(): CompanyData {
     plan: [],
     dataSources: { sheets: [] },
     reputation: emptyReputation(),
-    budget: { confirmed: null, draft: null },
+    budget: { confirmed: null, history: [], draft: null },
+    clinicSetup: { added: [], overrides: {} },
   };
 }
 
@@ -569,18 +591,56 @@ export const placesSearchSchema = z.object({
 
 const budgetAmount = z.number().int("予算は円単位の整数で入力してください").min(0).max(1_000_000_000);
 
+const monthRe = /^\d{4}-(0[1-9]|1[0-2])$/;
+
 export const budgetInputSchema = z.discriminatedUnion("action", [
-  /** 案の編集（指定したセルだけ上書き。standardJpy を指定すると基準額も変える） */
+  /** 案の編集（指定したセルの予算・人員だけ上書き。基準額・1人あたり売上も変えられる） */
   z.object({
     action: z.literal("edit"),
     cells: z
-      .array(z.object({ month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/), clinicId: z.string().min(1).max(40), amountJpy: budgetAmount }))
-      .max(500),
+      .array(
+        z.object({
+          month: z.string().regex(monthRe),
+          clinicId: z.string().min(1).max(40),
+          amountJpy: budgetAmount.optional(),
+          /** 施術者の人数（null で消す） */
+          staff: z.number().min(0).max(200).nullable().optional(),
+        }),
+      )
+      .max(1000),
     standardJpy: budgetAmount.optional(),
+    perStaffJpy: budgetAmount.optional(),
   }),
   /** すべての院・月を基準額で埋める */
   z.object({ action: z.literal("fill_standard"), standardJpy: budgetAmount }),
+  /** 人員 × 1人あたりの売上で予算を計算する */
+  z.object({ action: z.literal("apply_staff"), perStaffJpy: budgetAmount.optional(), clinicIds: z.array(z.string().max(40)).max(100).optional() }),
+  /** 予算表（CSV）の取り込み */
+  z.object({
+    action: z.literal("import"),
+    csv: z.string().min(1, "ファイルが空です").max(2_000_000, "ファイルが大きすぎます"),
+    unit: z.enum(["auto", "yen", "thousand", "man"]),
+    fileName: z.string().trim().max(200).optional(),
+  }),
   z.object({ action: z.literal("discard") }),
   /** 案の確定を承認依頼する */
   z.object({ action: z.literal("request"), note: z.string().trim().max(300).optional() }),
+]);
+
+/** 院の設定（店舗展開・閉院） */
+export const clinicInputSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("add"),
+    name: z.string().trim().min(1, "院の名前を入力してください").max(40),
+    short: z.string().trim().max(20).optional(),
+    openedMonth: z.string().regex(monthRe).optional(),
+    tags: z.array(z.string().trim().max(20)).max(5).optional(),
+  }),
+  z.object({
+    action: z.literal("update"),
+    id: z.string().min(1).max(40),
+    openedMonth: z.string().regex(monthRe).nullable().optional(),
+    closedMonth: z.string().regex(monthRe).nullable().optional(),
+  }),
+  z.object({ action: z.literal("remove"), id: z.string().min(1).max(40) }),
 ]);
