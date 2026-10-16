@@ -52,6 +52,19 @@ const BEAUTY_MENUS = [
    durations:{first:100, repeat:80},
    catchCopy:"美容鍼と小顔矯正をまとめて受けたい方に", price:"料金：9,900円（税込）"},
 ];
+// 管理画面「美容メニュー管理」で変更した設定（受付のON/OFF・所要時間・料金表示・説明文・担当スタッフ）を上書きする
+// ※メニュー名は予約データ・会計と結びついているため、ここでは変えない
+function applyBeautyMenuConfig(bm){
+  if(!bm||typeof bm!=="object"||!bm.menus) return;
+  BEAUTY_MENUS.forEach(function(m){
+    var o=bm.menus[m.id]; if(!o||typeof o!=="object") return;
+    if(o.durations&&Number(o.durations.first)>0&&Number(o.durations.repeat)>0) m.durations={first:Number(o.durations.first),repeat:Number(o.durations.repeat)};
+    if(typeof o.price==="string") m.price=o.price;
+    if(typeof o.catchCopy==="string"&&o.catchCopy.trim()) m.catchCopy=o.catchCopy;
+    if(Array.isArray(o.staffIds)&&o.staffIds.length>0) m.staffIds=o.staffIds.map(Number);
+    if(typeof o.enabled==="boolean") m.enabled=o.enabled&&!!m.durations; // 所要時間が無いメニューは受付できない
+  });
+}
 const VISIT_TYPES = [
   {key:"first", label:"初診", desc:"このメニューを当院で初めて受ける方"},
   {key:"repeat", label:"2回目以降", desc:"このメニューを当院で受けたことがある方"},
@@ -248,6 +261,9 @@ function App(){
       sb.select("temp_closures","?store_id=eq."+STORE_ID),
     ]).then(function(r){
       if(!r[0]||!Array.isArray(r[0].staff)) throw new Error("config");
+      applyBeautyMenuConfig(r[0].beauty_menus);
+      // URLで選ばれていたメニューが管理画面で受付停止になっていたら、メニュー選択に戻す
+      setMenuId(function(id){ var m=BEAUTY_MENUS.find(function(x){return x.id===id;}); if(id&&!(m&&m.enabled)){ setStep(0); return null; } return id; });
       setConfig(r[0]);
       setBusinessHours(Array.isArray(r[1])?r[1]:[]);
       setClosures(Array.isArray(r[2])?r[2]:[]);
