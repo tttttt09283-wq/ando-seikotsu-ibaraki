@@ -65,6 +65,16 @@ function applyBeautyMenuConfig(bm){
     if(typeof o.enabled==="boolean") m.enabled=o.enabled&&!!m.durations; // 所要時間が無いメニューは受付できない
   });
 }
+// ご来院前のお願い（メイク）：小顔矯正はオイルを使うため必ず落としてきていただく。美容鍼は落としてきていただくのがおすすめ
+function makeupNotice(menuId){
+  if(menuId==="kogao"||menuId==="biyoshin_kogao") return {must:true,text:"小顔矯正はオイルを使って行うため、必ずメイクを落としてからご来院ください（院にクレンジングのご用意はありません）。"};
+  if(menuId==="biyoshin") return {must:false,text:"美容鍼はメイクをしたままでも施術できますが、できるだけメイクを落としてからのご来院をおすすめします（院にクレンジングのご用意はありません）。"};
+  return null;
+}
+function MakeupNotice(props){
+  var n=makeupNotice(props.menuId); if(!n) return null;
+  return <div style={{marginTop:10,padding:"10px 12px",borderRadius:10,fontSize:12.5,lineHeight:1.7,background:n.must?"#fef2f2":"#fffbeb",border:"1px solid "+(n.must?"#fecaca":"#fde68a"),color:n.must?"#991b1b":"#92400e"}}><b>{n.must?"⚠️ ご来院前のお願い":"💄 ご来院前のお願い"}</b><br/>{n.text}</div>;
+}
 const VISIT_TYPES = [
   {key:"first", label:"初診", desc:"このメニューを当院で初めて受ける方"},
   {key:"repeat", label:"2回目以降", desc:"このメニューを当院で受けたことがある方"},
@@ -400,6 +410,7 @@ function App(){
       </div>
       <div style={C.card}>
         {[["メニュー",done.menu.icon+" "+done.menu.name],["初診・2回目以降",done.visitLabel],["所要時間",done.duration+"分"],["日時",fmtDateJP(done.date)+" "+done.time+"〜"+done.endTime],["予約番号","#"+done.id]].map(function(r){return <div key={r[0]} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"9px 0",borderBottom:"1px solid #f3f4f6",fontSize:14}}><span style={{color:"#6b7280"}}>{r[0]}</span><b style={{textAlign:"right"}}>{r[1]}</b></div>;})}
+        <MakeupNotice menuId={done.menu.id}/>
         <div style={{fontSize:12,color:"#6b7280",marginTop:10,lineHeight:1.7}}>変更・キャンセルはお電話（<a href={"tel:"+CLINIC_TEL} style={{color:"#be185d"}}>{CLINIC_TEL}</a>）またはLINEでご連絡ください。</div>
       </div>
     </div></div>;
@@ -518,6 +529,7 @@ function App(){
         {[["メニュー",menu.icon+" "+menu.name],["初診・2回目以降",(VISIT_TYPES.find(function(v){return v.key===visit;})||{}).label],["所要時間",duration+"分"],["日時",selDate?fmtDateJP(selDate)+" "+selTime+"〜"+minToTime(toMin(selTime)+duration):"-"],["お名前",form.name+"（"+form.kana+"）"],["電話番号",form.phone],["ご要望",form.note||"なし"]].map(function(r){
           return <div key={r[0]} style={{display:"flex",justifyContent:"space-between",gap:12,padding:"10px 0",borderBottom:"1px solid #f3f4f6",fontSize:14}}><span style={{color:"#6b7280",flexShrink:0}}>{r[0]}</span><b style={{textAlign:"right",wordBreak:"break-all"}}>{r[1]}</b></div>;
         })}
+        <MakeupNotice menuId={menu.id}/>
         <div style={{fontSize:12,color:"#6b7280",marginTop:10,lineHeight:1.7}}>※ 所要時間には、カウンセリング・お着替えなどの時間も含みます。<br/>※ 変更・キャンセルはお早めにお電話またはLINEでご連絡ください。</div>
       </div>}
     </div>
