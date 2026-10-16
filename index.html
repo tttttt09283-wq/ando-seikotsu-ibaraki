@@ -9008,6 +9008,239 @@ function PersonalWeekView({staff,filtered,payments,visitCounts,setBookingPopup,s
 // 除外（送信不要）した人を除いて一斉LINE送信できるパネル。
 // ===== キャンセル一覧パネル =====
 // ===== 姿勢の経過記録 =====
+// ===== 美容メニュー管理（美容鍼・巻き爪・小顔矯正などを1か所で管理） =====
+// メニュー設定の初期値（beauty.html の BEAUTY_MENUS と同じ）。変更は app_settings の beauty_menu_config に保存し、予約ページへ反映される
+const BEAUTY_MENU_DEFAULTS=[
+  {id:"biyoshin",name:"美容鍼",icon:"✨",color:"#db2777",enabled:true,durations:{first:80,repeat:60},staffIds:[1,4],price:"料金：6,600円（税込）",catchCopy:"お顔のハリ・むくみ・くすみが気になる方に",priceYen:6600},
+  {id:"makizume",name:"巻き爪施術",icon:"🦶",color:"#0f766e",enabled:true,durations:{first:80,repeat:60},staffIds:[5],price:"料金は爪の状態により異なります（施術前にご説明します）",catchCopy:"巻き爪・陥入爪の痛みでお困りの方に",priceYen:null},
+  {id:"kogao",name:"小顔矯正",icon:"🌸",color:"#7c3aed",enabled:true,durations:{first:60,repeat:20},staffIds:[4,3],price:"料金：5,500円（税込）",catchCopy:"お顔の大きさ・左右差・むくみが気になる方に",priceYen:5500},
+  {id:"biyoshin_kogao",name:"美容鍼＋小顔矯正",icon:"💐",color:"#9333ea",enabled:true,durations:{first:100,repeat:80},staffIds:[4],price:"料金：9,900円（税込）",catchCopy:"美容鍼と小顔矯正をまとめて受けたい方に",priceYen:9900},
+];
+function readBeautyMenuConfig(){
+  let saved={};
+  try{ const v=JSON.parse(localStorage.getItem("beauty_menu_config")||"{}"); if(v&&v.menus) saved=v.menus; }catch(e){}
+  return BEAUTY_MENU_DEFAULTS.map(d=>{ const o=saved[d.id]||{}; return {...d,
+    enabled:typeof o.enabled==="boolean"?o.enabled:d.enabled,
+    durations:o.durations&&o.durations.first>0&&o.durations.repeat>0?{first:Number(o.durations.first),repeat:Number(o.durations.repeat)}:d.durations,
+    staffIds:Array.isArray(o.staffIds)&&o.staffIds.length?o.staffIds.map(Number):d.staffIds,
+    price:typeof o.price==="string"?o.price:d.price, catchCopy:typeof o.catchCopy==="string"&&o.catchCopy.trim()?o.catchCopy:d.catchCopy}; });
+}
+// 予約がどの美容メニューか（Web予約の「美容鍼（初診）」形式に加え、管理画面で入れた「美容鍼」「巻き爪矯正…」なども対象）
+function beautyMenuOfBooking(b){
+  const text=[b.menu,...(Array.isArray(b.menus)?b.menus:[])].filter(Boolean).join(" ");
+  let id=null;
+  if(/美容鍼|美容はり|美容針/.test(text)&&/小顔/.test(text)) id="biyoshin_kogao";
+  else if(/美容鍼|美容はり|美容針/.test(text)) id="biyoshin";
+  else if(/小顔/.test(text)) id="kogao";
+  else if(/巻き爪|陥入爪/.test(text)) id="makizume";
+  if(!id) return null;
+  const visit=/初診/.test(text)?"初診":/2回目以降/.test(text)?"2回目以降":"";
+  return {id,visit};
+}
+const BEAUTY_LABEL_RE=/美容鍼|美容はり|美容針|小顔|巻き爪|陥入爪/;
+function BeautyManagerPanel({bookings,payments,todayStr,onOpenPatient,storeStaff}){
+  const [tab,setTab]=React.useState("dash");
+  const [month,setMonth]=React.useState(todayStr.slice(0,7));
+  const [listRange,setListRange]=React.useState("upcoming");
+  const [fMenu,setFMenu]=React.useState("");
+  const [fStaff,setFStaff]=React.useState("");
+  const [custFilter,setCustFilter]=React.useState("all");
+  const ver=useSharedSettingsVersion();
+  const [menus,setMenus]=React.useState(readBeautyMenuConfig);
+  const [dirty,setDirty]=React.useState(false);
+  const [savedMsg,setSavedMsg]=React.useState("");
+  React.useEffect(()=>{ if(!dirty) setMenus(readBeautyMenuConfig()); },[ver]);
+  const staffList=(storeStaff&&storeStaff.length?storeStaff:STAFF_ACCOUNTS).filter(s=>s.id<100&&!s.eventOnly);
+  const staffName=id=>(STAFF_ACCOUNTS.find(s=>s.id===id)||{}).name||"—";
+  const menuById=id=>menus.find(m=>m.id===id)||BEAUTY_MENU_DEFAULTS.find(m=>m.id===id);
+
+  // 美容の予約と、その予約の美容分の売上
+  const beautyPayByBooking=React.useMemo(()=>{
+    const map={};
+    payments.forEach(p=>{
+      if(!p.booking_id) return;
+      let amt=0;
+      if(Array.isArray(p.jifee_items)&&p.jifee_items.length) amt=p.jifee_items.filter(i=>BEAUTY_LABEL_RE.test(i.label||"")).reduce((s,i)=>s+(Number(i.amount)||0),0);
+      else amt=Number(p.jifee_amount)||0;
+      if(!map[p.booking_id]) map[p.booking_id]={amount:0,paid:false,date:p.payment_date};
+      map[p.booking_id].amount+=amt;
+      if(!p.is_refund) map[p.booking_id].paid=true;
+    });
+    return map;
+  },[payments]);
+  const rows=React.useMemo(()=>bookings.map(b=>{ const k=beautyMenuOfBooking(b); if(!k) return null;
+      const pay=beautyPayByBooking[b.id];
+      const status=b.cancelled?"cancel":pay&&pay.paid?"done":b.date<todayStr?"unpaid":"booked";
+      return {b,menuId:k.id,visit:k.visit,status,sales:pay?pay.amount:0};
+    }).filter(Boolean).sort((x,y)=>(x.b.date+x.b.time).localeCompare(y.b.date+y.b.time)),[bookings,beautyPayByBooking,todayStr]);
+  // 患者様ごとの美容の初回来院日（新規／リピートの判定）
+  const firstBeautyVisit=React.useMemo(()=>{ const m={}; rows.forEach(r=>{ if(r.status==="cancel") return; const n=r.b.patient_name; if(!m[n]||r.b.date<m[n]) m[n]=r.b.date; }); return m; },[rows]);
+  const STATUS={booked:{l:"予約中",c:"#2563eb",bg:"#eff6ff"},done:{l:"来院済み",c:"#059669",bg:"#ecfdf5"},unpaid:{l:"未会計",c:"#d97706",bg:"#fffbeb"},cancel:{l:"キャンセル",c:"#94a3b8",bg:"#f1f5f9"}};
+  const yen=n=>"¥"+Math.round(n||0).toLocaleString("ja-JP");
+  const card={background:"white",borderRadius:12,boxShadow:"0 1px 4px rgba(0,0,0,.06)",padding:"14px 16px",marginBottom:14};
+  const h={fontWeight:800,fontSize:14,color:"#831843",marginBottom:10};
+  const th={padding:"8px 10px",textAlign:"left",fontSize:12,color:"#64748b",fontWeight:700,borderBottom:"1px solid #f1f5f9",whiteSpace:"nowrap"};
+  const td={padding:"8px 10px",fontSize:13,borderBottom:"1px solid #f8fafc",whiteSpace:"nowrap"};
+  const chip=(on,label,onClick,color)=>(<button onClick={onClick} style={{padding:"6px 12px",borderRadius:16,border:`1.5px solid ${on?(color||"#db2777"):"#e2e8f0"}`,background:on?(color||"#db2777"):"white",color:on?"white":"#475569",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{label}</button>);
+  const statusChip=st=>(<span style={{fontSize:11,fontWeight:800,padding:"2px 8px",borderRadius:10,color:STATUS[st].c,background:STATUS[st].bg}}>{STATUS[st].l}</span>);
+  const menuLabel=r=>{ const m=menuById(r.menuId); return `${m.icon} ${m.name}${r.visit?`（${r.visit}）`:""}`; };
+  const monthRows=rows.filter(r=>r.b.date.slice(0,7)===month);
+  const monthActive=monthRows.filter(r=>r.status!=="cancel");
+  const monthDone=monthRows.filter(r=>r.status==="done");
+  const monthSales=monthRows.reduce((s,r)=>s+r.sales,0);
+  const monthNew=new Set(monthActive.filter(r=>firstBeautyVisit[r.b.patient_name]===r.b.date).map(r=>r.b.patient_name)).size;
+  const monthPatients=new Set(monthActive.map(r=>r.b.patient_name)).size;
+  const shiftMonth=d=>{ const [y,m]=month.split("-").map(Number); const t=new Date(y,m-1+d,1); setMonth(t.getFullYear()+"-"+String(t.getMonth()+1).padStart(2,"0")); };
+  const monthPicker=(<div style={{display:"flex",alignItems:"center",gap:8}}><button onClick={()=>shiftMonth(-1)} style={{border:"1px solid #e2e8f0",background:"white",borderRadius:8,padding:"4px 10px",cursor:"pointer"}}>‹</button><b style={{fontSize:14}}>{month.replace("-","年")}月</b><button onClick={()=>shiftMonth(1)} style={{border:"1px solid #e2e8f0",background:"white",borderRadius:8,padding:"4px 10px",cursor:"pointer"}}>›</button></div>);
+  const bookingTable=(list,showSales)=>(list.length===0?<div style={{color:"#94a3b8",fontSize:13,padding:"10px 0"}}>該当する予約はありません</div>:
+    <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><th style={th}>日時</th><th style={th}>お名前</th><th style={th}>メニュー</th><th style={th}>担当</th><th style={th}>状態</th>{showSales&&<th style={{...th,textAlign:"right"}}>売上</th>}</tr></thead>
+    <tbody>{list.map(r=>(<tr key={r.b.id}><td style={td}>{r.b.date.slice(5).replace("-","/")}（{"日月火水木金土"[new Date(r.b.date+"T00:00:00").getDay()]}）{r.b.time}</td>
+      <td style={td}><span onClick={()=>onOpenPatient&&onOpenPatient(r.b.patient_name)} style={{color:"#2563eb",fontWeight:700,cursor:"pointer",textDecoration:"underline"}}>{r.b.patient_name}</span>{firstBeautyVisit[r.b.patient_name]===r.b.date&&r.status!=="cancel"&&<span style={{marginLeft:6,fontSize:10,fontWeight:800,color:"#db2777",background:"#fdf2f8",borderRadius:8,padding:"1px 6px"}}>新規</span>}</td>
+      <td style={td}>{menuLabel(r)}</td><td style={td}>{staffName(r.b.staff_id)}</td><td style={td}>{statusChip(r.status)}</td>{showSales&&<td style={{...td,textAlign:"right",fontWeight:700}}>{r.sales?yen(r.sales):"—"}</td>}</tr>))}</tbody></table></div>);
+
+  // ---------- 各タブ ----------
+  function Dash(){
+    const upcoming=rows.filter(r=>r.status==="booked"&&r.b.date>=todayStr).slice(0,15);
+    const unpaid=rows.filter(r=>r.status==="unpaid");
+    const byMenu=menus.map(m=>{ const rs=monthActive.filter(r=>r.menuId===m.id); return {m,count:rs.length,first:rs.filter(r=>r.visit==="初診").length,repeat:rs.filter(r=>r.visit==="2回目以降").length,sales:monthRows.filter(r=>r.menuId===m.id).reduce((s,r)=>s+r.sales,0)}; });
+    const kpi=(l,v,sub,c)=>(<div style={{flex:"1 1 130px",background:"#fdf2f8",borderRadius:12,padding:"12px 14px"}}><div style={{fontSize:11.5,color:"#9d174d",fontWeight:700}}>{l}</div><div style={{fontSize:24,fontWeight:800,color:c||"#831843",marginTop:2}}>{v}</div>{sub&&<div style={{fontSize:11,color:"#94a3b8"}}>{sub}</div>}</div>);
+    return(<>
+      <div style={card}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,flexWrap:"wrap",gap:8}}><div style={h}>📊 月のまとめ</div>{monthPicker}</div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+          {kpi("予約数",monthActive.length+"件",`キャンセル ${monthRows.length-monthActive.length}件`)}
+          {kpi("来院済み",monthDone.length+"件",`お客様 ${monthPatients}名`)}
+          {kpi("新規のお客様",monthNew+"名",`リピート ${monthPatients-monthNew}名`)}
+          {kpi("美容の売上",yen(monthSales),monthDone.length?`客単価 ${yen(monthSales/monthDone.length)}`:"","#059669")}
+        </div>
+        <table style={{width:"100%",borderCollapse:"collapse",marginTop:14}}><thead><tr><th style={th}>メニュー</th><th style={{...th,textAlign:"right"}}>予約</th><th style={{...th,textAlign:"right"}}>初診</th><th style={{...th,textAlign:"right"}}>2回目以降</th><th style={{...th,textAlign:"right"}}>売上</th></tr></thead>
+          <tbody>{byMenu.map(x=>(<tr key={x.m.id}><td style={td}>{x.m.icon} {x.m.name}{!x.m.enabled&&<span style={{fontSize:10,color:"#94a3b8",marginLeft:6}}>（受付停止中）</span>}</td><td style={{...td,textAlign:"right",fontWeight:800}}>{x.count}</td><td style={{...td,textAlign:"right"}}>{x.first}</td><td style={{...td,textAlign:"right"}}>{x.repeat}</td><td style={{...td,textAlign:"right"}}>{yen(x.sales)}</td></tr>))}</tbody></table>
+      </div>
+      {unpaid.length>0&&<div style={{...card,border:"1.5px solid #fcd34d"}}><div style={{...h,color:"#b45309"}}>⚠️ 会計がまだの予約（{unpaid.length}件）</div>{bookingTable(unpaid.slice(-10),false)}</div>}
+      <div style={card}><div style={h}>📅 これからの美容予約</div>{bookingTable(upcoming,false)}</div>
+    </>);
+  }
+  function List(){
+    const weekEnd=(()=>{ const d=new Date(todayStr+"T00:00:00"); d.setDate(d.getDate()+6); return d.toISOString().slice(0,10); })();
+    let list=rows.filter(r=>listRange==="today"?r.b.date===todayStr:listRange==="week"?r.b.date>=todayStr&&r.b.date<=weekEnd:listRange==="upcoming"?r.b.date>=todayStr:listRange==="month"?r.b.date.slice(0,7)===month:r.b.date<todayStr);
+    if(fMenu) list=list.filter(r=>r.menuId===fMenu);
+    if(fStaff) list=list.filter(r=>String(r.b.staff_id)===fStaff);
+    if(listRange==="past") list=[...list].reverse();
+    return(<div style={card}>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>{[["today","今日"],["week","今週"],["upcoming","これから全部"],["month","月を選ぶ"],["past","過去"]].map(([k,l])=>chip(listRange===k,l,()=>setListRange(k)))}</div>
+      {listRange==="month"&&<div style={{marginBottom:8}}>{monthPicker}</div>}
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+        <select value={fMenu} onChange={e=>setFMenu(e.target.value)} className="form-input" style={{width:"auto"}}><option value="">メニュー：すべて</option>{menus.map(m=><option key={m.id} value={m.id}>{m.icon} {m.name}</option>)}</select>
+        <select value={fStaff} onChange={e=>setFStaff(e.target.value)} className="form-input" style={{width:"auto"}}><option value="">担当：全員</option>{staffList.map(s=><option key={s.id} value={String(s.id)}>{s.name}</option>)}</select>
+      </div>
+      <div style={{fontSize:12,color:"#64748b",marginBottom:6}}>{list.length}件</div>
+      {bookingTable(list,true)}
+    </div>);
+  }
+  function Customers(){
+    const map={};
+    rows.forEach(r=>{ const n=r.b.patient_name; if(!map[n]) map[n]={name:n,visits:0,sales:0,first:null,last:null,next:null,menus:{}};
+      const c=map[n];
+      if(r.status==="done"||r.status==="unpaid"){ c.visits++; if(!c.first||r.b.date<c.first) c.first=r.b.date; if(!c.last||r.b.date>c.last) c.last=r.b.date; c.menus[r.menuId]=(c.menus[r.menuId]||0)+1; }
+      if(r.status==="booked"&&(!c.next||r.b.date<c.next)) c.next=r.b.date;
+      c.sales+=r.sales; });
+    const daysSince=d=>d?Math.floor((new Date(todayStr+"T00:00:00")-new Date(d+"T00:00:00"))/864e5):null;
+    let list=Object.values(map).filter(c=>c.visits>0||c.next);
+    const follow=c=>c.visits>0&&!c.next&&daysSince(c.last)>=30;
+    if(custFilter==="follow") list=list.filter(follow);
+    if(custFilter==="repeat") list=list.filter(c=>c.visits>=2);
+    list.sort((a,b)=>(b.last||"").localeCompare(a.last||""));
+    const repeatRate=(()=>{ const all=Object.values(map).filter(c=>c.visits>0); return all.length?Math.round(all.filter(c=>c.visits>=2).length/all.length*100):0; })();
+    return(<div style={card}>
+      <div style={{display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:10}}>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{chip(custFilter==="all","すべて",()=>setCustFilter("all"))}{chip(custFilter==="repeat","リピーター（2回以上）",()=>setCustFilter("repeat"))}{chip(custFilter==="follow","フォローが必要",()=>setCustFilter("follow"),"#d97706")}</div>
+        <div style={{fontSize:12.5,color:"#64748b",fontWeight:700}}>リピート率 <b style={{color:"#db2777",fontSize:15}}>{repeatRate}%</b></div>
+      </div>
+      {custFilter==="follow"&&<div style={{fontSize:12,color:"#92400e",background:"#fffbeb",borderRadius:8,padding:"8px 10px",marginBottom:8}}>最後の来院から30日以上たっていて、次の予約が入っていないお客様です。LINEなどでご案内しましょう。</div>}
+      <div style={{fontSize:12,color:"#64748b",marginBottom:6}}>{list.length}名</div>
+      {list.length===0?<div style={{color:"#94a3b8",fontSize:13}}>該当するお客様はいません</div>:
+      <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><th style={th}>お名前</th><th style={th}>受けたメニュー</th><th style={{...th,textAlign:"right"}}>来院</th><th style={th}>最終来院</th><th style={th}>次回予約</th><th style={{...th,textAlign:"right"}}>累計売上</th></tr></thead>
+        <tbody>{list.map(c=>(<tr key={c.name} style={{background:follow(c)?"#fffbeb":"white"}}>
+          <td style={td}><span onClick={()=>onOpenPatient&&onOpenPatient(c.name)} style={{color:"#2563eb",fontWeight:700,cursor:"pointer",textDecoration:"underline"}}>{c.name}</span></td>
+          <td style={td}>{Object.entries(c.menus).map(([id,n])=>`${menuById(id).icon}${n}`).join(" ")||"—"}</td>
+          <td style={{...td,textAlign:"right",fontWeight:800}}>{c.visits}回</td>
+          <td style={td}>{c.last?`${c.last.slice(5).replace("-","/")}（${daysSince(c.last)}日前）`:"—"}</td>
+          <td style={td}>{c.next?c.next.slice(5).replace("-","/"):<span style={{color:"#94a3b8"}}>なし</span>}</td>
+          <td style={{...td,textAlign:"right"}}>{yen(c.sales)}</td></tr>))}</tbody></table></div>}
+    </div>);
+  }
+  function Sales(){
+    const months=[...new Set(rows.map(r=>r.b.date.slice(0,7)))].filter(m=>m<=todayStr.slice(0,7)).sort().slice(-6);
+    const maxSales=Math.max(1,...months.map(m=>rows.filter(r=>r.b.date.slice(0,7)===m).reduce((s,r)=>s+r.sales,0)));
+    const byStaff=staffList.map(s=>{ const rs=monthRows.filter(r=>r.b.staff_id===s.id&&r.status!=="cancel"); return {s,count:rs.length,sales:rs.reduce((t,r)=>t+r.sales,0)}; }).filter(x=>x.count>0);
+    return(<>
+      <div style={card}><div style={h}>📈 月ごとの美容の売上（直近6か月）</div>
+        {months.length===0?<div style={{color:"#94a3b8",fontSize:13}}>まだ売上はありません</div>:
+        <div style={{display:"flex",alignItems:"flex-end",gap:10,height:150,padding:"0 4px"}}>{months.map(m=>{ const v=rows.filter(r=>r.b.date.slice(0,7)===m).reduce((s,r)=>s+r.sales,0); return(
+          <div key={m} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:4}}><div style={{fontSize:11,fontWeight:800,color:"#831843"}}>{yen(v)}</div><div style={{width:"60%",height:Math.max(4,v/maxSales*100),background:"linear-gradient(180deg,#f472b6,#db2777)",borderRadius:"6px 6px 0 0"}}/><div style={{fontSize:11,color:"#64748b"}}>{Number(m.slice(5))}月</div></div>); })}</div>}
+      </div>
+      <div style={card}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}><div style={h}>👤 スタッフ別（{Number(month.slice(5))}月）</div>{monthPicker}</div>
+        {byStaff.length===0?<div style={{color:"#94a3b8",fontSize:13}}>この月の美容の予約はありません</div>:
+        <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><th style={th}>担当</th><th style={{...th,textAlign:"right"}}>件数</th><th style={{...th,textAlign:"right"}}>売上</th></tr></thead>
+          <tbody>{byStaff.map(x=>(<tr key={x.s.id}><td style={td}>{x.s.name}</td><td style={{...td,textAlign:"right"}}>{x.count}</td><td style={{...td,textAlign:"right",fontWeight:800}}>{yen(x.sales)}</td></tr>))}</tbody></table>}
+        <div style={{fontSize:11,color:"#94a3b8",marginTop:8}}>※ 売上は会計の自費項目のうち、美容鍼・小顔矯正・巻き爪の金額（返金を差し引き済み）です。</div>
+      </div>
+      <div style={card}><div style={h}>🧾 {Number(month.slice(5))}月の明細</div>{bookingTable(monthRows,true)}</div>
+    </>);
+  }
+  function updateMenu(id,patch){ setMenus(ms=>ms.map(m=>m.id===id?{...m,...patch}:m)); setDirty(true); setSavedMsg(""); }
+  function saveMenus(){
+    for(const m of menus){ if(m.enabled&&!(m.durations.first>0&&m.durations.repeat>0)){ alert(`${m.name}の所要時間を入れてください`); return; } if(m.enabled&&m.staffIds.length===0){ alert(`${m.name}の担当スタッフを1人以上選んでください`); return; } }
+    const cfg={menus:Object.fromEntries(menus.map(m=>[m.id,{enabled:m.enabled,durations:m.durations,staffIds:m.staffIds,price:m.price,catchCopy:m.catchCopy}])),updated_at:new Date().toISOString()};
+    sharedSettings.set("beauty_menu_config",JSON.stringify(cfg));
+    setDirty(false); setSavedMsg("✅ 保存しました。予約ページにすぐ反映されます。");
+  }
+  function Settings(){
+    const base=location.origin&&location.origin.startsWith("http")?location.origin:"https://ando-seikotsu-kourien.vercel.app";
+    const inp={padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"};
+    return(<>
+      {menus.map(m=>(<div key={m.id} style={{...card,borderLeft:`5px solid ${m.enabled?m.color:"#cbd5e1"}`}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+          <div style={{fontWeight:800,fontSize:15}}>{m.icon} {m.name}</div>
+          <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:800,cursor:"pointer",color:m.enabled?"#059669":"#94a3b8"}}>
+            <input type="checkbox" checked={m.enabled} onChange={e=>updateMenu(m.id,{enabled:e.target.checked})} style={{width:18,height:18}}/>{m.enabled?"予約受付中":"受付停止中"}</label>
+        </div>
+        <div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:10,fontSize:13}}>
+          <label>初診 <input type="number" min="10" step="10" value={m.durations.first} onChange={e=>updateMenu(m.id,{durations:{...m.durations,first:Number(e.target.value)}})} style={{...inp,width:70}}/> 分</label>
+          <label>2回目以降 <input type="number" min="10" step="10" value={m.durations.repeat} onChange={e=>updateMenu(m.id,{durations:{...m.durations,repeat:Number(e.target.value)}})} style={{...inp,width:70}}/> 分</label>
+        </div>
+        <div style={{marginTop:10,fontSize:12,fontWeight:700,color:"#475569"}}>担当スタッフ（シフトで出勤している人の空きだけ予約できます）</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6}}>{staffList.map(s=>{ const on=m.staffIds.includes(s.id); return(<button key={s.id} onClick={()=>updateMenu(m.id,{staffIds:on?m.staffIds.filter(x=>x!==s.id):[...m.staffIds,s.id]})} style={{padding:"5px 12px",borderRadius:16,border:`1.5px solid ${on?(s.color||m.color):"#e2e8f0"}`,background:on?(s.color||m.color):"white",color:on?"white":"#475569",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{on?"✓ ":""}{s.name}</button>); })}</div>
+        <div style={{marginTop:10,display:"grid",gap:8}}>
+          <label style={{fontSize:12,fontWeight:700,color:"#475569"}}>予約ページに出す料金の案内<input value={m.price} onChange={e=>updateMenu(m.id,{price:e.target.value})} style={{...inp,width:"100%",marginTop:4}}/></label>
+          <label style={{fontSize:12,fontWeight:700,color:"#475569"}}>説明文<input value={m.catchCopy} onChange={e=>updateMenu(m.id,{catchCopy:e.target.value})} style={{...inp,width:"100%",marginTop:4}}/></label>
+        </div>
+        <div style={{marginTop:10,fontSize:12,color:"#64748b",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>予約URL：<code style={{background:"#f8fafc",padding:"3px 6px",borderRadius:6}}>{base}/beauty.html?menu={m.id}</code>
+          <button onClick={()=>{ try{ navigator.clipboard.writeText(`${base}/beauty.html?menu=${m.id}`); setSavedMsg("📋 URLをコピーしました"); }catch(e){} }} style={{border:"1px solid #e2e8f0",background:"white",borderRadius:6,padding:"3px 8px",fontSize:11,cursor:"pointer"}}>コピー</button></div>
+      </div>))}
+      <div style={{position:"sticky",bottom:10,display:"flex",gap:10,alignItems:"center",background:"rgba(255,255,255,.95)",borderRadius:12,padding:"10px 14px",boxShadow:"0 4px 16px rgba(0,0,0,.1)"}}>
+        <button onClick={saveMenus} disabled={!dirty} style={{padding:"10px 22px",borderRadius:10,border:"none",background:dirty?"linear-gradient(135deg,#db2777,#9d174d)":"#e2e8f0",color:dirty?"white":"#94a3b8",fontWeight:800,fontSize:14,cursor:dirty?"pointer":"default",fontFamily:"inherit"}}>💾 メニュー設定を保存</button>
+        {dirty&&<button onClick={()=>{ setMenus(readBeautyMenuConfig()); setDirty(false); }} style={{border:"none",background:"none",color:"#64748b",fontSize:12,cursor:"pointer"}}>変更を取り消す</button>}
+        <span style={{fontSize:12.5,fontWeight:700,color:"#059669"}}>{savedMsg}</span>
+      </div>
+      <div style={{fontSize:11.5,color:"#94a3b8",margin:"10px 4px",lineHeight:1.7}}>※ メニュー名は予約・会計の記録と結びついているため、ここでは変えられません。会計（POS）の金額は会計画面のメニューの金額が使われます。<br/>※ 美容メニュー全体の予約ページ：<a href={`${base}/beauty`} target="_blank" rel="noreferrer">{base}/beauty</a></div>
+    </>);
+  }
+  const TABS=[["dash","📊 ダッシュボード"],["list","📅 予約一覧"],["customers","👥 お客様"],["sales","💰 売上"],["settings","⚙️ メニュー設定"]];
+  return(
+    <div style={{maxWidth:1000,margin:"0 auto"}}>
+      <div style={{background:"linear-gradient(135deg,#db2777,#9d174d)",borderRadius:14,padding:"16px 18px",color:"white",marginBottom:14,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+        <div><div style={{fontWeight:800,fontSize:17}}>💖 美容メニュー管理</div><div style={{fontSize:12,opacity:.85,marginTop:2}}>美容鍼・小顔矯正・巻き爪の予約・お客様・売上・メニュー設定をまとめて管理</div></div>
+        <div style={{display:"flex",gap:8}}>
+          <a href="/beauty" target="_blank" rel="noreferrer" style={{background:"rgba(255,255,255,.2)",color:"white",borderRadius:8,padding:"7px 12px",fontSize:12.5,fontWeight:800,textDecoration:"none"}}>予約ページを見る ↗</a>
+          <a href="/body-check.html?check=face" target="_blank" rel="noreferrer" style={{background:"rgba(255,255,255,.2)",color:"white",borderRadius:8,padding:"7px 12px",fontSize:12.5,fontWeight:800,textDecoration:"none"}}>💄 顔タイプチェック ↗</a>
+        </div>
+      </div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>{TABS.map(([k,l])=>(<button key={k} onClick={()=>setTab(k)} style={{padding:"9px 16px",borderRadius:10,border:"none",background:tab===k?"#831843":"white",color:tab===k?"white":"#831843",fontWeight:800,fontSize:13,cursor:"pointer",boxShadow:"0 1px 4px rgba(0,0,0,.06)",fontFamily:"inherit"}}>{l}{k==="settings"&&dirty?" ●":""}</button>))}</div>
+      {tab==="dash"&&Dash()}{tab==="list"&&List()}{tab==="customers"&&Customers()}{tab==="sales"&&Sales()}{tab==="settings"&&Settings()}
+    </div>
+  );
+}
+
 // ===== 体のチェック（body-check.html）の経過記録 =====
 const BODY_CHECK_KINDS=[
   {kind:"total",label:"総合評価",icon:"🏅",color:"#059669"},
@@ -12508,6 +12741,7 @@ function Dashboard({user,onLogout}){
   React.useEffect(()=>{
     try{
       const params=new URLSearchParams(location.search);
+      if(params.get("view")==="beauty_manager"){ setView("beauty_manager"); }
       const gotodate=params.get("gotodate");
       if(gotodate){
         setBaseDate(new Date(gotodate+"T00:00:00"));
@@ -13452,6 +13686,9 @@ function Dashboard({user,onLogout}){
       {id:"register_cash",label:"レジ金（レジ締め）",icon:"receipt",special:""},
       {id:"refund",label:"返金する（返金管理）",icon:"receipt",special:""},
     ]},
+    {id:"beauty",label:"美容メニュー",color:"#db2777",items:[
+      {id:"beauty_manager",label:"美容メニュー管理（予約・お客様・売上・設定）",icon:"trending",special:""},
+    ]},
     {id:"marketing",label:"集客・フォロー",color:"#0891b2",items:[
       {id:"churn_alert",label:"離反防止アラート",icon:"bell",special:""},
       {id:"referral_mgmt",label:"紹介キャンペーン管理",icon:"users",special:""},
@@ -14066,6 +14303,7 @@ function Dashboard({user,onLogout}){
           {view==="karte_list"&&<KarteListPanel bookings={bookings} payments={payments} stores={stores} todayStr={todayStr}/>}
           {view==="daily_report"&&<DailyReportPanel bookings={bookings} payments={paymentsNet} stores={stores} todayStr={todayStr} refunds={refunds} onOpenRefund={openRefund} onOpenPos={(b,opt)=>setIframeModal({url:`pos.html?id=${b.id}${opt&&opt.fix?"&fix=1":""}${opt&&opt.pid?"&pid="+opt.pid:""}`,title:opt&&opt.fix?"会計の修正":"会計"})}/>}
           {view==="register_cash"&&<RegisterCashPanel bookings={bookings} payments={payments} refunds={refunds} stores={stores} todayStr={todayStr} currentUser={user}/>}
+          {view==="beauty_manager"&&<BeautyManagerPanel bookings={bookings} payments={paymentsNet} todayStr={todayStr} onOpenPatient={openPatientByName} storeStaff={storeStaff}/>}
           {view==="reviews"&&<ReviewTrackerPanel stores={stores} user={user} todayStr={todayStr}/>}
           {view==="money_calc"&&<MoneyCalcPanel bookings={bookings} payments={payments} refunds={refunds} stores={stores} todayStr={todayStr} user={user} trainingMode={trainingMode} onOpenRefund={openRefund} onOpenPos={(b,opt)=>setIframeModal({url:`pos.html?id=${b.id}${opt&&opt.fix?"&fix=1":""}${opt&&opt.pid?"&pid="+opt.pid:""}`,title:opt&&opt.fix?"会計の修正":"会計"})}/>}
           {view==="refund"&&<RefundPanel bookings={bookings} payments={payments} refunds={refunds} allRefunds={allRefunds} stores={stores} todayStr={todayStr} user={user} isAdmin={isAdmin} onChanged={reloadRefunds} trainingMode={trainingMode} initialPaymentId={refundPaymentId} onConsumeInitial={()=>setRefundPaymentId(null)}/>}
