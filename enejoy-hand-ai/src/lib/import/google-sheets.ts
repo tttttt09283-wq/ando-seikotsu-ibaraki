@@ -1,7 +1,8 @@
 import { createSign } from "node:crypto";
 import { promises as fs } from "node:fs";
 import { parseCsv } from "./csv";
-export { extractGid, extractSpreadsheetId } from "./google-sheets-url";
+import { extractGid, extractSpreadsheetId } from "./google-sheets-url";
+export { extractGid, extractSpreadsheetId };
 
 /**
  * Googleスプレッドシート（日計表）の読み取り。書き込みは一切しない。
@@ -57,11 +58,11 @@ async function accessToken(sa: ServiceAccount): Promise<string> {
 }
 
 /** シートの表を文字列の2次元配列で返す（表示されている書式のまま） */
-export async function fetchSheetGrid(spreadsheetId: string, sheetName: string, gid?: string): Promise<string[][]> {
+export async function fetchSheetGrid(spreadsheetId: string, sheetName: string, gid?: string, maxRows = 80): Promise<string[][]> {
   const sa = await loadServiceAccount();
   if (sa) {
     const token = await accessToken(sa);
-    const range = encodeURIComponent(`'${sheetName.replace(/'/g, "''")}'!A1:AZ80`);
+    const range = encodeURIComponent(`'${sheetName.replace(/'/g, "''")}'!A1:AZ${maxRows}`);
     const res = await fetch(
       `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${range}?valueRenderOption=FORMATTED_VALUE`,
       { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(20_000) },
@@ -83,4 +84,27 @@ export async function fetchSheetGrid(spreadsheetId: string, sheetName: string, g
     );
   }
   return parseCsv(await res.text());
+}
+
+/**
+ * タブを開いた状態のURL（…/edit#gid=123）から、そのタブの表を読む。
+ * サービスアカウントのときは gid からタブ名を調べて読み、公開リンクのときは gid の CSV を読む。
+ */
+export async function fetchSheetByUrl(url: string, maxRows = 200): Promise<{ grid: string[][]; title?: string }> {
+  const id = extractSpreadsheetId(url);
+  if (!id) throw new Error("GoogleスプレッドシートのURLを確認してください");
+  const gid = extractGid(url);
+  const sa = await loadServiceAccount();
+  if (!sa) return { grid: await fetchSheetGrid(id, "", gid, maxRows) };
+  const token = await accessToken(sa);
+  const res = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${id}?fields=sheets.properties(sheetId,title)`, {
+    headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (res.status === 403 || res.status === 404) throw new Error(`シートを読めません（${res.status}）。シートをサービスアカウント（${sa.client_email}）に共有してください。`);
+  if (!res.ok) throw new Error(`シートの読み取りに失敗しました（${res.status}）`);
+  const sheets = ((await res.json()) as { sheets?: { properties: { sheetId: number; title: string } }[] }).sheets ?? [];
+  const sheet = gid ? sheets.find((s) => String(s.properties.sheetId) === gid) : sheets[0];
+  if (!sheet) throw new Error("URLのタブが見つかりません。読み込みたいタブを開いた状態のURLを貼ってください。");
+  return { grid: await fetchSheetGrid(id, sheet.properties.title, undefined, maxRows), title: sheet.properties.title };
 }

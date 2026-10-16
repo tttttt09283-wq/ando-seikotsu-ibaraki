@@ -91,6 +91,9 @@ export class FileStore implements CompanyStore {
         reputation: { ...base.reputation, ...(parsed.reputation ?? {}) },
         budget: { ...base.budget, ...(parsed.budget ?? {}) },
         clinicSetup: { ...base.clinicSetup, ...(parsed.clinicSetup ?? {}) },
+        kpis: { ...base.kpis, ...(parsed.kpis ?? {}) },
+        org: { ...base.org, ...(parsed.org ?? {}) },
+        midPlan: { ...base.midPlan, ...(parsed.midPlan ?? {}) },
       };
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "ENOENT") {

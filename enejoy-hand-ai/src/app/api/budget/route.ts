@@ -7,9 +7,10 @@ import {
   importBudget,
   requestBudgetConfirm,
 } from "@/lib/engine/budget";
-import { parseCsv } from "@/lib/import/csv";
+import { importPlanSheet } from "@/lib/engine/planning";
 import { checkSameOrigin, engineErrorResponse, jsonError, requireRole, snapshotResponse } from "@/lib/server/api";
 import { getEngineDeps } from "@/lib/server/runtime";
+import { gridFromInput } from "@/lib/server/sheet-input";
 import { budgetInputSchema } from "@/lib/types";
 
 /** 院別売上予算：案の編集・人員から計算・予算表の取り込み・基準額で埋める・破棄・確定の承認依頼（統括責任者のみ） */
@@ -41,7 +42,12 @@ export async function POST(req: NextRequest) {
         extra = { result: await applyStaffing(deps, actor.memberId, { perStaffJpy: input.perStaffJpy, clinicIds: input.clinicIds }) };
         break;
       case "import":
-        extra = { result: await importBudget(deps, actor.memberId, { grid: parseCsv(input.csv), unit: input.unit, label: input.fileName }) };
+      {
+        // 年度・予算／実績の行がある表（年間予算表・進捗表）を先に試し、読めなければ院×月の予算表として読む
+        const { grid, label, source } = await gridFromInput(input);
+        const plan = await importPlanSheet(deps, actor.memberId, { grid, unit: input.unit, label, scenarioId: input.scenarioId, source });
+        extra = { result: plan ?? { kind: "simple", ...(await importBudget(deps, actor.memberId, { grid, unit: input.unit, label })) } };
+      }
         break;
       case "discard":
         await discardBudgetDraft(deps, actor.memberId);

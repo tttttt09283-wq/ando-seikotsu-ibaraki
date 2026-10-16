@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CircleAlert, CircleCheck, FileUp, LoaderCircle, PencilLine, Plus, Send, Trash2, Undo2, Users } from "lucide-react";
+import { LoaderCircle, PencilLine, Plus, Send, Trash2, Undo2, Users } from "lucide-react";
 import * as React from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,34 +11,13 @@ import { formatDateTime } from "@/lib/time";
 import { cn } from "@/lib/utils";
 import { TENANT } from "@/tenant";
 import { formatOku, monthLabel } from "./RevenuePanel";
+import { Message, PlanSheetImport, type Msg } from "./SheetImport";
 import { useClinics, useCompany } from "./StateProvider";
 
 const man = (n: number | null | undefined) => (n == null ? "—" : `${Math.round(n / 10_000).toLocaleString("ja-JP")}`);
 const signedMan = (n: number) => (n === 0 ? "±0" : `${n > 0 ? "+" : "−"}${man(Math.abs(n))}`);
 const ym = (m: string) => `${m.slice(0, 4)}年${Number(m.slice(5))}月`;
 const digits = (s: string) => s.replace(/[^\d.]/g, "");
-
-type Msg = { ok: boolean; text: string } | null;
-
-function Message({ msg }: { msg: Msg }) {
-  if (!msg) return null;
-  return (
-    <p role={msg.ok ? "status" : "alert"} className={cn("flex items-start gap-1.5 text-xs", msg.ok ? "text-emerald-700 dark:text-emerald-400" : "text-red-600")}>
-      {msg.ok ? <CircleCheck className="mt-px size-3.5 shrink-0" aria-hidden /> : <CircleAlert className="mt-px size-3.5 shrink-0" aria-hidden />}
-      {msg.text}
-    </p>
-  );
-}
-
-async function readFileText(file: File): Promise<string> {
-  const buf = await file.arrayBuffer();
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(buf);
-  } catch {
-    // Excel で保存した CSV は Shift_JIS のことが多い
-    return new TextDecoder("shift_jis").decode(buf);
-  }
-}
 
 /** 達成率の文字色（色だけに頼らず数字も出す） */
 const rateCls = (r: number | null) =>
@@ -249,90 +228,6 @@ function Grid({
   );
 }
 
-type ImportResult = { clinics: string[]; cells: number; total: number; annualOnly: boolean; unit: string; unmatched: string[]; warnings: string[] };
-
-function ImportBudget({ disabled, onDone }: { disabled: boolean; onDone: () => void }) {
-  const { mutate } = useCompany();
-  const [file, setFile] = React.useState<File | null>(null);
-  const [unit, setUnit] = React.useState<"auto" | "yen" | "thousand" | "man">("auto");
-  const [busy, setBusy] = React.useState(false);
-  const [msg, setMsg] = React.useState<Msg>(null);
-  const [result, setResult] = React.useState<ImportResult | null>(null);
-  const inputRef = React.useRef<HTMLInputElement>(null);
-
-  const run = async () => {
-    if (!file) return;
-    setBusy(true);
-    setMsg(null);
-    setResult(null);
-    const csv = await readFileText(file);
-    const r = await mutate("/api/budget", { action: "import", csv, unit, fileName: file.name });
-    setBusy(false);
-    if (!r.ok) {
-      setMsg({ ok: false, text: r.error });
-      return;
-    }
-    setResult(r.data.result as ImportResult);
-    setMsg({ ok: true, text: "予算表を案に取り込みました。表で確認してから確定の承認依頼をしてください。" });
-    setFile(null);
-    if (inputRef.current) inputRef.current.value = "";
-    onDone();
-  };
-
-  return (
-    <div className="space-y-2 rounded-lg border border-dashed p-3">
-      <p className="text-sm font-medium">年間予算の表（CSV）を取り込む</p>
-      <p className="text-muted-foreground text-xs">
-        Excel・スプレッドシートの予算表を「CSV」で保存して選んでください。①院ごとに「7月」「8月」…の列がある表、②院ごとの「年間予算」だけの表（営業している月に均等に割り振ります）のどちらも読めます。表にある院・月だけを案に上書きします。
-      </p>
-      <div className="flex flex-wrap items-end gap-2">
-        <input
-          ref={inputRef}
-          type="file"
-          accept=".csv,text/csv"
-          aria-label="予算表のCSVファイル"
-          disabled={disabled || busy}
-          onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          className="file:bg-secondary max-w-full text-xs file:mr-2 file:rounded-md file:border-0 file:px-2 file:py-1"
-        />
-        <label className="text-xs">
-          金額の単位
-          <select
-            value={unit}
-            onChange={(e) => setUnit(e.target.value as typeof unit)}
-            className="bg-background mt-1 block h-8 rounded-md border px-2 text-sm"
-          >
-            <option value="auto">自動で判断</option>
-            <option value="yen">円</option>
-            <option value="thousand">千円</option>
-            <option value="man">万円</option>
-          </select>
-        </label>
-        <Button size="sm" variant="outline" disabled={disabled || busy || !file} onClick={run}>
-          {busy ? <LoaderCircle className="animate-spin" aria-hidden /> : <FileUp aria-hidden />} 取り込む
-        </Button>
-      </div>
-      <Message msg={msg} />
-      {result && (
-        <ul className="text-muted-foreground list-disc space-y-0.5 pl-5 text-xs">
-          <li>
-            {result.clinics.length}院・{result.cells}件、合計 {formatOku(result.total)}（単位：{result.unit}として読み取り）
-            {result.annualOnly && "・年間予算を月に均等割り"}
-          </li>
-          {result.unmatched.length > 0 && (
-            <li className="text-amber-700 dark:text-amber-400">
-              院が分からない行：{result.unmatched.join("、")}（新しい院なら「院の設定」で追加してから取り込み直してください）
-            </li>
-          )}
-          {result.warnings.map((w) => (
-            <li key={w}>{w}</li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 /** 店舗展開：院の追加・開院月／閉院月 */
 function ClinicSettings() {
   const { mutate } = useCompany();
@@ -383,17 +278,18 @@ function ClinicSettings() {
       <CardHeader>
         <CardTitle>院の設定（店舗展開）</CardTitle>
         <CardDescription>
-          新しい院を追加すると、開院月から予算の表に入ります（予算は基準額で仮置き）。閉院する場合は最終営業月を入れると、その翌月から予算は0円になります。変更は予算の案・確定予算の計算にすぐ反映されます。
+          新しい院を追加すると、開院月から予算の表に入ります（予算は基準額で仮置き）。ブロックは管理項目でブロックごとに集計する単位です（組織図を取り込むとブロックマネージャーの行から自動で入ります）。閉院する場合は最終営業月を入れると、その翌月から予算は0円になります。変更は予算の案・確定予算の計算にすぐ反映されます。
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="-mx-1 overflow-x-auto">
-          <table className="w-full min-w-[32rem] text-sm">
+          <table className="w-full min-w-[38rem] text-sm">
             <thead>
               <tr className="text-muted-foreground border-b text-xs">
                 <th scope="col" className="py-2 pl-1 text-left font-medium">院</th>
                 <th scope="col" className="py-2 text-left font-medium">開院月</th>
                 <th scope="col" className="py-2 text-left font-medium">閉院（最終営業月）</th>
+                <th scope="col" className="py-2 text-left font-medium">ブロック</th>
                 <th scope="col" className="py-2" />
               </tr>
             </thead>
@@ -425,6 +321,22 @@ function ClinicSettings() {
                         if (v && !window.confirm(`${c.name}を${ym(v)}末で閉院として扱いますか？翌月からの予算は0円になります。`)) return;
                         void call(`c-${c.id}`, { action: "update", id: c.id, closedMonth: v }, v ? `${c.name}を${ym(v)}末で閉院にしました` : `${c.name}を営業中に戻しました`);
                       }}
+                    />
+                  </td>
+                  <td className="py-1.5">
+                    <input
+                      key={`${c.id}-${c.block ?? ""}`}
+                      defaultValue={c.block ?? ""}
+                      maxLength={20}
+                      placeholder="例 北"
+                      aria-label={`${c.name}のブロック`}
+                      disabled={busy !== null}
+                      onBlur={(e) => {
+                        const v = e.target.value.trim();
+                        if (v === (c.block ?? "")) return;
+                        void call(`b-${c.id}`, { action: "update", id: c.id, block: v || null }, v ? `${c.name}を「${v}」ブロックにしました` : `${c.name}のブロックを外しました`);
+                      }}
+                      className="focus-visible:ring-ring/50 h-8 w-24 rounded-md border bg-transparent px-2 text-xs outline-none focus-visible:ring-[3px]"
                     />
                   </td>
                   <td className="py-1.5 text-right">
@@ -731,7 +643,7 @@ export function BudgetView() {
                   {busy === "staff" ? <LoaderCircle className="animate-spin" aria-hidden /> : <Users aria-hidden />} 人員から金額を計算
                 </Button>
               </div>
-              <ImportBudget disabled={busy !== null} onDone={() => setPending({})} />
+              <PlanSheetImport disabled={busy !== null} onDone={() => setPending({})} />
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" disabled={busy !== null} onClick={() => save(true)}>
                   {busy === "save" && <LoaderCircle className="animate-spin" aria-hidden />}

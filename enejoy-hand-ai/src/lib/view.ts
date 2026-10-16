@@ -35,6 +35,9 @@ import {
 import { COMMANDER_ID, PRESIDENT_ID, TENANT } from "@/tenant";
 import { competitorComparison, reputationMode, reviewStats } from "@/lib/engine/reputation-metrics";
 import { budgetTable } from "@/lib/engine/budget-metrics";
+import { kpiTable } from "@/lib/engine/kpi-metrics";
+import { fyStarts, midPlanTable } from "@/lib/engine/midplan-metrics";
+import type { MidPlanScenario, OrgSnapshot } from "@/lib/types";
 
 /**
  * 表示する承認依頼：今のモードのもの＋本番の口コミへの返信など、実データへの書き込みを伴うもの
@@ -146,6 +149,19 @@ export type CompanySnapshot = {
     original: ReturnType<typeof budgetTable> | null;
     draft: ReturnType<typeof budgetTable> | null;
     draftUpdatedAt: string | null;
+    pendingApprovalId: string | null;
+  };
+  /** 管理項目（KPI）：院・ブロック・全院の月ごとの値・目標・達成度 */
+  kpi: ReturnType<typeof kpiTable>;
+  /** 人員（組織図から数えた人数。名前は含まない） */
+  org: { snapshots: OrgSnapshot[] };
+  /** 中期事業計画 */
+  plan: {
+    fyStarts: string[];
+    /** シナリオがまだないときの、既定の成長率での計画 */
+    base: ReturnType<typeof midPlanTable>;
+    scenarios: { scenario: MidPlanScenario; table: ReturnType<typeof midPlanTable> }[];
+    adopted: (ReturnType<typeof midPlanTable> & { name: string; at: string; approvalId: string; note?: string }) | null;
     pendingApprovalId: string | null;
   };
   /** 監査ログ（新しい順・統括責任者のみ） */
@@ -370,6 +386,23 @@ export function buildSnapshot(data: CompanyData, mode: DataMode, now: Date, limi
       draft: data.budget.draft ? budgetTable(data, now, "draft") : null,
       draftUpdatedAt: data.budget.draft?.updatedAt ?? null,
       pendingApprovalId: data.approvals.find((a) => a.status === "PENDING" && a.payload?.kind === "budget_confirm")?.id ?? null,
+    },
+    kpi: kpiTable(data, now),
+    org: { snapshots: data.org.snapshots },
+    plan: {
+      fyStarts: fyStarts(),
+      base: midPlanTable(data, now, null),
+      scenarios: data.midPlan.scenarios.map((scenario) => ({ scenario, table: midPlanTable(data, now, scenario) })),
+      adopted: data.midPlan.adopted
+        ? {
+            ...midPlanTable(data, now, data.midPlan.adopted.scenario),
+            name: data.midPlan.adopted.scenario.name,
+            at: data.midPlan.adopted.at,
+            approvalId: data.midPlan.adopted.approvalId,
+            note: data.midPlan.adopted.note,
+          }
+        : null,
+      pendingApprovalId: data.approvals.find((a) => a.status === "PENDING" && a.payload?.kind === "plan_adopt")?.id ?? null,
     },
     audit: data.audit.slice(-150).reverse(),
     safety: data.safety,

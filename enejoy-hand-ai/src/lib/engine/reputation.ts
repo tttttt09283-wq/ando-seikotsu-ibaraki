@@ -6,6 +6,7 @@ import { jstDayKey } from "@/lib/time";
 import type { CompanyData, Competitor, DataMode, RatingSnapshot } from "@/lib/types";
 import { COMMANDER_ID, TENANT } from "@/tenant";
 import { applyBudgetConfirm } from "./budget";
+import { applyPlanAdopt } from "./planning";
 import { audit, createApproval, EngineError, iso, log, name, newId, type EngineDeps } from "./engine";
 
 /**
@@ -212,6 +213,7 @@ export async function executeApprovedAction(deps: EngineDeps, approvalId: string
   if (!a || a.status !== "APPROVED" || !a.payload || a.execution) return null;
   // 予算の確定は社内の記録の更新なので、ここで反映する
   if (a.payload.kind === "budget_confirm") return applyBudgetConfirm(deps, approvalId);
+  if (a.payload.kind === "plan_adopt") return applyPlanAdopt(deps, approvalId);
   const payload = a.payload;
   const review = snap.reputation.reviews.find((r) => r.id === payload.reviewId);
 

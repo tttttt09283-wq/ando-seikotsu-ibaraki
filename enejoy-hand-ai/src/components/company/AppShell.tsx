@@ -12,6 +12,7 @@ import {
   MessageSquareHeart,
   Network,
   ShieldCheck,
+  Target,
   TriangleAlert,
   WifiOff,
 } from "lucide-react";
@@ -25,6 +26,7 @@ import { useCompany } from "./StateProvider";
 const NAV = [
   { href: "/", label: "ダッシュボード", short: "ホーム", icon: LayoutDashboard },
   { href: "/numbers", label: "数字（院別）", short: "数字", icon: BarChart3 },
+  { href: "/plan", label: "事業計画・管理項目", short: "計画", icon: Target },
   { href: "/reputation", label: "口コミ・MEO", short: "口コミ", icon: MessageSquareHeart },
   { href: "/commander", label: "司令塔との会話", short: "司令塔", icon: MessageSquare },
   { href: "/organization", label: "組織図と稼働状況", short: "組織", icon: Network },
@@ -157,7 +159,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* スマホ：下部ナビ */}
       <nav
-        className="bg-background/95 fixed inset-x-0 bottom-0 z-40 grid grid-cols-7 border-t pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+        className="bg-background/95 fixed inset-x-0 bottom-0 z-40 grid grid-cols-8 border-t pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
         aria-label="メインメニュー"
       >
         {NAV.map((item) => {

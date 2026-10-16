@@ -5,7 +5,7 @@ import { matchClinic } from "./daily-report";
 import { normalizeLabel, parseNumberCell } from "./normalize";
 
 export type BudgetUnit = "auto" | "yen" | "thousand" | "man";
-const FACTOR: Record<Exclude<BudgetUnit, "auto">, number> = { yen: 1, thousand: 1_000, man: 10_000 };
+export const FACTOR: Record<Exclude<BudgetUnit, "auto">, number> = { yen: 1, thousand: 1_000, man: 10_000 };
 export const UNIT_LABEL: Record<Exclude<BudgetUnit, "auto">, string> = { yen: "円", thousand: "千円", man: "万円" };
 
 export type BudgetImportResult = {
@@ -21,7 +21,7 @@ export type BudgetImportResult = {
 const TOTAL_ROW = /^(合計|総計|全院|全体|計|小計|本部|調整)/;
 
 /** 1院・1か月あたりの金額の大きさから単位を推定する（例：350万円 → 3,500,000／3,500／350） */
-function guessUnit(monthlyValues: number[]): Exclude<BudgetUnit, "auto"> {
+export function guessUnit(monthlyValues: number[]): Exclude<BudgetUnit, "auto"> {
   const xs = monthlyValues.filter((v) => v > 0).sort((a, b) => a - b);
   if (!xs.length) return "yen";
   const median = xs[Math.floor(xs.length / 2)];

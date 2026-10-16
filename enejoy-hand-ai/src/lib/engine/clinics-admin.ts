@@ -39,7 +39,7 @@ export async function addClinic(
 export async function updateClinic(
   deps: EngineDeps,
   actorId: string,
-  input: { id: string; openedMonth?: string | null; closedMonth?: string | null },
+  input: { id: string; openedMonth?: string | null; closedMonth?: string | null; block?: string | null },
 ) {
   if (!monthOk(input.openedMonth) || !monthOk(input.closedMonth)) throw new EngineError("月の指定が正しくありません", "INVALID_STATE");
   await deps.store.transact((data) => {
@@ -52,10 +52,12 @@ export async function updateClinic(
     if (added) {
       if (input.openedMonth !== undefined) added.openedMonth = input.openedMonth ?? undefined;
       if (input.closedMonth !== undefined) added.closedMonth = input.closedMonth ?? undefined;
+      if (input.block !== undefined) added.block = input.block?.trim() || undefined;
     } else {
       const o = (data.clinicSetup.overrides[input.id] ??= {});
       if (input.openedMonth !== undefined) o.openedMonth = input.openedMonth;
       if (input.closedMonth !== undefined) o.closedMonth = input.closedMonth;
+      if (input.block !== undefined) o.block = input.block?.trim() || null;
     }
     const name = (added ?? base)!.name;
     audit(data, deps.now(), actorId, "clinic.update", `${name}：開院 ${opened ?? "—"}／閉院 ${closed ?? "—"}`);

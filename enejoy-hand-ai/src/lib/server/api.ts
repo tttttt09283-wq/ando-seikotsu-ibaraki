@@ -70,8 +70,8 @@ export function engineErrorResponse(e: unknown) {
   return jsonError(500, "サーバーでエラーが発生しました。時間をおいて再度お試しください。");
 }
 
-export async function readJson(req: NextRequest): Promise<unknown> {
+export async function readJson(req: NextRequest, maxBytes = 10_000): Promise<unknown> {
   const len = Number(req.headers.get("content-length") ?? 0);
-  if (len > 10_000) throw new Error("payload too large");
+  if (len > maxBytes) throw new Error("payload too large");
   return req.json();
 }

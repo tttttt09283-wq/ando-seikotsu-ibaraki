@@ -15,6 +15,7 @@ export function getClinics(data: Pick<CompanyData, "clinicSetup">): Clinic[] {
       ...c,
       openedMonth: o.openedMonth === undefined ? c.openedMonth : (o.openedMonth ?? undefined),
       closedMonth: o.closedMonth === undefined ? c.closedMonth : (o.closedMonth ?? undefined),
+      block: o.block === undefined ? c.block : (o.block ?? undefined),
     };
   });
   return [...base, ...setup.added.map((c) => ({ ...c, added: true }))];

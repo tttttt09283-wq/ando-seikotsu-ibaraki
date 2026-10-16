@@ -246,7 +246,9 @@ export type Approval = {
 export type ApprovalPayload =
   | { kind: "review_reply"; reviewId: string; comment: string }
   /** 院別予算の確定（承認された内容＝この payload の予算をそのまま確定する） */
-  | { kind: "budget_confirm"; standardJpy: number; perStaffJpy: number; cells: BudgetCell[]; label: string; note?: string };
+  | { kind: "budget_confirm"; standardJpy: number; perStaffJpy: number; cells: BudgetCell[]; label: string; note?: string }
+  /** 中期事業計画の採用（承認された時点のシナリオをそのまま採用する） */
+  | { kind: "plan_adopt"; scenario: MidPlanScenario; note?: string };
 
 /** 院・月ごとの売上予算（staff = その月の施術者の人数。人員から予算を計算するときに使う） */
 export type BudgetCell = { month: string; clinicId: string; amountJpy: number; staff?: number };
@@ -264,8 +266,8 @@ export type BudgetVersion = {
 
 /** 院の追加・開院月・閉院月の変更（設定ファイルの院に上書きする） */
 export type ClinicSetup = {
-  added: { id: string; name: string; short: string; aliases: string[]; openedMonth?: string; closedMonth?: string; tags?: string[] }[];
-  overrides: Record<string, { openedMonth?: string | null; closedMonth?: string | null }>;
+  added: { id: string; name: string; short: string; aliases: string[]; openedMonth?: string; closedMonth?: string; tags?: string[]; block?: string }[];
+  overrides: Record<string, { openedMonth?: string | null; closedMonth?: string | null; block?: string | null }>;
 };
 
 /**
@@ -279,6 +281,108 @@ export type BudgetState = {
   /** これまでに確定した版（古い順。最初が当初予算） */
   history: BudgetVersion[];
   draft: { standardJpy: number; perStaffJpy: number; cells: BudgetCell[]; updatedAt: string; updatedBy: string } | null;
+};
+
+// ---- 管理項目（KPI）・人員（組織図）・中期事業計画 ----
+
+/**
+ * 管理項目で使える数字の系列。日計表などの指標の key に加えて、次の特別な系列が使える。
+ * budget = 今の確定予算 / staff = 施術者数（組織図→予算の人員） / lastYearSales = 前年同月の売上
+ */
+export const SPECIAL_SERIES: Record<string, string> = { budget: "予算", staff: "施術者数", lastYearSales: "前年同月の売上" };
+
+export type KpiUnit = "yen" | "count" | "percent" | "person";
+
+/** 管理項目（KPI）の定義。院別×月で値・目標・達成を見る */
+export type KpiDef = {
+  id: string;
+  name: string;
+  unit: KpiUnit;
+  /** series = 数字をそのまま／ratio = 分子÷分母（単位が % なら ×100）／manual = 手入力 */
+  calc: { kind: "series"; key: string } | { kind: "ratio"; numerator: string; denominator: string } | { kind: "manual" };
+  /** 高いほど良い（up）／低いほど良い（down） */
+  direction: "up" | "down";
+  /** 目標：固定値、または系列（例：売上の目標＝予算） */
+  target?: { kind: "value"; value: number } | { kind: "series"; key: string };
+  /** 院ごとの目標（固定値の上書き） */
+  clinicTargets?: Record<string, number>;
+  note?: string;
+  /** 使わなくなった項目（表示しない。記録は残す） */
+  archived?: boolean;
+};
+
+/** defs = null の間は会社の標準の管理項目（設定ファイル）を使う */
+export type KpiState = { defs: KpiDef[] | null };
+
+/** 組織図の役割（人数だけを数える。名前は保存しない） */
+export type StaffRole = "director" | "deputy" | "therapist" | "short" | "part" | "reception" | "receptionPart";
+
+export type OrgCounts = Partial<Record<StaffRole, number>>;
+
+/**
+ * 組織図から数えた院ごとの人数。スタッフの氏名は保存せず、人数と施術者の換算人数（fte）だけを持つ。
+ * kind = actual（その月からの実際の配置）／plan（出店時・理想などの計画）
+ */
+export type OrgSnapshot = {
+  id: string;
+  month: string;
+  kind: "actual" | "plan";
+  label: string;
+  clinics: { clinicId: string; counts: OrgCounts; fte: number }[];
+  /** 院として分からなかった列（新店舗など） */
+  unmatched: { label: string; counts: OrgCounts; fte: number }[];
+  importedAt: string;
+  importedBy: string;
+};
+
+export type OrgState = { snapshots: OrgSnapshot[] };
+
+/** 中期計画の新店（立ち上がり：開院月の月商から、rampMonths か月かけて成熟時の月商まで直線で伸びる） */
+export type MidPlanNewStore = {
+  id: string;
+  name: string;
+  openMonth: string;
+  startJpy: number;
+  matureJpy: number;
+  rampMonths: number;
+  /** 施術者の人数（換算） */
+  staff: number;
+};
+
+/** 中期計画の1年度（来期以降。今期は予算と実績から計算する） */
+export type MidPlanYear = {
+  /** 期首 YYYY-MM */
+  fyStart: string;
+  /** 既存店の成長率（前年比。1.05 = 105%） */
+  growthRate: number;
+  /** 院ごとの成長率（上書き） */
+  clinicGrowth: Record<string, number>;
+  /** 院ごとの施術者数（年平均・換算人数。未入力は前年のまま） */
+  staff: Record<string, number>;
+  /** 取り込んだ院別・月別の計画（12か月。あれば成長率の計算より優先） */
+  monthly: Record<string, number[]>;
+  /** この年度の売上目標（任意） */
+  targetJpy?: number;
+  note?: string;
+};
+
+export type MidPlanScenario = {
+  id: string;
+  name: string;
+  years: MidPlanYear[];
+  newStores: MidPlanNewStore[];
+  /** 利益の目安：施術者1人あたりの年間人件費・その他経費率（売上に対する%）。未設定なら利益は出さない */
+  laborPerStaffYearJpy?: number;
+  otherCostRate?: number;
+  note?: string;
+  updatedAt: string;
+  updatedBy: string;
+};
+
+export type MidPlanState = {
+  scenarios: MidPlanScenario[];
+  /** 承認を経て採用した計画（承認時点の内容） */
+  adopted: { scenario: MidPlanScenario; approvalId: string; at: string; note?: string } | null;
 };
 
 export type UsageRecord = {
@@ -479,6 +583,9 @@ export type CompanyData = {
   reputation: ReputationData;
   budget: BudgetState;
   clinicSetup: ClinicSetup;
+  kpis: KpiState;
+  org: OrgState;
+  midPlan: MidPlanState;
 };
 
 export function emptyCompanyData(): CompanyData {
@@ -500,6 +607,9 @@ export function emptyCompanyData(): CompanyData {
     reputation: emptyReputation(),
     budget: { confirmed: null, history: [], draft: null },
     clinicSetup: { added: [], overrides: {} },
+    kpis: { defs: null },
+    org: { snapshots: [] },
+    midPlan: { scenarios: [], adopted: null },
   };
 }
 
@@ -618,9 +728,13 @@ export const budgetInputSchema = z.discriminatedUnion("action", [
   /** 予算表（CSV）の取り込み */
   z.object({
     action: z.literal("import"),
-    csv: z.string().min(1, "ファイルが空です").max(2_000_000, "ファイルが大きすぎます"),
+    csv: z.string().max(2_000_000, "ファイルが大きすぎます").optional(),
+    /** GoogleスプレッドシートのURL（タブを開いた状態のURL） */
+    url: z.string().trim().max(500).optional(),
     unit: z.enum(["auto", "yen", "thousand", "man"]),
     fileName: z.string().trim().max(200).optional(),
+    /** 来期以降の計画を入れる中期計画のシナリオ（省略時は最初のシナリオ） */
+    scenarioId: z.string().max(40).optional(),
   }),
   z.object({ action: z.literal("discard") }),
   /** 案の確定を承認依頼する */
@@ -641,6 +755,108 @@ export const clinicInputSchema = z.discriminatedUnion("action", [
     id: z.string().min(1).max(40),
     openedMonth: z.string().regex(monthRe).nullable().optional(),
     closedMonth: z.string().regex(monthRe).nullable().optional(),
+    /** ブロック（ブロックマネージャーの担当の単位。null で外す） */
+    block: z.string().trim().max(20).nullable().optional(),
   }),
   z.object({ action: z.literal("remove"), id: z.string().min(1).max(40) }),
+]);
+
+// ---- 管理項目・人員・中期事業計画 ----
+
+/** 取り込み元：CSVの中身、または GoogleスプレッドシートのURL（タブを開いた状態のURL） */
+const sheetSource = {
+  csv: z.string().max(2_000_000, "ファイルが大きすぎます").optional(),
+  url: z.string().trim().max(500).optional(),
+  fileName: z.string().trim().max(200).optional(),
+};
+const seriesKey = z.string().min(1).max(40);
+const kpiDefSchema = z.object({
+  id: z.string().min(1).max(40).optional(),
+  name: z.string().trim().min(1, "名前を入力してください").max(40),
+  unit: z.enum(["yen", "count", "percent", "person"]),
+  calc: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("series"), key: seriesKey }),
+    z.object({ kind: z.literal("ratio"), numerator: seriesKey, denominator: seriesKey }),
+    z.object({ kind: z.literal("manual") }),
+  ]),
+  direction: z.enum(["up", "down"]),
+  target: z
+    .discriminatedUnion("kind", [
+      z.object({ kind: z.literal("value"), value: z.number().finite().min(0).max(10_000_000_000) }),
+      z.object({ kind: z.literal("series"), key: seriesKey }),
+    ])
+    .optional(),
+  clinicTargets: z.record(z.string().max(40), z.number().finite().min(0).max(10_000_000_000)).optional(),
+  note: z.string().trim().max(200).optional(),
+});
+
+export const kpiInputSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("save"), def: kpiDefSchema }),
+  z.object({ action: z.literal("remove"), id: z.string().min(1).max(40) }),
+  z.object({ action: z.literal("move"), id: z.string().min(1).max(40), dir: z.union([z.literal(-1), z.literal(1)]) }),
+  z.object({ action: z.literal("reset") }),
+  z.object({
+    action: z.literal("value"),
+    kpiId: z.string().min(1).max(40),
+    month: z.string().regex(monthRe),
+    clinicId: z.string().min(1).max(40),
+    value: z.number().finite().min(-10_000_000_000).max(10_000_000_000).nullable(),
+  }),
+]);
+
+export const orgInputSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("import"),
+    ...sheetSource,
+    month: z.string().regex(monthRe, "適用する月を選んでください"),
+    kind: z.enum(["actual", "plan"]),
+    label: z.string().trim().max(60).optional(),
+  }),
+  z.object({ action: z.literal("remove"), id: z.string().min(1).max(40) }),
+  z.object({ action: z.literal("apply_budget"), id: z.string().min(1).max(40) }),
+  z.object({ action: z.literal("apply_plan"), id: z.string().min(1).max(40), scenarioId: z.string().min(1).max(40), fyStart: z.string().regex(monthRe) }),
+]);
+
+const rate = z.number().finite().min(0.5, "成長率は50%〜300%で入力してください").max(3, "成長率は50%〜300%で入力してください");
+const yen = z.number().finite().int().min(0).max(100_000_000_000);
+export const planInputSchema = z.discriminatedUnion("action", [
+  z.object({ action: z.literal("create"), name: z.string().trim().min(1, "名前を入力してください").max(30), copyFrom: z.string().max(40).optional() }),
+  z.object({
+    action: z.literal("update"),
+    id: z.string().min(1).max(40),
+    name: z.string().trim().min(1).max(30).optional(),
+    note: z.string().trim().max(500).optional(),
+    laborPerStaffYearJpy: yen.nullable().optional(),
+    otherCostRate: z.number().finite().min(0).max(100).nullable().optional(),
+    years: z
+      .array(
+        z.object({
+          fyStart: z.string().regex(monthRe),
+          growthRate: rate.optional(),
+          clinicGrowth: z.record(z.string().max(40), rate.nullable()).optional(),
+          staff: z.record(z.string().max(40), z.number().finite().min(0).max(200).nullable()).optional(),
+          targetJpy: yen.nullable().optional(),
+          note: z.string().trim().max(300).optional(),
+          clearMonthly: z.array(z.string().max(40)).max(100).optional(),
+        }),
+      )
+      .max(10)
+      .optional(),
+    newStores: z
+      .array(
+        z.object({
+          id: z.string().max(40).optional(),
+          name: z.string().trim().min(1, "新店の名前を入力してください").max(40),
+          openMonth: z.string().regex(monthRe, "開院月を選んでください"),
+          startJpy: yen,
+          matureJpy: yen,
+          rampMonths: z.number().int().min(0).max(60),
+          staff: z.number().finite().min(0).max(100),
+        }),
+      )
+      .max(20)
+      .optional(),
+  }),
+  z.object({ action: z.literal("remove"), id: z.string().min(1).max(40) }),
+  z.object({ action: z.literal("request_adopt"), id: z.string().min(1).max(40), note: z.string().trim().max(300).optional() }),
 ]);

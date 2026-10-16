@@ -25,6 +25,7 @@ import {
 import type { CompanyContext, Executor, StaffingProposal, Usage } from "./executor";
 import { reputationMode, reviewStats } from "./reputation-metrics";
 import { budgetTable } from "./budget-metrics";
+import { midPlanTable } from "./midplan-metrics";
 import {
   costTotals,
   isMemberActive,
@@ -170,6 +171,14 @@ export function buildContext(data: CompanyData, mode: DataMode, now: Date): Comp
       const rate = revenue.hasData && cur?.rate != null ? `／今月の予算達成見込み ${cur.rate}%` : "";
       return head + gap + rate;
     })(),
+    ...(data.midPlan?.adopted
+      ? [
+          (() => {
+            const t = midPlanTable(data, now, data.midPlan.adopted!.scenario);
+            return `・中期事業計画（採用：${data.midPlan.adopted!.scenario.name}）：${t.years.map((y) => `${y.term} ${yen(y.revenue)}`).join(" → ")}`;
+          })(),
+        ]
+      : []),
     `・Task：実行中 ${counts.active}件 / 着手待ち ${counts.queued}件 / 本日完了 ${counts.doneToday}件 / 累計完了 ${counts.doneTotal}件`,
     ...(doneToday.length ? [`・今日終えた仕事：${doneToday.slice(-5).map((t) => t.title).join("、")}`] : []),
     `・承認待ち：統括責任者 ${forOperator}件 / 代表 ${forPresident}件`,
@@ -997,7 +1006,7 @@ function assertFiscalMonth(month: string) {
   }
 }
 
-function upsertClinicMonth(
+export function upsertClinicMonth(
   data: CompanyData,
   now: Date,
   r: { month: string; clinicId: string; values: Record<string, number>; source: NumberSource; sourceLabel?: string; updatedBy: string },

@@ -5,7 +5,7 @@
  * すべて src/tenants/<会社>/ に置き、この型を満たす TenantConfig として src/tenant.ts から読み込む。
  * 別の会社へ導入するときは、tenants/ に新しいフォルダを作り src/tenant.ts の参照先を差し替える。
  */
-import type { ApprovalCategory, Priority } from "@/lib/types";
+import type { ApprovalCategory, KpiDef, Priority, StaffRole } from "@/lib/types";
 
 /** 組織上の階層。president / operator は人間、それ以外はAI */
 export type Tier = "president" | "operator" | "commander" | "leader" | "staff";
@@ -51,6 +51,8 @@ export type Clinic = {
   added?: boolean;
   /** 院の特徴（例：巻き爪対応） */
   tags?: string[];
+  /** ブロック（エリア・ブロックマネージャーの担当単位） */
+  block?: string;
 };
 
 /**
@@ -229,6 +231,19 @@ export type TenantConfig = {
   };
   /** 日計表で取り込むシート名（既定値） */
   dailySheetName: string;
+  /** 会社の標準の管理項目（画面で追加・変更できる） */
+  kpis: KpiDef[];
+  /** 期と中期計画の設定 */
+  fiscal: {
+    /** revenueTarget.fromMonth に始まる年度が第何期か */
+    term: number;
+    /** 中期計画で今期の後に何年度先まで計画するか */
+    planYears: number;
+    /** 既存店の成長率の初期値（前年比） */
+    defaultGrowth: number;
+  };
+  /** 組織図の役割の名前（行名の前方一致）と、施術者の換算人数（時短・アルバイトは 0.5 など。受付は 0） */
+  staffRoles: { role: StaffRole; label: string; aliases: string[]; fte: number }[];
   teams: Team[];
   members: Member[];
   /** チームごとのレビュー担当リーダー */
