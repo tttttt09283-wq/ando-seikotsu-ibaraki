@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>体のチェック - あんど整骨院</title>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#f0f4f8;min-height:100vh;color:#1f2937;}
+.header{background:linear-gradient(135deg,#1e3a5f,#2d6a9f);color:white;padding:16px 18px;}
+.header h1{font-size:17px;font-weight:800;}
+.header p{font-size:11px;opacity:0.75;margin-top:2px;}
+.container{max-width:560px;margin:0 auto;padding:14px 16px 60px;}
+.card{background:white;border-radius:12px;margin-bottom:14px;box-shadow:0 1px 8px rgba(0,0,0,0.06);overflow:hidden;}
+.card-header{padding:12px 16px;font-size:13px;font-weight:800;color:#1e3a5f;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:6px;}
+.card-body{padding:16px;}
+.btn{width:100%;padding:13px;border:none;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;font-family:inherit;}
+.btn:disabled{opacity:.6;cursor:not-allowed;}
+.btn-primary{background:linear-gradient(135deg,#1e3a5f,#2d6a9f);color:white;}
+.btn-green{background:linear-gradient(135deg,#059669,#047857);color:white;}
+.btn-outline{background:white;color:#374151;border:1.5px solid #e2e8f0;}
+.btn-sm{padding:8px 10px;font-size:12px;border-radius:8px;width:auto;}
+.btn-row{display:flex;gap:8px;}
+.btn-row .btn{flex:1;}
+.back{background:none;border:none;color:#2d6a9f;font-weight:800;font-size:13px;cursor:pointer;padding:4px 0 12px;font-family:inherit;}
+.menu-card{display:flex;gap:12px;align-items:center;width:100%;text-align:left;background:white;border:2px solid #e2e8f0;border-radius:14px;padding:14px;margin-bottom:10px;cursor:pointer;font-family:inherit;}
+.menu-card .icon{font-size:28px;width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.menu-card .t{font-weight:800;font-size:15px;color:#111827;}
+.menu-card .d{font-size:11.5px;color:#64748b;margin-top:3px;line-height:1.5;}
+.done-chip{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:10px;background:#dcfce7;color:#166534;margin-left:6px;}
+.cam-wrap{position:relative;width:100%;aspect-ratio:3/4;background:#111;border-radius:10px;overflow:hidden;margin-bottom:12px;}
+.cam-wrap video{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;}
+.cam-hint{position:absolute;bottom:10px;left:0;right:0;text-align:center;color:white;font-size:11.5px;background:rgba(0,0,0,0.5);padding:6px 12px;border-radius:20px;width:fit-content;max-width:92%;margin:0 auto;line-height:1.5;}
+.captured-wrap{position:relative;width:100%;border-radius:10px;overflow:hidden;margin-bottom:10px;background:#111;}
+.captured-wrap canvas{width:100%;display:block;}
+.form-label{display:block;font-size:12px;font-weight:700;color:#374151;margin-bottom:6px;}
+.form-input{width:100%;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:14px;font-family:inherit;background:white;}
+.form-group{margin-bottom:14px;}
+.search-results{border:1px solid #e2e8f0;border-radius:8px;margin-top:6px;max-height:200px;overflow-y:auto;}
+.search-item{padding:10px 12px;cursor:pointer;border-bottom:1px solid #f1f5f9;font-size:13px;}
+.search-item:last-child{border-bottom:none;}
+.search-item span{color:#94a3b8;font-size:11px;margin-left:6px;}
+.selected-patient{background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;padding:10px 12px;display:flex;justify-content:space-between;align-items:center;margin-top:6px;}
+.staff-btns{display:flex;flex-wrap:wrap;gap:6px;}
+.staff-btn{padding:8px 14px;border-radius:8px;border:1.5px solid #e2e8f0;background:white;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:#374151;}
+.staff-btn.sel{border-color:#1e3a5f;background:#1e3a5f;color:white;}
+.q{padding:12px 0;border-bottom:1px solid #f1f5f9;}
+.q:last-child{border-bottom:none;}
+.q-title{font-size:13px;font-weight:800;margin-bottom:8px;}
+.opt{display:block;width:100%;text-align:left;padding:9px 12px;margin-bottom:6px;border-radius:9px;border:1.5px solid #e2e8f0;background:white;font-size:12.5px;cursor:pointer;font-family:inherit;color:#374151;line-height:1.5;}
+.opt.sel{border-color:#7c3aed;background:#f5f3ff;color:#4c1d95;font-weight:700;}
+.score-hero{text-align:center;padding:14px 0 6px;}
+.score-num{font-size:50px;font-weight:800;line-height:1;}
+.score-label{font-size:12px;color:#94a3b8;font-weight:700;margin-top:4px;}
+.pill{display:inline-flex;align-items:center;gap:8px;border-radius:20px;padding:8px 18px;font-weight:800;font-size:15px;}
+.finding{display:flex;gap:10px;padding:10px 12px;border-radius:10px;margin-top:8px;}
+.finding.bad{background:#fef2f2;border:1px solid #fecaca;}
+.finding.ok{background:#f0fdf4;border:1px solid #bbf7d0;}
+.finding .ft{font-size:12px;font-weight:800;}
+.finding .fd{font-size:12.5px;color:#374151;margin-top:3px;line-height:1.6;}
+.finding .fi{font-size:11.5px;color:#92400e;margin-top:4px;line-height:1.6;background:#fffbeb;border-radius:6px;padding:6px 8px;}
+.finding .fm{font-size:11.5px;color:#1e40af;margin-top:4px;line-height:1.7;}
+.rom-test{border:1.5px solid #e2e8f0;border-radius:12px;padding:12px;margin-bottom:10px;}
+.rom-test.off{opacity:.55;}
+.rom-row{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap;}
+.rom-row input{width:72px;padding:7px 8px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:14px;font-family:inherit;text-align:right;}
+.thumbs{display:flex;gap:6px;margin-top:8px;}
+.thumbs canvas{width:31%;border-radius:6px;background:#111;}
+.bar-row{display:flex;align-items:center;gap:8px;font-size:12px;padding:6px 0;}
+.bar-row .bl{width:96px;color:#475569;font-weight:700;flex-shrink:0;}
+.bar-row .bw{flex:1;height:8px;background:#f1f5f9;border-radius:4px;overflow:hidden;}
+.bar-row .bb{height:100%;border-radius:4px;}
+.bar-row .bv{width:52px;text-align:right;font-weight:800;}
+.type-pct{display:flex;gap:6px;margin-top:10px;}
+.type-pct div{flex:1;text-align:center;border-radius:10px;padding:8px 4px;font-size:11px;font-weight:700;}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1e293b;color:white;padding:11px 20px;border-radius:20px;font-size:13px;font-weight:700;z-index:200;box-shadow:0 6px 20px rgba(0,0,0,0.2);max-width:92%;text-align:center;}
+.spinner{width:34px;height:34px;border:3px solid #e2e8f0;border-top-color:#1e3a5f;border-radius:50%;animation:spin 0.8s linear infinite;margin:20px auto;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.disclaimer{font-size:10.5px;color:#94a3b8;line-height:1.6;margin-top:10px;}
+.tip{font-size:12px;color:#475569;line-height:1.7;background:#f8fafc;border-radius:8px;padding:10px 12px;margin-top:8px;}
+.tip b{color:#1e3a5f;}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>🩺 体のチェック</h1>
+  <p>骨格タイプ・可動域・O脚X脚／骨盤・総合評価　スタッフ用ツール</p>
+</div>
+<div class="container" id="root">
+  <div style="text-align:center;padding:60px;color:#9ca3af;">読み込み中...</div>
+</div>
+<div id="toastContainer"></div>
+<script>
+const SUPABASE_URL="https://dctlirxcwitcupaewiyt.supabase.co";
+const SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
+const supabaseClient=window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY):null;
+const STAFF_LIST=[{id:1,name:"奥田"},{id:2,name:"佐藤"},{id:3,name:"細永"},{id:4,name:"田中"},{id:5,name:"岩永"}];
+
+async function sbGet(t,f){
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}${f||""}`,{headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`}});
+  return res.json();
+}
+async function sbPost(t,d){
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}`,{method:"POST",headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`,"Content-Type":"application/json",Prefer:"return=representation"},body:JSON.stringify(d)});
+  const data=await res.json().catch(()=>null);
+  if(!res.ok) throw new Error((data&&(data.message||data.hint))||`保存に失敗しました（HTTP ${res.status}）`);
+  return data;
+}
+function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function todayStr(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+
+// =====================================================================
+// 計算（画面から切り離した純粋な関数。MediaPipe Poseの33点ランドマークを使う）
+// 主な番号：鼻0 左目2 右目5 耳7/8 肩11/12 手首15/16 人差し指19/20 股関節23/24 膝25/26 足首27/28 かかと29/30 つま先31/32
+// ※左右（11=左など）は「本人から見た左右」。画面上の向きで伝えるときは「向かって右／左」と書く
+// =====================================================================
+function px(lm,i,w,h){ return {x:lm[i].x*w,y:lm[i].y*h,v:lm[i].visibility==null?1:lm[i].visibility}; }
+function mid(a,b){ return {x:(a.x+b.x)/2,y:(a.y+b.y)/2}; }
+function dist(a,b){ return Math.hypot(a.x-b.x,a.y-b.y); }
+function angleAt(a,b,c){ // bを頂点とする角度（度）
+  const v1={x:a.x-b.x,y:a.y-b.y}, v2={x:c.x-b.x,y:c.y-b.y};
+  const d=(v1.x*v2.x+v1.y*v2.y)/((Math.hypot(v1.x,v1.y)*Math.hypot(v2.x,v2.y))||1);
+  return Math.acos(Math.max(-1,Math.min(1,d)))*180/Math.PI;
+}
+function tiltDeg(a,b){ // 2点を結ぶ線の水平からの傾き（度・0〜90）
+  const t=Math.abs(Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI);
+  return t>90?180-t:t;
+}
+function fromVerticalUp(base,top){ // base→top の線が真上から何度倒れているか（0〜180）
+  return Math.atan2(Math.abs(top.x-base.x),-(top.y-base.y))*180/Math.PI;
+}
+function round1(n){ return Math.round(n*10)/10; }
+function deduction(value,tol,weight,cap){ return Math.min(cap,Math.max(0,Math.abs(value)-tol)*weight); }
+function gradeFromScore(s){
+  if(s>=90) return {label:"良好",color:"#059669",icon:"✅"};
+  if(s>=75) return {label:"やや気になる点あり",color:"#d97706",icon:"⚠️"};
+  if(s>=55) return {label:"改善がおすすめ",color:"#ea580c",icon:"⚠️"};
+  return {label:"早めのケアがおすすめ",color:"#dc2626",icon:"🔴"};
+}
+function scoreColor(s){ return s>=90?"#059669":s>=75?"#d97706":s>=55?"#ea580c":"#dc2626"; }
+
+// ---------- ① 骨格タイプチェック ----------
+const SKELETON_TYPES={
+  S:{key:"S",name:"ストレート",color:"#dc2626",soft:"#fef2f2",
+     summary:"体に厚みがあり、メリハリのある立体的な体つき。筋肉がつきやすく、ハリのある質感です。",
+     fashion:"シンプルで上質な素材、Vネック、ジャストサイズのきれいめな服が似合います。",
+     care:"上半身・肩まわりに張りが出やすいタイプ。肩甲骨まわりのストレッチや姿勢矯正で、厚みのある上半身をすっきり見せられます。",
+     menus:["姿勢矯正","肩まわりのストレッチ"]},
+  W:{key:"W",name:"ウェーブ",color:"#db2777",soft:"#fdf2f8",
+     summary:"体が薄く華奢で、柔らかい曲線的な体つき。重心が下にあり、下半身に肉がつきやすい傾向です。",
+     fashion:"柔らかい素材、フリルやギャザー、ハイウエストで重心を上げる服が似合います。",
+     care:"下半身のむくみ・冷えが出やすいタイプ。骨盤矯正や脚のケアで、重心を整えると全体のバランスが良く見えます。",
+     menus:["骨盤矯正","美容鍼（むくみケア）"]},
+  N:{key:"N",name:"ナチュラル",color:"#0f766e",soft:"#f0fdfa",
+     summary:"骨や関節がしっかりしたフレーム感のある体つき。肩幅が広めで、筋や骨が目立ちやすい質感です。",
+     fashion:"ざっくりした素材、ゆったりめのシルエット、ラフなカジュアルが似合います。",
+     care:"関節まわりや筋のこわばりが出やすいタイプ。ストレッチや可動域を広げるケアで、しなやかな動きを保てます。",
+     menus:["ストレッチ","鍼"]},
+};
+const SKELETON_QUESTIONS=[
+  {id:"neck",q:"首の長さ・太さは？",o:[["S","やや短め・太め"],["W","長め・細め"],["N","普通〜長め、筋が目立つ"]]},
+  {id:"clavicle",q:"鎖骨の見え方は？",o:[["S","ほとんど目立たない"],["W","細く、うっすら見える"],["N","太くはっきり出ている"]]},
+  {id:"upper",q:"上半身（胸〜背中）の厚みは？",o:[["S","厚みがあり立体的"],["W","薄く華奢"],["N","厚みより、肩幅の広さ・骨っぽさが目立つ"]]},
+  {id:"hand",q:"手のひら・指は？",o:[["S","厚みがあり、柔らかい"],["W","薄く、小さめ"],["N","大きめで、関節や筋が目立つ"]]},
+  {id:"wrist",q:"手首は？",o:[["S","断面が丸く、やや太め"],["W","細く、平たい"],["N","骨（くるぶし）がしっかり出ている"]]},
+  {id:"knee",q:"ひざは？",o:[["S","小さく、ひざ下がまっすぐ"],["W","ひざ上に肉がつきやすい"],["N","ひざの骨が大きめ"]]},
+  {id:"fat",q:"太るとどこからつきやすい？",o:[["S","お腹・上半身"],["W","下半身・腰まわり"],["N","全体的に。もともと太りにくい"]]},
+  {id:"skin",q:"二の腕をつまんだ感じは？",o:[["S","弾力があり、ハリがある"],["W","柔らかく、ふわふわ"],["N","皮膚が厚め、筋や骨を感じる"]]},
+  {id:"hip",q:"腰の位置・お尻は？",o:[["S","腰の位置が高く、お尻は丸く立体的"],["W","腰の位置が低めで、お尻は平ため"],["N","骨盤がしっかりして、お尻は平ら"]]},
+  {id:"clothes",q:"よく褒められる・似合う服は？",o:[["S","シンプルできちんとした服"],["W","柔らかい素材・かわいらしい服"],["N","ゆったり・ラフな服"]]},
+];
+// 写真（正面・気をつけ）から、肩幅と股関節幅の比率を出す
+function skeletonPhotoMetrics(lm,w,h){
+  const ls=px(lm,11,w,h), rs=px(lm,12,w,h), lh=px(lm,23,w,h), rh=px(lm,24,w,h);
+  const shoulderW=dist(ls,rs), hipW=dist(lh,rh);
+  const ratio=hipW>0?shoulderW/hipW:0;
+  // 肩幅÷股関節幅（関節の中心どうしの幅のため、一般に1.3〜1.6くらい）
+  let lean=null;
+  if(ratio>=1.6) lean="N"; else if(ratio>=1.45) lean="S"; else if(ratio>0&&ratio<1.35) lean="W";
+  return {ratio:round1(ratio*100)/100, lean};
+}
+function skeletonResult(answers,photo){
+  const counts={S:0,W:0,N:0};
+  Object.values(answers||{}).forEach(k=>{ if(counts[k]!=null) counts[k]+=1; });
+  const answered=counts.S+counts.W+counts.N;
+  if(photo&&photo.lean) counts[photo.lean]+=1.5; // 写真の比率は「質問1.5問分」として加味する
+  const total=counts.S+counts.W+counts.N;
+  const order=["S","W","N"].sort((a,b)=>counts[b]-counts[a]);
+  const top=order[0], second=order[1];
+  const mixed=total>0 && (counts[top]-counts[second])<=1 && counts[second]>0;
+  const pct={}; ["S","W","N"].forEach(k=>pct[k]=total>0?Math.round(counts[k]/total*100):0);
+  return {answered, counts, pct, main:top, sub:mixed?second:null,
+    label: mixed ? `${SKELETON_TYPES[top].name}×${SKELETON_TYPES[second].name}（ミックス）` : SKELETON_TYPES[top].name};
+}
+
+// ---------- ② 可動域チェック ----------
+// ref＝参考可動域（日本整形外科学会などの参考値をもとにした目安）
+const ROM_TESTS=[
+  {key:"shoulder",name:"肩の挙上（バンザイ）",icon:"🙌",ref:180,paired:true,shots:[{side:"both",label:"両腕",hint:"正面を向いて、両腕を真横から耳の横までできるだけ高く上げる"}],
+   muscles:["広背筋","大胸筋","肩関節まわり（腱板）"],symptoms:["肩こり","四十肩・五十肩の予備群","腕が上げにくい"]},
+  {key:"trunk",name:"体の横倒し（側屈）",icon:"🤸",ref:50,paired:true,shots:[{side:"R",label:"右へ倒す",hint:"正面を向いたまま、上半身を右へできるだけ倒す（腰は動かさない）"},{side:"L",label:"左へ倒す",hint:"正面を向いたまま、上半身を左へできるだけ倒す（腰は動かさない）"}],
+   muscles:["腰方形筋","腹斜筋","広背筋"],symptoms:["腰痛","わき腹・背中の張り","骨盤の左右差"]},
+  {key:"forward",name:"前屈",icon:"🙇",ref:90,paired:false,shots:[{side:"one",label:"前屈",hint:"横向きに立ち、ひざを伸ばしたまま、できるだけ前へ体を倒す"}],
+   muscles:["ハムストリングス（太もも裏）","脊柱起立筋","ふくらはぎ"],symptoms:["腰痛","太もも裏のつっぱり","骨盤の後傾"]},
+  {key:"neck",name:"首の横倒し",icon:"🙆",ref:50,paired:true,shots:[{side:"R",label:"右へ倒す",hint:"正面を向いたまま、肩を上げずに首を右へ倒す（耳を肩に近づける）"},{side:"L",label:"左へ倒す",hint:"正面を向いたまま、肩を上げずに首を左へ倒す（耳を肩に近づける）"}],
+   muscles:["僧帽筋（上部）","斜角筋","胸鎖乳突筋"],symptoms:["首こり・肩こり","緊張型頭痛","寝違えやすい"]},
+];
+// 1枚の写真から、そのテストの角度を出す（両腕の場合は {L,R}、片側の場合は {value}）
+function romMeasure(testKey,lm,w,h){
+  if(testKey==="shoulder"){
+    const L=angleAt(px(lm,23,w,h),px(lm,11,w,h),px(lm,15,w,h));
+    const R=angleAt(px(lm,24,w,h),px(lm,12,w,h),px(lm,16,w,h));
+    return {L:Math.round(L),R:Math.round(R)};
+  }
+  if(testKey==="trunk"){
+    const hm=mid(px(lm,23,w,h),px(lm,24,w,h)), sm=mid(px(lm,11,w,h),px(lm,12,w,h));
+    return {value:Math.round(fromVerticalUp(hm,sm))};
+  }
+  if(testKey==="neck"){
+    const eye=tiltDeg(px(lm,2,w,h),px(lm,5,w,h)), sh=tiltDeg(px(lm,11,w,h),px(lm,12,w,h));
+    return {value:Math.round(Math.max(0,eye-sh))};
+  }
+  if(testKey==="forward"){
+    const visL=lm[11].visibility+lm[23].visibility+lm[25].visibility, visR=lm[12].visibility+lm[24].visibility+lm[26].visibility;
+    const L=visL>=visR;
+    const sh=px(lm,L?11:12,w,h), hip=px(lm,L?23:24,w,h), knee=px(lm,L?25:26,w,h), ankle=px(lm,L?27:28,w,h);
+    const finger=px(lm,L?19:20,w,h), foot=px(lm,L?31:32,w,h), heel=px(lm,L?29:30,w,h);
+    const floorY=Math.max(foot.y,heel.y,ankle.y);
+    let reach="膝より上", reachScore=40;
+    if(finger.y>=floorY-(floorY-ankle.y)*0.6-2){ reach="床に届く"; reachScore=100; }
+    else if(finger.y>=ankle.y-(ankle.y-knee.y)*0.15){ reach="足首まで"; reachScore=85; }
+    else if(finger.y>=(knee.y+ankle.y)/2){ reach="すねまで"; reachScore=70; }
+    else if(finger.y>=knee.y){ reach="膝まで"; reachScore=55; }
+    return {value:Math.round(fromVerticalUp(hip,sh)),reach,reachScore};
+  }
+  return {};
+}
+// 各テストの値（v＝{L,R} or {value,reach,reachScore}）から評価をまとめる
+function romResult(values){
+  const tests=[]; let sum=0, n=0;
+  ROM_TESTS.forEach(t=>{
+    const v=values[t.key]; if(!v) return;
+    const sides=t.paired?[["R","右"],["L","左"]].filter(([k])=>v[k]!=null&&v[k]!=="").map(([k,lab])=>({k,lab,deg:Number(v[k])})):(v.value!=null&&v.value!==""?[{k:"value",lab:"",deg:Number(v.value)}]:[]);
+    if(sides.length===0) return;
+    const pcts=sides.map(s=>Math.min(1,Math.max(0,s.deg)/t.ref));
+    let score=pcts.reduce((a,b)=>a+b,0)/pcts.length*100;
+    if(t.key==="forward"&&v.reachScore) score=(score+v.reachScore)/2;
+    let asym=null, asymPenalty=0;
+    if(t.paired&&sides.length===2){
+      asym=Math.abs(sides[0].deg-sides[1].deg);
+      asymPenalty=Math.min(15,Math.max(0,asym-10)*1.0);
+      score-=asymPenalty;
+    }
+    score=Math.max(0,Math.round(score));
+    const minPct=Math.min(...pcts);
+    const level=minPct>=0.9?"ok":minPct>=0.7?"mild":"stiff";
+    const weakSide=t.paired&&sides.length===2&&asym>=10?(sides[0].deg<sides[1].deg?sides[0].lab:sides[1].lab):null;
+    tests.push({key:t.key,name:t.name,ref:t.ref,sides,score,level,asym,weakSide,reach:v.reach||null});
+    sum+=score; n++;
+  });
+  if(n===0) return null;
+  const score=Math.round(sum/n);
+  const findings=tests.map(r=>{
+    const t=ROM_TESTS.find(x=>x.key===r.key);
+    const degTxt=r.sides.map(s=>(s.lab?s.lab+" ":"")+s.deg+"°").join("／")+`（目安 ${r.ref}°）`+(r.reach?`・指先：${r.reach}`:"");
+    if(r.level==="ok"&&!r.weakSide) return {part:r.name,ok:true,desc:`${degTxt}　十分に動いています。`};
+    const parts=[];
+    if(r.level!=="ok") parts.push(r.level==="mild"?"やや硬さがあります":"動きがかなり硬くなっています");
+    if(r.weakSide) parts.push(`${r.weakSide}側が${r.asym}°小さく、左右差があります`);
+    return {part:r.name,ok:false,severity:r.level==="stiff"?"硬い":r.weakSide&&r.level==="ok"?"左右差":"やや硬い",
+      desc:`${degTxt}　${parts.join("。")}。`,
+      impact:"動きが小さい・左右差があると、動かしやすい側や別の部位に負担が集中しやすくなります。",
+      muscles:t.muscles,symptoms:t.symptoms};
+  });
+  return {score,grade:gradeFromScore(score),tests,findings};
+}
+
+// ---------- ③ O脚・X脚・骨盤チェック ----------
+function legsAnalysis(lm,w,h){
+  const lh=px(lm,23,w,h), rh=px(lm,24,w,h), lk=px(lm,25,w,h), rk=px(lm,26,w,h), la=px(lm,27,w,h), ra=px(lm,28,w,h);
+  const ls=px(lm,11,w,h), rs=px(lm,12,w,h);
+  const midX=(lh.x+rh.x)/2;
+  function legDev(hip,knee,ankle){
+    // ひざが「股関節〜足首を結ぶ線」より外側＝O脚方向（＋）、内側＝X脚方向（−）
+    const t=(knee.y-hip.y)/((ankle.y-hip.y)||1);
+    const lineX=hip.x+t*(ankle.x-hip.x);
+    const outward=(knee.x-lineX)*Math.sign(hip.x-midX||1);
+    const dev=180-angleAt(hip,knee,ankle);
+    return round1(outward>=0?dev:-dev);
+  }
+  const devL=legDev(lh,lk,la), devR=legDev(rh,rk,ra);
+  const avgDev=round1((devL+devR)/2);
+  const hipW=dist(lh,rh)||1, legLen=((dist(lh,la)+dist(rh,ra))/2)||1;
+  const pelvisTilt=round1(tiltDeg(lh,rh)), shoulderTilt=round1(tiltDeg(ls,rs));
+  const kneeHeightDiff=round1(Math.abs(lk.y-rk.y)/legLen*100);
+  const shift=round1(((midX-(la.x+ra.x)/2)/hipW)*100); // ＋＝画面の右寄り
+  // 画面上で高い（yが小さい）ほう：向かって右／左
+  const viewerRight=(a,b)=>a.x>b.x?a:b;
+  const pelvisHighSide=pelvisTilt<1.5?null:((lh.y<rh.y)===(viewerRight(lh,rh)===lh)?"向かって右":"向かって左");
+  const shoulderHighSide=shoulderTilt<1.5?null:((ls.y<rs.y)===(viewerRight(ls,rs)===ls)?"向かって右":"向かって左");
+
+  let legType="まっすぐ（良好）";
+  if(Math.abs(devL)>=4&&Math.abs(devR)>=4&&Math.sign(devL)!==Math.sign(devR)) legType="左右で違う（片側O脚・片側X脚の傾向）";
+  else if(avgDev>=4) legType="O脚傾向";
+  else if(avgDev<=-4) legType="X脚傾向";
+  const a=Math.abs(avgDev);
+  const legSeverity=a<4?null:a<7?"軽度":a<11?"中等度":"強め";
+
+  let score=100;
+  score-=deduction(avgDev,3,3.0,35);
+  score-=deduction(Math.abs(devL-devR),4,1.5,10);
+  score-=deduction(pelvisTilt,1.5,6,25);
+  score-=deduction(shoulderTilt,1.5,4,15);
+  score-=deduction(kneeHeightDiff,1.5,4,10);
+  score-=deduction(shift,10,0.8,15);
+  score=Math.max(0,Math.round(score));
+
+  const findings=[];
+  if(legType.startsWith("O脚")) findings.push({part:"脚のライン（O脚傾向）",ok:false,severity:legSeverity,
+    desc:`ひざが外側に開いています（左 ${devL}°／右 ${devR}°）。`,
+    impact:"ひざの内側や足の外側に体重がかかりやすく、ひざの痛みや脚の外側の張りにつながりやすい状態です。",
+    muscles:["内転筋（弱くなりやすい）","大腿筋膜張筋・外側広筋（張りやすい）","お尻の筋肉（中殿筋）"],
+    symptoms:["ひざの内側の痛み","太ももの外張り","むくみ","腰痛"]});
+  else if(legType.startsWith("X脚")) findings.push({part:"脚のライン（X脚傾向）",ok:false,severity:legSeverity,
+    desc:`ひざが内側に入っています（左 ${devL}°／右 ${devR}°）。`,
+    impact:"ひざの外側や土踏まずに負担がかかりやすく、偏平足や外反母趾につながりやすい状態です。",
+    muscles:["お尻の筋肉（中殿筋・弱くなりやすい）","内転筋（張りやすい）","足裏の筋肉"],
+    symptoms:["ひざの外側の痛み","偏平足・外反母趾","股関節の違和感"]});
+  else if(legType.startsWith("左右")) findings.push({part:"脚のライン（左右差）",ok:false,severity:"左右差",
+    desc:`左右の脚のラインが違います（左 ${devL}°／右 ${devR}°）。`,
+    impact:"片脚に体重をかけるクセや骨盤のねじれが隠れていることが多く、骨盤の左右差とあわせたケアがおすすめです。",
+    muscles:["お尻の筋肉（中殿筋）","内転筋","骨盤まわり"],symptoms:["片側の腰痛","脚の長さの違和感","片側のひざの痛み"]});
+  else findings.push({part:"脚のライン",ok:true,desc:`ひざがほぼまっすぐの位置です（左 ${devL}°／右 ${devR}°）。`});
+
+  if(pelvisHighSide&&pelvisTilt>=1.5) findings.push({part:"骨盤の高さ",ok:false,severity:pelvisTilt<3?"軽度":pelvisTilt<5?"中等度":"強め",
+    desc:`骨盤が傾いています（${pelvisHighSide}が高い・${pelvisTilt}°）。`,
+    impact:"骨盤が傾くと背骨がバランスを取ろうとして曲がり、腰や背中・肩の左右差につながります。",
+    muscles:["腰方形筋","中殿筋","腸腰筋"],symptoms:["腰痛","脚の長さの違い","片側の肩こり"]});
+  else findings.push({part:"骨盤の高さ",ok:true,desc:`左右の高さはほぼそろっています（${pelvisTilt}°）。`});
+
+  if(shoulderHighSide&&shoulderTilt>=1.5) findings.push({part:"肩の高さ",ok:false,severity:shoulderTilt<3?"軽度":shoulderTilt<5?"中等度":"強め",
+    desc:`肩が傾いています（${shoulderHighSide}が高い・${shoulderTilt}°）。`,
+    impact:"肩の高さの違いは、骨盤の傾きや、カバンを持つ側などの生活のクセから起こりやすい変化です。",
+    muscles:["僧帽筋（上部）","肩甲挙筋"],symptoms:["片側の肩こり","首の張り"]});
+
+  if(Math.abs(shift)>=10) findings.push({part:"重心の位置",ok:false,severity:Math.abs(shift)<20?"軽度":"中等度",
+    desc:`体の重心が${shift>0?"向かって右":"向かって左"}に寄っています。`,
+    impact:"片側の脚に体重をかけるクセがあると、骨盤のゆがみや片側だけの疲れ・痛みにつながります。",
+    muscles:["中殿筋","内転筋"],symptoms:["片側の腰・ひざの疲れ"]});
+
+  return {score,grade:gradeFromScore(score),legType,legSeverity,devL,devR,avgDev,pelvisTilt,shoulderTilt,kneeHeightDiff,shift,pelvisHighSide,shoulderHighSide,findings};
+}
+
+// ---------- ④ 総合評価 ----------
+// 姿勢（横）・正面バランス・柔軟性・脚と骨盤 の4項目を100点満点でまとめる（測ったものだけで平均）
+function totalEvaluation(src){
+  const axes=[
+    {key:"posture",label:"姿勢（横から）",score:src.posture&&src.posture.side!=null?Math.round(src.posture.side):null,menu:"姿勢矯正",
+      advice:"頭や肩の位置が前に出やすい状態です。姿勢矯正と、胸まわりのストレッチがおすすめです。"},
+    {key:"balance",label:"左右バランス（正面）",score:src.posture&&src.posture.front!=null?Math.round(src.posture.front):null,menu:"骨盤矯正",
+      advice:"肩や骨盤の高さに左右差があります。骨盤矯正で土台から整えるのがおすすめです。"},
+    {key:"flex",label:"柔軟性（可動域）",score:src.rom?src.rom.score:null,menu:"ストレッチ",
+      advice:"関節の動きが小さくなっています。ストレッチや鍼で筋肉の硬さをゆるめるのがおすすめです。"},
+    {key:"legs",label:"脚・骨盤",score:src.legs?src.legs.score:null,menu:"骨盤矯正",
+      advice:"脚のラインや骨盤の傾きが気になります。骨盤矯正と、お尻・内ももの筋肉を使う練習がおすすめです。"},
+  ];
+  const measured=axes.filter(a=>a.score!=null);
+  if(measured.length<2) return {ok:false,axes,measuredCount:measured.length};
+  const score=Math.round(measured.reduce((s,a)=>s+a.score,0)/measured.length);
+  const rank=score>=90?"S":score>=80?"A":score>=70?"B":score>=60?"C":"D";
+  const rankText={S:"とても良い状態です",A:"良い状態です。小さなクセを整えましょう",B:"気になる点があります。早めのケアがおすすめです",C:"体に負担がかかっています。定期的なケアがおすすめです",D:"体への負担が大きい状態です。集中的なケアがおすすめです"}[rank];
+  const weak=[...measured].filter(a=>a.score<90).sort((a,b)=>a.score-b.score).slice(0,3);
+  const menus=[...new Set(weak.map(a=>a.menu))];
+  if(src.skeleton&&SKELETON_TYPES[src.skeleton.main]) SKELETON_TYPES[src.skeleton.main].menus.forEach(m=>{ if(!menus.includes(m)&&menus.length<4) menus.push(m); });
+  return {ok:true,score,rank,rankText,axes,measuredCount:measured.length,weak,menus,grade:gradeFromScore(score)};
+}
+// 4項目のレーダーチャート（SVG）
+function radarSvg(axes,size){
+  size=size||240; const c=size/2, r=size/2-38, n=axes.length;
+  const pt=(i,val)=>{ const ang=-Math.PI/2+i*2*Math.PI/n; return [c+Math.cos(ang)*r*val/100, c+Math.sin(ang)*r*val/100]; };
+  let g="";
+  [25,50,75,100].forEach(v=>{ g+=`<polygon points="${axes.map((_,i)=>pt(i,v).join(",")).join(" ")}" fill="none" stroke="#e2e8f0" stroke-width="1"/>`; });
+  axes.forEach((a,i)=>{ const [x,y]=pt(i,100); g+=`<line x1="${c}" y1="${c}" x2="${x}" y2="${y}" stroke="#e2e8f0"/>`;
+    const [lx,ly]=pt(i,128); g+=`<text x="${lx}" y="${ly}" font-size="10.5" font-weight="700" fill="#475569" text-anchor="middle" dominant-baseline="middle">${esc(a.label.replace(/（.*）/,""))}</text>`;
+    g+=`<text x="${lx}" y="${ly+13}" font-size="11" font-weight="800" fill="${a.score==null?"#94a3b8":scoreColor(a.score)}" text-anchor="middle">${a.score==null?"未測定":a.score+"点"}</text>`; });
+  const poly=axes.map((a,i)=>pt(i,a.score==null?0:a.score).join(",")).join(" ");
+  g+=`<polygon points="${poly}" fill="rgba(45,106,159,.22)" stroke="#2d6a9f" stroke-width="2"/>`;
+  return `<svg viewBox="-56 -8 ${size+112} ${size+20}" width="100%" style="max-width:${size+150}px;display:block;margin:0 auto;">${g}</svg>`;
+}
+
+// =====================================================================
+// MediaPipe Pose（テスト時は window.__POSE_OVERRIDE で差し替えられる）
+// =====================================================================
+let poseModel=null, poseResolve=null;
+function getPoseModel(){
+  if(poseModel) return poseModel;
+  poseModel=new Pose({locateFile:(file)=>`https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`});
+  poseModel.setOptions({modelComplexity:1,smoothLandmarks:false,enableSegmentation:false,minDetectionConfidence:0.5,minTrackingConfidence:0.5});
+  poseModel.onResults(results=>{ if(poseResolve){ poseResolve(results); poseResolve=null; } });
+  return poseModel;
+}
+function detectPose(canvas){
+  if(window.__POSE_OVERRIDE) return Promise.resolve({poseLandmarks:window.__POSE_OVERRIDE(canvas,state.cam&&state.cam.key)});
+  return new Promise((resolve,reject)=>{ const m=getPoseModel(); poseResolve=resolve; m.send({image:canvas}).catch(reject); });
+}
+function drawResult(srcCanvas,lm,extra){
+  const canvas=document.createElement("canvas");
+  canvas.width=srcCanvas.width; canvas.height=srcCanvas.height;
+  const ctx=canvas.getContext("2d");
+  ctx.drawImage(srcCanvas,0,0);
+  if(window.drawConnectors&&window.POSE_CONNECTIONS) window.drawConnectors(ctx,lm,window.POSE_CONNECTIONS,{color:"#22d3ee",lineWidth:3});
+  if(window.drawLandmarks) window.drawLandmarks(ctx,lm,{color:"#f97316",lineWidth:1,radius:3});
+  if(extra) extra(ctx,canvas.width,canvas.height);
+  return canvas;
+}
+function strokeLine(ctx,a,b,color,w,dash){ ctx.save(); ctx.strokeStyle=color; ctx.lineWidth=w; if(dash) ctx.setLineDash(dash); ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); ctx.restore(); }
+function label(ctx,text,x,y,W){ const fs=Math.max(14,Math.round(W*0.035)); ctx.save(); ctx.font=`800 ${fs}px sans-serif`; const tw=ctx.measureText(text).width; ctx.fillStyle="rgba(15,23,42,.75)"; ctx.fillRect(x-4,y-fs,tw+8,fs+6); ctx.fillStyle="#fde047"; ctx.fillText(text,x,y); ctx.restore(); }
+
+// =====================================================================
+// 画面の状態
+// =====================================================================
+let state={
+  screen:"home", // home | skeleton | rom | legs | total
+  staffId:STAFF_LIST[0].id, patientQuery:"", patientResults:[], selectedPatient:null,
+  cam:null,       // 撮影中：{key,title,hint,onShot(canvas,landmarks)}
+  stream:null, mirrorCam:false, analyzing:false,
+  answers:{}, skeletonPhoto:null, skeleton:null,
+  romValues:{}, romShots:{}, romSelected:{shoulder:true,trunk:true,forward:true,neck:true}, rom:null,
+  legsShot:null, legs:null,
+  history:null,   // 選択中の患者様の過去記録 {posture:[],assessments:[]}
+  notes:{skeleton:"",rom:"",legs:"",total:""},
+  saved:{}, savedIds:[], saving:false, toast:"",
+};
+function showToast(msg){ state.toast=msg; renderToast(); setTimeout(()=>{ if(state.toast===msg){ state.toast=""; renderToast(); } },2800); }
+function renderToast(){ const el=document.getElementById("toastContainer"); if(el) el.innerHTML=state.toast?`<div class="toast">${esc(state.toast)}</div>`:""; const ct=document.getElementById("camToast"); if(ct){ ct.textContent=state.toast||""; ct.style.display=state.toast?"block":"none"; } }
+function go(screen){ stopCamera(); state.cam=null; state.screen=screen; render(); window.scrollTo(0,0); }
+
+// ---------- カメラ ----------
+async function startCamera(){
+  try{
+    state.stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:"environment"},width:{ideal:960},height:{ideal:1280}},audio:false});
+    const v=document.getElementById("camVideo"); if(v){ v.srcObject=state.stream; v.play().catch(()=>{}); }
+  }catch(e){ showToast("カメラを起動できませんでした。「写真を選択」から撮影してください。"); }
+}
+function stopCamera(){ if(state.stream){ state.stream.getTracks().forEach(t=>t.stop()); state.stream=null; } }
+function openCamera(cam){ state.cam=cam; render(); window.scrollTo(0,0); startCamera(); }
+function cancelCamera(){ stopCamera(); state.cam=null; render(); }
+function toggleMirror(){ state.mirrorCam=!state.mirrorCam; const v=document.getElementById("camVideo"); if(v) v.style.transform=`scaleX(${state.mirrorCam?-1:1})`; }
+function captureFromVideo(retry){
+  retry=retry||0;
+  const video=document.getElementById("camVideo");
+  if(!video||!video.videoWidth){ if(retry<10){ setTimeout(()=>captureFromVideo(retry+1),150); } else showToast("カメラの準備ができていません。少し待ってからもう一度お試しください。"); return; }
+  const canvas=document.createElement("canvas"); canvas.width=video.videoWidth; canvas.height=video.videoHeight;
+  const ctx=canvas.getContext("2d"); if(state.mirrorCam){ ctx.translate(canvas.width,0); ctx.scale(-1,1); }
+  ctx.drawImage(video,0,0);
+  analyzeShot(canvas);
+}
+function onFileSelected(e){
+  const file=e.target.files&&e.target.files[0]; if(!file) return;
+  const img=new Image();
+  img.onload=()=>{ let w=img.width||1,h=img.height||1; const r=Math.min(1,1280/Math.max(w,h)); w=Math.max(1,Math.round(w*r)); h=Math.max(1,Math.round(h*r));
+    const c=document.createElement("canvas"); c.width=w; c.height=h; c.getContext("2d").drawImage(img,0,0,w,h); analyzeShot(c); };
+  img.src=URL.createObjectURL(file); e.target.value="";
+}
+async function analyzeShot(canvas){
+  const cam=state.cam; if(!cam) return;
+  stopCamera(); state.analyzing=true; render();
+  try{
+    const res=await detectPose(canvas);
+    const lm=res&&res.poseLandmarks;
+    state.analyzing=false;
+    if(!lm||lm.length<33){ showToast("体を検出できませんでした。全身が映るように撮り直してください。"); render(); startCamera(); return; }
+    state.cam=null;
+    cam.onShot(canvas,lm);
+  }catch(e){ state.analyzing=false; showToast("解析中にエラーが発生しました："+e.message); }
+  render();
+}
+
+// ---------- 患者様の選択 ----------
+let searchTimer=null;
+function onPatientQueryInput(v){
+  state.patientQuery=v; clearTimeout(searchTimer);
+  if(!v.trim()){ state.patientResults=[]; renderSearchResults(); return; }
+  searchTimer=setTimeout(async()=>{
+    try{
+      const rows=await sbGet("bookings",`?patient_name=ilike.*${encodeURIComponent(v.trim())}*&select=patient_name,phone&order=date.desc&limit=50`);
+      const map={}; (Array.isArray(rows)?rows:[]).forEach(r=>{ if(!map[r.patient_name]) map[r.patient_name]={name:r.patient_name,phone:r.phone||""}; });
+      state.patientResults=Object.values(map).slice(0,10);
+    }catch(e){ state.patientResults=[]; }
+    renderSearchResults();
+  },300);
+}
+function renderSearchResults(){
+  const el=document.getElementById("patientSearchResults"); if(!el) return;
+  el.innerHTML=state.patientResults.length?`<div class="search-results">${state.patientResults.map((p,i)=>`<div class="search-item" data-i="${i}"><b>${esc(p.name)}</b>${p.phone?`<span>${esc(p.phone)}</span>`:""}</div>`).join("")}</div>`:"";
+  el.querySelectorAll(".search-item").forEach(n=>n.onclick=()=>selectPatient(state.patientResults[Number(n.dataset.i)]));
+}
+function selectPatient(p){ state.selectedPatient=p; state.patientQuery=""; state.patientResults=[]; state.history=null; state.saved={}; render(); loadHistory(); }
+async function loadHistory(){
+  const p=state.selectedPatient; if(!p) return;
+  try{
+    const enc=encodeURIComponent(p.name);
+    const [posture,assess]=await Promise.all([
+      sbGet("posture_records",`?patient_name=eq.${enc}&order=recorded_date.desc,created_at.desc&limit=10`),
+      sbGet("body_assessments",`?patient_name=eq.${enc}&is_training=eq.false&order=recorded_date.desc,created_at.desc&limit=50`),
+    ]);
+    state.history={posture:Array.isArray(posture)?posture:[],assessments:Array.isArray(assess)?assess:[]};
+  }catch(e){ state.history={posture:[],assessments:[]}; }
+  render();
+}
+function latestAssessment(kind){ return state.history?state.history.assessments.find(a=>a.kind===kind)||null:null; }
+
+// ---------- 保存 ----------
+async function uploadCanvasPhoto(canvas,tag){
+  if(!supabaseClient||!canvas) return null;
+  const blob=await new Promise(r=>canvas.toBlob(r,"image/jpeg",0.82)); if(!blob) return null;
+  const path=`body_${tag}_${Date.now()}_${Math.random().toString(36).slice(2,8)}.jpg`;
+  const {error}=await supabaseClient.storage.from("posture-photos").upload(path,blob,{contentType:"image/jpeg",upsert:false});
+  if(error) throw new Error(error.message);
+  const {data}=supabaseClient.storage.from("posture-photos").getPublicUrl(path);
+  return data&&data.publicUrl?data.publicUrl:null;
+}
+async function saveAssessment(kind,payload,photos){
+  if(!state.selectedPatient){ showToast("保存するには、上で患者様を選んでください"); window.scrollTo(0,0); return; }
+  if(state.saving) return;
+  state.saving=true; render();
+  try{
+    let photoUrls=null, photoFailed=false;
+    if(photos&&photos.length){
+      photoUrls={};
+      for(const [tag,canvas] of photos){ try{ const u=await uploadCanvasPhoto(canvas,tag); if(u) photoUrls[tag]=u; }catch(e){ photoFailed=true; } }
+    }
+    const rows=await sbPost("body_assessments",Object.assign({
+      patient_name:state.selectedPatient.name, phone:state.selectedPatient.phone||null, staff_id:state.staffId, store_id:1,
+      recorded_date:todayStr(), kind, photo_urls:photoUrls, notes:state.notes[kind]||null, is_training:false,
+    },payload));
+    state.saved[kind]=true;
+    if(Array.isArray(rows)&&rows[0]){ state.savedIds.push(rows[0].id); if(state.history) state.history.assessments.unshift(rows[0]); }
+    showToast(photoFailed?"✅ 保存しました（写真の保存だけ失敗しました）":"✅ 保存しました");
+  }catch(e){ showToast("❌ "+e.message); }
+  state.saving=false; render();
+}
+
+// =====================================================================
+// 各チェックの操作
+// =====================================================================
+// ① 骨格タイプ
+function answer(qid,k){ state.answers[qid]=k; state.skeleton=null; state.saved.skeleton=false; render(); }
+function shootSkeleton(){
+  openCamera({key:"skeleton",title:"骨格タイプ：正面の写真",hint:"正面を向いて気をつけの姿勢。頭から足先まで入るように",onShot:(canvas,lm)=>{
+    const m=skeletonPhotoMetrics(lm,canvas.width,canvas.height);
+    const rc=drawResult(canvas,lm,(ctx,W,H)=>{ const ls=px(lm,11,W,H),rs=px(lm,12,W,H),lh=px(lm,23,W,H),rh=px(lm,24,W,H);
+      strokeLine(ctx,ls,rs,"#fde047",4); strokeLine(ctx,lh,rh,"#fde047",4); label(ctx,`肩幅÷股関節幅 ${m.ratio}`,Math.min(ls.x,rs.x),Math.min(ls.y,rs.y)-12,W); });
+    state.skeletonPhoto={canvas:rc,metrics:m}; state.skeleton=null; state.saved.skeleton=false;
+  }});
+}
+function judgeSkeleton(){
+  const n=Object.keys(state.answers).length;
+  if(n<SKELETON_QUESTIONS.length){ showToast(`まだ答えていない質問があります（${SKELETON_QUESTIONS.length-n}問）`); return; }
+  state.skeleton=skeletonResult(state.answers,state.skeletonPhoto&&state.skeletonPhoto.metrics); render();
+  setTimeout(()=>{ const el=document.getElementById("resultTop"); if(el) el.scrollIntoView({behavior:"smooth"}); },50);
+}
+function saveSkeleton(){
+  const r=state.skeleton; if(!r) return;
+  saveAssessment("skeleton",{score:null,result_type:r.label,details:{main:r.main,sub:r.sub,pct:r.pct,counts:r.counts,answers:state.answers,photoRatio:state.skeletonPhoto?state.skeletonPhoto.metrics.ratio:null}},
+    state.skeletonPhoto?[["skeleton",state.skeletonPhoto.canvas]]:[]);
+}
+// ② 可動域
+function toggleRomTest(key){ state.romSelected[key]=!state.romSelected[key]; state.rom=null; render(); }
+function shootRom(testKey,side){
+  const t=ROM_TESTS.find(x=>x.key===testKey), shot=t.shots.find(s=>s.side===side);
+  openCamera({key:`rom_${testKey}_${side}`,title:`${t.name}：${shot.label}`,hint:shot.hint,onShot:(canvas,lm)=>{
+    const W=canvas.width,H=canvas.height, m=romMeasure(testKey,lm,W,H);
+    const v=Object.assign({},state.romValues[testKey]||{});
+    if(testKey==="shoulder"){ v.L=m.L; v.R=m.R; }
+    else if(testKey==="forward"){ v.value=m.value; v.reach=m.reach; v.reachScore=m.reachScore; }
+    else v[side]=m.value;
+    state.romValues[testKey]=v;
+    const rc=drawResult(canvas,lm,(ctx)=>{
+      if(testKey==="shoulder"){ label(ctx,`左 ${m.L}°`,px(lm,11,W,H).x,px(lm,11,W,H).y-14,W); label(ctx,`右 ${m.R}°`,px(lm,12,W,H).x,px(lm,12,W,H).y-14,W); }
+      else if(testKey==="trunk"){ const hm=mid(px(lm,23,W,H),px(lm,24,W,H)), sm=mid(px(lm,11,W,H),px(lm,12,W,H)); strokeLine(ctx,hm,{x:hm.x,y:0},"#fde047",3,[12,8]); strokeLine(ctx,hm,sm,"#f472b6",4); label(ctx,`${m.value}°`,sm.x,sm.y-14,W); }
+      else if(testKey==="neck"){ strokeLine(ctx,px(lm,2,W,H),px(lm,5,W,H),"#f472b6",4); label(ctx,`${m.value}°`,px(lm,0,W,H).x,px(lm,0,W,H).y-24,W); }
+      else { label(ctx,`${m.value}°・指先：${m.reach}`,12,40,W); }
+    });
+    state.romShots[`${testKey}_${side}`]=rc; state.rom=null; state.saved.rom=false;
+  }});
+}
+function setRomValue(testKey,k,val){
+  const v=Object.assign({},state.romValues[testKey]||{}); v[k]=val===""?"":Math.max(0,Math.min(200,Number(val)));
+  if(testKey==="forward"&&k==="value"){ delete v.reach; delete v.reachScore; } // 手入力に変えた場合は、写真から読んだ指先の位置は使わない
+  state.romValues[testKey]=v; state.rom=null; state.saved.rom=false;
+}
+function judgeRom(){
+  const vals={}; ROM_TESTS.forEach(t=>{ if(state.romSelected[t.key]&&state.romValues[t.key]) vals[t.key]=state.romValues[t.key]; });
+  const r=romResult(vals);
+  if(!r){ showToast("撮影するか、角度を入力してください"); return; }
+  state.rom=r; render();
+  setTimeout(()=>{ const el=document.getElementById("resultTop"); if(el) el.scrollIntoView({behavior:"smooth"}); },50);
+}
+function saveRom(){
+  const r=state.rom; if(!r) return;
+  const photos=Object.entries(state.romShots).filter(([k])=>state.romSelected[k.split("_")[0]]).map(([k,c])=>["rom_"+k,c]);
+  saveAssessment("rom",{score:r.score,result_type:r.grade.label,details:{tests:r.tests,findings:r.findings}},photos);
+}
+// ③ 脚・骨盤
+function shootLegs(){
+  openCamera({key:"legs",title:"O脚・X脚・骨盤：正面の写真",hint:"正面を向いて、両足のかかとをそろえて、ひざを伸ばして立つ（ひざ下まで見える服で）",onShot:(canvas,lm)=>{
+    const W=canvas.width,H=canvas.height, a=legsAnalysis(lm,W,H);
+    const rc=drawResult(canvas,lm,(ctx)=>{
+      [[23,25,27],[24,26,28]].forEach(([h,k,an])=>strokeLine(ctx,px(lm,h,W,H),px(lm,an,W,H),"#fde047",3,[12,8]));
+      strokeLine(ctx,px(lm,23,W,H),px(lm,24,W,H),"#38bdf8",4); strokeLine(ctx,px(lm,11,W,H),px(lm,12,W,H),"#38bdf8",4);
+      label(ctx,`${a.legType.replace(/（.*）/,"")}`,12,40,W);
+    });
+    state.legsShot=rc; state.legs=a; state.saved.legs=false;
+  }});
+}
+function saveLegs(){
+  const a=state.legs; if(!a) return;
+  saveAssessment("legs",{score:a.score,result_type:a.legType,details:{devL:a.devL,devR:a.devR,avgDev:a.avgDev,pelvisTilt:a.pelvisTilt,shoulderTilt:a.shoulderTilt,kneeHeightDiff:a.kneeHeightDiff,shift:a.shift,pelvisHighSide:a.pelvisHighSide,shoulderHighSide:a.shoulderHighSide,findings:a.findings}},
+    state.legsShot?[["legs",state.legsShot]]:[]);
+}
+// ④ 総合評価：今回測った結果を優先し、無ければ保存済みの最新の結果（90日以内）を使う
+function totalSources(){
+  const within=(d)=>{ if(!d) return false; const lim=new Date(); lim.setDate(lim.getDate()-90); return new Date(d+"T00:00:00")>=lim; };
+  const src={posture:null,rom:null,legs:null,skeleton:null,from:{}};
+  const pr=state.history&&state.history.posture.find(p=>within(p.recorded_date));
+  if(pr){ src.posture={side:pr.posture_score!=null?Number(pr.posture_score):null,front:pr.front_score!=null?Number(pr.front_score):null}; src.from.posture=pr.recorded_date; }
+  if(state.rom){ src.rom={score:state.rom.score}; src.from.rom="今回"; }
+  else { const a=latestAssessment("rom"); if(a&&within(a.recorded_date)){ src.rom={score:Number(a.score)}; src.from.rom=a.recorded_date; } }
+  if(state.legs){ src.legs={score:state.legs.score}; src.from.legs="今回"; }
+  else { const a=latestAssessment("legs"); if(a&&within(a.recorded_date)){ src.legs={score:Number(a.score)}; src.from.legs=a.recorded_date; } }
+  if(state.skeleton){ src.skeleton={main:state.skeleton.main,label:state.skeleton.label}; src.from.skeleton="今回"; }
+  else { const a=latestAssessment("skeleton"); if(a&&a.details&&a.details.main){ src.skeleton={main:a.details.main,label:a.result_type}; src.from.skeleton=a.recorded_date; } }
+  return src;
+}
+function saveTotal(){
+  const src=totalSources(), t=totalEvaluation(src); if(!t.ok) return;
+  saveAssessment("total",{score:t.score,result_type:`${t.rank}ランク`,details:{axes:t.axes.map(a=>({key:a.key,label:a.label,score:a.score})),rank:t.rank,menus:t.menus,skeleton:src.skeleton,from:src.from}},[]);
+}
+
+// =====================================================================
+// 描画
+// =====================================================================
+function findingsHtml(list){
+  return (list||[]).map(f=>`<div class="finding ${f.ok?"ok":"bad"}"><span style="font-size:16px;">${f.ok?"✅":"⚠️"}</span><div>
+    <div class="ft" style="color:${f.ok?"#065f46":"#991b1b"};">${esc(f.part)}${f.severity?`　<span style="font-size:10px;background:#991b1b22;padding:1px 7px;border-radius:10px;">${esc(f.severity)}</span>`:""}</div>
+    <div class="fd">${esc(f.desc)}</div>
+    ${f.impact?`<div class="fi">💡 ${esc(f.impact)}</div>`:""}
+    ${f.muscles?`<div class="fm"><b>🦴 関連する筋肉：</b>${f.muscles.map(esc).join("・")}</div>`:""}
+    ${f.symptoms?`<div class="fm" style="color:#991b1b;"><b>⚠️ 起こりやすい不調：</b>${f.symptoms.map(esc).join("・")}</div>`:""}
+  </div></div>`).join("");
+}
+function scoreBlock(score,grade,sub){
+  return `<div class="score-hero"><div class="score-num" style="color:${scoreColor(score)};">${score}<span style="font-size:20px;">点</span></div><div class="score-label">100点満点</div></div>
+    <div style="text-align:center;"><span class="pill" style="background:${grade.color}15;border:1.5px solid ${grade.color}55;color:${grade.color};">${grade.icon} ${esc(grade.label)}</span>${sub?`<div style="font-size:12.5px;color:#475569;font-weight:700;margin-top:8px;">${esc(sub)}</div>`:""}</div>`;
+}
+function notesAndSave(kind,onSave,canSave){
+  return `<div class="form-group" style="margin-top:14px;"><label class="form-label">コメント・所見（任意）</label><textarea class="form-input" rows="2" data-notes="${kind}" placeholder="気になる点・アドバイスなど">${esc(state.notes[kind])}</textarea></div>
+    <button class="btn btn-green" onclick="${onSave}()" ${(!canSave||state.saving)?"disabled":""}>${state.saving?"保存中...":state.saved[kind]?"✅ 保存済み（もう一度保存）":"💾 この結果を保存する"}</button>
+    ${state.selectedPatient?"":`<div class="disclaimer" style="text-align:center;">※ 保存するには、メニュー画面で患者様を選んでください</div>`}`;
+}
+function patientCard(){
+  const p=state.selectedPatient;
+  return `<div class="card"><div class="card-header">👤 患者様・担当</div><div class="card-body">
+    <div class="form-group">
+      ${p?`<div class="selected-patient"><span style="font-weight:800;color:#065f46;">${esc(p.name)} 様</span><button onclick="state.selectedPatient=null;state.history=null;render();" style="background:none;border:none;color:#059669;font-size:12px;cursor:pointer;font-weight:700;">変更</button></div>`
+        :`<label class="form-label">お名前で検索（保存・総合評価に使います）</label><input class="form-input" id="patientSearchInput" placeholder="患者様のお名前を入力" value="${esc(state.patientQuery)}"/><div id="patientSearchResults"></div>`}
+    </div>
+    <div><label class="form-label">担当スタッフ</label><div class="staff-btns">${STAFF_LIST.map(s=>`<button class="staff-btn ${state.staffId===s.id?"sel":""}" onclick="state.staffId=${s.id};render();">${s.name}</button>`).join("")}</div></div>
+  </div></div>`;
+}
+function renderHome(){
+  const done=k=>state[k]||state.saved[k];
+  const last=k=>{ const a=latestAssessment(k); return a?`<span class="done-chip" style="background:#eef2ff;color:#3730a3;">前回 ${esc(a.recorded_date.slice(5).replace("-","/"))}${a.score!=null?" "+Math.round(a.score)+"点":a.result_type?" "+esc(a.result_type):""}</span>`:""; };
+  const card=(screen,icon,bg,title,desc,kind)=>`<button class="menu-card" onclick="go('${screen}')"><div class="icon" style="background:${bg};">${icon}</div><div style="flex:1;"><div class="t">${title}${done(kind)?`<span class="done-chip">今回済み</span>`:""}${last(kind)}</div><div class="d">${desc}</div></div><div style="color:#94a3b8;font-size:20px;">›</div></button>`;
+  return patientCard()+`
+    <div class="card"><div class="card-header">📋 チェックを選ぶ（1つだけでも、まとめてでもOK）</div><div class="card-body">
+      ${card("skeleton","🧬","#f5f3ff","① 骨格タイプチェック","10の質問＋正面の写真で、ストレート／ウェーブ／ナチュラルを判定します（約3分）","skeleton")}
+      ${card("rom","🤸","#ecfeff","② 可動域チェック","肩・体の横倒し・前屈・首の動きを撮影して角度を測り、左右差も出します（約5分）","rom")}
+      ${card("legs","🦵","#fef3c7","③ O脚・X脚・骨盤チェック","正面の写真1枚で、脚のライン・骨盤と肩の傾き・重心のかたよりを調べます（約1分）","legs")}
+      ${card("total","🏅","#dcfce7","④ 総合評価","姿勢分析・可動域・脚と骨盤の結果をまとめて、点数・ランク・おすすめケアを出します","total")}
+      <a href="/posture-analysis.html" target="_blank" style="display:block;text-align:center;font-size:12.5px;color:#2d6a9f;font-weight:800;margin-top:6px;">🧍 姿勢分析（横・正面）はこちら →</a>
+      <div class="disclaimer">※ 写真から体の傾向を推定する参考ツールです。医学的な診断ではありません。</div>
+    </div></div>`;
+}
+function renderSkeleton(){
+  const r=state.skeleton, n=Object.keys(state.answers).length;
+  let html=`<button class="back" onclick="go('home')">← メニューへ</button>
+    <div class="card"><div class="card-header">🧬 ① 骨格タイプチェック　<span style="font-weight:700;color:#94a3b8;">${n}/${SKELETON_QUESTIONS.length}問</span></div><div class="card-body">
+    ${SKELETON_QUESTIONS.map((q,i)=>`<div class="q"><div class="q-title">Q${i+1}. ${esc(q.q)}</div>${q.o.map(([k,t])=>`<button class="opt ${state.answers[q.id]===k?"sel":""}" onclick="answer('${q.id}','${k}')">${esc(t)}</button>`).join("")}</div>`).join("")}
+    </div></div>
+    <div class="card"><div class="card-header">📷 正面の写真（任意・判定の精度が上がります）</div><div class="card-body">
+      ${state.skeletonPhoto?`<div class="captured-wrap" id="cv_skeleton"></div><div class="tip">肩幅÷股関節幅：<b>${state.skeletonPhoto.metrics.ratio}</b>　${state.skeletonPhoto.metrics.lean?`→ ${SKELETON_TYPES[state.skeletonPhoto.metrics.lean].name}寄りの比率`:"→ 平均的な比率"}</div>`:""}
+      <button class="btn btn-outline" style="margin-top:8px;" onclick="shootSkeleton()">📷 ${state.skeletonPhoto?"撮り直す":"正面を撮影する"}</button>
+    </div></div>
+    <button class="btn btn-primary" onclick="judgeSkeleton()" style="margin-bottom:14px;">🧬 判定する</button>`;
+  if(r){
+    const main=SKELETON_TYPES[r.main], sub=r.sub?SKELETON_TYPES[r.sub]:null;
+    html+=`<div class="card" id="resultTop"><div class="card-header">🧬 判定結果</div><div class="card-body">
+      <div style="text-align:center;padding:8px 0;"><div style="font-size:12px;color:#94a3b8;font-weight:700;">あなたの骨格タイプ</div>
+      <div style="font-size:28px;font-weight:800;color:${main.color};margin-top:4px;">${esc(r.label)}</div></div>
+      <div class="type-pct">${["S","W","N"].map(k=>`<div style="background:${SKELETON_TYPES[k].soft};color:${SKELETON_TYPES[k].color};">${SKELETON_TYPES[k].name}<div style="font-size:18px;font-weight:800;">${r.pct[k]}%</div></div>`).join("")}</div>
+      <div class="tip"><b>体の特徴：</b>${esc(main.summary)}</div>
+      <div class="tip"><b>似合う服：</b>${esc(main.fashion)}</div>
+      <div class="tip"><b>体のケアのポイント：</b>${esc(main.care)}${sub?`<br/><span style="color:#64748b;">（${esc(sub.name)}の要素：${esc(sub.care)}）</span>`:""}</div>
+      <div class="tip"><b>おすすめメニュー：</b>${main.menus.map(esc).join("・")}</div>
+      ${notesAndSave("skeleton","saveSkeleton",true)}
+    </div></div>`;
+  }
+  return html;
+}
+function renderRom(){
+  const r=state.rom;
+  let html=`<button class="back" onclick="go('home')">← メニューへ</button>
+    <div class="card"><div class="card-header">🤸 ② 可動域チェック</div><div class="card-body">
+    <div class="tip" style="margin-top:0;margin-bottom:10px;">測りたい項目だけ選べます。撮影すると角度が自動で入ります（角度計で測った値を直接入力してもOK）。</div>
+    ${ROM_TESTS.map(t=>{
+      const on=!!state.romSelected[t.key], v=state.romValues[t.key]||{};
+      const inputs=t.key==="shoulder"?[["R","右"],["L","左"]]:t.paired?[["R","右"],["L","左"]]:[["value",""]];
+      const thumbs=t.shots.map(s=>state.romShots[`${t.key}_${s.side}`]?`thumb_${t.key}_${s.side}`:null).filter(Boolean);
+      return `<div class="rom-test ${on?"":"off"}">
+        <label style="display:flex;align-items:center;gap:8px;font-weight:800;font-size:14px;cursor:pointer;"><input type="checkbox" ${on?"checked":""} onchange="toggleRomTest('${t.key}')" style="width:18px;height:18px;"/> ${t.icon} ${esc(t.name)}<span style="font-size:11px;color:#94a3b8;font-weight:700;">目安 ${t.ref}°</span></label>
+        ${on?`<div class="rom-row">${t.shots.map(s=>`<button class="btn btn-outline btn-sm" onclick="shootRom('${t.key}','${s.side}')">📷 ${esc(s.label)}${state.romShots[`${t.key}_${s.side}`]?" ✓":""}</button>`).join("")}</div>
+        <div class="rom-row">${inputs.map(([k,lab])=>`<span style="font-size:12px;font-weight:700;color:#475569;">${lab}</span><input type="number" inputmode="numeric" data-rom="${t.key}" data-k="${k}" value="${v[k]!=null?esc(v[k]):""}" placeholder="—"/><span style="font-size:12px;color:#94a3b8;">°</span>`).join("")}${t.key==="forward"&&v.reach?`<span style="font-size:12px;color:#0f766e;font-weight:700;">指先：${esc(v.reach)}</span>`:""}</div>
+        ${thumbs.length?`<div class="thumbs">${thumbs.map(id=>`<span id="${id}" style="width:31%;"></span>`).join("")}</div>`:""}`:""}
+      </div>`;
+    }).join("")}
+    <button class="btn btn-primary" onclick="judgeRom()">🤸 結果を見る</button>
+    </div></div>`;
+  if(r){
+    html+=`<div class="card" id="resultTop"><div class="card-header">🤸 可動域の結果</div><div class="card-body">
+      ${scoreBlock(r.score,r.grade)}
+      <div style="margin-top:12px;">${r.tests.map(tt=>`<div class="bar-row"><span class="bl">${esc(tt.name.replace(/（.*）/,""))}</span><span class="bw"><span class="bb" style="display:block;width:${tt.score}%;background:${scoreColor(tt.score)};"></span></span><span class="bv" style="color:${scoreColor(tt.score)};">${tt.score}点</span></div>`).join("")}</div>
+      ${findingsHtml(r.findings)}
+      <div class="disclaimer">※ 角度は写真からの推定値です。体の向きや服装で数度ずれることがあります。</div>
+      ${notesAndSave("rom","saveRom",true)}
+    </div></div>`;
+  }
+  return html;
+}
+function renderLegs(){
+  const a=state.legs;
+  let html=`<button class="back" onclick="go('home')">← メニューへ</button>
+    <div class="card"><div class="card-header">🦵 ③ O脚・X脚・骨盤チェック</div><div class="card-body">
+      <div class="tip" style="margin-top:0;">正面を向いて、<b>かかとをそろえ、ひざを伸ばして</b>立った写真を撮ります。ひざ下が見える服装がおすすめです。</div>
+      ${state.legsShot?`<div class="captured-wrap" id="cv_legs" style="margin-top:10px;"></div>`:""}
+      <button class="btn ${state.legsShot?"btn-outline":"btn-primary"}" style="margin-top:10px;" onclick="shootLegs()">📷 ${state.legsShot?"撮り直す":"正面を撮影する"}</button>
+    </div></div>`;
+  if(a){
+    const row=(l,v,bad)=>`<div class="bar-row"><span class="bl">${l}</span><span style="flex:1;font-weight:800;color:${bad?"#dc2626":"#059669"};">${v}</span></div>`;
+    html+=`<div class="card" id="resultTop"><div class="card-header">🦵 結果</div><div class="card-body">
+      ${scoreBlock(a.score,a.grade,`脚のライン：${a.legType}${a.legSeverity?`（${a.legSeverity}）`:""}`)}
+      <div style="margin-top:12px;">
+        ${row("ひざの角度",`左 ${a.devL}°／右 ${a.devR}°（＋はO脚・−はX脚方向）`,Math.abs(a.avgDev)>=4)}
+        ${row("骨盤の傾き",`${a.pelvisTilt}°${a.pelvisHighSide?`（${a.pelvisHighSide}が高い）`:""}`,a.pelvisTilt>=1.5)}
+        ${row("肩の傾き",`${a.shoulderTilt}°${a.shoulderHighSide?`（${a.shoulderHighSide}が高い）`:""}`,a.shoulderTilt>=1.5)}
+        ${row("重心のかたより",Math.abs(a.shift)<10?"ほぼ中央":`${a.shift>0?"向かって右":"向かって左"}寄り`,Math.abs(a.shift)>=10)}
+      </div>
+      ${findingsHtml(a.findings)}
+      <div class="disclaimer">※ 写真からの推定値です。黄色の点線＝股関節と足首を結ぶ線（ひざがこの線より外ならO脚、内ならX脚の方向）。</div>
+      ${notesAndSave("legs","saveLegs",true)}
+    </div></div>`;
+  }
+  return html;
+}
+function renderTotal(){
+  let html=`<button class="back" onclick="go('home')">← メニューへ</button>`;
+  if(!state.selectedPatient){
+    return html+patientCard()+`<div class="card"><div class="card-body"><div class="tip" style="margin-top:0;">総合評価は、その患者様の<b>姿勢分析</b>（保存済み）と、今回または保存済みの<b>可動域・脚と骨盤</b>の結果をまとめて出します。まず患者様を選んでください。</div></div></div>`;
+  }
+  if(!state.history) return html+`<div class="card"><div class="card-body"><div class="spinner"></div></div></div>`;
+  const src=totalSources(), t=totalEvaluation(src);
+  const fromTxt=k=>src.from[k]?(src.from[k]==="今回"?"今回":src.from[k].slice(5).replace("-","/")+"の記録"):"未測定";
+  const prev=state.history.assessments.find(a=>a.kind==="total"&&!state.savedIds.includes(a.id))||null; // 今回保存した分ではなく、それより前の記録と比べる
+  html+=`<div class="card"><div class="card-header">🏅 ④ 総合評価　<span style="font-weight:700;color:#64748b;">${esc(state.selectedPatient.name)} 様</span></div><div class="card-body">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11.5px;">
+      ${[["posture","🧍 姿勢分析"],["rom","🤸 可動域"],["legs","🦵 脚・骨盤"],["skeleton","🧬 骨格タイプ"]].map(([k,l])=>`<div style="background:${src.from[k]?"#f0fdf4":"#f8fafc"};border-radius:8px;padding:7px 9px;"><b>${l}</b><br/><span style="color:${src.from[k]?"#166534":"#94a3b8"};">${fromTxt(k)}</span></div>`).join("")}
+    </div>`;
+  if(!t.ok){
+    html+=`<div class="tip">総合評価には、<b>2つ以上</b>の結果が必要です（今は${t.measuredCount}つ）。下のボタンから測ってください。</div>
+      <div class="btn-row" style="margin-top:10px;flex-wrap:wrap;">
+        ${src.posture?"":`<a class="btn btn-outline btn-sm" href="/posture-analysis.html" target="_blank" style="text-decoration:none;">🧍 姿勢分析</a>`}
+        ${src.rom?"":`<button class="btn btn-outline btn-sm" onclick="go('rom')">🤸 可動域</button>`}
+        ${src.legs?"":`<button class="btn btn-outline btn-sm" onclick="go('legs')">🦵 脚・骨盤</button>`}
+      </div></div></div>`;
+    return html;
+  }
+  const diff=prev&&prev.score!=null?t.score-Math.round(Number(prev.score)):null;
+  html+=`<div style="text-align:center;margin-top:14px;">
+      <div style="display:inline-flex;align-items:center;justify-content:center;width:84px;height:84px;border-radius:50%;background:${t.grade.color};color:white;font-size:40px;font-weight:800;">${t.rank}</div>
+      <div class="score-num" style="color:${scoreColor(t.score)};margin-top:8px;font-size:40px;">${t.score}<span style="font-size:18px;">点</span></div>
+      <div style="font-weight:800;color:${t.grade.color};margin-top:4px;">${esc(t.rankText)}</div>
+      ${diff!=null?`<div style="font-size:12.5px;font-weight:800;margin-top:6px;color:${diff>=0?"#059669":"#dc2626"};">前回（${esc(prev.recorded_date.slice(5).replace("-","/"))}）より ${diff>=0?"+":""}${diff}点</div>`:""}
+    </div>
+    <div style="margin-top:10px;">${radarSvg(t.axes)}</div>
+    ${src.skeleton?`<div class="tip"><b>骨格タイプ：</b>${esc(src.skeleton.label)}　${esc(SKELETON_TYPES[src.skeleton.main]?SKELETON_TYPES[src.skeleton.main].care:"")}</div>`:""}
+    ${t.weak.length?`<div style="font-weight:800;font-size:13px;color:#1e3a5f;margin-top:14px;">🎯 改善ポイント</div>${t.weak.map((a,i)=>`<div class="finding bad"><span style="font-weight:800;color:#991b1b;">${i+1}</span><div><div class="ft" style="color:#991b1b;">${esc(a.label)}　${a.score}点</div><div class="fd">${esc(a.advice)}</div></div></div>`).join("")}`
+      :`<div class="finding ok"><span>✅</span><div class="fd">すべての項目が良好です。今の状態を保つために、月1回のメンテナンスがおすすめです。</div></div>`}
+    <div class="tip" style="margin-top:12px;"><b>おすすめのケア：</b>${t.menus.length?t.menus.map(esc).join("・"):"メンテナンス（月1回）"}</div>
+    ${notesAndSave("total","saveTotal",true)}
+  </div></div>`;
+  return html;
+}
+function renderCamera(){
+  const cam=state.cam;
+  return `<div class="card"><div class="card-header">📷 ${esc(cam.title)}</div><div class="card-body">
+    <div id="camToast" style="display:${state.toast?"block":"none"};background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 12px;color:#dc2626;font-size:12px;font-weight:700;margin-bottom:10px;">${esc(state.toast)}</div>
+    <div class="cam-wrap"><video id="camVideo" autoplay playsinline muted style="transform:scaleX(${state.mirrorCam?-1:1});"></video><div class="cam-hint">${esc(cam.hint)}</div>
+      <button onclick="toggleMirror()" style="position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.5);color:white;border:none;border-radius:8px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer;">🔄 反転</button></div>
+    <button class="btn btn-primary" onclick="captureFromVideo()" style="margin-bottom:8px;">📷 撮影する</button>
+    <input type="file" id="fileInput" accept="image/*" style="display:none;"/>
+    <div class="btn-row"><button class="btn btn-outline" onclick="document.getElementById('fileInput').click()">🖼️ 写真を選択</button><button class="btn btn-outline" onclick="cancelCamera()">やめる</button></div>
+  </div></div>`;
+}
+function render(){
+  const root=document.getElementById("root");
+  if(state.cam&&!state.analyzing){
+    if(root.dataset.cam===state.cam.key) return; // 撮影画面のまま：videoを作り直さない
+    root.dataset.cam=state.cam.key;
+    root.innerHTML=renderCamera();
+    document.getElementById("fileInput").onchange=onFileSelected;
+    if(state.stream){ const v=document.getElementById("camVideo"); v.srcObject=state.stream; v.play().catch(()=>{}); }
+    renderToast(); return;
+  }
+  root.dataset.cam="";
+  if(state.analyzing){ root.innerHTML=`<div class="card"><div class="card-body" style="text-align:center;padding:50px 20px;"><div class="spinner"></div><div style="font-weight:700;">解析中です...</div><div style="font-size:12px;color:#94a3b8;margin-top:6px;">体のポイントを検出しています</div></div></div>`; return; }
+  const scrollY=window.scrollY;
+  root.innerHTML=state.screen==="skeleton"?renderSkeleton():state.screen==="rom"?renderRom():state.screen==="legs"?renderLegs():state.screen==="total"?renderTotal():renderHome();
+  // 入力欄（画面全体を描き直すと入力中の文字が消えるため、値は state に直接入れる）
+  const psi=document.getElementById("patientSearchInput"); if(psi){ psi.oninput=e=>onPatientQueryInput(e.target.value); renderSearchResults(); }
+  root.querySelectorAll("textarea[data-notes]").forEach(t=>t.oninput=e=>{ state.notes[t.dataset.notes]=e.target.value; });
+  root.querySelectorAll("input[data-rom]").forEach(inp=>{ inp.oninput=e=>setRomValue(inp.dataset.rom,inp.dataset.k,e.target.value); inp.onchange=()=>{ if(state.rom===null) render(); }; });
+  const put=(id,c)=>{ const el=document.getElementById(id); if(el&&c){ c.style.width="100%"; c.style.borderRadius="6px"; el.innerHTML=""; el.appendChild(c); } };
+  if(state.screen==="skeleton"&&state.skeletonPhoto) put("cv_skeleton",state.skeletonPhoto.canvas);
+  if(state.screen==="legs") put("cv_legs",state.legsShot);
+  if(state.screen==="rom") Object.entries(state.romShots).forEach(([k,c])=>put("thumb_"+k,c));
+  window.scrollTo(0,scrollY);
+  renderToast();
+}
+render();
+// ?id=予約ID で開いたときは、その予約の患者様・担当スタッフを選んだ状態にする（予約詳細の「体のチェック」ボタンから）
+(async function(){
+  const params=new URLSearchParams(location.search);
+  const startScreen=params.get("check"); if(["skeleton","rom","legs","total"].includes(startScreen)){ state.screen=startScreen; render(); }
+  const id=params.get("id"); if(!id) return;
+  try{
+    const rows=await sbGet("bookings",`?id=eq.${encodeURIComponent(id)}&select=patient_name,phone,staff_id&limit=1`);
+    if(Array.isArray(rows)&&rows[0]){ if(rows[0].staff_id&&STAFF_LIST.some(s=>s.id===rows[0].staff_id)) state.staffId=rows[0].staff_id; selectPatient({name:rows[0].patient_name,phone:rows[0].phone||""}); }
+  }catch(e){}
+})();
+</script>
+</body>
+</html>
