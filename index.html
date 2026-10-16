@@ -2852,6 +2852,7 @@ const MERGE_TABLES=[
   {t:"refunds",col:"patient_name",label:"返金"},
   {t:"passes",col:"patient_name",label:"回数券"},
   {t:"posture_records",col:"patient_name",label:"姿勢分析"},
+  {t:"body_assessments",col:"patient_name",label:"体のチェック"},
   {t:"meal_logs",col:"patient_name",label:"食事記録"},
   {t:"treatment_plans",col:"patient_name",label:"施術計画"},
   {t:"patient_referral_codes",col:"patient_name",label:"紹介コード"},
@@ -9007,6 +9008,106 @@ function PersonalWeekView({staff,filtered,payments,visitCounts,setBookingPopup,s
 // 除外（送信不要）した人を除いて一斉LINE送信できるパネル。
 // ===== キャンセル一覧パネル =====
 // ===== 姿勢の経過記録 =====
+// ===== 体のチェック（body-check.html）の経過記録 =====
+const BODY_CHECK_KINDS=[
+  {kind:"total",label:"総合評価",icon:"🏅",color:"#059669"},
+  {kind:"rom",label:"可動域",icon:"🤸",color:"#0891b2"},
+  {kind:"legs",label:"O脚・X脚・骨盤",icon:"🦵",color:"#d97706"},
+  {kind:"skeleton",label:"骨格タイプ",icon:"🧬",color:"#7c3aed"},
+];
+function BodyCheckRecordsPanel({bookings}){
+  const [query,setQuery]=React.useState("");
+  const [selPatient,setSelPatient]=React.useState(null);
+  const [records,setRecords]=React.useState([]);
+  const [loading,setLoading]=React.useState(false);
+  const [openId,setOpenId]=React.useState(null);
+  const patientList=React.useMemo(()=>{
+    const map={};
+    bookings.forEach(b=>{ if(b.patient_name&&!map[b.patient_name]) map[b.patient_name]={name:b.patient_name,phone:b.phone||""}; });
+    return Object.values(map).sort((a,b)=>a.name.localeCompare(b.name,"ja"));
+  },[bookings]);
+  const filtered=query.trim()?patientList.filter(p=>p.name.includes(query.trim())).slice(0,20):[];
+  function selectPatient(p){
+    setSelPatient(p); setQuery(""); setOpenId(null); setLoading(true);
+    sb.select("body_assessments",`?patient_name=eq.${encodeURIComponent(p.name)}&is_training=eq.false&order=recorded_date.desc,created_at.desc`)
+      .then(d=>setRecords(Array.isArray(d)?d:[])).catch(()=>setRecords([])).finally(()=>setLoading(false));
+  }
+  const staffName=id=>(STAFF_ACCOUNTS.find(s=>s.id===id)||{}).name||"";
+  const scoreColor=s=>s>=90?"#059669":s>=75?"#d97706":s>=55?"#ea580c":"#dc2626";
+  return(
+    <div style={{maxWidth:900,margin:"0 auto"}}>
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{padding:"14px 16px",borderBottom:"1px solid #f1f5f9",background:"linear-gradient(135deg,#6d28d9,#7c3aed)"}}>
+          <div style={{color:"white",fontWeight:800,fontSize:15}}>🩺 体のチェックの経過記録</div>
+          <div style={{color:"rgba(255,255,255,.8)",fontSize:12,marginTop:2}}>骨格タイプ・可動域・O脚X脚／骨盤・総合評価の結果と、点数の推移を見られます</div>
+        </div>
+        <div style={{padding:16}}>
+          <div style={{display:"flex",gap:8,alignItems:"flex-end",flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:200}}>
+              <label className="form-label">患者様を検索</label>
+              <input className="form-input" value={selPatient?selPatient.name:query} placeholder="お名前を入力" onChange={e=>{setQuery(e.target.value);setSelPatient(null);}}/>
+            </div>
+            <button onClick={()=>window.open("/body-check.html","_blank")} className="btn" style={{padding:"10px 16px",background:"#7c3aed",color:"white",fontWeight:800,fontSize:13,borderRadius:8}}>＋ チェックを行う</button>
+          </div>
+          {filtered.length>0&&!selPatient&&(
+            <div style={{border:"1px solid #e2e8f0",borderRadius:8,marginTop:6,maxHeight:220,overflowY:"auto"}}>
+              {filtered.map(p=>(<div key={p.name} onClick={()=>selectPatient(p)} style={{padding:"9px 12px",cursor:"pointer",borderBottom:"1px solid #f1f5f9",fontSize:13}}><b>{p.name}</b>{p.phone&&<span style={{color:"#94a3b8",marginLeft:8,fontSize:12}}>{p.phone}</span>}</div>))}
+            </div>
+          )}
+        </div>
+      </div>
+      {selPatient&&loading&&<div className="card" style={{padding:20,textAlign:"center",color:"#94a3b8"}}>読み込み中…</div>}
+      {selPatient&&!loading&&records.length===0&&<div className="card" style={{padding:20,textAlign:"center",color:"#94a3b8",fontSize:13}}>{selPatient.name} 様の記録はまだありません</div>}
+      {selPatient&&!loading&&BODY_CHECK_KINDS.map(k=>{
+        const list=records.filter(r=>r.kind===k.kind);
+        if(list.length===0) return null;
+        const scored=[...list].filter(r=>r.score!=null).sort((a,b)=>(a.recorded_date+a.created_at).localeCompare(b.recorded_date+b.created_at));
+        return(
+          <div key={k.kind} className="card" style={{marginBottom:14,padding:16}}>
+            <div style={{fontWeight:800,fontSize:14,color:k.color,marginBottom:10}}>{k.icon} {k.label}　<span style={{fontSize:12,color:"#94a3b8",fontWeight:700}}>{list.length}件</span></div>
+            {scored.length>=2&&(
+              <div style={{display:"flex",alignItems:"flex-end",gap:6,height:90,marginBottom:12,borderBottom:"1px solid #f1f5f9",paddingBottom:4}}>
+                {scored.map(r=>(<div key={r.id} style={{flex:1,maxWidth:48,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+                  <div style={{fontSize:10.5,fontWeight:800,color:scoreColor(Number(r.score))}}>{Math.round(r.score)}</div>
+                  <div style={{width:"70%",height:Math.max(4,Number(r.score)*0.6),background:scoreColor(Number(r.score)),borderRadius:"4px 4px 0 0"}}/>
+                  <div style={{fontSize:9.5,color:"#94a3b8"}}>{r.recorded_date.slice(5).replace("-","/")}</div>
+                </div>))}
+              </div>
+            )}
+            {list.map(r=>{
+              const d=r.details||{}; const open=openId===r.id;
+              return(
+                <div key={r.id} style={{borderTop:"1px solid #f1f5f9",padding:"8px 0"}}>
+                  <div onClick={()=>setOpenId(open?null:r.id)} style={{display:"flex",gap:10,alignItems:"center",cursor:"pointer",fontSize:13}}>
+                    <span style={{color:"#64748b",width:84}}>{r.recorded_date}</span>
+                    {r.score!=null&&<span style={{fontWeight:800,color:scoreColor(Number(r.score)),width:48}}>{Math.round(r.score)}点</span>}
+                    <span style={{fontWeight:700,flex:1}}>{r.result_type||""}</span>
+                    <span style={{fontSize:11,color:"#94a3b8"}}>{staffName(r.staff_id)}</span>
+                    <span style={{color:"#94a3b8"}}>{open?"▲":"▼"}</span>
+                  </div>
+                  {open&&(
+                    <div style={{fontSize:12,color:"#374151",lineHeight:1.7,background:"#f8fafc",borderRadius:8,padding:"8px 12px",marginTop:6}}>
+                      {k.kind==="total"&&Array.isArray(d.axes)&&<div>{d.axes.map(a=>`${a.label}：${a.score==null?"未測定":a.score+"点"}`).join("　")}{d.menus&&d.menus.length?<div>おすすめ：{d.menus.join("・")}</div>:null}</div>}
+                      {k.kind==="rom"&&Array.isArray(d.tests)&&d.tests.map(t=>(<div key={t.key}>{t.name}：{(t.sides||[]).map(s=>(s.lab?s.lab+" ":"")+s.deg+"°").join("／")}（目安{t.ref}°）{t.reach?"・指先："+t.reach:""}　{t.score}点</div>))}
+                      {k.kind==="legs"&&<div>ひざの角度 左{d.devL}°／右{d.devR}°（＋O脚・−X脚）　骨盤の傾き {d.pelvisTilt}°{d.pelvisHighSide?`（${d.pelvisHighSide}が高い）`:""}　肩の傾き {d.shoulderTilt}°</div>}
+                      {k.kind==="skeleton"&&d.pct&&<div>ストレート {d.pct.S}%／ウェーブ {d.pct.W}%／ナチュラル {d.pct.N}%{d.photoRatio?`　肩幅÷股関節幅 ${d.photoRatio}`:""}</div>}
+                      {Array.isArray(d.findings)&&d.findings.filter(f=>!f.ok).map((f,i)=>(<div key={i} style={{color:"#991b1b"}}>⚠️ {f.part}：{f.desc}</div>))}
+                      {r.notes&&<div style={{marginTop:4}}>📝 {r.notes}</div>}
+                      {r.photo_urls&&Object.keys(r.photo_urls).length>0&&(
+                        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6}}>{Object.entries(r.photo_urls).map(([tag,u])=>(<a key={tag} href={u} target="_blank" rel="noreferrer"><img src={u} alt={tag} style={{width:90,borderRadius:6,background:"#111"}}/></a>))}</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function PostureRecordsPanel({bookings}){
   const [query,setQuery]=React.useState("");
   const [selPatient,setSelPatient]=React.useState(null); // {name, phone}
@@ -13358,6 +13459,8 @@ function Dashboard({user,onLogout}){
       {id:"symptom_checker",label:"症状チェッカー（試験運用）",icon:"search",special:"",action:()=>window.open("/symptom-checker.html","_blank")},
       {id:"posture_analysis",label:"姿勢評価",icon:"activity",special:"",action:()=>window.open("/posture-analysis.html","_blank")},
       {id:"posture_records",label:"姿勢の経過記録",icon:"activity",special:""},
+      {id:"body_check",label:"体のチェック（骨格・可動域・脚・総合）",icon:"activity",special:"",action:()=>window.open("/body-check.html","_blank")},
+      {id:"body_check_records",label:"体のチェックの経過記録",icon:"activity",special:""},
       {id:"treatment_plans",label:"施術計画書",icon:"clipboard-list",special:""},
     ]},
     {id:"staff",label:"スタッフ",color:"#d97706",defaultCollapsed:true,items:[
@@ -13987,6 +14090,7 @@ function Dashboard({user,onLogout}){
           {/* キャンセル一覧 */}
 
           {view==="posture_records"&&<PostureRecordsPanel bookings={bookings}/>}
+          {view==="body_check_records"&&<BodyCheckRecordsPanel bookings={bookings}/>}
           {view==="treatment_plans"&&<TreatmentPlanPanel bookings={bookings}/>}
 
           {/* 店舗管理 */}
@@ -14164,6 +14268,15 @@ function Dashboard({user,onLogout}){
                 }} style={{width:"100%",padding:"9px 12px",background:"linear-gradient(135deg,#0f766e,#0d9488)",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:800,fontSize:13,textAlign:"left",display:"flex",alignItems:"center",gap:8}}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="5" r="2"/><path d="M12 7v5l-3 8M12 12l3 8M8 10l4-2 4 2"/></svg>
                   姿勢評価
+                </button>
+                )}
+                {!isReadOnlyReal&&(
+                <button onClick={()=>{
+                  window.open(`body-check.html?id=${b.id}`,"_blank");
+                  setBookingPopup(null);
+                }} style={{width:"100%",padding:"9px 12px",background:"linear-gradient(135deg,#7c3aed,#6d28d9)",color:"white",border:"none",borderRadius:8,cursor:"pointer",fontWeight:800,fontSize:13,textAlign:"left",display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:14}}>🩺</span>
+                  体のチェック（骨格・可動域・脚・総合）
                 </button>
                 )}
                 <button onClick={()=>{setHistoryPatient(b.patient_name);setView("patients");setBookingPopup(null);}} style={{width:"100%",padding:"9px 12px",background:"#f8fafc",color:"#374151",border:"1px solid #e2e8f0",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,textAlign:"left",display:"flex",alignItems:"center",gap:8}}>
