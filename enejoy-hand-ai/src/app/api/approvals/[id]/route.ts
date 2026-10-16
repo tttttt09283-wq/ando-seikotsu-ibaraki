@@ -1,7 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { decideApproval, tick } from "@/lib/engine/engine";
 import { checkSameOrigin, engineErrorResponse, jsonError, readJson, requireRole, snapshotResponse } from "@/lib/server/api";
-import { getEngineDeps } from "@/lib/server/runtime";
+import { executeApprovedAction } from "@/lib/engine/reputation";
+import { getEngineDeps, getGoogleApiIfConnected } from "@/lib/server/runtime";
 import { approvalDecisionSchema } from "@/lib/types";
 
 /**
@@ -30,7 +31,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ id: string
 
   try {
     const deps = getEngineDeps();
-    await decideApproval(deps, id, actor.memberId, input.decision, input.comment);
+    const a = await decideApproval(deps, id, actor.memberId, input.decision, input.comment);
+    // 承認された外部への書き込み（口コミへの返信など）は、ここで実行する
+    if (a.status === "APPROVED" && a.payload) await executeApprovedAction(deps, id, await getGoogleApiIfConnected());
     await tick(deps);
     return await snapshotResponse(actor);
   } catch (e) {

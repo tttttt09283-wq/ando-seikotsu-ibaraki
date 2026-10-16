@@ -20,6 +20,10 @@ export function ApprovalsView() {
     const r = await mutate(`/api/approvals/${id}`, { decision, comment });
     return r.ok ? { ok: true } : { ok: false, error: r.error };
   };
+  const retry = async (approvalId: string) => {
+    const r = await mutate("/api/reputation/retry", { approvalId });
+    return r.ok ? { ok: true } : { ok: false, error: r.error };
+  };
 
   return (
     <div className="space-y-8">
@@ -46,7 +50,7 @@ export function ApprovalsView() {
         <section className="space-y-4">
           <h2 className="font-semibold">判断済み</h2>
           {done.map((a) => (
-            <ApprovalCard key={a.id} a={a} viewer="operator" decide={decide} onOpenTask={openTask} />
+            <ApprovalCard key={a.id} a={a} viewer="operator" decide={decide} onOpenTask={openTask} onRetry={retry} />
           ))}
         </section>
       )}

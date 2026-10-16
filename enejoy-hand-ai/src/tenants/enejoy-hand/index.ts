@@ -96,6 +96,7 @@ const enejoyHand: TenantConfig = {
     { id: "i-data", title: "データ集計が曖昧", detail: "部門別の売上・患者数を正しく追えない。", impact: 4, urgency: 4, intents: ["admin_ops", "finance", "revenue_plan"] },
     { id: "i-succession", title: "後継者育成ができていない", detail: "院長・部門長を任せられる人が育っていない。", impact: 5, urgency: 3, intents: ["succession", "mission", "grade"] },
     { id: "i-system", title: "システムが足りず、データを含めて管理ができていない", detail: "院によって管理方法がばらばら。", impact: 4, urgency: 3, intents: ["admin_ops"] },
+    { id: "i-reviews", title: "口コミ・Googleマップ（MEO）の管理ができていない", detail: "返信の遅れ、競合との差が見えていない。", impact: 4, urgency: 4, intents: ["reviews"] },
     { id: "i-sns", title: "SNSの成果が出ない・続かない", detail: "担当とネタが決まっていない。", impact: 3, urgency: 3, intents: ["sns"] },
   ],
   kpiCandidates: [
@@ -115,6 +116,7 @@ const enejoyHand: TenantConfig = {
     "会社のお金の流れを整理して",
     "事務作業のムダを洗い出して",
     "3億円達成までの計画を立てて",
+    "口コミと競合の状況を整理して",
     "課題を洗い出して優先順位をつけて",
     "今日の仕事を報告して",
   ],

@@ -22,6 +22,7 @@ import {
   type Task,
 } from "@/lib/types";
 import type { CompanyContext, Executor, StaffingProposal, Usage } from "./executor";
+import { reputationMode, reviewStats } from "./reputation-metrics";
 import {
   costTotals,
   isMemberActive,
@@ -71,18 +72,18 @@ export class EngineError extends Error {
   }
 }
 
-const name = (id: string) => getMember(id)?.name ?? id;
-const newId = (prefix: string) => `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
-const iso = (d: Date) => d.toISOString();
+export const name = (id: string) => getMember(id)?.name ?? id;
+export const newId = (prefix: string) => `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
+export const iso = (d: Date) => d.toISOString();
 const plus = (d: Date, ms: number) => new Date(d.getTime() + ms).toISOString();
 const isDue = (at: string | null | undefined, now: Date) => at != null && new Date(at).getTime() <= now.getTime();
 const leaseFree = (t: { leaseUntil?: string }, now: Date) => !t.leaseUntil || new Date(t.leaseUntil) <= now;
 
-function log(data: CompanyData, mode: DataMode, now: Date, a: Omit<Activity, "id" | "mode" | "at">) {
+export function log(data: CompanyData, mode: DataMode, now: Date, a: Omit<Activity, "id" | "mode" | "at">) {
   data.activities.push({ id: newId("act"), mode, at: iso(now), ...a });
 }
 
-function audit(data: CompanyData, now: Date, actor: string, action: string, detail: string) {
+export function audit(data: CompanyData, now: Date, actor: string, action: string, detail: string) {
   data.audit.push({ id: newId("aud"), at: iso(now), actor, action, detail });
 }
 
@@ -134,7 +135,9 @@ export function buildContext(data: CompanyData, mode: DataMode, now: Date): Comp
   const cost = costTotals(data, mode, now);
   const revenue = revenueProgress(data, now);
   const topIssues = issueViews(data, mode).slice(0, 3);
-  const pendingApprovals = data.approvals.filter((a) => a.mode === mode && a.status === "PENDING");
+  const pendingApprovals = data.approvals.filter((a) => (a.mode === mode || a.payload != null) && a.status === "PENDING");
+  const repMode = reputationMode(data);
+  const reviews = reviewStats(data, repMode, now);
   const forOperator = pendingApprovals.filter((a) => a.currentApprover === "operator").length;
   const forPresident = pendingApprovals.filter((a) => a.currentApprover === "president").length;
   const today = jstDayKey(now);
@@ -160,6 +163,11 @@ export function buildContext(data: CompanyData, mode: DataMode, now: Date): Comp
     `・Task：実行中 ${counts.active}件 / 着手待ち ${counts.queued}件 / 本日完了 ${counts.doneToday}件 / 累計完了 ${counts.doneTotal}件`,
     ...(doneToday.length ? [`・今日終えた仕事：${doneToday.slice(-5).map((t) => t.title).join("、")}`] : []),
     `・承認待ち：統括責任者 ${forOperator}件 / 代表 ${forPresident}件`,
+    ...(data.reputation.reviews.some((r) => r.mode === repMode)
+      ? [
+          `・口コミ${repMode === "demo" ? "（デモ）" : ""}：今月の新着 ${reviews.newThisMonth}件／未返信 ${reviews.unreplied}件${reviews.lowUnreplied ? `（★2以下 ${reviews.lowUnreplied}件は早めの返信を）` : ""}`,
+        ]
+      : []),
     `・優先度の高い課題：${topIssues.map((i) => `${i.title}（${i.status}）`).join("、")}`,
     `・本日のAIコスト：¥${cost.today.toFixed(2)}${mode === "demo" ? "（推定）" : ""}`,
     data.safety.halted ? `・⚠ 安全停止中：${data.safety.reason}` : "",
@@ -452,7 +460,7 @@ function failTask(data: CompanyData, t: Task, now: Date, reason: string) {
   refreshProjectStatus(data, t.projectId, now);
 }
 
-type ApprovalRequest = Omit<
+export type ApprovalRequest = Omit<
   Approval,
   "id" | "status" | "createdAt" | "recommendedApprover" | "approverReason" | "presidentRequired" | "currentApprover" | "history"
 > & { corporate?: boolean; sensitive?: boolean };
@@ -461,7 +469,7 @@ type ApprovalRequest = Omit<
  * 承認依頼を作る。依頼はまず統括責任者に届き、司令塔は推奨承認者とその理由を添える。
  * 統括責任者は自分で判断するか、代表へ回すかを選ぶ（代表の決裁が必須のものは承認できない）。
  */
-function createApproval(data: CompanyData, now: Date, req: ApprovalRequest): Approval {
+export function createApproval(data: CompanyData, now: Date, req: ApprovalRequest): Approval {
   const { corporate, sensitive, ...a } = req;
   const rec = TENANT.recommendApprover({ category: a.category, costJpy: a.costJpy, corporate, sensitive });
   const approval: Approval = {
@@ -955,6 +963,12 @@ export async function resetDemoData(deps: EngineDeps, actorId: string = OPERATOR
     data.approvals = keep(data.approvals);
     data.usage = keep(data.usage);
     data.staffing.demo = [];
+    const rep = data.reputation;
+    rep.locations = keep(rep.locations);
+    rep.reviews = keep(rep.reviews);
+    rep.performance = keep(rep.performance);
+    rep.competitors = keep(rep.competitors);
+    rep.snapshots = keep(rep.snapshots);
     data.safety = { halted: false, consecutiveFailures: 0 };
     // 手入力の売上実績（本番の数字）はデモではないため消さない
     audit(data, now, actorId, "demo.reset", "デモデータを初期化");

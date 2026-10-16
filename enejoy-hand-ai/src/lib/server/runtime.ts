@@ -3,6 +3,9 @@ import { DEMO_TIMING, getLimits } from "@/config/limits";
 import { DemoExecutor } from "@/lib/engine/demo-executor";
 import { syncSheets, type EngineDeps } from "@/lib/engine/engine";
 import { fetchSheetGrid, sheetsAuthMode } from "@/lib/import/google-sheets";
+import { refreshCompetitors, syncGoogle } from "@/lib/engine/reputation";
+import { createGoogleApi, createPlacesApi, type GoogleApi, type PlacesApi } from "@/lib/google/client";
+import { getAccessToken, getOAuthConfig, isConnected } from "@/lib/google/oauth";
 import type { Usage } from "@/lib/engine/executor";
 import { getStore } from "@/lib/store/store";
 import type { DataMode } from "@/lib/types";
@@ -23,7 +26,22 @@ export type RuntimeInfo = {
   sheetsAuth: "service_account" | "public_link";
   /** 日計表の自動同期の間隔（分） */
   sheetSyncMinutes: number;
+  /** Googleアカウント接続（OAuth）の設定があるか */
+  googleOAuthConfigured: boolean;
+  /** Places API（地域の競合）のキーがあるか */
+  placesConfigured: boolean;
 };
+
+/** 接続済みなら Googleビジネスプロフィール API、未接続なら null */
+export async function getGoogleApiIfConnected(): Promise<GoogleApi | null> {
+  if (!getOAuthConfig() || !(await isConnected())) return null;
+  return createGoogleApi(getAccessToken);
+}
+
+export function getPlacesApi(): PlacesApi | null {
+  const key = process.env.GOOGLE_MAPS_API_KEY;
+  return key ? createPlacesApi(key) : null;
+}
 
 function sheetSyncMinutes(): number {
   const n = Number.parseInt(process.env.EH_SHEET_SYNC_MINUTES ?? "5", 10);
@@ -44,6 +62,8 @@ export function getRuntimeInfo(): RuntimeInfo {
     storage: getStore().description,
     sheetsAuth: sheetsAuthMode(),
     sheetSyncMinutes: sheetSyncMinutes(),
+    googleOAuthConfigured: Boolean(getOAuthConfig()),
+    placesConfigured: Boolean(process.env.GOOGLE_MAPS_API_KEY),
   };
 }
 
@@ -76,6 +96,24 @@ function startSheetSync(deps: EngineDeps) {
     }
   };
   globalForDeps.__ehSheetTimer = setInterval(run, sheetSyncMinutes() * 60_000);
+  // 口コミ・表示回数（6時間ごと）と競合の星・件数（1日ごと）。接続・設定がなければ何もしない
+  const hours = Math.max(1, Number.parseInt(process.env.EH_GOOGLE_SYNC_HOURS ?? "6", 10) || 6);
+  setInterval(async () => {
+    try {
+      const api = await getGoogleApiIfConnected();
+      if (api) await syncGoogle(deps, api);
+    } catch (e) {
+      console.error("[enejoy-hand-ai] google sync failed", e);
+    }
+  }, hours * 3_600_000).unref?.();
+  setInterval(async () => {
+    try {
+      const places = getPlacesApi();
+      if (places) await refreshCompetitors(deps, places);
+    } catch (e) {
+      console.error("[enejoy-hand-ai] competitor refresh failed", e);
+    }
+  }, 24 * 3_600_000).unref?.();
   globalForDeps.__ehSheetTimer.unref?.();
   setTimeout(run, 3_000).unref?.();
 }

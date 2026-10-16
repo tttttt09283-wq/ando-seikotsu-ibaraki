@@ -22,12 +22,25 @@ import {
   type Project,
   type SafetyState,
   type ClinicMonthRecord,
+  type CustomerReview,
+  type GbpLocation,
+  type GoogleConnectionState,
+  type PerformanceMonth,
   type DataSourceState,
   type PlanRecord,
   type Task,
   type TaskStatus,
 } from "@/lib/types";
 import { COMMANDER_ID, PRESIDENT_ID, TENANT } from "@/tenant";
+import { competitorComparison, reputationMode, reviewStats } from "@/lib/engine/reputation-metrics";
+
+/**
+ * 表示する承認依頼：今のモードのもの＋本番の口コミへの返信など、実データへの書き込みを伴うもの
+ * （AIのデモの承認と、実際の口コミへの返信の承認は、DEMO の印で見分ける）
+ */
+export function approvalVisible(a: Approval, mode: DataMode): boolean {
+  return a.mode === mode || a.payload != null;
+}
 
 /** 画面に渡すスナップショット。すべて保存データから算出する（架空の稼働・数字は作らない）。 */
 
@@ -113,6 +126,16 @@ export type CompanySnapshot = {
   /** 事業計画書：損益の主な行 */
   planRows: ReturnType<typeof planHighlightRows>;
   dataSources: DataSourceState;
+  /** 口コミ・Googleビジネスプロフィール・地域の競合（本番の接続データがなければデモ） */
+  reputation: {
+    mode: DataMode;
+    google: GoogleConnectionState;
+    locations: GbpLocation[];
+    reviews: CustomerReview[];
+    performance: PerformanceMonth[];
+    stats: ReturnType<typeof reviewStats>;
+    comparison: ReturnType<typeof competitorComparison>;
+  };
   /** 監査ログ（新しい順・統括責任者のみ） */
   audit: AuditEntry[];
   safety: SafetyState;
@@ -134,7 +157,7 @@ export function deriveMemberViews(data: CompanyData, mode: DataMode): MemberView
   const tasks = data.tasks.filter((t) => t.mode === mode);
   const commands = data.commands.filter((c) => c.mode === mode);
   const activities = data.activities.filter((a) => a.mode === mode);
-  const approvals = data.approvals.filter((a) => a.mode === mode && a.status === "PENDING");
+  const approvals = data.approvals.filter((a) => approvalVisible(a, mode) && a.status === "PENDING");
 
   const lastActive = new Map<string, string>();
   for (const a of activities) {
@@ -267,7 +290,7 @@ export function buildSnapshot(data: CompanyData, mode: DataMode, now: Date, limi
   const commandIds = new Set(commands.map((c) => c.id));
   const tasks = data.tasks.filter((t) => t.mode === mode && commandIds.has(t.commandId));
   const messages = data.messages.filter((m) => m.mode === mode).slice(-120);
-  const pendingApprovals = data.approvals.filter((a) => a.mode === mode && a.status === "PENDING");
+  const pendingApprovals = data.approvals.filter((a) => approvalVisible(a, mode) && a.status === "PENDING");
   const commanderMessage = [...messages].reverse().find((m) => m.role === "commander") ?? null;
 
   return {
@@ -303,7 +326,7 @@ export function buildSnapshot(data: CompanyData, mode: DataMode, now: Date, limi
     messages,
     activities: data.activities.filter((a) => a.mode === mode).slice(-200),
     approvals: data.approvals
-      .filter((a) => a.mode === mode)
+      .filter((a) => approvalVisible(a, mode))
       .sort((a, b) => (a.status === "PENDING" ? -1 : 0) - (b.status === "PENDING" ? -1 : 0) || b.createdAt.localeCompare(a.createdAt))
       .slice(0, 40),
     clinicMonths: data.clinicMonths.filter(
@@ -312,6 +335,22 @@ export function buildSnapshot(data: CompanyData, mode: DataMode, now: Date, limi
     clinicPlan: data.plan.filter((p) => p.clinicId),
     planRows: planHighlightRows(data),
     dataSources: data.dataSources,
+    reputation: (() => {
+      const rm = reputationMode(data);
+      const rep = data.reputation;
+      return {
+        mode: rm,
+        google: rep.google,
+        locations: rep.locations.filter((l) => l.mode === rm),
+        reviews: rep.reviews
+          .filter((r) => r.mode === rm)
+          .sort((a, b) => b.createTime.localeCompare(a.createTime))
+          .slice(0, 400),
+        performance: rep.performance.filter((p) => p.mode === rm),
+        stats: reviewStats(data, rm, now),
+        comparison: competitorComparison(data, rm, now),
+      };
+    })(),
     audit: data.audit.slice(-150).reverse(),
     safety: data.safety,
     busy:
@@ -331,7 +370,7 @@ export type PresidentSnapshot = {
 };
 
 export function buildPresidentSnapshot(data: CompanyData, mode: DataMode, now: Date): PresidentSnapshot {
-  const mine = data.approvals.filter((a) => a.mode === mode);
+  const mine = data.approvals.filter((a) => approvalVisible(a, mode));
   const progress = missionProgress(data, mode);
   const revenue = revenueProgress(data, now);
   return {

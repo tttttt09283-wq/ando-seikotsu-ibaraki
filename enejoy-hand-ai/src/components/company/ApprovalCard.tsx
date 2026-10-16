@@ -71,12 +71,15 @@ export function ApprovalCard({
   viewer,
   decide,
   onOpenTask,
+  onRetry,
   compact,
 }: {
   a: Approval;
   viewer: ApprovalViewer;
   decide: (id: string, decision: ApprovalDecision, comment?: string) => Promise<{ ok: boolean; error?: string }>;
   onOpenTask?: (taskId: string) => void;
+  /** 承認後の投稿に失敗したときのやり直し */
+  onRetry?: (approvalId: string) => Promise<{ ok: boolean; error?: string }>;
   compact?: boolean;
 }) {
   const [comment, setComment] = React.useState("");
@@ -151,6 +154,26 @@ export function ApprovalCard({
           <Row label="リスク">{a.risk}</Row>
           <Row label="司令塔の推奨理由">{a.commanderRecommendation}</Row>
           {a.decisionComment && <Row label="判断コメント">{a.decisionComment}</Row>}
+          {a.execution && (
+            <Row label="実行結果">
+              <span className={cn(a.execution.status === "failed" ? "text-red-600" : a.execution.status === "done" ? "text-emerald-700 dark:text-emerald-400" : "text-muted-foreground")}>
+                {a.execution.message}（{formatDateTime(a.execution.at)}）
+              </span>
+              {a.execution.status === "failed" && onRetry && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="ml-2"
+                  onClick={async () => {
+                    const r = await onRetry(a.id);
+                    if (!r.ok) setError(r.error ?? "やり直せませんでした");
+                  }}
+                >
+                  投稿をやり直す
+                </Button>
+              )}
+            </Row>
+          )}
         </dl>
 
         <details className="text-xs">
@@ -171,6 +194,9 @@ export function ApprovalCard({
           <div className="space-y-3 border-t pt-4">
             {a.mode === "demo" && (
               <p className="text-muted-foreground text-xs">DEMO MODEでは、承認しても実際の外部送信・投稿・支払い・確定の反映は行われません。</p>
+            )}
+            {a.mode === "live" && a.payload?.kind === "review_reply" && (
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">承認すると、この返信文がGoogleマップに公開されます（本番の口コミです）。</p>
             )}
             {viewer === "operator" && a.presidentRequired && (
               <p className="text-sm text-amber-800 dark:text-amber-300">

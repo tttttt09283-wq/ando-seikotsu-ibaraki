@@ -84,7 +84,8 @@ export class FileStore implements CompanyStore {
     try {
       const raw = await fs.readFile(this.filePath, "utf8");
       const parsed = JSON.parse(raw) as CompanyData;
-      this.cache = { ...emptyCompanyData(), ...parsed };
+      const base = emptyCompanyData();
+      this.cache = { ...base, ...parsed, reputation: { ...base.reputation, ...(parsed.reputation ?? {}) } };
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "ENOENT") {
         // 壊れたファイルは上書きせず退避してから新規作成する
@@ -126,7 +127,7 @@ export class FileStore implements CompanyStore {
   }
 }
 
-function resolveDataDir(): string {
+export function resolveDataDir(): string {
   if (process.env.EH_DATA_DIR) return process.env.EH_DATA_DIR;
   // Vercel 等のサーバーレス環境ではプロジェクト直下に書き込めないため一時領域を使う
   if (process.env.VERCEL) return path.join(os.tmpdir(), "enejoy-hand-ai");

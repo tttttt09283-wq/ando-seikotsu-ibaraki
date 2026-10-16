@@ -209,6 +209,46 @@ export function IssuesCard() {
   );
 }
 
+export function ReputationCard() {
+  const { snapshot } = useCompany();
+  const r = snapshot.reputation;
+  if (r.reviews.length === 0 && r.locations.length === 0) return null;
+  const worst = [...r.stats.perClinic].filter((c) => c.averageRating != null).sort((a, b) => (a.averageRating ?? 0) - (b.averageRating ?? 0))[0];
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>口コミ</CardTitle>
+          <CardDescription>Googleビジネスプロフィール（7院）</CardDescription>
+        </div>
+        {r.mode === "demo" && <Badge variant="demo">DEMO</Badge>}
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm">
+        <div className="grid grid-cols-3 gap-2 text-center">
+          {[
+            ["今月の新着", r.stats.newThisMonth],
+            ["未返信", r.stats.unreplied],
+            ["★2以下 未返信", r.stats.lowUnreplied],
+          ].map(([k, v]) => (
+            <div key={k as string} className={cn("bg-secondary/60 rounded-lg p-2", k === "★2以下 未返信" && Number(v) > 0 && "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-200")}>
+              <div className="text-xl font-bold tabular-nums">{v}</div>
+              <div className="text-muted-foreground text-[11px]">{k}</div>
+            </div>
+          ))}
+        </div>
+        {worst && (
+          <p className="text-muted-foreground text-xs">
+            星が最も低い院：{worst.name} ★{worst.averageRating?.toFixed(1)}
+          </p>
+        )}
+        <Link href="/reputation" className="text-brand inline-flex items-center gap-1 text-sm font-medium hover:underline">
+          口コミ・MEOを開く <ArrowRight className="size-3.5" aria-hidden />
+        </Link>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function CommanderMessageCard() {
   const { snapshot } = useCompany();
   const msg = snapshot.commanderMessage;
@@ -293,6 +333,7 @@ export function Dashboard() {
         </div>
         <div className="space-y-6">
           <MissionCard />
+          <ReputationCard />
           <IssuesCard />
           <Card>
             <CardHeader>

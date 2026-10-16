@@ -237,7 +237,13 @@ export type Approval = {
   commandId?: string;
   /** new_agent の場合の対象社員 */
   memberId?: string;
+  /** 承認後に実行する外部への書き込み（口コミへの返信など） */
+  payload?: ApprovalPayload;
+  /** 承認後の実行結果 */
+  execution?: { status: "done" | "failed" | "skipped"; at: string; message: string };
 };
+
+export type ApprovalPayload = { kind: "review_reply"; reviewId: string; comment: string };
 
 export type UsageRecord = {
   id: string;
@@ -322,6 +328,103 @@ export type DataSourceState = {
   planLabel?: string;
 };
 
+// ---- 口コミ・Googleビジネスプロフィール・地域の競合 ----
+
+/** Googleビジネスプロフィールのロケーション（院のプロフィール） */
+export type GbpLocation = {
+  /** locations/123… */
+  name: string;
+  /** accounts/123… */
+  accountName: string;
+  title: string;
+  address?: string;
+  placeId?: string;
+  mapsUri?: string;
+  /** 対応する院（未設定なら集計に含めない） */
+  clinicId?: string;
+  averageRating?: number;
+  totalReviewCount?: number;
+  mode: DataMode;
+};
+
+/**
+ * 自院の口コミ。投稿者名・本文はお客様の個人情報を含みうるため、
+ * この端末の中だけに保存し、外部のAIには送らない。
+ */
+export type CustomerReview = {
+  /** accounts/…/locations/…/reviews/… */
+  id: string;
+  locationName: string;
+  clinicId?: string;
+  reviewerName: string;
+  rating: number;
+  comment: string;
+  createTime: string;
+  updateTime: string;
+  reply?: { comment: string; updateTime: string };
+  mode: DataMode;
+};
+
+/** Googleビジネスプロフィールの月ごとの数字（表示回数・電話・ルート検索など） */
+export type PerformanceMonth = {
+  clinicId: string;
+  month: string;
+  /** 指標 key → 回数 */
+  values: Record<string, number>;
+  mode: DataMode;
+  updatedAt: string;
+};
+
+/** 地域の競合 */
+export type Competitor = {
+  id: string;
+  /** どの院の競合か */
+  clinicId: string;
+  name: string;
+  placeId?: string;
+  address?: string;
+  mapsUri?: string;
+  note?: string;
+  mode: DataMode;
+  createdAt: string;
+};
+
+/**
+ * 星の平均と口コミ件数の記録。
+ * source = places（Google Maps Platform から取得）は規約に合わせて30日で消し、
+ * manual（人が確認して記録）と gbp（自院のプロフィール）は残す。
+ */
+export type RatingSnapshot = {
+  /** 競合の id、または自院は "clinic:<clinicId>" */
+  subjectId: string;
+  date: string;
+  rating?: number;
+  reviewCount?: number;
+  source: "places" | "manual" | "gbp";
+  mode: DataMode;
+};
+
+export type GoogleConnectionState = {
+  connectedAt?: string;
+  email?: string;
+  lastSyncAt?: string;
+  lastStatus?: "ok" | "error";
+  lastMessage?: string;
+};
+
+export type ReputationData = {
+  google: GoogleConnectionState;
+  locations: GbpLocation[];
+  reviews: CustomerReview[];
+  performance: PerformanceMonth[];
+  competitors: Competitor[];
+  snapshots: RatingSnapshot[];
+};
+
+export function emptyReputation(): ReputationData {
+  return { google: {}, locations: [], reviews: [], performance: [], competitors: [], snapshots: [] };
+}
+
 export type CompanyData = {
   schemaVersion: 1;
   commands: Command[];
@@ -337,6 +440,7 @@ export type CompanyData = {
   clinicMonths: ClinicMonthRecord[];
   plan: PlanRecord[];
   dataSources: DataSourceState;
+  reputation: ReputationData;
 };
 
 export function emptyCompanyData(): CompanyData {
@@ -355,6 +459,7 @@ export function emptyCompanyData(): CompanyData {
     clinicMonths: [],
     plan: [],
     dataSources: { sheets: [] },
+    reputation: emptyReputation(),
   };
 }
 
@@ -410,3 +515,34 @@ export const manualInputSchema = z.object({
   values: z.record(z.string().max(40), z.number().finite().min(-10_000_000_000).max(10_000_000_000)),
 });
 export type ManualInput = z.infer<typeof manualInputSchema>;
+
+// ---- 口コミ・競合の入力 ----
+
+export const replyDraftSchema = z.object({
+  reviewId: z.string().min(1).max(300),
+  comment: z.string().trim().min(1, "返信文を入力してください").max(4000, "返信文が長すぎます"),
+});
+
+export const locationMapSchema = z.object({
+  locationName: z.string().min(1).max(200),
+  clinicId: z.string().max(40),
+});
+
+export const competitorInputSchema = z.object({
+  clinicId: z.string().min(1).max(40),
+  name: z.string().trim().min(1, "名前を入力してください").max(120),
+  placeId: z.string().trim().max(300).optional(),
+  address: z.string().trim().max(300).optional(),
+  mapsUri: z.string().trim().max(500).optional(),
+  note: z.string().trim().max(300).optional(),
+});
+
+export const snapshotInputSchema = z.object({
+  subjectId: z.string().min(1).max(80),
+  rating: z.number().min(0).max(5).optional(),
+  reviewCount: z.number().int().min(0).max(1_000_000).optional(),
+});
+
+export const placesSearchSchema = z.object({
+  query: z.string().trim().min(1, "検索する言葉を入力してください").max(120),
+});

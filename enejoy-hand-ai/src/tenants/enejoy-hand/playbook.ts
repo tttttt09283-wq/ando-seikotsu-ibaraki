@@ -19,6 +19,7 @@ const RULES: { intent: string; pattern: RegExp }[] = [
   { intent: "grade", pattern: /(クラス|等級|キャリア(パス|アップ)|昇格|昇給|グレード)/ },
   { intent: "evaluation", pattern: /(評価制度|評価基準|人事評価|評価シート|スタッフの評価|評価を)/ },
   { intent: "succession", pattern: /(後継者|幹部候補|院長候補|リーダー育成|育成計画)/ },
+  { intent: "reviews", pattern: /(口コミ|レビュー|MEO|Googleマップ|グーグルマップ|ビジネスプロフィール|競合|近隣店舗|ライバル)/i },
   { intent: "sns", pattern: /(SNS|インスタ|Instagram|TikTok|YouTube|投稿|発信)/i },
   { intent: "marketing", pattern: /(集客|新規|患者を増|お客様を増|来院|口コミ|広告|チラシ|キャンペーン|LINE)/i },
   { intent: "finance", pattern: /(お金|経理|収支|財務|入出金|経費|コスト|会計|資金)/ },
@@ -574,6 +575,68 @@ const snsFirstPost: TaskTemplate = {
 };
 
 // ---------------------------------------------------------------------------
+// 口コミ・MEO・地域の競合
+// ---------------------------------------------------------------------------
+
+const reviewsStatus: TaskTemplate = {
+  key: "status",
+  title: "口コミの現状整理（院別の星・件数・未返信）",
+  description: "院ごとの星の平均・口コミ件数・今月の新着・未返信を整理し、返信が遅れている院を特定する。",
+  teamId: "growth",
+  assigneeId: "matsumoto",
+  approveComment: "院ごとの差が一目で分かり、優先して手を打つ院が明確。承認します。",
+  body: () =>
+    lines(
+      "■ 見るポイント（「口コミ・MEO」画面の数字を使う）",
+      "・星の平均が4.3未満の院、未返信が5件以上の院を優先",
+      "・★2以下の口コミは48時間以内の返信を目標にする",
+      "",
+      "■ デモでの例（架空）",
+      "・交野：未返信 7件（うち★2以下 1件）→ 今週中に返信",
+      "・香里園：開院直後で口コミ6件 → 口コミの依頼を習慣にする",
+    ),
+};
+
+const reviewsCompetitors: TaskTemplate = {
+  key: "competitors",
+  title: "地域の競合との比較と打ち手",
+  description: "院ごとに近隣の競合の星・口コミ件数・月の増加と比べ、勝てている点・負けている点を整理する。",
+  teamId: "growth",
+  assigneeId: "matsumoto",
+  dependsOn: ["status"],
+  businessUnits: ["seikotsu", "beauty", "makizume"],
+  demoRevision: true,
+  revisionComment: "比較が星の平均だけになっている。口コミの『増えるペース』も比べてください。",
+  approveComment: "件数の増え方まで比べられていて、打ち手の優先順位が付けられる。承認します。",
+  body: (revision) =>
+    lines(
+      "■ 比べる数字：星の平均／口コミ件数／1か月の増加",
+      "■ 打ち手の例",
+      "・件数で負けている院：会計時の口コミ依頼カード、LINEでのお礼メッセージに口コミのリンク",
+      "・星で負けている院：低評価の内容を分類し、待ち時間・説明不足など原因ごとに改善",
+      "・巻き爪：「巻き爪 地域名」で探す方向けに、施術例の写真と説明をプロフィールに追加",
+      ...(revision > 0 ? ["", "■【修正】増えるペースの比較", "・競合の月の増加が自院の2倍以上なら、口コミ依頼を最優先にする"] : []),
+    ),
+};
+
+const reviewsRules: TaskTemplate = {
+  key: "rules",
+  title: "口コミ返信の運用ルール",
+  description: "誰が・いつまでに・どんな言葉で返信するか、承認の流れも含めて決める。",
+  teamId: "org",
+  assigneeId: "yoshida",
+  dependsOn: ["status"],
+  approveComment: "承認の流れと、書いてはいけないことが明確。承認します。",
+  body: () =>
+    lines(
+      "■ 流れ：口コミの取り込み（6時間ごと）→ 返信案（AI部門）→ 統括責任者の承認 → Googleに投稿",
+      "■ 期限：★4以上は3日以内、★3以下は48時間以内",
+      "■ 書かないこと：施術の効果の断定、病名・来院日などお客様が特定される内容、言い訳",
+      "■ 低評価は、お詫びと改善の約束、院への直接の連絡のお願いに留める",
+    ),
+};
+
+// ---------------------------------------------------------------------------
 // お金・事務・3億円計画
 // ---------------------------------------------------------------------------
 
@@ -990,6 +1053,21 @@ const PLAYBOOKS: Record<string, IntentPlaybook> = {
       leadId: "nomura",
     },
     tasks: [snsCause, snsTemplates, snsFlow, snsFirstPost],
+  },
+  reviews: {
+    intent: "reviews",
+    label: "口コミ・MEOの管理",
+    priority: "高",
+    priorityReason: "整骨院の新規はGoogleマップからが多い。口コミの数と返信は、費用をかけずに効く集客の土台。",
+    understanding: "Googleビジネスプロフィールの口コミ・地域の競合を管理し、集客につなげる指示と判断しました。",
+    concern: "口コミへの返信はGoogleマップに公開されます。お客様が特定される内容を書かないよう、必ず承認を経てから投稿します。",
+    issueIds: ["i-reviews", "i-acquisition"],
+    project: {
+      title: "口コミ・MEO：院ごとの評価と地域での見つけられやすさ",
+      objective: "院別の口コミの現状と競合との差を整理し、返信の運用ルールと打ち手を決める。",
+      leadId: "nomura",
+    },
+    tasks: [reviewsStatus, reviewsCompetitors, reviewsRules],
   },
   finance: {
     intent: "finance",
