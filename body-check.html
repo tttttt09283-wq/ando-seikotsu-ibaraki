@@ -355,7 +355,7 @@ function legsAnalysis(lm,w,h){
   return {score,grade:gradeFromScore(score),legType,legSeverity,devL,devR,avgDev,pelvisTilt,shoulderTilt,kneeHeightDiff,shift,pelvisHighSide,shoulderHighSide,findings};
 }
 
-// ---------- AI姿勢分析（posture-analysis.html と同じ判定。横向き・正面） ----------
+// ---------- AI姿勢分析（旧 posture-analysis.html の判定をそのまま移したもの。横向き・正面） ----------
 function drawResultCanvas(srcCanvas,landmarks,view){
   const canvas=document.createElement("canvas");
   canvas.width=srcCanvas.width;canvas.height=srcCanvas.height;
