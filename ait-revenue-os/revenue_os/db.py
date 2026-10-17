@@ -28,8 +28,15 @@ def _m001_initial(conn) -> None:
     Base.metadata.create_all(conn)
 
 
+def _m002_threads(conn) -> None:
+    from .models import AccountMetric, AppSetting, ScheduledPost, ThreadsInsight, ThreadsPost
+
+    Base.metadata.create_all(conn, tables=[t.__table__ for t in (ScheduledPost, ThreadsPost, ThreadsInsight, AccountMetric, AppSetting)])
+
+
 MIGRATIONS: list[tuple[int, str, Callable]] = [
     (1, "初期テーブルの作成", _m001_initial),
+    (2, "Threads（予約投稿・分析）・運用設定", _m002_threads),
 ]
 
 

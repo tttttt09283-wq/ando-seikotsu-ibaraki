@@ -33,10 +33,22 @@ class Settings:
     ai_daily_budget_yen: int
     usd_jpy: float
     db_path: Path
+    # Threads（公式API）
+    threads_access_token: str | None = None
+    threads_api_base: str = "https://graph.threads.net/v1.0"
+    threads_token_issued_at: str | None = None
+    threads_posting_enabled: bool = False
+    threads_daily_limit: int = 5
+    threads_min_interval_min: int = 60
+    threads_publish_wait_sec: int = 30
 
     @property
     def ai_enabled(self) -> bool:
         return bool(self.anthropic_api_key)
+
+    @property
+    def threads_connected(self) -> bool:
+        return bool(self.threads_access_token)
 
 
 def get_settings() -> Settings:
@@ -47,4 +59,24 @@ def get_settings() -> Settings:
         ai_daily_budget_yen=_int("AIT_AI_DAILY_BUDGET_YEN", 300),
         usd_jpy=_float("AIT_USD_JPY", 150.0),
         db_path=Path(db),
+        threads_access_token=os.getenv("THREADS_ACCESS_TOKEN") or None,
+        threads_api_base=(os.getenv("THREADS_API_BASE") or "https://graph.threads.net/v1.0").rstrip("/"),
+        threads_token_issued_at=os.getenv("THREADS_TOKEN_ISSUED_AT") or None,
+        threads_posting_enabled=(os.getenv("AIT_THREADS_POSTING_ENABLED", "false").strip().lower() in ("1", "true", "yes", "on")),
+        threads_daily_limit=max(0, min(_int("AIT_THREADS_DAILY_LIMIT", 5), 50)),
+        threads_min_interval_min=max(10, _int("AIT_THREADS_MIN_INTERVAL_MIN", 60)),
+        threads_publish_wait_sec=max(0, _int("AIT_THREADS_PUBLISH_WAIT_SEC", 30)),
     )
+
+
+ENV_PATH = BASE_DIR / ".env"
+
+
+def save_env_value(key: str, value: str) -> None:
+    """.env の値を書き換える（Threads トークン更新用）。.env 以外には秘密情報を保存しない。"""
+    from dotenv import set_key
+
+    if not ENV_PATH.exists():
+        ENV_PATH.touch(mode=0o600)
+    set_key(str(ENV_PATH), key, value, quote_mode="never")
+    os.environ[key] = value

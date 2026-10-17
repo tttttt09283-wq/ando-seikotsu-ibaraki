@@ -257,3 +257,73 @@ def chad_daily(session: Session, facts: dict, **kw) -> AIResult:
         }
 
     return generate(session, "チャド", "日次報告", prompt, CHAD_SCHEMA, template, **kw)
+
+
+# ---------------------------------------------------------------------------
+# マーケティングAI：Threads 分析 → 改善投稿／営業AI：note 導線
+# ---------------------------------------------------------------------------
+
+THREADS_IMPROVE_SCHEMA = _obj(
+    {
+        "hypotheses": _STRS,
+        "next_posts": {"type": "array", "items": _obj({"angle": _STR, "body": _STR, "why": _STR})},
+        "experiments": _STRS,
+    }
+)
+
+
+def threads_improvement(session: Session, facts: dict, product: dict | None, count: int = 3, **kw) -> AIResult:
+    prompt = (
+        "あなたは Threads 運用担当です。次の実績データ（確認済みの事実）から、伸びた投稿の共通点を仮説として整理し、"
+        f"認知を広げるための次の投稿案を{count}本作ってください。"
+        "各投稿は500字以内（目安150〜300字）、1行目で読者の悩みや意外性を示し、最後は押し売りにならない形で note へ誘導してください。"
+        "架空の実績・体験談・数字・口コミは書かないでください。リンクは本文に「（noteのリンク）」と書くだけにしてください。"
+        "煽り（残りわずか・今だけ等）や、エンゲージメントを強要する表現（いいねしないと〜等）は使わないでください。\n"
+        f"実績データ：{json.dumps(facts, ensure_ascii=False)}\n"
+        f"誘導先の note 商品：{json.dumps(product, ensure_ascii=False) if product else 'なし（認知拡大のみ）'}"
+    )
+
+    def template() -> dict:
+        best = facts.get("best_features", {})
+        hyps = [f"【仮説】{k}は「{v['最も閲覧が多い']}」の投稿が平均閲覧 {v['平均閲覧']}（{v['件数']}件）で最も多い" for k, v in best.items()]
+        if not hyps:
+            hyps = ["【仮説】まだ比較できるだけの投稿データがない。まずは1日2本を2週間続けて、時間帯と1行目の型を試す"]
+        title = (product or {}).get("title", "")
+        cta = f"\n\n詳しい手順は note にまとめました（noteのリンク）" if title else ""
+        topic = title or "日々の作業を楽にする方法"
+        posts = [
+            {"angle": "悩みの言語化", "body": f"「{topic}」でつまずく人の多くは、最初の一歩でつまずいています。\n\n・何から始めればいいか分からない\n・調べるほど迷う\n・続かない\n\nまずは1つだけ決めるところから。{cta}", "why": "読者の悩みを1行目で言い当てる型"},
+            {"angle": "問いかけ", "body": f"{topic}、みなさんはどこで手が止まりますか？\n\n自分が一番迷ったのは「順番」でした。順番が分かると、あとは手を動かすだけ。{cta}", "why": "返信（会話）を生む問いかけ型"},
+            {"angle": "手順の要約", "body": f"{topic}を3ステップで。\n\n1. 目的を1行で書く\n2. 必要なものを書き出す\n3. 今日やる1つを決める\n\n細かいやり方は別にまとめています。{cta}", "why": "保存されやすい箇条書き型"},
+        ]
+        return {
+            "hypotheses": hyps,
+            "next_posts": posts[:count],
+            "experiments": ["同じ内容で投稿時間だけを変えて比べる（朝と夜）", "1行目を「悩み」型と「数字」型で比べる", "1週間ごとに伸びた投稿の型を見直す"],
+        }
+
+    return generate(session, "マーケティングAI", "Threads改善案", prompt, THREADS_IMPROVE_SCHEMA, template, **kw)
+
+
+FUNNEL_SCHEMA = _obj({"bottlenecks": _STRS, "actions": _STRS, "profile_text": _STR, "pinned_post": _STR})
+
+
+def funnel_improvement(session: Session, funnel: dict, **kw) -> AIResult:
+    prompt = (
+        "次の note 商品の販売導線（Threads → プロフィール → note 無料部分 → 購入）の状況から、"
+        "詰まっている箇所（仮説）と、今日からできる改善アクションを出してください。"
+        "あわせて Threads のプロフィール文案（150字以内）と、固定投稿の文案（500字以内）を作ってください。"
+        "架空の実績・購入者の声は書かないでください。\n" + json.dumps(funnel, ensure_ascii=False)
+    )
+
+    def template() -> dict:
+        missing = [c["label"] for c in funnel.get("checks", []) if not c["ok"]]
+        title = funnel.get("title", "note商品")
+        return {
+            "bottlenecks": [f"【仮説】未対応：{m}" for m in missing] or ["【仮説】導線の基本項目はそろっている。投稿数と投稿の質を高める段階"],
+            "actions": [f"「{m}」を対応する" for m in missing[:3]] or ["伸びた投稿の型で、この商品に紐付いた投稿を週3本以上つくる"],
+            "profile_text": f"{title}など、日々の作業を楽にする方法を発信しています。詳しい手順は note にまとめています↓",
+            "pinned_post": f"【固定】はじめまして。\nこのアカウントでは、{title}に役立つ考え方や手順を発信しています。\n\nまとまった手順は note に置いています。必要な方だけどうぞ（noteのリンク）",
+        }
+
+    return generate(session, "営業AI", f"導線改善：{funnel.get('title', '')}", prompt, FUNNEL_SCHEMA, template, **kw)

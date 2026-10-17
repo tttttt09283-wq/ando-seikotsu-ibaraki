@@ -26,6 +26,9 @@ from .models import (
     ResearchTheme,
     SalesRecord,
     Task,
+    ThreadsInsight,
+    ThreadsPost,
+    AccountMetric,
 )
 from .workflow import HUMAN_ACTOR, create_content, submit_for_review
 
@@ -118,6 +121,26 @@ def seed_sample(session: Session, today: date | None = None) -> bool:
 
     session.add(Task(title="（サンプル）調査テーマの出典を確認する", role="市場調査AI", priority=2, due_date=today + timedelta(days=1), is_sample=True))
 
+    # Threads の投稿と反応数（分析画面の操作確認用・架空）
+    samples = [
+        (1, 7, "（サンプル）確定申告、毎年ぎりぎりになっていませんか？\n\n・何から始めるか分からない\n・書類が見つからない\n\nまずは1つだけ決めましょう。", 2400, 96, 18, 9),
+        (2, 21, "（サンプル）帳簿づけが続かない人へ。続けるコツは「書く場所を1つに決める」こと。", 1800, 61, 7, 5),
+        (3, 12, "（サンプル）AIに確定申告の準備を手伝ってもらう方法を、3ステップでまとめました。\n1. 書類を集める\n2. 一覧にする\n3. 確認する", 3100, 140, 22, 17),
+        (4, 21, "（サンプル）みなさんは確定申告のどこで手が止まりますか？", 2900, 120, 41, 6),
+        (5, 8, "（サンプル）領収書の整理、月に1回だけやる方法。", 900, 22, 2, 1),
+        (6, 21, "（サンプル）確定申告を早く終わらせた年と、ぎりぎりだった年の違いを振り返ってみました。準備の順番が違いました。", 2600, 88, 12, 8),
+        (8, 13, "（サンプル）副業の確定申告、最初に確認すること。", 1100, 30, 3, 2),
+        (9, 21, "（サンプル）確定申告の準備を10ステップに分けて note にまとめました。必要な方だけどうぞ（noteのリンク）", 2200, 70, 9, 11),
+    ]
+    for days_ago, hour, text, views, likes, replies, reposts in samples:
+        posted = datetime.combine(today - timedelta(days=days_ago), datetime.min.time()).replace(hour=hour)
+        tp = ThreadsPost(threads_id=f"sample-{days_ago}", text=text, posted_at=posted, source="manual", note_product_id=product.id, is_sample=True)
+        session.add(tp)
+        session.flush()
+        session.add(ThreadsInsight(post_id=tp.id, fetched_at=now, views=views, likes=likes, replies=replies, reposts=reposts))
+    for i in range(10):
+        session.add(AccountMetric(metric_date=today - timedelta(days=9 - i), platform="threads", followers=820 + i * 6, is_sample=True))
+
     # サンプルCSV（日付を今日基準にずらして取り込む）
     for source in ("note", "rakuten"):
         path = SAMPLE_DIR / f"sample_{source}_sales.csv"
@@ -137,7 +160,7 @@ def _shift_sample_dates(path: Path, today: date) -> bytes:
 def delete_sample(session: Session) -> None:
     sample_batches = select(SalesRecord.import_batch_id).where(SalesRecord.is_sample.is_(True))
     batch_ids = {b for b in session.scalars(sample_batches) if b}
-    for model in (SalesRecord, ChannelMetric, Expense, Task, Content, RakutenItem, NoteProduct, ResearchTheme):
+    for model in (ThreadsPost, AccountMetric, SalesRecord, ChannelMetric, Expense, Task, Content, RakutenItem, NoteProduct, ResearchTheme):
         session.execute(delete(model).where(model.is_sample.is_(True)))
     if batch_ids:
         session.execute(delete(ImportBatch).where(ImportBatch.id.in_(batch_ids)))

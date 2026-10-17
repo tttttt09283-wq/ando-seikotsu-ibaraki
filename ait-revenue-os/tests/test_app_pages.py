@@ -10,6 +10,9 @@ from revenue_os.seed import seed_sample
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGES = {
+    "today": "today.render",
+    "threads": "threads.render",
+    "funnel": "funnel.render",
     "dashboard": "dashboard.render",
     "departments": "departments.render",
     "research": "research.render",
@@ -54,7 +57,7 @@ def test_main_app_renders(db_path, monkeypatch):
     at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=30)
     at.run()
     assert not at.exception, at.exception
-    assert at.title[0].value == "📊 経営ダッシュボード"
+    assert at.title[0].value == "✅ 今日やること"
 
 
 def test_approval_queue_buttons(db_path):

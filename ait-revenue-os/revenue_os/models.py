@@ -336,3 +336,87 @@ class DailyReport(Base):
     priorities_md: Mapped[str] = mapped_column(Text)
     generated_by: Mapped[str] = mapped_column(String(20))  # api / template
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+
+
+# ---------------------------------------------------------------------------
+# Threads（公式API）・予約投稿・分析
+# ---------------------------------------------------------------------------
+
+SCHEDULE_STATUSES = ["scheduled", "publishing", "published", "failed", "cancelled"]
+SCHEDULE_LABELS = {"scheduled": "予約中", "publishing": "投稿処理中", "published": "投稿済み", "failed": "失敗", "cancelled": "取り消し"}
+
+
+class ScheduledPost(TimestampMixin, Base):
+    """承認済みコンテンツの予約投稿。社長が予約した時だけ作られる。"""
+
+    __tablename__ = "scheduled_posts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    content_id: Mapped[int] = mapped_column(ForeignKey("contents.id", ondelete="CASCADE"), index=True)
+    scheduled_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    status: Mapped[str] = mapped_column(String(20), default="scheduled", index=True)
+    # 二重投稿防止：作成済みのコンテナIDを保持し、再試行では同じコンテナを公開する
+    container_id: Mapped[str] = mapped_column(String(100), default="")
+    threads_id: Mapped[str] = mapped_column(String(100), default="")
+    permalink: Mapped[str] = mapped_column(String(1000), default="")
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    scheduled_by: Mapped[str] = mapped_column(String(50), default="社長")
+
+
+class ThreadsPost(TimestampMixin, Base):
+    """Threads の投稿（APIで取得・予約投稿・手動記録）。"""
+
+    __tablename__ = "threads_posts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    threads_id: Mapped[str] = mapped_column(String(100), unique=True)
+    content_id: Mapped[int | None] = mapped_column(ForeignKey("contents.id", ondelete="SET NULL"), nullable=True)
+    note_product_id: Mapped[int | None] = mapped_column(ForeignKey("note_products.id", ondelete="SET NULL"), nullable=True)
+    text: Mapped[str] = mapped_column(Text, default="")
+    permalink: Mapped[str] = mapped_column(String(1000), default="")
+    posted_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    media_type: Mapped[str] = mapped_column(String(30), default="TEXT")
+    source: Mapped[str] = mapped_column(String(20), default="api")  # api / scheduled / manual
+    is_sample: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    insights: Mapped[list[ThreadsInsight]] = relationship(back_populates="post", cascade="all, delete-orphan", order_by="ThreadsInsight.fetched_at")
+
+
+class ThreadsInsight(Base):
+    """投稿の反応数のスナップショット（取得するたびに1件追加）。"""
+
+    __tablename__ = "threads_insights"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    post_id: Mapped[int] = mapped_column(ForeignKey("threads_posts.id", ondelete="CASCADE"), index=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    views: Mapped[int] = mapped_column(Integer, default=0)
+    likes: Mapped[int] = mapped_column(Integer, default=0)
+    replies: Mapped[int] = mapped_column(Integer, default=0)
+    reposts: Mapped[int] = mapped_column(Integer, default=0)
+    quotes: Mapped[int] = mapped_column(Integer, default=0)
+    shares: Mapped[int] = mapped_column(Integer, default=0)
+
+    post: Mapped[ThreadsPost] = relationship(back_populates="insights")
+
+
+class AccountMetric(Base):
+    __tablename__ = "account_metrics"
+    __table_args__ = (UniqueConstraint("metric_date", "platform", name="uq_account_metric"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    metric_date: Mapped[date] = mapped_column(Date)
+    platform: Mapped[str] = mapped_column(String(20), default="threads")
+    followers: Mapped[int] = mapped_column(Integer, default=0)
+    is_sample: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class AppSetting(Base):
+    """画面から変更できる運用設定（秘密情報は保存しない）。"""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, default="")

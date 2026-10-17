@@ -7,7 +7,7 @@ import streamlit as st
 from revenue_os.config import get_settings
 from revenue_os.db import init_db, session_scope
 from revenue_os.seed import delete_sample, has_sample, seed_sample
-from revenue_os.ui import chad, contents, dashboard, departments, importer, products, research
+from revenue_os.ui import chad, contents, dashboard, departments, funnel, importer, nav, products, research, threads, today
 
 st.set_page_config(page_title="A.I.T Revenue OS", page_icon="📈", layout="wide")
 
@@ -28,7 +28,10 @@ with st.sidebar:
         st.success(f"AI：有効（{settings.model}）")
     else:
         st.info("AI：テンプレートモード\n（.env にAPIキーを設定すると有効）")
-    st.caption("🔒 外部サービスへの投稿・販売設定の変更は一切行いません。")
+    if settings.threads_connected and settings.threads_posting_enabled:
+        st.caption("🧵 Threads：承認・予約した投稿だけを公式APIで投稿します。それ以外の外部サービスへの投稿・販売設定の変更は行いません。")
+    else:
+        st.caption("🔒 外部サービスへの投稿・販売設定の変更は行いません（Threads の予約投稿はオフ）。")
 
     with session_scope() as s:
         sample_exists = has_sample(s)
@@ -46,15 +49,21 @@ with st.sidebar:
                     seed_sample(s)
                 st.rerun()
 
-pages = [
-    st.Page(dashboard.render, title="経営ダッシュボード", icon="📊", url_path="dashboard", default=True),
-    st.Page(departments.render, title="部門ボード", icon="🏢", url_path="departments"),
-    st.Page(research.render, title="市場調査", icon="🔎", url_path="research"),
-    st.Page(products.render_note, title="note商品管理", icon="📘", url_path="note"),
-    st.Page(products.render_rakuten, title="楽天商品管理", icon="🛒", url_path="rakuten"),
-    st.Page(contents.render_contents, title="コンテンツ管理", icon="✍️", url_path="contents"),
-    st.Page(contents.render_approvals, title="承認キュー", icon="✅", url_path="approvals"),
-    st.Page(importer.render, title="売上CSVインポート", icon="📥", url_path="import"),
-    st.Page(chad.render, title="チャド日次報告", icon="🧭", url_path="chad"),
+PAGE_DEFS = [
+    ("today", today.render, "今日やること", "✅"),
+    ("dashboard", dashboard.render, "経営ダッシュボード", "📊"),
+    ("departments", departments.render, "部門ボード", "🏢"),
+    ("threads", threads.render, "Threads運用", "🧵"),
+    ("funnel", funnel.render, "note導線", "🛤"),
+    ("research", research.render, "市場調査", "🔎"),
+    ("note", products.render_note, "note商品管理", "📘"),
+    ("rakuten", products.render_rakuten, "楽天商品管理", "🛒"),
+    ("contents", contents.render_contents, "コンテンツ管理", "✍️"),
+    ("approvals", contents.render_approvals, "承認キュー", "🗳"),
+    ("import", importer.render, "売上CSVインポート", "📥"),
+    ("chad", chad.render, "チャド日次報告", "🧭"),
 ]
-st.navigation(pages).run()
+nav.PAGES.clear()
+for i, (key, fn, title, icon) in enumerate(PAGE_DEFS):
+    nav.PAGES[key] = st.Page(fn, title=title, icon=icon, url_path=key, default=i == 0)
+st.navigation(list(nav.PAGES.values())).run()
