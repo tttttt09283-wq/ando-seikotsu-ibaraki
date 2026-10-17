@@ -166,16 +166,18 @@ function isPastSlot(ctx, d, t){
   return slot<=cutoff;
 }
 // スタッフがその日・その時間帯に勤務しているか（管理画面と同じ優先順：特定日の変更 → 月次シフト → 週の固定シフト）
-// 半日出勤の時間帯（分）。区切りは管理画面の設定（half_split）、未設定ならその日の営業時間の真ん中（30分単位で切り下げ）
+// 半日出勤の時間帯（分）。管理画面のシフト表で設定した「平日／土日・祝」の午前・午後の時間（未設定なら平日 午前10:00〜14:00・午後16:00〜20:00、土日・祝 午前9:00〜13:30・午後13:30〜18:00）。その日の営業時間の内側に収める
 function halfDayWindow(ctx, d, half){
   var ds=fmtDate(d), clo=closureFor(ctx.closures, ds), open, close;
   var bh=(ctx.businessHours||[]).find(function(b){return b.day_of_week===d.getDay();});
-  if(clo&&clo.is_closed===false&&clo.open_time&&clo.close_time){ open=toMin(String(clo.open_time).slice(0,5)); close=toMin(String(clo.close_time).slice(0,5)); }
+  var override=!!(clo&&clo.is_closed===false&&clo.open_time&&clo.close_time);
+  if(override){ open=toMin(String(clo.open_time).slice(0,5)); close=toMin(String(clo.close_time).slice(0,5)); }
   else if(bh&&bh.open_time&&bh.close_time){ open=toMin(String(bh.open_time).slice(0,5)); close=toMin(String(bh.close_time).slice(0,5)); }
-  else { var we=d.getDay()===0||d.getDay()===6; open=toMin(we?"09:00":"10:00"); close=toMin(we?"18:00":"20:00"); }
-  var hs=ctx.config&&ctx.config.half_split;
-  var split=hs&&/^\d{1,2}:\d{2}$/.test(hs)?toMin(hs):Math.floor((open+close)/2/30)*30;
-  return half==="am"?{start:open,end:split}:{start:split,end:close};
+  else { var we0=d.getDay()===0||d.getDay()===6; open=toMin(we0?"09:00":"10:00"); close=toMin(we0?"18:00":"20:00"); }
+  var kind=(d.getDay()===0||d.getDay()===6||override)?"weekend":"weekday";
+  var DEF={weekday:{am:["10:00","14:00"],pm:["16:00","20:00"]},weekend:{am:["09:00","13:30"],pm:["13:30","18:00"]}};
+  var ht=ctx.config&&ctx.config.half_times, r=(ht&&ht[kind]&&Array.isArray(ht[kind][half])&&ht[kind][half].length===2)?ht[kind][half]:DEF[kind][half];
+  return {start:Math.max(toMin(r[0]),open),end:Math.min(toMin(r[1]),close)};
 }
 function isStaffWorking(ctx, staffId, d, t, dur){
   var ds=fmtDate(d), cfg=ctx.config||{};

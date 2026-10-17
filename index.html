@@ -522,7 +522,7 @@ const sb = {
 // サーバー（app_settings）を正として、localStorage はその写し（すぐ読めるようにするための控え）として使う。
 const SHARED_SETTING_PREFIXES=["shifts_","holiday_balance","ando_sales_target_"];
 // ===== 半日出勤（シフト表の「午前出勤」＝午後休み／「午後出勤」＝午前休み） =====
-// 午前と午後の区切りは、設定「shift_half_split」（例 "14:00"）。未設定ならその日の営業時間のちょうど真ん中（30分単位で切り下げ）
+// 午前・午後の時間帯は、設定「shift_half_times」（平日／土日・祝それぞれ）。未設定なら HALF_SHIFT_DEFAULT_TIMES
 const HALF_SHIFT={"午前出勤":"am","午後出勤":"pm"};
 const SHIFT_WORKING_VALUES=["出勤","午前出勤","午後出勤"];
 let HALF_SHIFT_BH=[];      // 営業時間（App で読み込んだものをここに入れて共有）
@@ -537,17 +537,24 @@ function dayOpenClose(dateStr){
   if(bh&&bh.open_time&&bh.close_time) return {open:String(bh.open_time).slice(0,5),close:String(bh.close_time).slice(0,5)};
   return (dow===0||dow===6)?{open:"09:00",close:"18:00"}:{open:"10:00",close:"20:00"};
 }
-function halfShiftSplit(dateStr){
-  let v=""; try{ v=localStorage.getItem("shift_half_split")||""; }catch(e){}
-  if(/^\d{1,2}:\d{2}$/.test(v)) return v.padStart(5,"0");
-  const oc=dayOpenClose(dateStr), mid=(_hm(oc.open)+_hm(oc.close))/2;
-  return _mhm(Math.floor(mid/30)*30);
+const HALF_SHIFT_DEFAULT_TIMES={weekday:{am:["10:00","14:00"],pm:["16:00","20:00"]},weekend:{am:["09:00","13:30"],pm:["13:30","18:00"]}};
+function readHalfShiftTimes(){
+  const out=JSON.parse(JSON.stringify(HALF_SHIFT_DEFAULT_TIMES));
+  try{ const v=JSON.parse(localStorage.getItem("shift_half_times")||"null");
+    if(v) ["weekday","weekend"].forEach(k=>["am","pm"].forEach(h=>{ const r=v[k]&&v[k][h]; if(Array.isArray(r)&&/^\d{2}:\d{2}$/.test(r[0])&&/^\d{2}:\d{2}$/.test(r[1])&&r[0]<r[1]) out[k][h]=r; })); }catch(e){}
+  return out;
 }
-// 半日出勤のときに働く時間帯 {start,end}。半日でなければ null
+// 土日と、祝日など営業時間を変更した日は「土日・祝」の時間帯を使う
+function halfShiftDayKind(dateStr){
+  const dow=new Date(dateStr+"T00:00:00").getDay();
+  const clo=HALF_SHIFT_CLOSURES.find(c=>c.date===dateStr&&c.is_closed===false&&c.open_time);
+  return (dow===0||dow===6||clo)?"weekend":"weekday";
+}
+// 半日出勤のときに働く時間帯 {start,end}（その日の営業時間の内側に収める）。半日でなければ null
 function halfShiftWindow(val,dateStr){
   const h=HALF_SHIFT[val]; if(!h) return null;
-  const oc=dayOpenClose(dateStr), sp=halfShiftSplit(dateStr);
-  return h==="am"?{start:oc.open,end:sp}:{start:sp,end:oc.close};
+  const r=readHalfShiftTimes()[halfShiftDayKind(dateStr)][h], oc=dayOpenClose(dateStr);
+  return {start:_mhm(Math.max(_hm(r[0]),_hm(oc.open))),end:_mhm(Math.min(_hm(r[1]),_hm(oc.close)))};
 }
 // シフト表の値を取り出す（無ければ null）
 function monthShiftValue(staffId,dateStr){
@@ -8338,25 +8345,28 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
 }
 
 // ===== シフト・休日管理パネル =====
-// 半日出勤の区切り時刻の設定（シフト表の上に表示）
+// 半日出勤の時間帯の設定（シフト表の上に表示）
 function HalfShiftSplitSetting(){
   const ver=useSharedSettingsVersion();
-  const read=()=>{ try{ return localStorage.getItem("shift_half_split")||""; }catch(e){ return ""; } };
-  const [v,setV]=React.useState(read);
-  React.useEffect(()=>{ setV(read()); },[ver]);
-  const opts=[];
-  for(let t=11*60;t<=17*60;t+=30) opts.push(_mhm(t));
-  const ex=d=>{ const w1=halfShiftWindow("午前出勤",d), w2=halfShiftWindow("午後出勤",d); return `午前 ${w1.start}〜${w1.end}／午後 ${w2.start}〜${w2.end}`; };
-  const pick=(dow)=>{ const d=new Date(); d.setDate(d.getDate()+((dow-d.getDay()+7)%7)); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+  const [v,setV]=React.useState(readHalfShiftTimes);
+  React.useEffect(()=>{ setV(readHalfShiftTimes()); },[ver]);
+  const opts=[]; for(let t=8*60;t<=21*60;t+=30) opts.push(_mhm(t));
+  function change(kind,half,i,val){
+    const next=JSON.parse(JSON.stringify(v)); next[kind][half][i]=val;
+    if(next[kind][half][0]>=next[kind][half][1]){ alert("開始より後の時刻を選んでください"); return; }
+    setV(next); sharedSettings.set("shift_half_times",JSON.stringify(next));
+  }
+  const sel=(kind,half,i)=>(<select value={v[kind][half][i]} onChange={e=>change(kind,half,i,e.target.value)} style={{padding:"3px 4px",borderRadius:6,border:"1px solid #cbd5e1",fontSize:12}}>{opts.map(o=><option key={o} value={o}>{o}</option>)}</select>);
+  const row=(kind,label)=>(<div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+    <b style={{minWidth:58,color:"#334155"}}>{label}</b>
+    <span style={{color:"#0369a1",fontWeight:700}}>午前</span>{sel(kind,"am",0)}〜{sel(kind,"am",1)}
+    <span style={{color:"#4f46e5",fontWeight:700,marginLeft:6}}>午後</span>{sel(kind,"pm",0)}〜{sel(kind,"pm",1)}
+  </div>);
   return(
-    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:12,color:"#475569",background:"#f0f9ff",border:"1px solid #bae6fd",borderRadius:8,padding:"8px 10px",marginBottom:10}}>
-      <b style={{color:"#0369a1"}}>🌓 半日出勤</b>
-      <span>「午前出勤」＝午後はお休み／「午後出勤」＝午前はお休み。午前と午後の区切り：</span>
-      <select value={v} onChange={e=>{ setV(e.target.value); sharedSettings.set("shift_half_split",e.target.value); }} style={{padding:"4px 6px",borderRadius:6,border:"1px solid #cbd5e1",fontSize:12}}>
-        <option value="">自動（営業時間の真ん中）</option>
-        {opts.map(o=><option key={o} value={o}>{o}</option>)}
-      </select>
-      <span style={{color:"#64748b"}}>平日：{ex(pick(1))}　土日：{ex(pick(6))}</span>
+    <div style={{fontSize:12,color:"#475569",background:"#f0f9ff",border:"1px solid #bae6fd",borderRadius:8,padding:"8px 10px",marginBottom:10,display:"grid",gap:6}}>
+      <div><b style={{color:"#0369a1"}}>🌓 半日出勤の時間帯</b>　「午前出勤」の人は午前の時間だけ、「午後出勤」の人は午後の時間だけ予約が入ります。</div>
+      {row("weekday","平日")}
+      {row("weekend","土日・祝")}
     </div>
   );
 }
