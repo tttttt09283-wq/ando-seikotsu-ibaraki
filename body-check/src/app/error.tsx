@@ -11,7 +11,7 @@ export default function ErrorPage({ error, reset }: { error: Error & { digest?: 
   }, [error]);
 
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-5 px-5 py-16 text-center">
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col items-center justify-center gap-5 px-5 py-16 text-center">
       <p className="text-5xl" aria-hidden="true">
         🙇
       </p>

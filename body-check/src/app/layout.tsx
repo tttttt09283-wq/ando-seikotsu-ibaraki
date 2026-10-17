@@ -27,7 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="ja" className={maru.variable}>
       <body className="min-h-dvh antialiased">
-        <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col">{children}</div>
+        <div className="flex min-h-dvh w-full flex-col">{children}</div>
       </body>
     </html>
   );

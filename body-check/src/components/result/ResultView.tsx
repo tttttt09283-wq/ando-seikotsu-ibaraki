@@ -17,6 +17,7 @@ import { buildResultMessages, calculateResult } from "@/lib/scoring";
 import { recommendSelfCare } from "@/lib/selfcare";
 import { buildCompletionEvent, sendStats } from "@/lib/stats";
 import { clearState, loadState, saveState, type CheckState } from "@/lib/storage";
+import { useIsDemo } from "@/lib/useDemo";
 import type { CheckId, ScoreResult } from "@/types";
 import { RadarScoreChart } from "./RadarScoreChart";
 import { SelfCareCard } from "./SelfCareCard";
@@ -30,6 +31,7 @@ export function ResultView() {
   const router = useRouter();
   const [state, setState] = useState<CheckState | null | undefined>(undefined);
   const sentRef = useRef(false);
+  const demo = useIsDemo();
 
   useEffect(() => {
     setState(loadState());
@@ -74,7 +76,8 @@ export function ResultView() {
         : null;
 
   const feedback = buildDetailedFeedback(result, state.answers);
-  const bookingUrl = siteConfig.bookingUrl
+  // デモ中は実在の院の予約ページへは進ませない（代わりに導入の案内を出す）
+  const bookingUrl = !demo && siteConfig.bookingUrl
     ? buildBookingUrl(siteConfig.bookingUrl, buildBodyCheckSummary(result, bodyAge))
     : null;
   const symptomLabels = state.profile.symptoms
@@ -109,7 +112,7 @@ export function ResultView() {
         <DetailedItemList result={result} feedback={feedback} />
         <ConsultSection feedback={feedback} symptoms={symptomLabels} url={bookingUrl} onClick={onBookingClick} />
         <SelfCareSection result={result} />
-        <BookingSection url={bookingUrl} onClick={onBookingClick} />
+        {demo ? <DemoResultCta /> : <BookingSection url={bookingUrl} onClick={onBookingClick} />}
 
         <div className="space-y-3 pt-2">
           <button type="button" onClick={restart} className={buttonStyles.secondary}>
@@ -474,6 +477,29 @@ function SelfCareSection({ result }: { result: ScoreResult }) {
           <SelfCareCard key={item.id} item={item} index={i} />
         ))}
       </div>
+    </section>
+  );
+}
+
+/** デモ版の結果画面：本来の予約ボタンの位置に、導入の案内を出す */
+function DemoResultCta() {
+  return (
+    <section aria-labelledby="demo-cta-heading" className="rounded-[2rem] border-2 border-dashed border-sun-400 bg-white p-6 text-center">
+      <p className="text-xs font-bold tracking-widest text-sun-500">DEMO</p>
+      <h2 id="demo-cta-heading" className="mt-1 text-xl font-black leading-snug">
+        実際の院では、ここから
+        <br />
+        WEB予約へ進みます
+      </h2>
+      <p className="mt-3 text-sm leading-relaxed text-slate-700">
+        結果（カラダ年齢・スコア）は予約フォームに自動で引き継がれ、院のスタッフは「どこを詳しく見てほしいか」を事前に把握できます。
+      </p>
+      <Link href="/for-clinics" className={cx(buttonStyles.accent, "mt-5")}>
+        導入について見る
+      </Link>
+      <Link href="/for-clinics/flow" className={cx(buttonStyles.secondary, "mt-3")}>
+        集客〜成約までの活用手順を見る
+      </Link>
     </section>
   );
 }
