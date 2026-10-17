@@ -141,8 +141,9 @@ export function StoreTemplates() {
           </div>
           <div className="space-y-4 px-6 py-6">
             <p className="text-2xl font-black">
-              スマホで<span className="text-brand-600">約3分</span>！カラダ年齢チェック
+              スマホで選べる<span className="text-brand-600">4つ</span>の無料チェック
             </p>
+            <p className="text-base font-bold">🧍 カラダ年齢　📸 AI姿勢　🧬 骨格タイプ　💪 体幹</p>
             <ul className="grid grid-cols-5 gap-1">
               {CHECK_ORDER.map((id) => (
                 <li key={id} className="flex flex-col items-center gap-1">

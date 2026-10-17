@@ -166,3 +166,18 @@ select count(*) from bookings where from_body_check and not cancelled;
 - **お問い合わせ先**：環境変数 `NEXT_PUBLIC_SALES_CONTACT_URL` / `NEXT_PUBLIC_SALES_CONTACT_EMAIL`（未設定なら「準備中」）
 - **公開URL**：環境変数 `NEXT_PUBLIC_SITE_URL`（デモのQRコードに使用）
 - 患者様向けの画面（トップ・チェック・結果）は `src/app/(app)/` に、販売ページは `src/app/for-clinics/` にあります（URLは今までと同じ）。
+
+## 9. 4つのチェックメニュー
+
+トップページ（`/`）から、次の4つを選べます。どのチェックも結果画面から予約へ進め、結果の要約が予約フォームに引き継がれます（`?src=body-check&bc=…`）。
+
+| URL | チェック | 内容 | 設定・判定のファイル |
+| --- | --- | --- | --- |
+| `/check` | カラダ年齢チェック | 5項目で「〇〇代レベル」（今までと同じ） | `src/config/checks.ts` ほか |
+| `/posture` | AI姿勢チェック | 横向き・正面の写真を MediaPipe Pose で解析（写真はスマホ内だけで処理） | `src/lib/posture.ts` |
+| `/skeleton` | 骨格タイプチェック | 10問でストレート／ウェーブ／ナチュラル | `src/config/skeleton.ts`・`src/lib/skeleton.ts` |
+| `/core` | 体幹チェック | プランク・サイドプランク・片脚ヒップリフト・座って脚上げの4テスト | `src/config/core.ts`・`src/lib/core.ts` |
+
+- AI姿勢チェックは、開いたときだけ `cdn.jsdelivr.net` から MediaPipe Pose を読み込みます。判定基準は院内の「体のチェック（AI姿勢分析）」と同じです。
+- `/demo` はメニュー画面を開くので、4つすべてをデモで試せます。
+
