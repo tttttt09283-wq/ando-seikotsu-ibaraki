@@ -1,0 +1,9 @@
+{
+  "name": "invoice-quick",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Invoice Quick - Google Apps Script 請求書・見積書PDF作成ツール",
+  "scripts": {
+    "test": "node --test tests/calculator.test.js"
+  }
+}
