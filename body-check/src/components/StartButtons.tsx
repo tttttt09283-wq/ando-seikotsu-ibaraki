@@ -45,3 +45,27 @@ export function StartButtons() {
     </div>
   );
 }
+
+/** メニュー画面用：カラダ年齢チェックの「続きから」「前回の結果」だけを小さく出す */
+export function ResumeLinks() {
+  const [saved, setSaved] = useState<CheckState | null>(null);
+  useEffect(() => {
+    setSaved(loadState());
+  }, []);
+  if (!hasDraft(saved) && !saved?.completedAt) return null;
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-2 rounded-2xl bg-white p-3 text-sm font-bold">
+      <span className="text-navy-700">🧍 カラダ年齢チェック：</span>
+      {hasDraft(saved) && (
+        <Link href="/check" className="rounded-full bg-brand-50 px-3 py-1 text-brand-700 underline-offset-4">
+          続きから再開
+        </Link>
+      )}
+      {saved?.completedAt && (
+        <Link href="/result" className="rounded-full bg-brand-50 px-3 py-1 text-brand-700 underline-offset-4">
+          前回の結果を見る
+        </Link>
+      )}
+    </div>
+  );
+}
