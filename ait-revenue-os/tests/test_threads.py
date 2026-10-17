@@ -195,3 +195,12 @@ def test_today_plan_lists_actions(session):
     c = _approved(session, "予約前の投稿")
     plan2 = build_today(session)
     assert any("予約する" in i.title for i in plan2.items)
+
+
+def test_analysis_with_no_posts(session):
+    from revenue_os.commands import run_command
+
+    df = posts_frame(session)
+    assert analysis_facts(df) == {"posts_with_insights": 0}
+    assert feature_table(df, "時間帯").empty
+    assert run_command(session, "Threadsの投稿を2本作って").title.startswith("Threads の下書きを2本")

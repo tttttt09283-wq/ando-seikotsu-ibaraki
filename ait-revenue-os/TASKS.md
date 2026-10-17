@@ -18,7 +18,8 @@
 - [x] 集客ハブ：10チャネルのカード管理・検索対策（SEO/MEO/AIO）・口コミ対策（AI返信下書き）・AI分析
 - [x] 自動取得：Instagram・Search Console・Googleビジネスプロフィール（読み取りのみ・連携設定画面のガイド付き）
 - [x] チャドに頼む（ふだんの言葉で操作）・おまかせ実行
-- [x] pytest 106件
+- [x] note 連携（公式RSS）：記事の自動取り込み・商品との紐付け・新着記事の Threads 紹介下書き
+- [x] pytest 111件
 
 ## 残課題・次の候補
 - [ ] Instagram・Google の実アカウントでの接続確認（Instagram の指標名は接続時に確認）

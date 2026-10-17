@@ -14,6 +14,7 @@ from ..threads_analytics import get_setting, set_setting, sync_threads
 from ..threads_scheduler import make_api
 from . import google as g
 from .instagram import InstagramClient, InstagramError
+from .note import NoteError, create_promo_drafts, sync_note
 
 SEARCH_CONSOLE_DELAY = 3  # Search Console は数日遅れて反映される
 GBP_DELAY = 3
@@ -34,7 +35,21 @@ def connection_status(session: Session) -> dict[str, bool]:
         "instagram": bool(s.instagram_access_token),
         "seo": logged_in and bool(get_setting(session, "gsc_site")),
         "gbp": logged_in and bool(get_setting(session, "gbp_location")),
+        "note": bool(get_setting(session, "note_username")),
     }
+
+
+def run_note_sync(session: Session, username: str, fetch=None) -> SyncReport:
+    try:
+        r = sync_note(session, username, fetch) if fetch else sync_note(session, username)
+    except NoteError as e:
+        return SyncReport("note", False, str(e))
+    msg = f"記事 {r.total}件を確認（新着 {len(r.new)}件・商品と紐付け {r.linked}件）"
+    if r.new and get_setting(session, "note_auto_promo", "1") == "1":
+        made = create_promo_drafts(session, r.new)
+        if made:
+            msg += f"／新着記事を紹介する Threads 下書きを {made}本作成（承認・予約してください）"
+    return SyncReport("note", True, msg)
 
 
 def sync_instagram(session: Session, client: InstagramClient, today: date) -> SyncReport:
@@ -86,7 +101,7 @@ def sync_gbp(session: Session, client: g.GoogleClient, location: str, today: dat
     return SyncReport("Googleビジネスプロフィール", True, f"{start:%m/%d}〜{end:%m/%d}：マップ表示 {values['map_views']:,.0f}・検索表示 {values['search_views']:,.0f}・ルート {values['directions']:,.0f}・電話 {values['calls']:,.0f}")
 
 
-def sync_all(session: Session, today: date | None = None, google_client: g.GoogleClient | None = None, instagram_client: InstagramClient | None = None) -> list[SyncReport]:
+def sync_all(session: Session, today: date | None = None, google_client: g.GoogleClient | None = None, instagram_client: InstagramClient | None = None, note_fetch=None) -> list[SyncReport]:
     """接続済みのサービスから、まとめて数字を取得する。"""
     today = today or date.today()
     s = get_settings()
@@ -97,6 +112,9 @@ def sync_all(session: Session, today: date | None = None, google_client: g.Googl
         reports.append(SyncReport("Threads", not r.errors, f"新しい投稿 {r.new_posts}件・反応数 {r.updated_insights}件" + (f"（{r.errors[0]}）" if r.errors else "")))
     if instagram_client or s.instagram_access_token:
         reports.append(sync_instagram(session, instagram_client or InstagramClient(s.instagram_access_token, s.instagram_api_base), today))
+    note_user = get_setting(session, "note_username")
+    if note_user:
+        reports.append(run_note_sync(session, note_user, note_fetch))
     site, location = get_setting(session, "gsc_site"), get_setting(session, "gbp_location")
     if (site or location) and (google_client or g.is_logged_in()):
         try:

@@ -190,6 +190,8 @@ def posts_frame(session: Session, since: datetime | None = None, include_sample:
 
 
 def feature_table(df: pd.DataFrame, feature: str) -> pd.DataFrame:
+    if df.empty or "取得" not in df.columns:
+        return pd.DataFrame()
     d = df[df["取得"] == "あり"]
     if d.empty:
         return pd.DataFrame()
@@ -203,6 +205,8 @@ FEATURES = ["時間帯", "文字数", "1行目", "問いかけ", "箇条書き",
 
 def analysis_facts(df: pd.DataFrame) -> dict:
     """AIに渡す「確認済みの事実」。数字はここで計算したものだけを使う。"""
+    if df.empty or "取得" not in df.columns:
+        return {"posts_with_insights": 0}
     d = df[df["取得"] == "あり"]
     if d.empty:
         return {"posts_with_insights": 0}

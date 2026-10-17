@@ -55,11 +55,11 @@ CHANNELS: tuple[ChannelDef, ...] = (
     ChannelDef("gbp", "Googleマップ", "📍", "検索", (MetricDef("search_views", "検索での表示（7日）"), MetricDef("map_views", "マップでの表示（7日）"), MetricDef("directions", "ルート検索（7日）"), MetricDef("calls", "電話（7日）"), MetricDef("website_clicks", "Webサイトクリック（7日）")), "map_views", "Googleビジネスプロフィール › パフォーマンス"),
     ChannelDef("seo", "Web検索", "🔍", "検索", (MetricDef("impressions", "表示回数（7日）"), MetricDef("clicks", "クリック（7日）"), MetricDef("avg_position", "平均掲載順位", True, lower_is_better=True)), "clicks", "Google Search Console › 検索パフォーマンス"),
     ChannelDef("aio", "AI検索", "🤖", "検索", (MetricDef("mention_rate", "言及率（%）", True),), "mention_rate", "検索対策画面で記録（ChatGPT・Gemini・GoogleのAIによる概要など）", auto=True),
-    ChannelDef("note", "note", "📒", "販売", (MetricDef("page_views", "記事の閲覧（7日）"), MetricDef("likes", "スキ（7日）"), MetricDef("sales", "販売件数（7日）")), "page_views", "note › ダッシュボード（販売件数は売上CSVから自動）"),
+    ChannelDef("note", "note", "📒", "販売", (MetricDef("page_views", "記事の閲覧（7日）"), MetricDef("likes", "スキ（7日）"), MetricDef("articles", "公開記事（7日）"), MetricDef("sales", "販売件数（7日）")), "page_views", "note › ダッシュボード（記事は公式RSS・販売件数は売上CSVから自動）"),
     ChannelDef("rakuten", "楽天", "🛒", "販売", (MetricDef("clicks", "クリック（7日）"), MetricDef("reward_yen", "成果報酬（7日・円）")), "reward_yen", "楽天アフィリエイト › レポート（報酬は売上CSVから自動）"),
 )
 CHANNEL_BY_KEY = {c.key: c for c in CHANNELS}
-AUTO_METRICS = {("threads", "followers"), ("threads", "views"), ("aio", "mention_rate"), ("note", "sales"), ("rakuten", "reward_yen")}
+AUTO_METRICS = {("threads", "followers"), ("threads", "views"), ("aio", "mention_rate"), ("note", "sales"), ("note", "articles"), ("rakuten", "reward_yen")}
 
 
 def enabled_channels(session: Session) -> list[str]:
@@ -147,6 +147,15 @@ def _auto_metric(session: Session, channel: str, key: str, day: date) -> tuple[f
         if not rows:
             return None, None
         return float(rows[0]), float(rows[-1]) if len(rows) > 1 else None
+    if channel == "note" and key == "articles":
+        from .models import NoteArticle
+
+        def count(a, b):
+            return float(session.scalar(select(func.count(NoteArticle.id)).where(NoteArticle.published_at >= a, NoteArticle.published_at <= b)) or 0)
+
+        if not session.scalar(select(func.count(NoteArticle.id))):
+            return None, None
+        return count(start, end), count(prev_start, start - timedelta(seconds=1))
     if channel == "aio":
         return aio_mention_rate(session, day), aio_mention_rate(session, day - timedelta(days=7))
     if channel in ("note", "rakuten"):
@@ -214,7 +223,7 @@ def channel_statuses(session: Session, day: date | None = None) -> list[ChannelS
         elif key == "aio":
             mode = "確認記録"
         elif connected.get(key):
-            mode = "API連携"
+            mode = "RSS連携" if key == "note" else "API連携"
         elif cdef.auto:
             mode = "自動集計"
         else:

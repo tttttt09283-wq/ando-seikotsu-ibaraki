@@ -36,7 +36,7 @@ def _cards(statuses) -> None:
             arrow = "▲" if p.delta_pct > 0 else "▼" if p.delta_pct < 0 else "±"
             delta = f'<span class="delta {cls}">{arrow}{abs(p.delta_pct):.0f}%</span>'
         sub = " ／ ".join(f"{esc(m.label.split('（')[0])} {esc(_fmt(m.value, m.label))}" for m in c.metrics if m is not p and m.value is not None)[:80]
-        mode_cls = "" if c.mode in ("API連携", "自動集計") else "manual"
+        mode_cls = "" if c.mode in ("API連携", "RSS連携", "自動集計") else "manual"
         last = f"最終記録 {c.last_recorded:%m/%d}" if c.last_recorded else "未記録"
         warn = " warn" if c.issues else ""
         cells.append(

@@ -100,7 +100,7 @@ def test_secrets_are_private(session):
 
 
 def test_connection_status_default(session):
-    assert connection_status(session) == {"threads": False, "instagram": False, "seo": False, "gbp": False}
+    assert connection_status(session) == {"threads": False, "instagram": False, "seo": False, "gbp": False, "note": False}
 
 
 @pytest.mark.parametrize(

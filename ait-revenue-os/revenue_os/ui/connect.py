@@ -10,7 +10,8 @@ import streamlit as st
 from ..config import get_settings, save_env_value
 from ..connectors import google as g
 from ..connectors.instagram import InstagramClient, InstagramError
-from ..connectors.sync import connection_status, sync_all
+from ..connectors.note import NoteError, rss_url
+from ..connectors.sync import connection_status, run_note_sync, sync_all
 from ..db import session_scope
 from ..threads_analytics import get_setting, set_setting
 from ..threads_api import ThreadsAPI, ThreadsAPIError
@@ -76,6 +77,39 @@ def _instagram_card(connected: bool) -> None:
                 _save_token("INSTAGRAM", token)
                 flash(f"Instagram（@{prof.get('username', '?')}）とつながりました。")
                 st.rerun()
+
+
+def _note_card(connected: bool) -> None:
+    with st.container(border=True):
+        st.markdown(f"### 📒 note　{_badge(connected)}")
+        st.caption("できること：記事の自動取り込み（公式RSS）、商品との紐付け・公開URLの自動記録、新着記事を紹介する Threads 下書きの自動作成")
+        with st.expander("つなぎ方（1分）", expanded=not connected):
+            st.markdown(
+                "1. note で自分のページを開き、URL の **note.com/〇〇** の **〇〇** 部分（ユーザー名）を確認\n"
+                "2. 下に入力して「保存して確認」\n\n"
+                "※ note には一般公開された開発者向けAPIがないため、note 公式の **RSS** だけを使います（ログイン不要・読み取りのみ）。"
+                "記事の閲覧数・スキは RSS に含まれないため、集客ハブで手入力、売上は「売上CSVインポート」で取り込みます。"
+            )
+        with session_scope() as s:
+            cur = get_setting(s, "note_username")
+            auto = get_setting(s, "note_auto_promo", "1") == "1"
+        user = st.text_input("note のユーザー名", value=cur, placeholder="例：ait_company", key="note_user")
+        new_auto = st.checkbox("新しい記事を見つけたら、Threads の紹介投稿の下書きを自動で作る（投稿は承認・予約後）", value=auto, key="note_auto")
+        if new_auto != auto:
+            with session_scope() as s:
+                set_setting(s, "note_auto_promo", "1" if new_auto else "0")
+        if st.button("保存して確認", key="note_save", disabled=not user.strip()):
+            try:
+                rss_url(user.strip())
+                with session_scope() as s:
+                    set_setting(s, "note_username", user.strip())
+                    rep = run_note_sync(s, user.strip())
+            except NoteError as e:
+                st.error(str(e))
+            else:
+                (flash if rep.ok else st.error)(f"note：{rep.message}")
+                if rep.ok:
+                    st.rerun()
 
 
 def _google_card(status: dict) -> None:
@@ -151,13 +185,13 @@ def _google_card(status: dict) -> None:
 
 def render() -> None:
     show_flash()
-    hero("つなぐだけで、数字が集まる。", "<b>Threads・Instagram・Google</b>の数字を自動で取得（読み取りのみ）")
+    hero("つなぐだけで、数字が集まる。", "<b>Threads・Instagram・note・Google</b>の数字を自動で取得（読み取りのみ）")
     with session_scope() as s:
         status = connection_status(s)
         last = get_setting(s, "last_sync_all")
     c = st.columns([3, 1])
     c[0].markdown(
-        f"Threads {_badge(status['threads'])}　／　Instagram {_badge(status['instagram'])}　／　Search Console {_badge(status['seo'])}　／　Googleマップ {_badge(status['gbp'])}  \n"
+        f"Threads {_badge(status['threads'])}　／　Instagram {_badge(status['instagram'])}　／　note {_badge(status['note'])}　／　Search Console {_badge(status['seo'])}　／　Googleマップ {_badge(status['gbp'])}  \n"
         f"<small>最終取得：{last[:16].replace('T', ' ') if last else 'まだ'}（scheduler.py を動かしていれば6時間ごとに自動取得）</small>",
         unsafe_allow_html=True,
     )
@@ -171,4 +205,5 @@ def render() -> None:
     st.caption("🔒 取得するのは数字だけです。ログイン情報はこのパソコンの中（.env と .secrets フォルダ）にだけ保存され、Git やデータベースには保存されません。")
     _threads_card(status["threads"])
     _instagram_card(status["instagram"])
+    _note_card(status["note"])
     _google_card(status)

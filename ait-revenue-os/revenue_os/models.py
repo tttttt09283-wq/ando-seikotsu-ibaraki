@@ -487,3 +487,18 @@ class SearchCheck(Base):
     memo: Mapped[str] = mapped_column(String(500), default="")
 
     keyword: Mapped[SearchKeyword] = relationship(back_populates="checks")
+
+
+class NoteArticle(TimestampMixin, Base):
+    """note の公式RSSから取り込んだ記事。"""
+
+    __tablename__ = "note_articles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    url: Mapped[str] = mapped_column(String(1000), unique=True)
+    title: Mapped[str] = mapped_column(String(500))
+    summary: Mapped[str] = mapped_column(Text, default="")
+    published_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    note_product_id: Mapped[int | None] = mapped_column(ForeignKey("note_products.id", ondelete="SET NULL"), nullable=True)
+    promo_draft_created: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_sample: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -6,7 +6,11 @@ import streamlit as st
 
 from ..ai.generators import funnel_improvement
 from ..db import session_scope
-from ..threads_analytics import funnel_rows, set_funnel_check, views_vs_sales
+from sqlalchemy import select
+
+from ..connectors.note import create_promo_drafts
+from ..models import NoteArticle, NoteProduct
+from ..threads_analytics import funnel_rows, get_setting, set_funnel_check, views_vs_sales
 from ..workflow import create_content
 from .common import ai_mode_caption, flash, show_ai_result, show_flash
 from .nav import link
@@ -30,6 +34,8 @@ def render() -> None:
     c1, c2 = st.columns(2)
     c1.bar_chart(chart["Threads閲覧数"], y_label="閲覧数")
     c2.bar_chart(chart["note販売件数"], y_label="件数", color="#2e7d32")
+
+    _articles()
 
     for f in rows:
         with st.container(border=True):
@@ -85,3 +91,32 @@ def render() -> None:
                         create_content(s, "threads", "", data.get("pinned_post", ""), actor="営業AI", ai_generated=True, note_product_id=f.product_id)
                     flash("下書きとして保存しました。承認・予約したあと、Threads アプリで固定してください。")
                     st.rerun()
+
+
+def _articles() -> None:
+    with session_scope() as s:
+        user = get_setting(s, "note_username")
+        arts = [(a.id, a.title, a.url, a.published_at, a.note_product_id, a.promo_draft_created) for a in s.scalars(select(NoteArticle).order_by(NoteArticle.published_at.desc()).limit(15))]
+        products = {p.id: p.title for p in s.scalars(select(NoteProduct))}
+    with st.expander(f"📒 note の記事（公式RSSから取り込み・{len(arts)}件）", expanded=bool(arts)):
+        if not user:
+            st.caption("連携設定で note のユーザー名を登録すると、記事が自動で取り込まれます。")
+            link("connect", "→ 連携設定を開く")
+            return
+        if not arts:
+            st.caption("まだ記事がありません。チャドに「数字を最新にして」と頼むと取り込みます。")
+        for aid, title, url, pub, pid, promoted in arts:
+            c = st.columns([6, 3, 2])
+            c[0].markdown(f"[{title}]({url})  \n<small>{pub:%m/%d %H:%M} 公開</small>", unsafe_allow_html=True)
+            new_pid = c[1].selectbox("紐付ける商品", [None, *products], index=([None, *products].index(pid) if pid in products else 0), format_func=lambda i: "（商品なし）" if i is None else products[i], key=f"art_p_{aid}", label_visibility="collapsed")
+            if new_pid != pid:
+                with session_scope() as s:
+                    s.get(NoteArticle, aid).note_product_id = new_pid
+                st.rerun()
+            if c[2].button("Threadsで紹介" if not promoted else "もう一度紹介", key=f"art_promo_{aid}"):
+                with session_scope() as s:
+                    art = s.get(NoteArticle, aid)
+                    art.promo_draft_created = False
+                    n = create_promo_drafts(s, [art])
+                flash(f"紹介投稿の下書きを{n}本作りました。コンテンツ管理で確認し、承認・予約してください。")
+                st.rerun()

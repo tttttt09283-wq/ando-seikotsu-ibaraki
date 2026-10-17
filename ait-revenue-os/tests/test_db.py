@@ -5,7 +5,7 @@ from revenue_os import db
 
 def test_migrate_is_idempotent_and_creates_tables(tmp_path):
     engine = db.make_engine(tmp_path / "m.db")
-    assert db.migrate(engine) == [1, 2, 3]
+    assert db.migrate(engine) == [1, 2, 3, 4]
     assert db.migrate(engine) == []
     tables = set(inspect(engine).get_table_names())
     for t in ["sales_records", "contents", "approval_events", "rakuten_items", "note_products", "research_themes", "ai_usage", "daily_reports"]:

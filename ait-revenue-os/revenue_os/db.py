@@ -40,10 +40,17 @@ def _m003_acquisition(conn) -> None:
     Base.metadata.create_all(conn, tables=[t.__table__ for t in (ChannelKPI, Review, SearchKeyword, SearchCheck)])
 
 
+def _m004_note(conn) -> None:
+    from .models import NoteArticle
+
+    Base.metadata.create_all(conn, tables=[NoteArticle.__table__])
+
+
 MIGRATIONS: list[tuple[int, str, Callable]] = [
     (1, "初期テーブルの作成", _m001_initial),
     (2, "Threads（予約投稿・分析）・運用設定", _m002_threads),
     (3, "集客ハブ（チャネル別KPI・口コミ・検索対策）", _m003_acquisition),
+    (4, "note 記事の取り込み（公式RSS）", _m004_note),
 ]
 
 
