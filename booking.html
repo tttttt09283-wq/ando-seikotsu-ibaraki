@@ -365,7 +365,7 @@ function App(){
   var weeklyShiftsState = useState([]);
   var weeklyShifts = weeklyShiftsState[0]; var setWeeklyShifts = weeklyShiftsState[1];
   // 管理画面の「シフト」（日付ごとの出勤・休み）。public_booking_config から読み込む
-  var shiftDaysState = useState({overrides:[], monthly:[]});
+  var shiftDaysState = useState({overrides:[], monthly:[], halfSplit:null});
   var shiftDays = shiftDaysState[0]; var setShiftDays = shiftDaysState[1];
 
   // 管理画面の「各種設定」から読み込む、患者様向け予約ページの動的設定
@@ -488,7 +488,8 @@ function App(){
         setWeeklyShifts(shiftConfig.weekly_shifts);
         setShiftDays({
           overrides:Array.isArray(shiftConfig.date_overrides)?shiftConfig.date_overrides:[],
-          monthly:Array.isArray(shiftConfig.monthly_shifts)?shiftConfig.monthly_shifts:[]
+          monthly:Array.isArray(shiftConfig.monthly_shifts)?shiftConfig.monthly_shifts:[],
+          halfSplit:shiftConfig.half_split||null
         });
       }else{
         setWeeklyShifts((weeklyShiftsResult.status==="fulfilled"&&Array.isArray(weeklyShiftsResult.value))?weeklyShiftsResult.value:[]);
@@ -681,6 +682,16 @@ function App(){
     var ss=toMin(t), se=ss+(durationMinutes||20);
     return bs<se && ss<be;
   }
+  // 半日出勤の時間帯（分）。区切りは管理画面の設定、未設定ならその日の営業時間の真ん中（30分単位で切り下げ）
+  function halfDayWindow(d,half){
+    var ds=fmtDate(d), clo=getClosureForDate(ds), dh=getDayHours(d.getDay());
+    var open, close;
+    if(clo&&clo.is_closed===false&&clo.open_time&&clo.close_time){ open=toMin(clo.open_time); close=toMin(clo.close_time); }
+    else if(dh&&dh.open_time&&dh.close_time){ open=toMin(dh.open_time); close=toMin(dh.close_time); }
+    else { var we=d.getDay()===0||d.getDay()===6; open=toMin(we?"09:00":"10:00"); close=toMin(we?"18:00":"20:00"); }
+    var split=shiftDays.halfSplit&&/^\d{1,2}:\d{2}$/.test(shiftDays.halfSplit)?toMin(shiftDays.halfSplit):Math.floor((open+close)/2/30)*30;
+    return half==="am"?{start:open,end:split}:{start:split,end:close};
+  }
   // 指定したスタッフが指定日に出勤しているか（staff_weekly_shiftsに設定が無いスタッフはフェイルセーフで出勤扱い）
   // t・durationMinutes を渡すと、その施術時間ぶん（t〜t+施術時間）がスタッフの勤務時間（開始〜終了）に収まっているかも見る。
   // ※以前は「その日に出勤か」しか見ておらず、勤務終了後（例：18:00上がりのスタッフの19:00）にも空きが出てしまっていた。
@@ -690,7 +701,16 @@ function App(){
     var ov = shiftDays.overrides.find(function(o){return o.staff_id===staffId && String(o.date).slice(0,10)===ds0;});
     if(ov) return ov.is_working!==false;
     var ms = shiftDays.monthly.find(function(o){return o.staff_id===staffId && o.date===ds0;});
-    if(ms) return !!ms.is_working;
+    if(ms){
+      if(!ms.is_working) return false;
+      // 半日出勤（午前のみ／午後のみ）：その時間帯に施術時間がおさまる枠だけ受け付ける
+      if(ms.half&&t){
+        var w=halfDayWindow(d,ms.half);
+        var tm0=toMin(t);
+        return tm0>=w.start && tm0+(durationMinutes||20)<=w.end;
+      }
+      return true;
+    }
     var dow = d.getDay();
     var found = null;
     for(var i=0;i<weeklyShifts.length;i++){

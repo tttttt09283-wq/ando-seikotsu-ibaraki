@@ -521,6 +521,43 @@ const sb = {
 // 以前はブラウザ（localStorage）にだけ保存していたため、端末ごとに設定し直す必要があった。
 // サーバー（app_settings）を正として、localStorage はその写し（すぐ読めるようにするための控え）として使う。
 const SHARED_SETTING_PREFIXES=["shifts_","holiday_balance","ando_sales_target_"];
+// ===== 半日出勤（シフト表の「午前出勤」＝午後休み／「午後出勤」＝午前休み） =====
+// 午前と午後の区切りは、設定「shift_half_split」（例 "14:00"）。未設定ならその日の営業時間のちょうど真ん中（30分単位で切り下げ）
+const HALF_SHIFT={"午前出勤":"am","午後出勤":"pm"};
+const SHIFT_WORKING_VALUES=["出勤","午前出勤","午後出勤"];
+let HALF_SHIFT_BH=[];      // 営業時間（App で読み込んだものをここに入れて共有）
+let HALF_SHIFT_CLOSURES=[]; // 臨時休業・営業時間変更日
+function _hm(t){ const [h,m]=String(t||"0:0").slice(0,5).split(":").map(Number); return h*60+(m||0); }
+function _mhm(n){ return String(Math.floor(n/60)).padStart(2,"0")+":"+String(n%60).padStart(2,"0"); }
+function dayOpenClose(dateStr){
+  const clo=HALF_SHIFT_CLOSURES.find(c=>c.date===dateStr&&c.is_closed===false&&c.open_time&&c.close_time);
+  if(clo) return {open:String(clo.open_time).slice(0,5),close:String(clo.close_time).slice(0,5)};
+  const dow=new Date(dateStr+"T00:00:00").getDay();
+  const bh=HALF_SHIFT_BH.find(b=>b.day_of_week===dow);
+  if(bh&&bh.open_time&&bh.close_time) return {open:String(bh.open_time).slice(0,5),close:String(bh.close_time).slice(0,5)};
+  return (dow===0||dow===6)?{open:"09:00",close:"18:00"}:{open:"10:00",close:"20:00"};
+}
+function halfShiftSplit(dateStr){
+  let v=""; try{ v=localStorage.getItem("shift_half_split")||""; }catch(e){}
+  if(/^\d{1,2}:\d{2}$/.test(v)) return v.padStart(5,"0");
+  const oc=dayOpenClose(dateStr), mid=(_hm(oc.open)+_hm(oc.close))/2;
+  return _mhm(Math.floor(mid/30)*30);
+}
+// 半日出勤のときに働く時間帯 {start,end}。半日でなければ null
+function halfShiftWindow(val,dateStr){
+  const h=HALF_SHIFT[val]; if(!h) return null;
+  const oc=dayOpenClose(dateStr), sp=halfShiftSplit(dateStr);
+  return h==="am"?{start:oc.open,end:sp}:{start:sp,end:oc.close};
+}
+// シフト表の値を取り出す（無ければ null）
+function monthShiftValue(staffId,dateStr){
+  try{ const raw=localStorage.getItem("shifts_"+dateStr.slice(0,7)); if(!raw) return null; const v=JSON.parse(raw)[staffId+"_"+dateStr]; return v||null; }catch(e){ return null; }
+}
+// 時間（time〜time+dur）が半日出勤の時間帯に入っているか（半日でなければ true）
+function withinHalfShift(staffId,dateStr,time,dur){
+  const w=halfShiftWindow(monthShiftValue(staffId,dateStr),dateStr); if(!w||!time) return true;
+  const st=_hm(time); return st>=_hm(w.start)&&st+(dur||20)<=_hm(w.end);
+}
 function isSharedSettingKey(k){ return SHARED_SETTING_PREFIXES.some(p=>String(k).startsWith(p)); }
 const sharedSettings={
   migrated:false,
@@ -5622,7 +5659,11 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
           <label className="form-label">担当スタッフ</label>
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             {(storeStaffList||STAFF_ACCOUNTS).map(s=>{
-              const working=!form.date||!isStaffWorkingOnDate?true:isStaffWorkingOnDate(s.id,new Date(form.date+"T00:00:00"));
+              const dayWorking=!form.date||!isStaffWorkingOnDate?true:isStaffWorkingOnDate(s.id,new Date(form.date+"T00:00:00"));
+              // 半日出勤の人は、選んだ時間がその時間帯（午前のみ／午後のみ）に入っているときだけ選べる
+              const halfVal=form.date?monthShiftValue(s.id,form.date):null;
+              const halfOk=!form.date||!form.time||withinHalfShift(s.id,form.date,form.time,form.duration||20);
+              const working=dayWorking&&halfOk;
               const canDoMenu=!staffCanDoMenus||staffCanDoMenus(s.id,selectedMenus);
               // 既にこの日時で予約枠（レーン数）が埋まっているスタッフは選べないようにする
               let isBooked=false;
@@ -5636,7 +5677,7 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
               return(
                 <button key={s.id} disabled={!selectable} onClick={()=>{if(!selectable)return;setForm(f=>({...f,staff_id:s.id}));setConflict(false);}} className="btn"
                   style={{position:"relative",background:!selectable?"#f3f4f6":form.staff_id===s.id?s.color:"white",color:!selectable?"#d1d5db":form.staff_id===s.id?"white":"#374151",border:"2px solid "+(!selectable?"#e2e8f0":(isLastStaff?"#7c3aed":s.color)),borderRadius:20,padding:"5px 12px",fontSize:12,fontWeight:700,boxShadow:form.staff_id===s.id&&selectable?"0 2px 8px "+s.color+"55":"none",cursor:!selectable?"not-allowed":"pointer"}}>
-                  {s.name}{!working?"（休み）":!canDoMenu?"（非対応）":isBooked?"（予約済み）":""}
+                  {s.name}{!dayWorking?"（休み）":!halfOk?({"午前出勤":"（午後休み）","午後出勤":"（午前休み）"})[halfVal]||"（休み）":!canDoMenu?"（非対応）":isBooked?"（予約済み）":halfVal&&HALF_SHIFT[halfVal]?({"午前出勤":"（午前のみ）","午後出勤":"（午後のみ）"})[halfVal]:""}
                   {isLastStaff&&<span style={{position:"absolute",top:-9,right:-4,background:"#7c3aed",color:"white",fontSize:8,fontWeight:900,borderRadius:4,padding:"1px 4px",lineHeight:1.4,whiteSpace:"nowrap"}}>前回</span>}
                 </button>
               );
@@ -7114,9 +7155,9 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
   const [monthShifts,setMonthShifts]=React.useState({});
   const [monthHolidays,setMonthHolidays]=React.useState({});
   const [editingCell,setEditingCell]=React.useState(null);
-  const SHIFT_TYPES=["出勤","休み","有休","振替","祝振替"];
-  const SHIFT_COLORS={"出勤":"#2563eb","休み":"#9ca3af","有休":"#059669","振替":"#d97706","祝振替":"#7c3aed"};
-  const SHIFT_ABBR={"出勤":"勤","休み":"休","有休":"有","振替":"振","祝振替":"祝"};
+  const SHIFT_TYPES=["出勤","午前出勤","午後出勤","休み","有休","振替","祝振替"];
+  const SHIFT_COLORS={"出勤":"#2563eb","午前出勤":"#0ea5e9","午後出勤":"#6366f1","休み":"#9ca3af","有休":"#059669","振替":"#d97706","祝振替":"#7c3aed"};
+  const SHIFT_ABBR={"出勤":"勤","午前出勤":"前","午後出勤":"後","休み":"休","有休":"有","振替":"振","祝振替":"祝"};
 
   const selStaff=STAFF_ACCOUNTS.find(s=>s.id===selStaffId)||null;
 
@@ -7303,6 +7344,7 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
                 <button onClick={saveMonthShifts} className="btn btn-primary btn-sm" style={{marginLeft:"auto"}}>💾 保存する</button>
               </div>
               <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>セルをクリックするとシフト種別が切り替わります。</div>
+              <HalfShiftSplitSetting/>
               {/* 凡例 */}
               <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>
                 {SHIFT_TYPES.map(t=>(
@@ -8296,6 +8338,29 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
 }
 
 // ===== シフト・休日管理パネル =====
+// 半日出勤の区切り時刻の設定（シフト表の上に表示）
+function HalfShiftSplitSetting(){
+  const ver=useSharedSettingsVersion();
+  const read=()=>{ try{ return localStorage.getItem("shift_half_split")||""; }catch(e){ return ""; } };
+  const [v,setV]=React.useState(read);
+  React.useEffect(()=>{ setV(read()); },[ver]);
+  const opts=[];
+  for(let t=11*60;t<=17*60;t+=30) opts.push(_mhm(t));
+  const ex=d=>{ const w1=halfShiftWindow("午前出勤",d), w2=halfShiftWindow("午後出勤",d); return `午前 ${w1.start}〜${w1.end}／午後 ${w2.start}〜${w2.end}`; };
+  const pick=(dow)=>{ const d=new Date(); d.setDate(d.getDate()+((dow-d.getDay()+7)%7)); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+  return(
+    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:12,color:"#475569",background:"#f0f9ff",border:"1px solid #bae6fd",borderRadius:8,padding:"8px 10px",marginBottom:10}}>
+      <b style={{color:"#0369a1"}}>🌓 半日出勤</b>
+      <span>「午前出勤」＝午後はお休み／「午後出勤」＝午前はお休み。午前と午後の区切り：</span>
+      <select value={v} onChange={e=>{ setV(e.target.value); sharedSettings.set("shift_half_split",e.target.value); }} style={{padding:"4px 6px",borderRadius:6,border:"1px solid #cbd5e1",fontSize:12}}>
+        <option value="">自動（営業時間の真ん中）</option>
+        {opts.map(o=><option key={o} value={o}>{o}</option>)}
+      </select>
+      <span style={{color:"#64748b"}}>平日：{ex(pick(1))}　土日：{ex(pick(6))}</span>
+    </div>
+  );
+}
+
 function ShiftPanel({currentUser}){
   const today=new Date();
   const [selMonth,setSelMonth]=React.useState(`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`);
@@ -8309,9 +8374,9 @@ function ShiftPanel({currentUser}){
   const [bulkDayTypes,setBulkDayTypes]=React.useState(["平日"]); // 平日/土/日/全て
   const [editingCell,setEditingCell]=React.useState(null); // "staffId_date"
 
-  const SHIFT_TYPES=["出勤","休み","有休","振替","祝振替"];
-  const SHIFT_COLORS={"出勤":"#2563eb","休み":"#9ca3af","有休":"#059669","振替":"#d97706","祝振替":"#7c3aed"};
-  const SHIFT_ABBR={"出勤":"勤","休み":"休","有休":"有","振替":"振","祝振替":"祝"};
+  const SHIFT_TYPES=["出勤","午前出勤","午後出勤","休み","有休","振替","祝振替"];
+  const SHIFT_COLORS={"出勤":"#2563eb","午前出勤":"#0ea5e9","午後出勤":"#6366f1","休み":"#9ca3af","有休":"#059669","振替":"#d97706","祝振替":"#7c3aed"};
+  const SHIFT_ABBR={"出勤":"勤","午前出勤":"前","午後出勤":"後","休み":"休","有休":"有","振替":"振","祝振替":"祝"};
 
   const [y,m]=selMonth.split("-").map(Number);
   const lastDay=new Date(y,m,0);
@@ -8392,7 +8457,7 @@ function ShiftPanel({currentUser}){
   }
 
   function calcMonthSummary(staffId){
-    const result={出勤:0,休み:0,有休:0,振替:0,祝振替:0};
+    const result={出勤:0,午前出勤:0,午後出勤:0,休み:0,有休:0,振替:0,祝振替:0};
     dates.forEach(({date})=>{const key=`${staffId}_${date}`;const v=shifts[key]||"出勤";result[v]=(result[v]||0)+1;});
     return result;
   }
@@ -8516,6 +8581,7 @@ function ShiftPanel({currentUser}){
             ))}
           </div>
         </div>
+        <div style={{padding:"10px 16px 0"}}><HalfShiftSplitSetting/></div>
         <div style={{overflowX:"auto"}}>
           <table style={{borderCollapse:"collapse",fontSize:11}}>
             <thead>
@@ -10985,7 +11051,7 @@ function StaffOffConflictsPanel({bookings,weeklyShifts,dateOverrides,storeStaff,
       if(raw){
         const map=JSON.parse(raw);
         const val=map[staffId+"_"+dateStr];
-        if(val) return val==="出勤";
+        if(val) return SHIFT_WORKING_VALUES.includes(val);
       }
     }catch(e){}
     const dow=new Date(dateStr+"T00:00:00").getDay();
@@ -10995,7 +11061,7 @@ function StaffOffConflictsPanel({bookings,weeklyShifts,dateOverrides,storeStaff,
   }
   const sharedSettingsVersion=useSharedSettingsVersion();
   const conflicts=React.useMemo(()=>{
-    return bookings.filter(b=>!b.cancelled&&b.date>=todayStr&&!isWorkingLocal(b.staff_id,b.date))
+    return bookings.filter(b=>!b.cancelled&&b.date>=todayStr&&(!isWorkingLocal(b.staff_id,b.date)||!withinHalfShift(b.staff_id,b.date,b.time,b.duration)))
       .sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time));
   },[bookings,weeklyShifts,todayStr,sharedSettingsVersion]);
   async function reassign(booking,newStaffId){
@@ -11028,7 +11094,7 @@ function StaffOffConflictsPanel({bookings,weeklyShifts,dateOverrides,storeStaff,
             <div style={{textAlign:"center",padding:30,color:"#94a3b8",fontSize:13}}>対象の予約はありません🎉</div>
           ):conflicts.map(b=>{
             const oldStaff=STAFF_ACCOUNTS.find(s=>s.id===b.staff_id)||{name:"不明",color:"#888"};
-            const workingStaff=(storeStaff||STAFF_ACCOUNTS).filter(s=>isWorkingLocal(s.id,b.date));
+            const workingStaff=(storeStaff||STAFF_ACCOUNTS).filter(s=>isWorkingLocal(s.id,b.date)&&withinHalfShift(s.id,b.date,b.time,b.duration));
             const rf=rescheduleForm[b.id]||{date:"",time:""};
             return(
               <div key={b.id} style={{padding:"12px 0",borderBottom:"1px solid #f1f5f9"}}>
@@ -11036,7 +11102,7 @@ function StaffOffConflictsPanel({bookings,weeklyShifts,dateOverrides,storeStaff,
                   <div>
                     <div style={{fontWeight:700,fontSize:14,color:"#1e293b"}}>{b.patient_name}</div>
                     <div style={{fontSize:12,color:"#64748b"}}>{b.date} {b.time}　{b.menu}</div>
-                    <div style={{fontSize:11,color:"#d97706",fontWeight:700,marginTop:2}}>現在の担当：{oldStaff.name}（この日休み）</div>
+                    <div style={{fontSize:11,color:"#d97706",fontWeight:700,marginTop:2}}>現在の担当：{oldStaff.name}（{({"午前出勤":"午後休み","午後出勤":"午前休み"})[monthShiftValue(b.staff_id,b.date)]||"この日休み"}）</div>
                   </div>
                   <div style={{display:"flex",gap:6,alignItems:"center"}}>
                     <select disabled={savingId===b.id} onChange={e=>{if(e.target.value)reassign(b,e.target.value);}} defaultValue=""
@@ -12928,7 +12994,7 @@ function Dashboard({user,onLogout}){
       if(raw){
         const map=JSON.parse(raw);
         const val=map[staffId+"_"+dateStr];
-        if(val) return val==="出勤";
+        if(val) return SHIFT_WORKING_VALUES.includes(val);
       }
     }catch(e){}
     const dow=dateObj.getDay();
@@ -12946,6 +13012,8 @@ function Dashboard({user,onLogout}){
       const hc=closures.find(x=>x.date===dStr&&x.is_closed===false&&x.open_time&&/祝日|振替休日|国民の休日/.test(x.memo||""));
       if(hc) return{start:String(hc.open_time).slice(0,5),end:String(hc.close_time||"18:00").slice(0,5)};
     }
+    const hw=halfShiftWindow(monthShiftValue(staffId,dStr),dStr);
+    if(hw) return hw; // 半日出勤（午前のみ／午後のみ）
     const dow=dateObj.getDay();
     const ws=weeklyShifts.find(w=>w.staff_id===staffId&&w.day_of_week===dow);
     if(ws&&ws.start_time&&ws.end_time) return{start:ws.start_time,end:ws.end_time};
@@ -12961,6 +13029,7 @@ function Dashboard({user,onLogout}){
     ]).then(([bh,tc])=>{
       setBusinessHours(Array.isArray(bh)?bh:[]);
       setClosures(Array.isArray(tc)?tc:[]);
+      HALF_SHIFT_BH=Array.isArray(bh)?bh:[]; HALF_SHIFT_CLOSURES=Array.isArray(tc)?tc:[];
     }).catch(()=>{});
   },[selStoreId]);
 
@@ -13440,6 +13509,10 @@ function Dashboard({user,onLogout}){
       showToast("移動先のスタッフはこの日休みのため移動できません","delete");
       return;
     }
+    if(!withinHalfShift(newStaffId,newDate,newTime,booking.duration||20)){
+      showToast("移動先のスタッフはこの時間は半日休みのため移動できません","delete");
+      return;
+    }
     const laneCapacity=getLaneCount(newStaffId,newDate);
     const overlapCountLocal=calendarBookings.filter(b=>b.id!==booking.id&&b.staff_id===newStaffId&&b.date===newDate&&!b.cancelled&&overlaps(b,{time:newTime,duration:booking.duration||DURATION[booking.menu]||30})).length;
     if(overlapCountLocal>=laneCapacity){
@@ -13646,7 +13719,7 @@ function Dashboard({user,onLogout}){
         if(raw){
           const map=JSON.parse(raw);
           const val=map[staffId+"_"+dateStr];
-          if(val) return val==="出勤";
+          if(val) return SHIFT_WORKING_VALUES.includes(val);
         }
       }catch(e){}
       const dow=new Date(dateStr+"T00:00:00").getDay();
@@ -13654,7 +13727,7 @@ function Dashboard({user,onLogout}){
       if(ws) return ws.is_working!==false;
       return true;
     }
-    return bookings.filter(b=>!b.cancelled&&b.date>=todayStr&&!isWorkingLocal(b.staff_id,b.date)).length;
+    return bookings.filter(b=>!b.cancelled&&b.date>=todayStr&&(!isWorkingLocal(b.staff_id,b.date)||!withinHalfShift(b.staff_id,b.date,b.time,b.duration))).length;
   },[bookings,weeklyShifts,dateOverrides,todayStr,sharedSettingsVersion]);
 
   // ===== サイドバーメニュー定義 =====
