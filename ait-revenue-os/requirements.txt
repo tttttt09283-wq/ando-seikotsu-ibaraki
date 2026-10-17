@@ -1,0 +1,7 @@
+# A.I.T Revenue OS — Python 3.11 以上
+streamlit>=1.40,<2
+SQLAlchemy>=2.0,<3
+pandas>=2.2,<4
+anthropic>=1.15,<2
+python-dotenv>=1.0,<2
+pytest>=8,<10

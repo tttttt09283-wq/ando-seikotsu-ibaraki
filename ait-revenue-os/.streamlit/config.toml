@@ -1,0 +1,9 @@
+[client]
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false
+
+[server]
+# 自分のパソコンの中だけで使う（他の端末からは接続できない）
+address = "localhost"

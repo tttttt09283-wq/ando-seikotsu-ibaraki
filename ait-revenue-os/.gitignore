@@ -1,0 +1,15 @@
+# 秘密情報（絶対にコミットしない）
+.env
+.env.*
+!.env.example
+# ローカルデータ
+data/*.db
+data/*.db-*
+data/backups/
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.streamlit/secrets.toml
