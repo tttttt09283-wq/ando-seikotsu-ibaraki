@@ -7,7 +7,7 @@ import streamlit as st
 from revenue_os.config import get_settings
 from revenue_os.db import init_db, session_scope
 from revenue_os.seed import delete_sample, has_sample, seed_sample
-from revenue_os.ui import chad, contents, dashboard, importer, products, research
+from revenue_os.ui import chad, contents, dashboard, departments, importer, products, research
 
 st.set_page_config(page_title="A.I.T Revenue OS", page_icon="📈", layout="wide")
 
@@ -48,6 +48,7 @@ with st.sidebar:
 
 pages = [
     st.Page(dashboard.render, title="経営ダッシュボード", icon="📊", url_path="dashboard", default=True),
+    st.Page(departments.render, title="部門ボード", icon="🏢", url_path="departments"),
     st.Page(research.render, title="市場調査", icon="🔎", url_path="research"),
     st.Page(products.render_note, title="note商品管理", icon="📘", url_path="note"),
     st.Page(products.render_rakuten, title="楽天商品管理", icon="🛒", url_path="rakuten"),
