@@ -19,7 +19,7 @@ export interface PersonalizeValues {
 const KEY = "ando-body-check:sales-personalize:v1";
 const DEFAULTS: PersonalizeValues = {
   clinicName: "〇〇整骨院",
-  checkUrl: salesConfig.appUrl,
+  checkUrl: "", // 各院のチェックページのURL（院ごとに違うため、初期値は空）
   benefit: "結果画面のご提示で、初回の身体チェック（約20分）を無料",
   tel: "",
 };
@@ -34,7 +34,11 @@ export function PersonalizeProvider({ children }: { children: React.ReactNode })
   useEffect(() => {
     try {
       const saved = JSON.parse(window.localStorage.getItem(KEY) || "null");
-      if (saved && typeof saved === "object") setV({ ...DEFAULTS, ...saved });
+      if (saved && typeof saved === "object") {
+        // 以前の初期値（あんど整骨院のURL）が残っていたら空に戻す
+        if (saved.checkUrl === salesConfig.appUrl) saved.checkUrl = "";
+        setV({ ...DEFAULTS, ...saved });
+      }
     } catch {
       // 保存できない環境でも、初期値で表示する
     }
@@ -60,7 +64,7 @@ export function usePersonalize() {
 export function fill(text: string, v: PersonalizeValues): string {
   return text
     .replaceAll("{院名}", v.clinicName || "〇〇整骨院")
-    .replaceAll("{URL}", v.checkUrl || salesConfig.appUrl)
+    .replaceAll("{URL}", v.checkUrl.trim() || "（チェックページのURL）")
     .replaceAll("{特典}", v.benefit || "")
     .replaceAll("{電話}", v.tel || "（電話番号）");
 }
@@ -85,7 +89,7 @@ export function PersonalizeForm() {
       <p className="mt-1 text-xs text-slate-600">入力内容はこのブラウザの中だけに保存されます（どこにも送信されません）。</p>
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {field("clinicName", "院名", "例：〇〇整骨院")}
-        {field("checkUrl", "チェックページのURL（導入後に発行されるURL）", "https://…", "url")}
+        {field("checkUrl", "貴院のチェックページのURL（導入時にお渡しするURL）", "https://…", "url")}
         {field("benefit", "特典（任意）", "例：結果画面のご提示で初回検査無料")}
         {field("tel", "電話番号（任意）", "例：06-0000-0000", "tel")}
       </div>
@@ -96,15 +100,28 @@ export function PersonalizeForm() {
 /** QRコード（ブラウザ内で作成。外部サービスは使わない） */
 export function QrImage({ value, size = 160, className }: { value: string; size?: number; className?: string }) {
   const [src, setSrc] = useState<string | null>(null);
+  const empty = !value.trim();
   useEffect(() => {
+    if (empty) return;
     let alive = true;
-    QRCode.toDataURL(value || salesConfig.appUrl, { width: size * 2, margin: 1, color: { dark: "#1e3a5f", light: "#ffffff" }, errorCorrectionLevel: "M" })
+    QRCode.toDataURL(value.trim(), { width: size * 2, margin: 1, color: { dark: "#1e3a5f", light: "#ffffff" }, errorCorrectionLevel: "M" })
       .then((url) => alive && setSrc(url))
       .catch(() => alive && setSrc(null));
     return () => {
       alive = false;
     };
-  }, [value, size]);
+  }, [value, size, empty]);
+  if (empty)
+    return (
+      <div
+        className={`flex items-center justify-center rounded-xl border-2 border-dashed border-slate-300 p-2 text-center text-xs font-bold leading-snug text-slate-500 ${className ?? ""}`}
+        style={{ width: size, height: size }}
+      >
+        チェックページのURLを入れると
+        <br />
+        QRコードが表示されます
+      </div>
+    );
   if (!src) return <div className={className} style={{ width: size, height: size }} aria-hidden="true" />;
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={src} width={size} height={size} alt={`QRコード：${value}`} className={className} />;
