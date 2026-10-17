@@ -1,9 +1,16 @@
 import Link from "next/link";
-import { CHECK_META, CHECK_ORDER } from "@/config/checks";
 import { siteConfig } from "@/config/site";
-import { CheckIllustration, HeroIllustration } from "@/components/Illustrations";
-import { Card, Footer, MedicalDisclaimer } from "@/components/ui";
-import { StartButtons } from "@/components/StartButtons";
+import { HeroIllustration } from "@/components/Illustrations";
+import { Footer, MedicalDisclaimer } from "@/components/ui";
+import { ResumeLinks } from "@/components/StartButtons";
+
+/** メニュー（色は薄い背景・濃い文字・枠の3つでチェックごとに分ける） */
+const MENU = [
+  { href: "/check", icon: "🧍", title: "カラダ年齢", time: "約3分", text: "5つの簡単な動きで、カラダが何歳レベルか分かる", badge: "いちばん人気", color: "#0b6d76", bg: "#e6f7f8", border: "#a3e1e7" },
+  { href: "/posture", icon: "📸", title: "AI姿勢", time: "約2分", text: "写真からAIが猫背・反り腰・傾きを見つける", color: "#1d4ed8", bg: "#eef4ff", border: "#bfd3fb" },
+  { href: "/skeleton", icon: "🧬", title: "骨格タイプ", time: "約2分", text: "10の質問で、骨格タイプとケアのポイントが分かる", color: "#7e22ce", bg: "#f6efff", border: "#dcc6f7" },
+  { href: "/core", icon: "💪", title: "体幹", time: "約5分", text: "4つのテストで、体を支える力と左右差をチェック", color: "#c2410c", bg: "#fff3e8", border: "#fbd0ab" },
+];
 
 export default function HomePage() {
   return (
@@ -35,45 +42,31 @@ export default function HomePage() {
       <div className="-mt-6 space-y-5 px-5">
         <p className="relative text-center text-sm font-black text-white">▼ 気になるチェックを選んでください（すべて無料）</p>
 
-        {/* ① カラダ年齢チェック（いちばんのおすすめ） */}
-        <Card className="relative animate-rise-in">
-          <p className="inline-block rounded-full bg-sun-300 px-3 py-0.5 text-xs font-black text-navy-900">いちばん人気</p>
-          <h2 className="mt-2 text-xl font-black">🧍 カラダ年齢チェック</h2>
-          <p className="mt-1 text-sm leading-relaxed text-slate-700">5つの簡単なチェックで、あなたのカラダが何歳レベルかを見える化します（約3分）。</p>
-          <ol className="mt-3 grid grid-cols-5 gap-1" aria-label="チェックする5つの項目">
-            {CHECK_ORDER.map((id) => (
-              <li key={id} className="flex flex-col items-center gap-1">
-                <CheckIllustration id={id} className="size-12" />
-                <span className="text-[11px] font-bold leading-tight text-navy-700">{CHECK_META[id].shortName}</span>
-              </li>
-            ))}
-          </ol>
-          <div className="mt-4">
-            <StartButtons />
-          </div>
-        </Card>
+        <ResumeLinks />
 
-        {/* ②〜④ ほかのチェック */}
-        <ul className="space-y-3">
-          {[
-            { href: "/posture", icon: "📸", title: "AI姿勢チェック", time: "約2分", text: "横向き・正面の写真から、AIが猫背・反り腰・左右の傾きなどの姿勢のクセを見つけます。" },
-            { href: "/skeleton", icon: "🧬", title: "骨格タイプチェック", time: "約2分", text: "10の質問で、ストレート／ウェーブ／ナチュラルのどのタイプかと、体のケアのポイントが分かります。" },
-            { href: "/core", icon: "💪", title: "体幹チェック", time: "約5分", text: "プランクなど4つのテストで、体を支える力と左右差をチェック。おすすめのセルフケア付き。" },
-          ].map((m) => (
+        {/* 4つのチェック（2列・色分け） */}
+        <ul className="grid grid-cols-2 gap-3">
+          {MENU.map((m) => (
             <li key={m.href}>
-              <Link href={m.href} className="flex items-center gap-4 rounded-3xl bg-white p-4 shadow-[0_4px_20px_rgba(30,58,95,0.08)] active:bg-brand-50">
-                <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-3xl" aria-hidden="true">
+              <Link
+                href={m.href}
+                className="relative flex h-full flex-col rounded-3xl border-2 p-3 shadow-[0_4px_14px_rgba(30,58,95,0.08)] transition active:scale-[0.98]"
+                style={{ background: m.bg, borderColor: m.border }}
+              >
+                {m.badge && (
+                  <span className="absolute -top-2 left-3 rounded-full bg-sun-300 px-2 py-0.5 text-[10px] font-black text-navy-900">{m.badge}</span>
+                )}
+                <span className="flex size-14 items-center justify-center self-center rounded-2xl bg-white text-4xl shadow-sm" aria-hidden="true">
                   {m.icon}
                 </span>
-                <span className="flex-1">
-                  <span className="block text-lg font-black text-navy-900">
-                    {m.title}
-                    <span className="ml-2 text-xs font-bold text-brand-600">{m.time}</span>
-                  </span>
-                  <span className="mt-0.5 block text-sm leading-snug text-slate-700">{m.text}</span>
+                <span className="mt-2 text-center text-base font-black leading-tight" style={{ color: m.color }}>
+                  <span className="block">{m.title}</span>
+                  <span className="block">チェック</span>
                 </span>
-                <span className="text-2xl text-brand-600" aria-hidden="true">
-                  ›
+                <span className="mt-0.5 text-center text-[11px] font-bold text-slate-500">{m.time}</span>
+                <span className="mt-1.5 flex-1 text-xs leading-snug text-navy-900">{m.text}</span>
+                <span className="mt-2 rounded-full py-1.5 text-center text-sm font-black text-white" style={{ background: m.color }}>
+                  はじめる ›
                 </span>
               </Link>
             </li>
