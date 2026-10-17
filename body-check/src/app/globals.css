@@ -91,3 +91,22 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* ===== 印刷（販売用テンプレート）：画面だけの部品は印刷しない ===== */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff !important;
+  }
+  .print-sheet {
+    box-shadow: none !important;
+    border: none !important;
+    margin: 0 !important;
+    break-inside: avoid;
+  }
+  body[data-print-only] .print-sheet:not(.print-target) {
+    display: none !important;
+  }
+}

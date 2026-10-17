@@ -11,6 +11,7 @@ import { siteConfig } from "@/config/site";
 import { CheckIllustration } from "@/components/Illustrations";
 import { buttonStyles, Spinner } from "@/components/ui";
 import { createInitialState, loadState, saveState, type CheckState } from "@/lib/storage";
+import { isDemo } from "@/lib/demo";
 import type { Answers, CheckId } from "@/types";
 import { ConsentContent, SafetyContent, StopNotice } from "./SafetyParts";
 import { StepShell } from "./StepShell";
@@ -36,7 +37,7 @@ export function CheckFlow() {
   const steps = useMemo<StepKey[]>(
     () => [
       "profile",
-      ...(siteConfig.statsEnabled ? (["consent"] as const) : []),
+      ...(siteConfig.statsEnabled && !isDemo() ? (["consent"] as const) : []),
       "safety",
       "balance",
       "legs",

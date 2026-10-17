@@ -5,6 +5,7 @@
  *
  * NEXT_PUBLIC_STATS_ENABLED が true でない場合は、何も送信しません。
  */
+import { isDemo } from "./demo";
 import { SEX_OPTIONS, type SexId } from "@/config/bodyAge";
 import { AGE_GROUPS, CHECK_ORDER, SYMPTOMS } from "@/config/checks";
 import type { AgeGroupId, CheckId, RankId, ScoreResult, SymptomId } from "@/types";
@@ -87,6 +88,7 @@ export function validateStatsEvent(raw: unknown): StatsEvent | null {
 
 /** ブラウザから統計を送る。失敗しても利用者の画面には影響させない */
 export async function sendStats(event: StatsEvent): Promise<boolean> {
+  if (isDemo()) return false; // デモモード中は送信しない
   try {
     const body = JSON.stringify(event);
     // 予約ページへ移動する直前でも届きやすい sendBeacon を優先
