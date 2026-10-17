@@ -137,8 +137,8 @@ class RakutenItem(TimestampMixin, Base):
 # コンテンツと承認ワークフロー
 # ---------------------------------------------------------------------------
 
-CHANNELS = ["threads", "x", "note"]
-CHANNEL_LABELS = {"threads": "Threads", "x": "X", "note": "note"}
+CHANNELS = ["threads", "x", "note", "instagram", "facebook", "line", "gbp"]
+CHANNEL_LABELS = {"threads": "Threads", "x": "X", "note": "note", "instagram": "Instagram", "facebook": "Facebook", "line": "LINE公式", "gbp": "Googleビジネスプロフィール"}
 
 STATUS_DRAFT = "draft"
 STATUS_REVIEW = "review"
@@ -420,3 +420,70 @@ class AppSetting(Base):
 
     key: Mapped[str] = mapped_column(String(100), primary_key=True)
     value: Mapped[str] = mapped_column(Text, default="")
+
+
+# ---------------------------------------------------------------------------
+# 集客ハブ（チャネル別KPI・口コミ・検索対策）
+# ---------------------------------------------------------------------------
+
+
+class ChannelKPI(Base):
+    """チャネルごとの指標（縦持ち）。各サービスの管理画面の数字を転記、または公式APIで取得。"""
+
+    __tablename__ = "channel_kpis"
+    __table_args__ = (UniqueConstraint("metric_date", "channel", "metric_key", name="uq_channel_kpi"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    metric_date: Mapped[date] = mapped_column(Date, index=True)
+    channel: Mapped[str] = mapped_column(String(30), index=True)
+    metric_key: Mapped[str] = mapped_column(String(50))
+    value: Mapped[float] = mapped_column(default=0.0)
+    is_sample: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class Review(TimestampMixin, Base):
+    """口コミ。返信は下書きまで作り、Googleマップ等への返信は人間が行う。"""
+
+    __tablename__ = "reviews"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    platform: Mapped[str] = mapped_column(String(30), default="google")
+    review_date: Mapped[date] = mapped_column(Date, index=True)
+    rating: Mapped[int] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(Text, default="")
+    reply_draft: Mapped[str] = mapped_column(Text, default="")
+    replied: Mapped[bool] = mapped_column(Boolean, default=False)
+    replied_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    is_sample: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+SEARCH_KINDS = {"seo": "Web検索（SEO）", "meo": "Googleマップ（MEO）", "aio": "AI検索（AIO）"}
+
+
+class SearchKeyword(TimestampMixin, Base):
+    __tablename__ = "search_keywords"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(10))  # seo / meo / aio
+    keyword: Mapped[str] = mapped_column(String(200))
+    target: Mapped[str] = mapped_column(String(500), default="")  # 表示させたいページ・店舗名
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    is_sample: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    checks: Mapped[list[SearchCheck]] = relationship(back_populates="keyword", cascade="all, delete-orphan", order_by="SearchCheck.checked_at")
+
+
+class SearchCheck(Base):
+    """検索結果の確認記録。順位（SEO・MEO）や AI の回答で言及されたか（AIO）を人間が確認して記録する。"""
+
+    __tablename__ = "search_checks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    keyword_id: Mapped[int] = mapped_column(ForeignKey("search_keywords.id", ondelete="CASCADE"), index=True)
+    checked_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    rank: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 圏外は None
+    mentioned: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # AIO
+    engine: Mapped[str] = mapped_column(String(50), default="")  # Google / Googleマップ / ChatGPT / Gemini など
+    memo: Mapped[str] = mapped_column(String(500), default="")
+
+    keyword: Mapped[SearchKeyword] = relationship(back_populates="checks")

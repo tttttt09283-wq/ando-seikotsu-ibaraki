@@ -11,6 +11,9 @@ from revenue_os.seed import seed_sample
 ROOT = Path(__file__).resolve().parent.parent
 PAGES = {
     "today": "today.render",
+    "hub": "hub.render",
+    "search": "search.render",
+    "reviews": "reviews.render",
     "threads": "threads.render",
     "funnel": "funnel.render",
     "dashboard": "dashboard.render",
@@ -49,7 +52,7 @@ def test_page_renders(db_path, page):
     at = AppTest.from_string(SCRIPT.format(root=str(ROOT), db=db_path, module=target.split(".")[0], call=target), default_timeout=30)
     at.run()
     assert not at.exception, at.exception
-    assert at.title  # 見出しが表示されている
+    assert at.title or any("ait-hero" in m.value for m in at.markdown)  # 見出しが表示されている
 
 
 def test_main_app_renders(db_path, monkeypatch):
@@ -57,7 +60,7 @@ def test_main_app_renders(db_path, monkeypatch):
     at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=30)
     at.run()
     assert not at.exception, at.exception
-    assert at.title[0].value == "✅ 今日やること"
+    assert any("今日やることは、これだけ。" in m.value for m in at.markdown)
 
 
 def test_approval_queue_buttons(db_path):

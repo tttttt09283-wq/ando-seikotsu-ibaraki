@@ -80,7 +80,7 @@ def build_today(session: Session, now: datetime | None = None) -> TodayPlan:
         add(TodayItem(1, "社長", f"承認済みの Threads 投稿 {n}件の投稿日時を予約する", "おすすめの時間帯を見て予約", "threads", n))
     n = _n(session, select(func.count(Content.id)).where(Content.status == STATUS_APPROVED, Content.channel != "threads"))
     if n:
-        add(TodayItem(2, "社長", f"承認済み（X・note）{n}件を各サービスで公開し、URLを記録する", "公開は手作業。公開後に承認キューでURLを入力", "approvals", n))
+        add(TodayItem(2, "社長", f"承認済み（Threads以外）{n}件を各サービスで公開し、URLを記録する", "公開は手作業。公開後に承認キューでURLを入力", "approvals", n))
 
     # ---- Threads（認知拡大） ----
     target = daily_post_target(session)
@@ -125,6 +125,22 @@ def build_today(session: Session, now: datetime | None = None) -> TodayPlan:
         missing = [label for _, label, ok, _ in f.checks if not ok]
         if missing:
             add(TodayItem(2 if f.status == "販売中" else 3, "営業AI", f"「{f.title}」の導線を整える（{f.score}点）", "未対応：" + "／".join(missing[:2]) + ("…" if len(missing) > 2 else ""), "funnel", len(missing)))
+
+    # ---- 集客ハブ（口コミ・チャネル・検索） ----
+    from .acquisition import channel_statuses, keyword_rows, review_stats
+
+    rv = review_stats(session)
+    if rv.low_unreplied:
+        add(TodayItem(1, "社長", f"評価3以下の口コミ {rv.low_unreplied}件に返信する", "AIの下書きを確認し、Googleマップ等で返信", "reviews", rv.low_unreplied))
+    if rv.unreplied - rv.low_unreplied > 0:
+        n = rv.unreplied - rv.low_unreplied
+        add(TodayItem(2, "社長", f"口コミ {n}件に返信する", "お礼と具体的な一言を添えて", "reviews", n))
+    stale = [c.cdef.name for c in channel_statuses(session, today) if c.stale and c.cdef.key not in ("threads",)]
+    if stale:
+        add(TodayItem(2, "マーケティングAI", f"集客チャネル {len(stale)}件の数字を記録する", "未記録・7日以上前：" + "、".join(stale[:4]) + ("…" if len(stale) > 4 else ""), "hub", len(stale)))
+    old_kw = [k for k in keyword_rows(session) if k.stale]
+    if old_kw:
+        add(TodayItem(3, "市場調査AI", f"検索順位・AI検索の言及を確認する（{len(old_kw)}件）", "14日以上確認していないキーワード", "search", len(old_kw)))
 
     # ---- 経理・調査・商品 ----
     last_import = session.scalar(select(func.max(ImportBatch.created_at)))

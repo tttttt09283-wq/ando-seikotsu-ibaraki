@@ -34,9 +34,16 @@ def _m002_threads(conn) -> None:
     Base.metadata.create_all(conn, tables=[t.__table__ for t in (ScheduledPost, ThreadsPost, ThreadsInsight, AccountMetric, AppSetting)])
 
 
+def _m003_acquisition(conn) -> None:
+    from .models import ChannelKPI, Review, SearchCheck, SearchKeyword
+
+    Base.metadata.create_all(conn, tables=[t.__table__ for t in (ChannelKPI, Review, SearchKeyword, SearchCheck)])
+
+
 MIGRATIONS: list[tuple[int, str, Callable]] = [
     (1, "初期テーブルの作成", _m001_initial),
     (2, "Threads（予約投稿・分析）・運用設定", _m002_threads),
+    (3, "集客ハブ（チャネル別KPI・口コミ・検索対策）", _m003_acquisition),
 ]
 
 

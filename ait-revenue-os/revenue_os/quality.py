@@ -56,6 +56,9 @@ def check_content(channel: str, title: str, body: str, linked_rakuten: bool = Fa
         findings.append(Finding(SEVERITY_WARN, f"X の文字数の目安（全角140字）を超えています（換算 {x_weighted_length(body)}／280）。"))
     if channel == "threads" and len(body) > 500:
         findings.append(Finding(SEVERITY_WARN, f"Threads の文字数の目安（500字）を超えています（{len(body)}字）。"))
+    limits = {"instagram": 2200, "gbp": 1500}
+    if channel in limits and len(body) > limits[channel]:
+        findings.append(Finding(SEVERITY_WARN, f"{channel} の文字数の目安（{limits[channel]}字）を超えています（{len(body)}字）。"))
     if not body.strip():
         findings.append(Finding(SEVERITY_ERROR, "本文が空です。"))
     return findings
@@ -73,7 +76,7 @@ BASE_CHECKLIST = [
     ("facts", "事実・数字は出典で確認した（AIの仮説を事実として書いていない）"),
     ("no_fake", "架空のレビュー・使用体験・売上・効果を書いていない"),
     ("no_exaggeration", "断定・誇大な表現（必ず・絶対・誰でも 等）を使っていない、または根拠がある"),
-    ("platform_rules", "投稿先（note / X / Threads）の利用規約・ガイドラインに反していない"),
+    ("platform_rules", "投稿先（各SNS・note・Googleビジネスプロフィール）の利用規約・ガイドラインに反していない"),
     ("no_spam", "同じ内容の大量投稿・無差別なメンション・DM送付をしない"),
 ]
 

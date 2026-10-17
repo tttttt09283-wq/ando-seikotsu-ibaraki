@@ -7,9 +7,11 @@ import streamlit as st
 from revenue_os.config import get_settings
 from revenue_os.db import init_db, session_scope
 from revenue_os.seed import delete_sample, has_sample, seed_sample
-from revenue_os.ui import chad, contents, dashboard, departments, funnel, importer, nav, products, research, threads, today
+from revenue_os.ui import chad, contents, dashboard, departments, funnel, hub, importer, nav, products, research, reviews, search, threads, today
+from revenue_os.ui.theme import apply_theme
 
 st.set_page_config(page_title="A.I.T Revenue OS", page_icon="📈", layout="wide")
+apply_theme()
 
 
 @st.cache_resource
@@ -49,21 +51,37 @@ with st.sidebar:
                     seed_sample(s)
                 st.rerun()
 
-PAGE_DEFS = [
-    ("today", today.render, "今日やること", "✅"),
-    ("dashboard", dashboard.render, "経営ダッシュボード", "📊"),
-    ("departments", departments.render, "部門ボード", "🏢"),
-    ("threads", threads.render, "Threads運用", "🧵"),
-    ("funnel", funnel.render, "note導線", "🛤"),
-    ("research", research.render, "市場調査", "🔎"),
-    ("note", products.render_note, "note商品管理", "📘"),
-    ("rakuten", products.render_rakuten, "楽天商品管理", "🛒"),
-    ("contents", contents.render_contents, "コンテンツ管理", "✍️"),
-    ("approvals", contents.render_approvals, "承認キュー", "🗳"),
-    ("import", importer.render, "売上CSVインポート", "📥"),
-    ("chad", chad.render, "チャド日次報告", "🧭"),
-]
+PAGE_GROUPS = {
+    "ホーム": [
+        ("today", today.render, "今日やること", "✅"),
+        ("hub", hub.render, "集客ハブ", "📡"),
+        ("dashboard", dashboard.render, "経営ダッシュボード", "📊"),
+        ("departments", departments.render, "部門ボード", "🏢"),
+    ],
+    "集客": [
+        ("threads", threads.render, "Threads運用", "🧵"),
+        ("search", search.render, "検索対策", "🔎"),
+        ("reviews", reviews.render, "口コミ対策", "⭐"),
+        ("contents", contents.render_contents, "投稿作成（コンテンツ）", "✍️"),
+        ("approvals", contents.render_approvals, "承認キュー", "🗳"),
+    ],
+    "販売": [
+        ("funnel", funnel.render, "note導線", "🛤"),
+        ("note", products.render_note, "note商品管理", "📘"),
+        ("rakuten", products.render_rakuten, "楽天商品管理", "🛒"),
+        ("import", importer.render, "売上CSVインポート", "📥"),
+    ],
+    "調査・報告": [
+        ("research", research.render, "市場調査", "🧪"),
+        ("chad", chad.render, "チャド日次報告", "🧭"),
+    ],
+}
 nav.PAGES.clear()
-for i, (key, fn, title, icon) in enumerate(PAGE_DEFS):
-    nav.PAGES[key] = st.Page(fn, title=title, icon=icon, url_path=key, default=i == 0)
-st.navigation(list(nav.PAGES.values())).run()
+sections: dict[str, list] = {}
+for group, defs in PAGE_GROUPS.items():
+    for key, fn, title, icon in defs:
+        page = st.Page(fn, title=title, icon=icon, url_path=key, default=key == "today")
+        nav.PAGES[key] = page
+        sections.setdefault(group, []).append(page)
+st.navigation(sections, expanded=True).run()
+

@@ -21,9 +21,10 @@ PRIORITY = {1: ("🔴 今すぐ", "error"), 2: ("🟠 今日中", "warning"), 3:
 def render() -> None:
     from datetime import date
 
-    st.title("✅ 今日やること")
-    st.caption(f"{date.today():%Y年%m月%d日}　全部門の状況から、今日対応することを自動で並べています。対応が済むと一覧から消えます。")
+    from .theme import hero
+
     show_flash()
+    hero("今日やることは、これだけ。", f"{date.today():%Y年%m月%d日}　全部門の状況から、<b>今日の対応</b>を自動で並べています")
 
     with session_scope() as s:
         plan = build_today(s)

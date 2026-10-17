@@ -327,3 +327,65 @@ def funnel_improvement(session: Session, funnel: dict, **kw) -> AIResult:
         }
 
     return generate(session, "営業AI", f"導線改善：{funnel.get('title', '')}", prompt, FUNNEL_SCHEMA, template, **kw)
+
+
+# ---------------------------------------------------------------------------
+# 集客ハブ：AI分析・口コミ返信
+# ---------------------------------------------------------------------------
+
+ACQ_SCHEMA = _obj({"summary": _STR, "issues": _STRS, "improvements": {"type": "array", "items": _obj({"channel": _STR, "action": _STR, "why": _STR})}})
+
+
+def acquisition_analysis(session: Session, facts: dict, **kw) -> AIResult:
+    prompt = (
+        "あなたは集客の責任者です。次の各チャネルの実績（確認済みの事実）を読み、"
+        "①全体の状況を2〜3文で要約、②課題（数字の根拠つき）、③改善ポイント（チャネル・具体的な行動・理由）を最大5つ出してください。"
+        "入力にない数字は作らないでください。改善ポイントは仮説として、今週すぐ実行できる行動にしてください。"
+        "口コミの依頼で特典を渡す、自作自演のレビューを書く等の規約違反になる提案はしないでください。\n"
+        + json.dumps(facts, ensure_ascii=False, default=str)
+    )
+
+    def template() -> dict:
+        imps = []
+        for issue in facts.get("issues", []):
+            ch, _, text = issue.partition("：")
+            if "記録されていません" in text:
+                imps.append({"channel": ch, "action": "管理画面の『過去7日間』の数字を記録する", "why": "数字がないと改善の判断ができないため"})
+            elif "悪化" in text:
+                imps.append({"channel": ch, "action": "伸びていた時期の投稿・施策と比べ、違いを1つ戻してみる", "why": "【仮説】直近で変えた点が影響している可能性"})
+            elif ch == "口コミ":
+                imps.append({"channel": "Googleマップ", "action": "未返信の口コミに、お礼と具体的な一言を添えて返信する", "why": "【仮説】返信があると、店舗の印象と信頼につながる"})
+            elif "AI検索" in ch:
+                imps.append({"channel": "AI検索", "action": "よくある質問と答えを、自社サイト・note・Googleビジネスプロフィールに明記する", "why": "【仮説】AIが参照できる情報が少ない"})
+            elif "順位" in ch or "検索" in ch:
+                imps.append({"channel": "Web検索", "action": "順位が下がったページのタイトルと冒頭に、検索された言葉への答えを入れる", "why": "【仮説】検索意図とのずれ"})
+        n = len(facts.get("issues", []))
+        return {
+            "summary": f"記録されている{len(facts.get('channels', []))}チャネルのうち、課題が{n}件見つかりました。" + ("まずは数字の記録をそろえるところから始めましょう。" if n else "大きな課題は見つかっていません。伸びている施策を続けましょう。"),
+            "issues": facts.get("issues", []) or ["大きな課題は見つかっていません"],
+            "improvements": imps[:5],
+        }
+
+    return generate(session, "経理分析AI", "集客データ分析", prompt, ACQ_SCHEMA, template, **kw)
+
+
+REVIEW_REPLY_SCHEMA = _obj({"reply": _STR, "notes": _STRS})
+
+
+def review_reply(session: Session, rating: int, text: str, business: str = "", **kw) -> AIResult:
+    prompt = (
+        "次の口コミへの返信文の下書きを作ってください（200字程度）。"
+        "お礼を伝え、口コミの内容に具体的に触れ、否定・言い訳・反論はしないでください。"
+        "個人を特定する情報や、来店・施術などの内容を口コミに書かれていない範囲まで書かないでください。"
+        "割引や特典の提供で評価の変更を促すことはしないでください。\n"
+        f"店舗・事業：{business or '（未設定）'}\n評価：{rating}\n口コミ：{text}"
+    )
+
+    def template() -> dict:
+        if rating >= 4:
+            reply = "このたびは口コミをお寄せいただき、ありがとうございます。いただいたお言葉を励みに、これからもご満足いただけるよう努めてまいります。またのお越しをお待ちしております。"
+        else:
+            reply = "このたびは率直なご意見をお寄せいただき、ありがとうございます。ご期待に沿えなかった点を真摯に受け止め、改善に努めてまいります。お気づきの点がございましたら、お気軽にお知らせください。"
+        return {"reply": reply, "notes": ["口コミの内容に触れる一文を足すと、より丁寧になります", "返信は Googleビジネスプロフィール等で、ご自身で投稿してください"]}
+
+    return generate(session, "マーケティングAI", f"口コミ返信（評価{rating}）", prompt, REVIEW_REPLY_SCHEMA, template, **kw)

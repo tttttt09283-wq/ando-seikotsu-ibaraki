@@ -7,3 +7,12 @@ gatherUsageStats = false
 [server]
 # 自分のパソコンの中だけで使う（他の端末からは接続できない）
 address = "localhost"
+
+[theme]
+# ダークネイビー × ブルーの光 × ゴールドのアクセント
+base = "dark"
+primaryColor = "#F5B83D"
+backgroundColor = "#060B1F"
+secondaryBackgroundColor = "#0E1838"
+textColor = "#E8EEFF"
+font = "sans serif"

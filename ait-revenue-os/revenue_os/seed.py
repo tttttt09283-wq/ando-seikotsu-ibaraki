@@ -29,6 +29,9 @@ from .models import (
     ThreadsInsight,
     ThreadsPost,
     AccountMetric,
+    ChannelKPI,
+    Review,
+    SearchKeyword,
 )
 from .workflow import HUMAN_ACTOR, create_content, submit_for_review
 
@@ -141,6 +144,29 @@ def seed_sample(session: Session, today: date | None = None) -> bool:
     for i in range(10):
         session.add(AccountMetric(metric_date=today - timedelta(days=9 - i), platform="threads", followers=820 + i * 6, is_sample=True))
 
+    # 集客ハブ（架空の数字・口コミ・キーワード）
+    from .acquisition import add_check, add_keyword, add_review, record_kpis
+
+    for week, factor in ((14, 0.85), (7, 1.0), (0, 1.12)):
+        d = today - timedelta(days=week)
+        record_kpis(session, "instagram", d, {"followers": 1200 + week * -8, "reach": 5400 * factor, "profile_visits": 310 * factor, "link_taps": 42 * factor}, is_sample=True)
+        record_kpis(session, "gbp", d, {"search_views": 1800 * factor, "map_views": 2600 * factor, "directions": 64 * factor, "calls": 21 * factor, "website_clicks": 48 * factor}, is_sample=True)
+        record_kpis(session, "seo", d, {"impressions": 3200 * factor, "clicks": 96 * factor, "avg_position": 18.4 / factor}, is_sample=True)
+        record_kpis(session, "note", d, {"page_views": 640 * factor, "likes": 35 * factor}, is_sample=True)
+    record_kpis(session, "x", today - timedelta(days=9), {"followers": 410, "impressions": 8200, "profile_visits": 120, "link_clicks": 14}, is_sample=True)
+    record_kpis(session, "x", today - timedelta(days=2), {"followers": 418, "impressions": 5900, "profile_visits": 96, "link_clicks": 9}, is_sample=True)
+    for days_ago, rating, text, replied in ((20, 5, "（サンプル）説明が丁寧で安心できました。", True), (6, 4, "（サンプル）予約が取りやすく助かります。", False), (2, 2, "（サンプル）待ち時間が長かったです。", False)):
+        r = add_review(session, "google", today - timedelta(days=days_ago), rating, text, is_sample=True)
+        if replied:
+            r.replied, r.reply_draft, r.replied_at = True, "（サンプル）ありがとうございます。", now - timedelta(days=days_ago - 1)
+    k1 = add_keyword(session, "seo", "（サンプル）確定申告 AI 使い方", "note記事", is_sample=True)
+    add_check(session, k1, rank=24, engine="Google", checked_at=now - timedelta(days=10))
+    add_check(session, k1, rank=17, engine="Google", checked_at=now - timedelta(days=1))
+    k2 = add_keyword(session, "meo", "（サンプル）地域名 整骨院", "店舗名", is_sample=True)
+    add_check(session, k2, rank=4, engine="Googleマップ", checked_at=now - timedelta(days=3))
+    k3 = add_keyword(session, "aio", "（サンプル）確定申告をAIで楽にする方法は？", "A.I.T company", is_sample=True)
+    add_check(session, k3, mentioned=False, engine="ChatGPT", checked_at=now - timedelta(days=2))
+
     # サンプルCSV（日付を今日基準にずらして取り込む）
     for source in ("note", "rakuten"):
         path = SAMPLE_DIR / f"sample_{source}_sales.csv"
@@ -160,7 +186,7 @@ def _shift_sample_dates(path: Path, today: date) -> bytes:
 def delete_sample(session: Session) -> None:
     sample_batches = select(SalesRecord.import_batch_id).where(SalesRecord.is_sample.is_(True))
     batch_ids = {b for b in session.scalars(sample_batches) if b}
-    for model in (ThreadsPost, AccountMetric, SalesRecord, ChannelMetric, Expense, Task, Content, RakutenItem, NoteProduct, ResearchTheme):
+    for model in (ChannelKPI, Review, SearchKeyword, ThreadsPost, AccountMetric, SalesRecord, ChannelMetric, Expense, Task, Content, RakutenItem, NoteProduct, ResearchTheme):
         session.execute(delete(model).where(model.is_sample.is_(True)))
     if batch_ids:
         session.execute(delete(ImportBatch).where(ImportBatch.id.in_(batch_ids)))
