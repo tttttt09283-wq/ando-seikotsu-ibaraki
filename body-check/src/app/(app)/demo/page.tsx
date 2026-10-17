@@ -2,7 +2,7 @@
 
 /**
  * デモの入り口（/demo）
- * デモモードにして、前回の回答を消してからチェックを始めます。
+ * デモモードにして、前回の回答を消してからメニュー画面（4つのチェック）を開きます。
  */
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
@@ -15,7 +15,7 @@ export default function DemoStartPage() {
   useEffect(() => {
     setDemo(true);
     clearState();
-    router.replace("/check");
+    router.replace("/");
   }, [router]);
   return <Spinner label="デモを準備しています…" />;
 }

@@ -1,9 +1,14 @@
 import Link from "next/link";
-import { CHECK_META, CHECK_ORDER } from "@/config/checks";
 import { salesConfig } from "@/config/sales";
-import { CheckIllustration } from "@/components/Illustrations";
 import { QrImage } from "@/components/sales/Personalize";
 import { buttonStyles, cx } from "@/components/styles";
+
+const MENUS = [
+  { icon: "🧍", title: "カラダ年齢チェック", time: "約3分", text: "片足立ち・椅子立ち上がりなど5項目で「〇〇代レベル」を判定。スコア・ランク・レーダーチャート付き。" },
+  { icon: "📸", title: "AI姿勢チェック", time: "約2分", text: "横向き・正面の写真をAIが解析。猫背・反り腰・肩や骨盤の傾きを点数と所見で表示します。" },
+  { icon: "🧬", title: "骨格タイプチェック", time: "約2分", text: "10の質問でストレート／ウェーブ／ナチュラルを判定。美容・ボディメイク系の集客にも。" },
+  { icon: "💪", title: "体幹チェック", time: "約5分", text: "プランク・サイドプランクなど4つのテストで、体を支える力と左右差を点数化。セルフケア付き。" },
+];
 
 const PAINS = [
   { icon: "🚪", title: "初めての方の来院ハードルが高い", text: "「整骨院に行くほどかな？」と迷っている方が、予約の一歩を踏み出せない。" },
@@ -13,8 +18,8 @@ const PAINS = [
 
 const FLOW = [
   { icon: "📱", title: "LINE・QRから開く", text: "リッチメニューや店頭のQRコードから、登録・ログインなしですぐに始められます。" },
-  { icon: "🧍", title: "3分のセルフチェック", text: "片足立ち・椅子立ち上がり・前屈・肩の動き・コンディションの5項目。ストップウォッチ付き。" },
-  { icon: "📊", title: "カラダ年齢とスコア", text: "「あなたのカラダは〇〇代レベル」とランク・レーダーチャートで、身体の状態が見える化。" },
+  { icon: "🧍", title: "選べるセルフチェック", text: "カラダ年齢・AI姿勢・骨格タイプ・体幹の4メニューから、気になるものを選んで2〜5分。" },
+  { icon: "📊", title: "結果で見える化", text: "カラダ年齢・姿勢の点数・骨格タイプ・体幹スコアなど、今の身体の状態を分かりやすく表示。" },
   { icon: "📅", title: "結果を持ってWEB予約", text: "気になる点と結果が予約フォームに引き継がれ、院は来院前に「何を見てほしいか」が分かります。" },
 ];
 
@@ -95,7 +100,7 @@ export default function ForClinicsPage() {
               <span className="text-sun-300">何歳レベル？</span>」
             </h1>
             <p className="mt-4 text-base font-bold leading-relaxed sm:text-lg">
-              LINEから3分のセルフ身体チェックで、
+              LINEから選べる4つのセルフ身体チェックで、
               <br className="hidden sm:block" />
               “気になる”を“予約”に変える。
             </p>
@@ -112,11 +117,11 @@ export default function ForClinicsPage() {
             <p className="text-sm font-black">スマホで今すぐ体験</p>
             <QrImage value={demoUrl} size={150} className="mx-auto mt-3" />
             <p className="mt-2 text-xs text-slate-600">QRコードを読み取るとデモが始まります。結果はどこにも送信されません。</p>
-            <ul className="mt-4 grid grid-cols-5 gap-1">
-              {CHECK_ORDER.map((id) => (
-                <li key={id} className="flex flex-col items-center gap-1">
-                  <CheckIllustration id={id} className="size-10" />
-                  <span className="text-[10px] font-bold leading-tight">{CHECK_META[id].shortName}</span>
+            <ul className="mt-4 grid grid-cols-4 gap-1">
+              {MENUS.map((m) => (
+                <li key={m.title} className="flex flex-col items-center gap-1">
+                  <span className="text-2xl" aria-hidden="true">{m.icon}</span>
+                  <span className="text-[10px] font-bold leading-tight">{m.title.replace("チェック", "")}</span>
                 </li>
               ))}
             </ul>
@@ -134,6 +139,26 @@ export default function ForClinicsPage() {
             </li>
           ))}
         </ul>
+      </Section>
+
+      <Section eyebrow="MENU" title="4つのチェックから選べます">
+        <ul className="grid gap-4 sm:grid-cols-2">
+          {MENUS.map((m) => (
+            <li key={m.title} className="flex gap-4 rounded-3xl bg-white p-5">
+              <span className="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-brand-50 text-3xl" aria-hidden="true">
+                {m.icon}
+              </span>
+              <div>
+                <p className="font-black text-navy-900">
+                  {m.title}
+                  <span className="ml-2 text-xs font-bold text-brand-600">{m.time}</span>
+                </p>
+                <p className="mt-1 text-sm leading-relaxed text-slate-700">{m.text}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-3 text-sm text-slate-700">どのチェックも、結果画面からそのまま貴院のWEB予約へ。結果の要約は予約フォームに引き継がれます。</p>
       </Section>
 
       <Section eyebrow="HOW IT WORKS" title="チェックから予約まで、ひとつの流れに">
