@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>体幹チェック（院内・イベント） - あんど整骨院</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="/core-test-logic.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#f0f4f8;min-height:100vh;color:#1f2937;}
+.header{background:linear-gradient(135deg,#1e3a5f,#2d6a9f);color:white;padding:14px 16px;}
+.header h1{font-size:17px;font-weight:800;}
+.header p{font-size:11px;opacity:.75;margin-top:2px;}
+.tabs{display:flex;gap:6px;max-width:760px;margin:0 auto;padding:10px 16px 0;}
+.tab{flex:1;padding:10px 6px;border-radius:10px 10px 0 0;border:none;background:#dbe4ee;color:#475569;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit;}
+.tab.on{background:white;color:#1e3a5f;}
+.container{max-width:760px;margin:0 auto;padding:0 16px 60px;}
+.panel{background:white;border-radius:0 0 12px 12px;padding:14px;}
+.card{background:white;border:1.5px solid #e2e8f0;border-radius:12px;margin-bottom:12px;overflow:hidden;}
+.card-h{padding:10px 14px;font-size:13.5px;font-weight:800;color:#1e3a5f;border-bottom:1px solid #f1f5f9;display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.card-b{padding:12px 14px;}
+.btn{padding:11px 14px;border:none;border-radius:10px;font-size:14px;font-weight:800;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;justify-content:center;gap:6px;}
+.btn:disabled{opacity:.5;cursor:not-allowed;}
+.btn-primary{background:linear-gradient(135deg,#1e3a5f,#2d6a9f);color:white;}
+.btn-green{background:linear-gradient(135deg,#059669,#047857);color:white;}
+.btn-red{background:#fee2e2;color:#b91c1c;}
+.btn-outline{background:white;color:#374151;border:1.5px solid #e2e8f0;}
+.btn-sm{padding:7px 10px;font-size:12px;border-radius:8px;}
+.btn-block{width:100%;}
+.label{display:block;font-size:12px;font-weight:700;color:#374151;margin-bottom:5px;}
+.input{width:100%;padding:9px 11px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:14px;font-family:inherit;background:white;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;}
+.chip{display:inline-block;font-size:11px;font-weight:800;padding:2px 8px;border-radius:10px;}
+.seg{display:flex;flex-wrap:wrap;gap:6px;}
+.seg button{padding:7px 12px;border-radius:8px;border:1.5px solid #e2e8f0;background:white;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:#374151;}
+.seg button.sel{border-color:#1e3a5f;background:#1e3a5f;color:white;}
+.timer{font-variant-numeric:tabular-nums;font-size:30px;font-weight:800;color:#1e3a5f;text-align:center;line-height:1.1;}
+.sidebox{flex:1;min-width:150px;border:1.5px solid #e2e8f0;border-radius:10px;padding:10px;}
+.bar{height:10px;border-radius:6px;background:#e2e8f0;overflow:hidden;}
+.bar>div{height:100%;border-radius:6px;}
+.stat{background:#f8fafc;border-radius:10px;padding:10px;text-align:center;}
+.stat b{display:block;font-size:22px;color:#1e3a5f;}
+.stat span{font-size:11px;color:#64748b;font-weight:700;}
+.row{display:flex;align-items:center;gap:10px;padding:10px 4px;border-bottom:1px solid #f1f5f9;cursor:pointer;}
+.row:hover{background:#f8fafc;}
+.modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.5);display:flex;align-items:flex-start;justify-content:center;padding:20px 12px;overflow-y:auto;z-index:50;}
+.modal{background:white;border-radius:14px;width:100%;max-width:640px;padding:16px;}
+.muted{color:#64748b;font-size:12px;}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1f2937;color:white;padding:10px 18px;border-radius:20px;font-size:13px;font-weight:700;z-index:99;}
+table.m{width:100%;border-collapse:collapse;font-size:12.5px;}
+table.m th,table.m td{border-bottom:1px solid #f1f5f9;padding:6px 4px;text-align:left;}
+@media print{
+  body{background:white;}
+  .no-print{display:none!important;}
+  .modal-bg{position:static;background:none;padding:0;}
+  .modal{max-width:none;padding:0;}
+  .sheet{border:none!important;}
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useMemo,useRef,useCallback}=React;
+const C=window.CoreTest;
+const SUPABASE_URL="https://dctlirxcwitcupaewiyt.supabase.co";
+const SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
+// 管理画面と同じく「タブを閉じるまでログイン維持」。管理画面から開いた場合はログイン状態を引き継ぐ
+const supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{
+  auth:{storage:window.sessionStorage,persistSession:true,autoRefreshToken:true}
+});
+const STAFF_LIST=[{id:1,name:"奥田"},{id:2,name:"佐藤"},{id:3,name:"細永"},{id:4,name:"田中"},{id:5,name:"岩永"}];
+const STAFF_BY_ID=Object.fromEntries(STAFF_LIST.map(s=>[s.id,s.name]));
+
+// 参加者の個人情報を扱うため、読み書きはすべてログイン中のスタッフのみ（anonキーでは使わない）
+async function api(path,{method="GET",body}={}){
+  const {data:{session}}=await supabaseClient.auth.getSession();
+  if(!session) throw new Error("ログインが切れました。もう一度ログインしてください");
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/${path}`,{method,
+    headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${session.access_token}`,"Content-Type":"application/json",Prefer:"return=representation"},
+    body:body?JSON.stringify(body):undefined});
+  const text=await res.text(); const data=text?JSON.parse(text):null;
+  if(!res.ok) throw new Error((data&&(data.message||data.hint))||`通信に失敗しました（HTTP ${res.status}）`);
+  return data;
+}
+function todayStr(){ const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function fmtDate(s){ if(!s) return "日付未定"; const [y,m,d]=String(s).slice(0,10).split("-"); return `${y}年${Number(m)}月${Number(d)}日`; }
+function enc(s){ return encodeURIComponent(s); }
+
+let toastTimer=null;
+function useToast(){
+  const [msg,setMsg]=useState("");
+  const show=useCallback(m=>{ setMsg(m); clearTimeout(toastTimer); toastTimer=setTimeout(()=>setMsg(""),2600); },[]);
+  return [msg,show];
+}
+
+// ===================== ログイン =====================
+function Login({onDone,error}){
+  const [email,setEmail]=useState(""); const [pw,setPw]=useState(""); const [busy,setBusy]=useState(false); const [err,setErr]=useState(error||"");
+  const submit=async e=>{
+    e.preventDefault(); setBusy(true); setErr("");
+    const {error}=await supabaseClient.auth.signInWithPassword({email:email.trim(),password:pw});
+    setBusy(false);
+    if(error){ setErr("ログインできませんでした。メールアドレスとパスワードを確認してください"); return; }
+    onDone();
+  };
+  return <div className="container" style={{paddingTop:20}}>
+    <form className="card" onSubmit={submit}><div className="card-h">🔒 スタッフログイン</div><div className="card-b">
+      <p className="muted" style={{marginBottom:12}}>参加者の名前・連絡先を扱うため、管理画面と同じスタッフアカウントでログインしてください。</p>
+      <label className="label">メールアドレス</label><input className="input" type="email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} required style={{marginBottom:10}}/>
+      <label className="label">パスワード</label><input className="input" type="password" autoComplete="current-password" value={pw} onChange={e=>setPw(e.target.value)} required style={{marginBottom:12}}/>
+      {err&&<p style={{color:"#b91c1c",fontSize:12.5,fontWeight:700,marginBottom:10}}>{err}</p>}
+      <button className="btn btn-primary btn-block" disabled={busy}>{busy?"確認中...":"ログイン"}</button>
+    </div></form>
+  </div>;
+}
+
+// ===================== ストップウォッチ =====================
+function Stopwatch({value,onChange,max,label}){
+  const [running,setRunning]=useState(false); const [elapsed,setElapsed]=useState(0);
+  const startRef=useRef(0); const tick=useRef(null);
+  const stop=useCallback((sec)=>{ clearInterval(tick.current); setRunning(false); onChange(String(Math.min(max,Math.floor(sec)))); },[max,onChange]);
+  const start=()=>{
+    startRef.current=Date.now(); setElapsed(0); setRunning(true);
+    tick.current=setInterval(()=>{ const s=(Date.now()-startRef.current)/1000; setElapsed(s); if(s>=max) stop(max); },100);
+  };
+  useEffect(()=>()=>clearInterval(tick.current),[]);
+  const shown=running?elapsed:(value===""||value==null?0:Number(value));
+  return <div className="sidebox">
+    {label&&<div style={{fontSize:12,fontWeight:800,color:"#475569",marginBottom:4}}>{label}</div>}
+    <div className="timer">{running?shown.toFixed(1):shown}<span style={{fontSize:13,color:"#94a3b8",marginLeft:3}}>秒</span></div>
+    <div style={{display:"flex",gap:6,marginTop:8}}>
+      {running
+        ?<button type="button" className="btn btn-red btn-block" onClick={()=>stop((Date.now()-startRef.current)/1000)}>■ ストップ</button>
+        :<button type="button" className="btn btn-primary btn-block" onClick={start}>▶ スタート</button>}
+    </div>
+    <input className="input" inputMode="numeric" placeholder="手入力（秒）" value={value??""} disabled={running}
+      onChange={e=>onChange(e.target.value.replace(/[^\d.]/g,""))} style={{marginTop:6,textAlign:"center"}} aria-label={(label||"")+"の秒数"}/>
+  </div>;
+}
+// 上体起こし：30秒のカウントダウン＋回数を数えるボタン
+function CountTest({value,onChange,seconds}){
+  const [left,setLeft]=useState(null); const tick=useRef(null);
+  const start=()=>{ const end=Date.now()+seconds*1000; onChange("0"); setLeft(seconds);
+    tick.current=setInterval(()=>{ const l=Math.max(0,(end-Date.now())/1000); setLeft(l); if(l<=0){ clearInterval(tick.current); setLeft(null); } },100); };
+  useEffect(()=>()=>clearInterval(tick.current),[]);
+  const n=Number(value||0);
+  return <div className="sidebox">
+    <div className="timer">{left!=null?left.toFixed(1)+"秒":`${value===""||value==null?"-":n}回`}</div>
+    {left!=null&&<div style={{textAlign:"center",fontWeight:800,color:"#059669",marginTop:4}}>{n}回</div>}
+    <div style={{display:"flex",gap:6,marginTop:8}}>
+      {left==null&&<button type="button" className="btn btn-primary" style={{flex:1}} onClick={start}>▶ {seconds}秒スタート</button>}
+      <button type="button" className="btn btn-green" style={{flex:1,fontSize:18}} onClick={()=>onChange(String(n+1))}>＋1回</button>
+      <button type="button" className="btn btn-outline" onClick={()=>onChange(String(Math.max(0,n-1)))}>－</button>
+    </div>
+    <input className="input" inputMode="numeric" placeholder="手入力（回）" value={value??""} onChange={e=>onChange(e.target.value.replace(/\D/g,""))} style={{marginTop:6,textAlign:"center"}} aria-label="回数"/>
+  </div>;
+}
+
+function TestCard({test,m,setM,index}){
+  const [open,setOpen]=useState(false);
+  const ev=C.evaluateItem(test,m);
+  const set=patch=>setM(prev=>Object.assign({},prev,patch)); // タイマー停止時も最新の値に重ねる
+  return <div className="card">
+    <div className="card-h">
+      <span style={{background:"#1e3a5f",color:"white",borderRadius:6,padding:"1px 7px",fontSize:12}}>{index+1}</span>
+      {test.name}<span className="chip" style={{background:"#eef2ff",color:"#4338ca"}}>{test.area}</span>
+      <span style={{marginLeft:"auto"}}>{m.skip?<span className="chip" style={{background:"#f1f5f9",color:"#64748b"}}>スキップ</span>:ev.points!=null?<span className="chip" style={{background:"#dcfce7",color:"#166534"}}>{ev.points}点 / 5</span>:<span className="chip" style={{background:"#fef3c7",color:"#92400e"}}>未入力</span>}</span>
+    </div>
+    <div className="card-b">
+      <button type="button" onClick={()=>setOpen(!open)} style={{background:"none",border:"none",color:"#2d6a9f",fontWeight:800,fontSize:12.5,cursor:"pointer",padding:0,marginBottom:8,fontFamily:"inherit"}}>{open?"▲ やり方を閉じる":"▼ やり方・判定基準"}</button>
+      {open&&<div style={{background:"#f8fafc",borderRadius:8,padding:10,fontSize:12.5,lineHeight:1.7,marginBottom:10}}>
+        <div>{test.how}</div>
+        <div className="muted" style={{marginTop:4}}>判定：{test.rating?"スタッフ評価そのまま（1〜5点）":`${test.steps.map((s,i)=>`${s}${test.unit}以上＝${i+2}点`).join("／")}（それ未満は1点）`}{test.sides?"。左右の平均で採点":""}</div>
+      </div>}
+      {!m.skip&&<>
+        {test.rating&&<div className="seg">{[1,2,3,4,5].map(v=><button type="button" key={v} className={String(m.value)===String(v)?"sel":""} onClick={()=>set({value:String(v)})}>{v}：{C.RATING_LABELS[v]}</button>)}</div>}
+        {test.timer&&!test.sides&&<div style={{display:"flex"}}><Stopwatch value={m.value} max={test.max} onChange={v=>set({value:v})}/></div>}
+        {test.timer&&test.sides&&<div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <Stopwatch label="右" value={m.right} max={test.max} onChange={v=>set({right:v})}/>
+          <Stopwatch label="左" value={m.left} max={test.max} onChange={v=>set({left:v})}/>
+        </div>}
+        {test.countdown&&<div style={{display:"flex"}}><CountTest value={m.value} seconds={test.countdown} onChange={v=>set({value:v})}/></div>}
+        {ev.asymmetry&&<p style={{marginTop:8,fontSize:12.5,fontWeight:800,color:"#b45309"}}>⚠️ 左右差あり：{ev.asymmetry.weak}側が{ev.asymmetry.diff}秒短い</p>}
+      </>}
+      <label style={{display:"flex",alignItems:"center",gap:6,marginTop:10,fontSize:12,color:"#64748b"}}>
+        <input type="checkbox" checked={!!m.skip} onChange={e=>set({skip:e.target.checked})}/>この項目はスキップ（痛み・体調などで行わない。点数の計算から外します）
+      </label>
+    </div>
+  </div>;
+}
+
+// ===================== 結果表示（お客様向け・印刷用） =====================
+function ResultView({entry,previous,eventName}){
+  const ev=C.evaluate(entry.measurements);
+  const r=C.RANKS.find(x=>x.rank===entry.rank)||ev.rankInfo||C.RANKS[4];
+  const diff=C.improvement(entry.total_score,previous);
+  return <div className="sheet" style={{border:"1.5px solid #e2e8f0",borderRadius:14,padding:16}}>
+    <div style={{textAlign:"center"}}>
+      <div className="muted">{eventName||"あんど式 体幹チェック"}・{fmtDate(entry.measured_on)}</div>
+      <div style={{fontSize:18,fontWeight:800,marginTop:4}}>{entry.participant_name} 様の体幹チェック結果</div>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:14,marginTop:12}}>
+        <div style={{width:84,height:84,borderRadius:"50%",background:r.bg,border:`4px solid ${r.color}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:42,fontWeight:900,color:r.color}}>{r.rank}</div>
+        <div style={{textAlign:"left"}}>
+          <div style={{fontSize:44,fontWeight:900,color:"#1e3a5f",lineHeight:1}}>{entry.total_score}<span style={{fontSize:16}}>点</span></div>
+          <div style={{fontWeight:800,color:r.color}}>{r.label}</div>
+          {diff!=null&&<div style={{fontSize:12.5,fontWeight:800,color:diff>=0?"#059669":"#b91c1c",marginTop:2}}>前回（{fmtDate(previous.measured_on)}）より {diff>=0?"+":""}{diff}点</div>}
+        </div>
+      </div>
+    </div>
+    <div style={{marginTop:16}}>
+      {C.CORE_TESTS.map(t=>{ const it=ev.items.find(i=>i.key===t.key);
+        return <div key={t.key} style={{marginBottom:9}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:12.5,fontWeight:700}}>
+            <span>{t.area}<span className="muted" style={{marginLeft:6}}>{t.name}</span></span>
+            <span>{it.points==null?(it.skipped?"スキップ":"未測定"):`${it.points}/5`}</span>
+          </div>
+          <div className="bar"><div style={{width:`${(it.points||0)/5*100}%`,background:it.points!=null&&it.points<=2?"#f59e0b":"#2d6a9f"}}/></div>
+          <div className="muted" style={{fontSize:11}}>{t.sides?(it.right!=null?`右 ${it.right}${t.unit}／左 ${it.left}${t.unit}`:""):(it.value!=null?`${it.value}${t.unit}`:"")}</div>
+        </div>; })}
+    </div>
+    {ev.asymmetries.length>0&&<div style={{background:"#fffbeb",borderRadius:10,padding:10,marginTop:8,fontSize:12.5}}>
+      <b>⚖️ 左右差</b>{ev.asymmetries.map(a=><div key={a.key}>・{C.testByKey(a.key).name}：{a.weak}側が{a.diff}秒短い（体のゆがみ・使い方のくせのサイン）</div>)}
+    </div>}
+    <div style={{background:"#f0f9ff",borderRadius:10,padding:10,marginTop:8,fontSize:12.5,lineHeight:1.7}}>
+      <b>🏠 おすすめセルフケア</b>
+      {(ev.weak.length?ev.weak:ev.items.filter(i=>i.points!=null).sort((a,b)=>a.points-b.points).slice(0,2).map(i=>i.key)).map(k=>{ const t=C.testByKey(k); return <div key={k}>・<b>{t.area}</b>：{t.care}</div>; })}
+    </div>
+    {entry.comment&&<div style={{background:"#f8fafc",borderRadius:10,padding:10,marginTop:8,fontSize:12.5}}><b>💬 担当からのひとこと</b><div style={{whiteSpace:"pre-wrap"}}>{entry.comment}</div></div>}
+    <p className="muted" style={{marginTop:10,fontSize:10.5}}>※本チェックは医療診断ではありません。痛みやしびれがある場合は無理をせずご相談ください。　あんど整骨院</p>
+  </div>;
+}
+
+// ===================== 測定 =====================
+const EMPTY_PERSON={participant_name:"",kana:"",gender:"",age:"",phone:"",is_patient:false,consent:false};
+function Measure({events,toast}){
+  const active=events.filter(e=>e.is_active);
+  const [eventId,setEventId]=useState(active[0]?active[0].id:"");
+  const [staffId,setStaffId]=useState(null);
+  const [p,setP]=useState(EMPTY_PERSON);
+  const [ms,setMs]=useState({});
+  const [comment,setComment]=useState("");
+  const [saving,setSaving]=useState(false);
+  const [saved,setSaved]=useState(null);
+  const [history,setHistory]=useState([]);
+  useEffect(()=>{ if(!eventId&&active[0]) setEventId(active[0].id); },[events]);
+  const ev=C.evaluate(ms);
+  const lookup=async()=>{ // 同じ名前の過去の記録（前回との比較用）
+    const name=p.participant_name.trim(); if(!name){ setHistory([]); return; }
+    try{ setHistory(await api(`core_test_entries?participant_name=eq.${enc(name)}&order=measured_on.desc,created_at.desc&limit=5`)||[]); }catch(e){ setHistory([]); }
+  };
+  const canSave=p.participant_name.trim()&&p.consent&&ev.score!=null&&!saving;
+  const save=async()=>{
+    if(!canSave) return;
+    if(!ev.complete&&!confirm(`未入力の項目があります（${ev.incomplete.map(k=>C.testByKey(k).name).join("・")}）。入力済みの項目だけで保存しますか？`)) return;
+    setSaving(true);
+    try{
+      const rows=await api("core_test_entries",{method:"POST",body:{
+        event_id:eventId||null,participant_name:p.participant_name.trim(),kana:p.kana.trim()||null,gender:p.gender||null,
+        age:p.age===""?null:Number(p.age),phone:p.phone.trim()||null,is_patient:p.is_patient,consent:p.consent,staff_id:staffId,
+        measured_on:todayStr(),measurements:ms,item_points:ev.itemPoints,total_score:ev.score,rank:ev.rank,weak_items:ev.weak,comment:comment.trim()||null,
+      }});
+      setSaved(rows[0]); toast("✅ 保存しました"); window.scrollTo(0,0);
+    }catch(e){ toast("❌ "+e.message); }
+    setSaving(false);
+  };
+  const reset=()=>{ setP(EMPTY_PERSON); setMs({}); setComment(""); setSaved(null); setHistory([]); window.scrollTo(0,0); };
+  const prev=saved?history.find(h=>h.id!==saved.id&&C.personKey(h)===C.personKey(saved))||history.find(h=>h.id!==saved.id):null;
+  if(saved) return <div>
+    <ResultView entry={saved} previous={prev} eventName={(events.find(e=>e.id===saved.event_id)||{}).name}/>
+    <div className="no-print" style={{display:"flex",gap:8,marginTop:12}}>
+      <button className="btn btn-outline" style={{flex:1}} onClick={()=>window.print()}>🖨 印刷する</button>
+      <button className="btn btn-primary" style={{flex:2}} onClick={reset}>次の人を測定する</button>
+    </div>
+  </div>;
+  return <div>
+    <div className="card"><div className="card-h">📋 イベント・担当</div><div className="card-b">
+      <label className="label">イベント</label>
+      <select className="input" value={eventId} onChange={e=>setEventId(e.target.value?Number(e.target.value):"")} style={{marginBottom:10}}>
+        <option value="">イベントなし（通常の院内測定）</option>
+        {active.map(e=><option key={e.id} value={e.id}>{e.name}（{fmtDate(e.event_date)}）</option>)}
+      </select>
+      <label className="label">担当スタッフ</label>
+      <div className="seg">{STAFF_LIST.map(s=><button type="button" key={s.id} className={staffId===s.id?"sel":""} onClick={()=>setStaffId(s.id)}>{s.name}</button>)}</div>
+    </div></div>
+
+    <div className="card"><div className="card-h">👤 参加者</div><div className="card-b">
+      <div className="grid2">
+        <div><label className="label">お名前（必須）</label><input className="input" value={p.participant_name} onChange={e=>setP({...p,participant_name:e.target.value})} onBlur={lookup} placeholder="例：山田 花子"/></div>
+        <div><label className="label">ふりがな</label><input className="input" value={p.kana} onChange={e=>setP({...p,kana:e.target.value})}/></div>
+        <div><label className="label">年齢</label><input className="input" inputMode="numeric" value={p.age} onChange={e=>setP({...p,age:e.target.value.replace(/\D/g,"").slice(0,3)})}/></div>
+        <div><label className="label">電話番号（任意）</label><input className="input" inputMode="tel" value={p.phone} onChange={e=>setP({...p,phone:e.target.value})}/></div>
+      </div>
+      <div style={{display:"flex",gap:16,flexWrap:"wrap",marginTop:10}}>
+        <div><label className="label">性別</label><div className="seg">{["女性","男性","回答しない"].map(g=><button type="button" key={g} className={p.gender===g?"sel":""} onClick={()=>setP({...p,gender:g})}>{g}</button>)}</div></div>
+        <div><label className="label">区分</label><div className="seg">{[[false,"新規の方"],[true,"通院中の患者様"]].map(([v,l])=><button type="button" key={l} className={p.is_patient===v?"sel":""} onClick={()=>setP({...p,is_patient:v})}>{l}</button>)}</div></div>
+      </div>
+      {history.length>0&&<div style={{background:"#f0fdf4",borderRadius:8,padding:8,marginTop:10,fontSize:12.5}}>
+        📈 同じお名前の記録があります：{history.slice(0,3).map(h=>`${fmtDate(h.measured_on)} ${h.total_score}点（${h.rank}）`).join("、")}　→ 保存後に前回との比較を表示します
+      </div>}
+    </div></div>
+
+    <p className="muted" style={{margin:"4px 2px 8px"}}>▼ 上から順に測定してください。ストップウォッチで測るか、秒数・回数を直接入力できます。</p>
+    {C.CORE_TESTS.map((t,i)=><TestCard key={t.key} test={t} index={i} m={ms[t.key]||{}} setM={fn=>setMs(s=>({...s,[t.key]:fn(s[t.key]||{})}))}/>)}
+
+    <div className="card" style={{border:"2px solid #1e3a5f"}}><div className="card-h">🏅 結果（自動計算）</div><div className="card-b">
+      {ev.score==null?<p className="muted">項目を入力すると、ここに点数とランクが出ます。</p>:<>
+        <div style={{display:"flex",alignItems:"center",gap:12}}>
+          <div style={{fontSize:36,fontWeight:900,color:"#1e3a5f"}}>{ev.score}<span style={{fontSize:14}}>点</span></div>
+          <span className="chip" style={{fontSize:15,background:ev.rankInfo.bg,color:ev.rankInfo.color}}>{ev.rank}ランク：{ev.rankInfo.label}</span>
+        </div>
+        {!ev.complete&&<p style={{fontSize:12,color:"#b45309",fontWeight:700,marginTop:4}}>未入力：{ev.incomplete.map(k=>C.testByKey(k).name).join("・")}</p>}
+        {ev.weak.length>0&&<p style={{fontSize:12.5,marginTop:6}}>弱い項目：<b>{ev.weak.map(k=>C.testByKey(k).area).join("・")}</b></p>}
+      </>}
+      <label className="label" style={{marginTop:12}}>担当からのひとこと（結果用紙に表示されます）</label>
+      <textarea className="input" rows="2" value={comment} onChange={e=>setComment(e.target.value)} placeholder="例：右のわき腹が弱めです。骨盤のゆがみチェックもおすすめです"/>
+      <label style={{display:"flex",gap:8,alignItems:"flex-start",marginTop:12,fontSize:12.5,fontWeight:700}}>
+        <input type="checkbox" checked={p.consent} onChange={e=>setP({...p,consent:e.target.checked})} style={{marginTop:3}}/>
+        測定結果とご連絡先を院で保管し、結果のご案内・ご連絡に使うことに、ご本人の同意をいただきました（必須）
+      </label>
+      <button className="btn btn-green btn-block" style={{marginTop:12}} disabled={!canSave} onClick={save}>{saving?"保存中...":"💾 保存して結果を表示"}</button>
+      {!p.participant_name.trim()&&<p className="muted" style={{marginTop:6}}>※ 保存するには、お名前の入力が必要です</p>}
+    </div></div>
+  </div>;
+}
+
+// ===================== 結果一覧・管理 =====================
+function Manage({events,toast}){
+  const [eventId,setEventId]=useState("all");
+  const [entries,setEntries]=useState(null);
+  const [q,setQ]=useState(""); const [status,setStatus]=useState(""); const [sort,setSort]=useState("new");
+  const [view,setView]=useState("list"); const [mask,setMask]=useState(true);
+  const [detail,setDetail]=useState(null);
+  const load=useCallback(async()=>{
+    setEntries(null);
+    try{
+      const f=eventId==="all"?"":eventId==="none"?"&event_id=is.null":`&event_id=eq.${eventId}`;
+      setEntries(await api(`core_test_entries?select=*${f}&order=created_at.desc&limit=2000`)||[]);
+    }catch(e){ toast("❌ "+e.message); setEntries([]); }
+  },[eventId]);
+  useEffect(()=>{ load(); },[load]);
+  const eventsById=Object.fromEntries(events.map(e=>[e.id,e.name]));
+  const list=useMemo(()=>{
+    let l=(entries||[]).slice();
+    const k=q.trim(); if(k) l=l.filter(e=>[e.participant_name,e.kana,e.phone].some(v=>String(v||"").includes(k)));
+    if(status) l=l.filter(e=>(e.follow_status||"未対応")===status);
+    if(sort==="score") l.sort((a,b)=>Number(b.total_score)-Number(a.total_score));
+    if(sort==="low") l.sort((a,b)=>Number(a.total_score)-Number(b.total_score));
+    return l;
+  },[entries,q,status,sort]);
+  const sum=C.summarize(entries||[]);
+  const patch=async(id,body)=>{
+    try{ const rows=await api(`core_test_entries?id=eq.${id}`,{method:"PATCH",body:{...body,updated_at:new Date().toISOString()}});
+      setEntries(es=>es.map(e=>e.id===id?rows[0]:e)); if(detail&&detail.id===id) setDetail(rows[0]); toast("✅ 更新しました"); }
+    catch(e){ toast("❌ "+e.message); }
+  };
+  const remove=async e=>{
+    if(!confirm(`${e.participant_name} 様（${fmtDate(e.measured_on)}）の記録を削除します。元に戻せません。よろしいですか？`)) return;
+    try{ await api(`core_test_entries?id=eq.${e.id}`,{method:"DELETE"}); setEntries(es=>es.filter(x=>x.id!==e.id)); setDetail(null); toast("削除しました"); }
+    catch(err){ toast("❌ "+err.message); }
+  };
+  const csv=()=>{
+    const blob=new Blob([C.toCsv(list,eventsById,STAFF_BY_ID)],{type:"text/csv"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+    a.download=`体幹チェック_${eventId==="all"?"全件":(eventsById[eventId]||"イベントなし")}_${todayStr()}.csv`; a.click(); URL.revokeObjectURL(a.href);
+  };
+  // ランキングは1人1件（同じ人は最高点）
+  const ranking=useMemo(()=>{
+    const best={}; (entries||[]).forEach(e=>{ const k=C.personKey(e); if(e.total_score!=null&&(!best[k]||Number(e.total_score)>Number(best[k].total_score))) best[k]=e; });
+    return Object.values(best).sort((a,b)=>Number(b.total_score)-Number(a.total_score)).slice(0,20);
+  },[entries]);
+  return <div>
+    <div className="no-print" style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+      <select className="input" style={{flex:2,minWidth:180}} value={eventId} onChange={e=>setEventId(e.target.value)}>
+        <option value="all">すべての記録</option>
+        {events.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
+        <option value="none">イベントなし（通常測定）</option>
+      </select>
+      <button className="btn btn-outline btn-sm" onClick={load}>↻ 再読み込み</button>
+      <button className="btn btn-outline btn-sm" onClick={csv} disabled={!list.length}>⬇ CSV（Excel）</button>
+    </div>
+    {entries==null?<p className="muted" style={{padding:20,textAlign:"center"}}>読み込み中...</p>:<>
+    <div className="grid3 no-print" style={{marginBottom:10}}>
+      <div className="stat"><b>{sum.count}</b><span>測定件数（{sum.people}人）</span></div>
+      <div className="stat"><b>{sum.avg??"-"}</b><span>平均点</span></div>
+      <div className="stat"><b>{sum.newCount}</b><span>新規の方</span></div>
+    </div>
+    <div className="card no-print"><div className="card-b" style={{fontSize:12.5,lineHeight:1.9}}>
+      <div><b>ランク分布：</b>{C.RANKS.map(r=><span key={r.rank} className="chip" style={{background:r.bg,color:r.color,marginRight:4}}>{r.rank} {sum.rankCount[r.rank]}人</span>)}</div>
+      <div><b>弱い人が多い項目：</b>{C.CORE_TESTS.filter(t=>sum.weakCount[t.key]).sort((a,b)=>sum.weakCount[b.key]-sum.weakCount[a.key]).map(t=>`${t.area} ${sum.weakCount[t.key]}人`).join("／")||"なし"}</div>
+      <div><b>フォロー状況：</b>{C.FOLLOW_STATUSES.map(s=>`${s} ${sum.followCount[s]}`).join("／")}</div>
+    </div></div>
+    <div className="seg no-print" style={{marginBottom:10}}>
+      <button className={view==="list"?"sel":""} onClick={()=>setView("list")}>📋 一覧・フォロー</button>
+      <button className={view==="rank"?"sel":""} onClick={()=>setView("rank")}>🏆 ランキング</button>
+    </div>
+    {view==="list"?<>
+      <div className="no-print" style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:6}}>
+        <input className="input" style={{flex:2,minWidth:160}} placeholder="名前・ふりがな・電話で検索" value={q} onChange={e=>setQ(e.target.value)}/>
+        <select className="input" style={{flex:1,minWidth:110}} value={status} onChange={e=>setStatus(e.target.value)}><option value="">フォロー：すべて</option>{C.FOLLOW_STATUSES.map(s=><option key={s}>{s}</option>)}</select>
+        <select className="input" style={{flex:1,minWidth:110}} value={sort} onChange={e=>setSort(e.target.value)}><option value="new">新しい順</option><option value="score">点数が高い順</option><option value="low">点数が低い順</option></select>
+      </div>
+      {list.length===0?<p className="muted" style={{padding:20,textAlign:"center"}}>記録がありません</p>:list.map(e=>{ const r=C.RANKS.find(x=>x.rank===e.rank)||C.RANKS[4];
+        return <div key={e.id} className="row" onClick={()=>setDetail(e)}>
+          <div style={{width:38,height:38,borderRadius:"50%",background:r.bg,color:r.color,fontWeight:900,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{e.rank}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontWeight:800,fontSize:14}}>{e.participant_name}<span className="muted" style={{marginLeft:6}}>{[e.age&&`${e.age}歳`,e.gender,e.is_patient?"患者様":"新規"].filter(Boolean).join("・")}</span></div>
+            <div className="muted">{fmtDate(e.measured_on)}{eventId==="all"&&e.event_id?`・${eventsById[e.event_id]||""}`:""}{(e.weak_items||[]).length?`・弱：${e.weak_items.map(k=>(C.testByKey(k)||{}).area).join("、")}`:""}</div>
+          </div>
+          <div style={{fontWeight:900,fontSize:18,color:"#1e3a5f"}}>{e.total_score}</div>
+          <select className="input" style={{width:104,padding:"6px 6px",fontSize:12}} value={e.follow_status||"未対応"} onClick={x=>x.stopPropagation()} onChange={x=>patch(e.id,{follow_status:x.target.value})} aria-label="フォロー状況">
+            {C.FOLLOW_STATUSES.map(s=><option key={s}>{s}</option>)}
+          </select>
+        </div>; })}
+    </>:<div>
+      <label className="no-print" style={{display:"flex",gap:6,alignItems:"center",fontSize:12.5,marginBottom:8}}><input type="checkbox" checked={mask} onChange={e=>setMask(e.target.checked)}/>名前を一部伏せる（会場の画面に映す・掲示するとき用）</label>
+      <div className="card"><div className="card-h">🏆 体幹チェック ランキング {eventId!=="all"&&eventsById[eventId]?`（${eventsById[eventId]}）`:""}</div><div className="card-b">
+        {ranking.length===0?<p className="muted">記録がありません</p>:ranking.map((e,i)=><div key={e.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderBottom:"1px solid #f1f5f9",fontSize:i<3?17:14}}>
+          <div style={{width:34,textAlign:"center",fontWeight:900}}>{["🥇","🥈","🥉"][i]||`${i+1}位`}</div>
+          <div style={{flex:1,fontWeight:800}}>{mask?C.maskName(e.participant_name):e.participant_name} 様</div>
+          <span className="chip" style={{background:(C.RANKS.find(r=>r.rank===e.rank)||{}).bg,color:(C.RANKS.find(r=>r.rank===e.rank)||{}).color}}>{e.rank}</span>
+          <div style={{fontWeight:900,color:"#1e3a5f",width:60,textAlign:"right"}}>{e.total_score}点</div>
+        </div>)}
+        <p className="muted" style={{marginTop:6}}>※ 同じ方が複数回測定した場合は、いちばん高い点数で表示しています</p>
+      </div></div>
+      <button className="btn btn-outline no-print" onClick={()=>window.print()}>🖨 ランキングを印刷</button>
+    </div>}
+    </>}
+    {detail&&<Detail entry={detail} all={entries||[]} eventsById={eventsById} onClose={()=>setDetail(null)} onPatch={patch} onDelete={remove}/>}
+  </div>;
+}
+
+function Detail({entry,all,eventsById,onClose,onPatch,onDelete}){
+  const [memo,setMemo]=useState(entry.follow_memo||""); const [comment,setComment]=useState(entry.comment||""); const [sheet,setSheet]=useState(false);
+  useEffect(()=>{ setMemo(entry.follow_memo||""); setComment(entry.comment||""); },[entry.id]);
+  const mine=all.filter(e=>C.personKey(e)===C.personKey(entry)).sort((a,b)=>String(b.measured_on).localeCompare(String(a.measured_on))||b.id-a.id);
+  const prev=mine.find(e=>e.id!==entry.id&&(String(e.measured_on)<String(entry.measured_on)||(e.measured_on===entry.measured_on&&e.id<entry.id)));
+  const ev=C.evaluate(entry.measurements);
+  return <div className="modal-bg" onClick={onClose}><div className="modal" onClick={e=>e.stopPropagation()}>
+    <div className="no-print" style={{display:"flex",alignItems:"center",marginBottom:10}}>
+      <b style={{fontSize:16,flex:1}}>{entry.participant_name} 様{entry.kana?`（${entry.kana}）`:""}</b>
+      <button className="btn btn-outline btn-sm" onClick={onClose}>閉じる ✕</button>
+    </div>
+    {sheet?<>
+      <ResultView entry={entry} previous={prev} eventName={eventsById[entry.event_id]}/>
+      <div className="no-print" style={{display:"flex",gap:8,marginTop:10}}>
+        <button className="btn btn-outline" style={{flex:1}} onClick={()=>setSheet(false)}>← 詳細へ戻る</button>
+        <button className="btn btn-primary" style={{flex:1}} onClick={()=>window.print()}>🖨 印刷</button>
+      </div>
+    </>:<>
+      <div className="muted" style={{marginBottom:8}}>{fmtDate(entry.measured_on)}・{eventsById[entry.event_id]||"イベントなし"}・担当 {STAFF_BY_ID[entry.staff_id]||"未設定"}<br/>
+        {[entry.age&&`${entry.age}歳`,entry.gender,entry.is_patient?"通院中の患者様":"新規の方",entry.phone&&`☎ ${entry.phone}`].filter(Boolean).join("・")}</div>
+      <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:8}}>
+        <div style={{fontSize:30,fontWeight:900,color:"#1e3a5f"}}>{entry.total_score}点</div>
+        <span className="chip" style={{fontSize:14,background:(C.RANKS.find(r=>r.rank===entry.rank)||{}).bg,color:(C.RANKS.find(r=>r.rank===entry.rank)||{}).color}}>{entry.rank}ランク</span>
+        {prev&&<span style={{fontSize:12.5,fontWeight:800,color:C.improvement(entry.total_score,prev)>=0?"#059669":"#b91c1c"}}>前回比 {C.improvement(entry.total_score,prev)>=0?"+":""}{C.improvement(entry.total_score,prev)}点</span>}
+      </div>
+      <table className="m"><thead><tr><th>項目</th><th>記録</th><th>点</th></tr></thead><tbody>
+        {C.CORE_TESTS.map(t=>{ const it=ev.items.find(i=>i.key===t.key); return <tr key={t.key}>
+          <td>{t.name}</td>
+          <td>{it.skipped?"スキップ":t.sides?(it.right!=null?`右${it.right} / 左${it.left}${t.unit}`:"-"):(it.value!=null?`${it.value}${t.unit}`:"-")}{it.asymmetry?` ⚠️${it.asymmetry.weak}が弱い`:""}</td>
+          <td>{it.points??"-"}</td></tr>; })}
+      </tbody></table>
+      {mine.length>1&&<div style={{background:"#f0fdf4",borderRadius:8,padding:8,marginTop:10,fontSize:12.5}}>📈 この方の記録：{mine.map(e=>`${fmtDate(e.measured_on)} ${e.total_score}点`).join(" → ")}</div>}
+      <label className="label" style={{marginTop:12}}>フォロー状況</label>
+      <div className="seg">{C.FOLLOW_STATUSES.map(s=><button key={s} className={(entry.follow_status||"未対応")===s?"sel":""} onClick={()=>onPatch(entry.id,{follow_status:s})}>{s}</button>)}</div>
+      <label className="label" style={{marginTop:10}}>フォローメモ（スタッフだけが見るメモ）</label>
+      <textarea className="input" rows="2" value={memo} onChange={e=>setMemo(e.target.value)} placeholder="例：12/20 LINEで結果送付。骨盤矯正に興味あり"/>
+      <label className="label" style={{marginTop:10}}>担当からのひとこと（結果用紙に表示）</label>
+      <textarea className="input" rows="2" value={comment} onChange={e=>setComment(e.target.value)}/>
+      <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
+        <button className="btn btn-green" style={{flex:2}} onClick={()=>onPatch(entry.id,{follow_memo:memo.trim()||null,comment:comment.trim()||null})}>💾 メモを保存</button>
+        <button className="btn btn-outline" style={{flex:2}} onClick={()=>setSheet(true)}>📄 結果用紙を表示・印刷</button>
+        <button className="btn btn-red" style={{flex:1}} onClick={()=>onDelete(entry)}>削除</button>
+      </div>
+    </>}
+  </div></div>;
+}
+
+// ===================== イベント設定 =====================
+function Events({events,reload,toast}){
+  const [form,setForm]=useState({name:"",event_date:"",place:"",notes:""});
+  const [edit,setEdit]=useState(null);
+  const add=async e=>{ e.preventDefault(); if(!form.name.trim()) return;
+    try{ await api("core_test_events",{method:"POST",body:{name:form.name.trim(),event_date:form.event_date||null,place:form.place.trim()||null,notes:form.notes.trim()||null}});
+      setForm({name:"",event_date:"",place:"",notes:""}); toast("✅ イベントを追加しました"); reload(); }catch(err){ toast("❌ "+err.message); } };
+  const save=async()=>{ try{ await api(`core_test_events?id=eq.${edit.id}`,{method:"PATCH",body:{name:edit.name.trim(),event_date:edit.event_date||null,place:(edit.place||"").trim()||null,notes:(edit.notes||"").trim()||null,is_active:edit.is_active}});
+      setEdit(null); toast("✅ 保存しました"); reload(); }catch(err){ toast("❌ "+err.message); } };
+  return <div>
+    {events.map(ev=>edit&&edit.id===ev.id?<div key={ev.id} className="card"><div className="card-b">
+      <div className="grid2">
+        <div><label className="label">イベント名</label><input className="input" value={edit.name} onChange={e=>setEdit({...edit,name:e.target.value})}/></div>
+        <div><label className="label">開催日</label><input className="input" type="date" value={edit.event_date||""} onChange={e=>setEdit({...edit,event_date:e.target.value})}/></div>
+        <div><label className="label">場所</label><input className="input" value={edit.place||""} onChange={e=>setEdit({...edit,place:e.target.value})}/></div>
+        <div><label className="label">メモ</label><input className="input" value={edit.notes||""} onChange={e=>setEdit({...edit,notes:e.target.value})}/></div>
+      </div>
+      <label style={{display:"flex",gap:6,alignItems:"center",fontSize:12.5,marginTop:10}}><input type="checkbox" checked={edit.is_active} onChange={e=>setEdit({...edit,is_active:e.target.checked})}/>測定画面で選べるようにする（終わったイベントはチェックを外す）</label>
+      <div style={{display:"flex",gap:8,marginTop:10}}><button className="btn btn-outline" style={{flex:1}} onClick={()=>setEdit(null)}>やめる</button><button className="btn btn-green" style={{flex:2}} onClick={save} disabled={!edit.name.trim()}>保存</button></div>
+    </div></div>:<div key={ev.id} className="card"><div className="card-b" style={{display:"flex",alignItems:"center",gap:10}}>
+      <div style={{flex:1}}>
+        <div style={{fontWeight:800}}>{ev.name} {!ev.is_active&&<span className="chip" style={{background:"#f1f5f9",color:"#64748b"}}>終了</span>}</div>
+        <div className="muted">{fmtDate(ev.event_date)}{ev.place?`・${ev.place}`:""}{ev.notes?`・${ev.notes}`:""}</div>
+      </div>
+      <button className="btn btn-outline btn-sm" onClick={()=>setEdit({...ev})}>編集</button>
+    </div></div>)}
+    <form className="card" onSubmit={add}><div className="card-h">＋ イベントを追加</div><div className="card-b">
+      <div className="grid2">
+        <div><label className="label">イベント名（必須）</label><input className="input" value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="例：1月 体幹チェック再測定会"/></div>
+        <div><label className="label">開催日</label><input className="input" type="date" value={form.event_date} onChange={e=>setForm({...form,event_date:e.target.value})}/></div>
+        <div><label className="label">場所</label><input className="input" value={form.place} onChange={e=>setForm({...form,place:e.target.value})}/></div>
+        <div><label className="label">メモ</label><input className="input" value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})}/></div>
+      </div>
+      <button className="btn btn-primary btn-block" style={{marginTop:10}} disabled={!form.name.trim()}>追加する</button>
+    </div></form>
+  </div>;
+}
+
+// ===================== 全体 =====================
+function App(){
+  const [auth,setAuth]=useState("checking"); // checking | out | denied | ok
+  const [events,setEvents]=useState([]);
+  const [tab,setTab]=useState("measure");
+  const [toastMsg,toast]=useToast();
+  const loadEvents=useCallback(async()=>{ try{ setEvents(await api("core_test_events?order=event_date.desc.nullsfirst,id.desc")||[]); }catch(e){ toast("❌ "+e.message); } },[toast]);
+  const check=useCallback(async()=>{
+    const {data:{session}}=await supabaseClient.auth.getSession();
+    if(!session){ setAuth("out"); return; }
+    try{ const ok=await api("rpc/is_staff",{method:"POST",body:{}}); if(ok!==true){ setAuth("denied"); return; } }catch(e){ setAuth("out"); return; }
+    setAuth("ok"); loadEvents();
+  },[loadEvents]);
+  useEffect(()=>{ check(); },[check]);
+  const logout=async()=>{ await supabaseClient.auth.signOut(); setAuth("out"); };
+  return <>
+    <div className="header no-print"><div style={{maxWidth:760,margin:"0 auto",display:"flex",alignItems:"center",gap:10}}>
+      <div style={{flex:1}}><h1>💪 あんど式 体幹チェック</h1><p>院内・イベント用の測定と結果管理（スタッフ専用）</p></div>
+      {auth==="ok"&&<button className="btn btn-sm" style={{background:"rgba(255,255,255,.2)",color:"white"}} onClick={logout}>ログアウト</button>}
+    </div></div>
+    {auth==="checking"&&<p className="muted" style={{textAlign:"center",padding:40}}>読み込み中...</p>}
+    {(auth==="out"||auth==="denied")&&<Login onDone={check} error={auth==="denied"?"このアカウントはスタッフとして登録されていません":""}/>}
+    {auth==="ok"&&<>
+      <div className="tabs no-print">
+        {[["measure","📝 測定する"],["manage","📊 結果一覧・管理"],["events","📅 イベント設定"]].map(([k,l])=><button key={k} className={"tab"+(tab===k?" on":"")} onClick={()=>setTab(k)}>{l}</button>)}
+      </div>
+      <div className="container"><div className="panel">
+        {tab==="measure"&&<Measure events={events} toast={toast}/>}
+        {tab==="manage"&&<Manage events={events} toast={toast}/>}
+        {tab==="events"&&<Events events={events} reload={loadEvents} toast={toast}/>}
+      </div></div>
+    </>}
+    {toastMsg&&<div className="toast no-print">{toastMsg}</div>}
+  </>;
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
