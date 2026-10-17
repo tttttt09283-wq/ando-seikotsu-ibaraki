@@ -16,10 +16,13 @@
 - [x] note導線：商品ごとの導線スコア・閲覧数と販売の推移・営業AIのプロフィール/固定投稿案
 - [x] デザイン刷新（ダークネイビー×ブルーの光×ゴールド）・メニューを目的別に整理
 - [x] 集客ハブ：10チャネルのカード管理・検索対策（SEO/MEO/AIO）・口コミ対策（AI返信下書き）・AI分析
-- [x] pytest 91件
+- [x] 自動取得：Instagram・Search Console・Googleビジネスプロフィール（読み取りのみ・連携設定画面のガイド付き）
+- [x] チャドに頼む（ふだんの言葉で操作）・おまかせ実行
+- [x] pytest 106件
 
 ## 残課題・次の候補
-- [ ] Instagram・Googleビジネスプロフィール・Search Console の公式API連携（各公式仕様・審査要件を確認してから）
+- [ ] Instagram・Google の実アカウントでの接続確認（Instagram の指標名は接続時に確認）
+- [ ] Googleの口コミの自動取得（ビジネスプロフィールの口コミAPIの仕様・利用条件を確認してから）
 - [ ] **Threads の初回接続**：Meta for Developers でアプリ作成・トークン発行（社長の操作。画面に沿って案内）
 - [ ] 接続時に、APIの接続先（graph.threads.net / .com）と権限名を公式ドキュメントで再確認
 - [ ] scheduler.py の自動起動（Mac の launchd 登録）

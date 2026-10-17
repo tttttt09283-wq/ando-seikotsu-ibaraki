@@ -13,3 +13,6 @@ __pycache__/
 venv/
 .pytest_cache/
 .streamlit/secrets.toml
+
+# 連携サービスのログイン情報（絶対にコミットしない）
+.secrets/

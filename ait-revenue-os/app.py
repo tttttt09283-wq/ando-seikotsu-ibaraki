@@ -7,7 +7,8 @@ import streamlit as st
 from revenue_os.config import get_settings
 from revenue_os.db import init_db, session_scope
 from revenue_os.seed import delete_sample, has_sample, seed_sample
-from revenue_os.ui import chad, contents, dashboard, departments, funnel, hub, importer, nav, products, research, reviews, search, threads, today
+from revenue_os.ui import chad, connect, contents, dashboard, departments, funnel, hub, importer, nav, products, research, reviews, search, threads, today
+from revenue_os.ui.command import render_command_bar
 from revenue_os.ui.theme import apply_theme
 
 st.set_page_config(page_title="A.I.T Revenue OS", page_icon="📈", layout="wide")
@@ -75,6 +76,9 @@ PAGE_GROUPS = {
         ("research", research.render, "市場調査", "🧪"),
         ("chad", chad.render, "チャド日次報告", "🧭"),
     ],
+    "設定": [
+        ("connect", connect.render, "連携設定", "🔌"),
+    ],
 }
 nav.PAGES.clear()
 sections: dict[str, list] = {}
@@ -83,5 +87,7 @@ for group, defs in PAGE_GROUPS.items():
         page = st.Page(fn, title=title, icon=icon, url_path=key, default=key == "today")
         nav.PAGES[key] = page
         sections.setdefault(group, []).append(page)
-st.navigation(sections, expanded=True).run()
+current = st.navigation(sections, expanded=True)
+render_command_bar()
+current.run()
 

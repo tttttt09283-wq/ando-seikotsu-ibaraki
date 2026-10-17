@@ -11,6 +11,7 @@ from revenue_os.seed import seed_sample
 ROOT = Path(__file__).resolve().parent.parent
 PAGES = {
     "today": "today.render",
+    "connect": "connect.render",
     "hub": "hub.render",
     "search": "search.render",
     "reviews": "reviews.render",

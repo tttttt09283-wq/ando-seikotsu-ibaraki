@@ -35,6 +35,17 @@ def render() -> None:
     c[2].metric("社長の作業時間（目安）", f"約{ceo_minutes(plan.items)}分")
     c[3].metric("Threads 今日の投稿", f"{plan.posts_today} / {plan.post_target}本", help="投稿済みの本数／1日の目標（Threads運用で変更可）")
 
+    with st.container(border=True):
+        oc = st.columns([4, 1])
+        oc[0].markdown("**🪄 おまかせ実行**：数字の取得・口コミ返信案・足りないThreads下書き・集客分析・日次報告を、ボタン1つでまとめて実行（投稿・返信の送信はしません）。")
+        if oc[1].button("🪄 おまかせ実行", type="primary", key="omakase_today", use_container_width=True):
+            from ..commands import run_command
+
+            with st.spinner("チャドが作業中…"):
+                with session_scope() as s:
+                    st.session_state["cmd_result"] = run_command(s, "おまかせでまとめてやって")
+            st.rerun()
+
     if not plan.items:
         st.success("🎉 今日やるべきことはすべて終わっています。")
 

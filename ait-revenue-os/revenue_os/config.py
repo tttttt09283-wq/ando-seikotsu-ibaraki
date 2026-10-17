@@ -41,6 +41,10 @@ class Settings:
     threads_daily_limit: int = 5
     threads_min_interval_min: int = 60
     threads_publish_wait_sec: int = 30
+    # Instagram（読み取りのみ）
+    instagram_access_token: str | None = None
+    instagram_token_issued_at: str | None = None
+    instagram_api_base: str = "https://graph.instagram.com"
 
     @property
     def ai_enabled(self) -> bool:
@@ -66,6 +70,9 @@ def get_settings() -> Settings:
         threads_daily_limit=max(0, min(_int("AIT_THREADS_DAILY_LIMIT", 5), 50)),
         threads_min_interval_min=max(10, _int("AIT_THREADS_MIN_INTERVAL_MIN", 60)),
         threads_publish_wait_sec=max(0, _int("AIT_THREADS_PUBLISH_WAIT_SEC", 30)),
+        instagram_access_token=os.getenv("INSTAGRAM_ACCESS_TOKEN") or None,
+        instagram_token_issued_at=os.getenv("INSTAGRAM_TOKEN_ISSUED_AT") or None,
+        instagram_api_base=(os.getenv("INSTAGRAM_API_BASE") or "https://graph.instagram.com").rstrip("/"),
     )
 
 

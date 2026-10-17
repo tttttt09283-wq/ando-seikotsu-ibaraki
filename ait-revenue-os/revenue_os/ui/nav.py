@@ -7,6 +7,7 @@ import streamlit as st
 PAGES: dict = {}
 PAGE_TITLES = {
     "today": "今日やること",
+    "connect": "連携設定",
     "hub": "集客ハブ",
     "search": "検索対策",
     "reviews": "口コミ対策",

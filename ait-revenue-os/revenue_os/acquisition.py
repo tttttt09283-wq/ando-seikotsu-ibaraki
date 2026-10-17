@@ -198,6 +198,9 @@ class ChannelStatus:
 def channel_statuses(session: Session, day: date | None = None) -> list[ChannelStatus]:
     day = day or date.today()
     s = get_settings()
+    from .connectors.sync import connection_status
+
+    connected = connection_status(session)
     out = []
     for key in enabled_channels(session):
         cdef = CHANNEL_BY_KEY[key]
@@ -210,6 +213,8 @@ def channel_statuses(session: Session, day: date | None = None) -> list[ChannelS
             mode = "API連携" if s.threads_connected else "自動集計"
         elif key == "aio":
             mode = "確認記録"
+        elif connected.get(key):
+            mode = "API連携"
         elif cdef.auto:
             mode = "自動集計"
         else:

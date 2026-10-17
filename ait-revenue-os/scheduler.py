@@ -4,7 +4,7 @@
     python scheduler.py
 
 - 1分ごとに、期限が来た予約投稿を確認して投稿する（1回に1件・自社上限と間隔を守る）
-- 6時間ごとに、Threads の投稿と反応数を同期する
+- 6時間ごとに、Threads・Instagram・Google（Search Console・ビジネスプロフィール）の数字を取得する
 - 7日ごとに、Threads の長期トークンを更新して .env に保存する
 止めるときは Ctrl + C。
 """
@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 
 from revenue_os.config import get_settings, save_env_value
 from revenue_os.db import init_db, session_scope
-from revenue_os.threads_analytics import sync_threads
+from revenue_os.connectors.sync import sync_all
 from revenue_os.threads_api import ThreadsAPIError
 from revenue_os.threads_scheduler import make_api, run_due
 
@@ -67,10 +67,10 @@ def main() -> None:
                             last_skip_msg = r.message
                     else:
                         log({"published": "✅", "retry": "🔁", "failed": "❌"}.get(r.outcome, "・") + f" 予約#{r.schedule_id}：{r.message}")
-            if api and datetime.now() - last_sync >= SYNC_EVERY:
+            if datetime.now() - last_sync >= SYNC_EVERY:
                 with session_scope() as ss:
-                    res = sync_threads(ss, api)
-                log(f"🔄 同期：新しい投稿 {res.new_posts}件・反応数 {res.updated_insights}件" + (f"・⚠️ {res.errors[0]}" if res.errors else ""))
+                    for rep in sync_all(ss):
+                        log(f"🔄 {rep.service}：{'✅' if rep.ok else '⚠️'} {rep.message}")
                 last_sync = datetime.now()
         except Exception as e:  # noqa: BLE001 - 実行係は止めずに次の周期で再試行する
             log(f"⚠️ エラー：{e}")

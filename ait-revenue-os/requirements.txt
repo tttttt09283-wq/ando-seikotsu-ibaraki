@@ -5,3 +5,4 @@ pandas>=2.2,<4
 anthropic>=1.15,<2
 python-dotenv>=1.0,<2
 pytest>=8,<10
+google-auth-oauthlib>=1.2,<2

@@ -142,6 +142,16 @@ def build_today(session: Session, now: datetime | None = None) -> TodayPlan:
     if old_kw:
         add(TodayItem(3, "市場調査AI", f"検索順位・AI検索の言及を確認する（{len(old_kw)}件）", "14日以上確認していないキーワード", "search", len(old_kw)))
 
+    from .acquisition import enabled_channels
+    from .connectors.sync import connection_status
+
+    con = connection_status(session)
+    _enabled = enabled_channels(session)
+    names = {"instagram": "Instagram", "seo": "Search Console", "gbp": "Googleマップ"}
+    missing = [names[k] for k in names if not con[k] and k in _enabled]
+    if missing:
+        add(TodayItem(3, "社長", f"{'・'.join(missing)} をつなぐと、数字の入力が不要になります", "連携設定の案内どおりに進めるだけ（1回だけ）", "connect", 1))
+
     # ---- 経理・調査・商品 ----
     last_import = session.scalar(select(func.max(ImportBatch.created_at)))
     if last_import is None or last_import < now - timedelta(days=7):
