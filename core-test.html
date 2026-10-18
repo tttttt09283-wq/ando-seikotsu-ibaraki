@@ -88,9 +88,11 @@ function clinicFromUrl(){
   const m=location.pathname.match(/\/taikan\/([a-z]+)/), q=new URLSearchParams(location.search).get("clinic");
   const c=(m&&m[1])||q; return CLINICS[c]?c:null;
 }
-const CLINIC=clinicFromUrl();
-const CF=`clinic=eq.${CLINIC}`;
-function clinicUrl(code){ return location.protocol==="file:"?`?clinic=${code}`:`/taikan/${code}`; }
+// ログイン後に選んだ院（URLに院が入っていればそれを初期値に）。切り替えると画面ごと作り直す
+let CLINIC=clinicFromUrl();
+let CF=`clinic=eq.${CLINIC}`;
+function setCurrentClinic(c){ CLINIC=c; CF=`clinic=eq.${c}`; }
+function clinicUrl(code){ const base=location.protocol==="file:"?location.pathname:"/taikan"; return code?(location.protocol==="file:"?`${base}?clinic=${code}`:`${base}/${code}`):base; }
 // 以前の記録（香里園）は担当をID（staff_id）で保存していた
 const LEGACY_STAFF={1:"奥田",2:"佐藤",3:"細永",4:"田中",5:"岩永"};
 function staffNameOf(e){ return e.staff_name||LEGACY_STAFF[e.staff_id]||""; }
@@ -129,7 +131,7 @@ function Login({onDone,error}){
   };
   return <div className="container" style={{paddingTop:20}}>
     <form className="card" onSubmit={submit}><div className="card-h">🔒 スタッフログイン</div><div className="card-b">
-      <p className="muted" style={{marginBottom:12}}>参加者の名前・連絡先を扱うため、管理画面と同じIDとパスワードでログインしてください。</p>
+      <p className="muted" style={{marginBottom:12}}>参加者の名前・連絡先を扱うため、香里園・茨木・大和田 共通のIDとパスワードでログインしてください。ログイン後に院を選びます。</p>
       <label className="label">ID</label><input className="input" type="text" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="IDを入力" value={loginId} onChange={e=>setLoginId(e.target.value)} required style={{marginBottom:10}}/>
       <label className="label">パスワード</label><input className="input" type="password" autoComplete="current-password" value={pw} onChange={e=>setPw(e.target.value)} required style={{marginBottom:12}}/>
       {err&&<p style={{color:"#b91c1c",fontSize:12.5,fontWeight:700,marginBottom:10}}>{err}</p>}
@@ -256,9 +258,9 @@ function ResultView({entry,previous,eventName}){
 
 // ===================== 測定（テスト → 結果 → 患者情報を入力して記録） =====================
 const EMPTY_PERSON={participant_name:"",kana:"",gender:"",age:"",phone:"",is_patient:false,consent:false};
-const DRAFT_KEY="ando-core-test:draft:"+CLINIC; // 途中で画面を再読み込みしても続きから
-function loadDraft(){ try{ return JSON.parse(sessionStorage.getItem(DRAFT_KEY)||"null"); }catch(e){ return null; } }
-function saveDraft(d){ try{ d?sessionStorage.setItem(DRAFT_KEY,JSON.stringify(d)):sessionStorage.removeItem(DRAFT_KEY); }catch(e){} }
+function draftKey(){ return "ando-core-test:draft:"+CLINIC; } // 途中で画面を再読み込みしても続きから（院ごと）
+function loadDraft(){ try{ return JSON.parse(sessionStorage.getItem(draftKey())||"null"); }catch(e){ return null; } }
+function saveDraft(d){ try{ d?sessionStorage.setItem(draftKey(),JSON.stringify(d)):sessionStorage.removeItem(draftKey()); }catch(e){} }
 const N=C.CORE_TESTS.length, STEP_RESULT=N+1, STEP_PERSON=N+2, STEP_DONE=N+3;
 
 function Progress({step}){
@@ -620,13 +622,13 @@ function StaffSettings({staff,reload,toast}){
   </div></form>;
 }
 
-// ===================== 院の選択（URLに院が入っていないとき） =====================
-function ClinicChooser(){
+// ===================== 院の選択（ログイン後） =====================
+function ClinicChooser({onChoose}){
   let last=null; try{ last=localStorage.getItem("ando-core-test:clinic"); }catch(e){}
   return <div className="container" style={{paddingTop:20}}>
     <p style={{fontWeight:800,textAlign:"center",marginBottom:12}}>院を選んでください</p>
-    {Object.entries(CLINICS).map(([code,c])=><a key={code} href={clinicUrl(code)} className="btn btn-block" style={{background:"white",border:last===code?"2px solid #2d6a9f":"1.5px solid #e2e8f0",color:"#1e3a5f",marginBottom:10,padding:18,fontSize:17,textDecoration:"none"}}>
-      🏥 あんど整骨院 {c.name}{last===code&&<span className="chip" style={{background:"#eff6ff",color:"#2d6a9f",marginLeft:8}}>前回</span>}</a>)}
+    {Object.entries(CLINICS).map(([code,c])=><button type="button" key={code} onClick={()=>onChoose(code)} className="btn btn-block" style={{background:"white",border:last===code?"2px solid #2d6a9f":"1.5px solid #e2e8f0",color:"#1e3a5f",marginBottom:10,padding:18,fontSize:17}}>
+      🏥 あんど整骨院 {c.name}{last===code&&<span className="chip" style={{background:"#eff6ff",color:"#2d6a9f",marginLeft:8}}>前回</span>}</button>)}
   </div>;
 }
 
@@ -636,6 +638,7 @@ function App(){
   const [events,setEvents]=useState([]);
   const [staff,setStaff]=useState([]);
   const [tab,setTab]=useState("measure");
+  const [clinic,setClinic]=useState(CLINIC);
   const [toastMsg,toast]=useToast();
   const loadEvents=useCallback(async()=>{ try{ setEvents(await api(`core_test_events?${CF}&order=event_date.desc.nullsfirst,id.desc`)||[]); }catch(e){ toast("❌ "+e.message); } },[toast]);
   const loadStaff=useCallback(async()=>{ try{ const r=await api(`core_test_settings?${CF}`); setStaff(r&&r[0]&&Array.isArray(r[0].staff)?r[0].staff:[]); }catch(e){ setStaff([]); } },[]);
@@ -643,20 +646,29 @@ function App(){
     const {data:{session}}=await supabaseClient.auth.getSession();
     if(!session){ setAuth("out"); return; }
     try{ const ok=await api("rpc/is_staff",{method:"POST",body:{}}); if(ok!==true){ setAuth("denied"); return; } }catch(e){ setAuth("out"); return; }
-    setAuth("ok"); loadEvents(); loadStaff();
-  },[loadEvents,loadStaff]);
-  useEffect(()=>{ if(!CLINIC) return; try{ localStorage.setItem("ando-core-test:clinic",CLINIC); }catch(e){} check(); },[check]);
+    setAuth("ok");
+  },[]);
+  useEffect(()=>{ check(); },[check]);
+  // 院が決まったら（選び直したら）その院のイベント・スタッフを読み込む
+  useEffect(()=>{ if(auth!=="ok"||!clinic) return; setEvents([]); setStaff([]); loadEvents(); loadStaff(); },[auth,clinic]);
+  const choose=code=>{
+    setCurrentClinic(code); try{ localStorage.setItem("ando-core-test:clinic",code); }catch(e){}
+    try{ history.replaceState(null,"",clinicUrl(code)); }catch(e){}
+    setTab("measure"); setClinic(code);
+  };
+  const switchClinic=()=>{ setCurrentClinic(null); try{ history.replaceState(null,"",clinicUrl("")); }catch(e){} setClinic(null); };
   const logout=async()=>{ await supabaseClient.auth.signOut(); setAuth("out"); };
   return <>
     <div className="header no-print"><div style={{maxWidth:760,margin:"0 auto",display:"flex",alignItems:"center",gap:10}}>
-      <div style={{flex:1}}><h1>💪 あんど式 体幹チェック{CLINIC&&<span style={{fontSize:13,marginLeft:8,background:"rgba(255,255,255,.2)",borderRadius:8,padding:"2px 8px"}}>{CLINICS[CLINIC].name}</span>}</h1>
-        <p>院内・イベント用の測定と結果管理（スタッフ専用）{CLINIC&&<a href={location.protocol==="file:"?location.pathname:"/taikan"} style={{color:"white",marginLeft:8}}>院を切り替え</a>}</p></div>
+      <div style={{flex:1}}><h1>💪 あんど式 体幹チェック{auth==="ok"&&clinic&&<span style={{fontSize:13,marginLeft:8,background:"rgba(255,255,255,.2)",borderRadius:8,padding:"2px 8px"}}>{CLINICS[CLINIC].name}</span>}</h1>
+        <p>院内・イベント用の測定と結果管理（スタッフ専用）</p></div>
+      {auth==="ok"&&clinic&&<button className="btn btn-sm" style={{background:"rgba(255,255,255,.2)",color:"white"}} onClick={switchClinic}>院を切り替え</button>}
       {auth==="ok"&&<button className="btn btn-sm" style={{background:"rgba(255,255,255,.2)",color:"white"}} onClick={logout}>ログアウト</button>}
     </div></div>
-    {!CLINIC&&<ClinicChooser/>}
-    {CLINIC&&auth==="checking"&&<p className="muted" style={{textAlign:"center",padding:40}}>読み込み中...</p>}
-    {CLINIC&&(auth==="out"||auth==="denied")&&<Login onDone={check} error={auth==="denied"?"このアカウントはスタッフとして登録されていません":""}/>}
-    {CLINIC&&auth==="ok"&&<>
+    {auth==="checking"&&<p className="muted" style={{textAlign:"center",padding:40}}>読み込み中...</p>}
+    {(auth==="out"||auth==="denied")&&<Login onDone={check} error={auth==="denied"?"このアカウントはスタッフとして登録されていません":""}/>}
+    {auth==="ok"&&!clinic&&<ClinicChooser onChoose={choose}/>}
+    {auth==="ok"&&clinic&&<React.Fragment key={clinic}>
       <div className="tabs no-print">
         {[["measure","📝 測定する"],["manage","📊 記録一覧・管理"],["events","📅 イベント・設定"]].map(([k,l])=><button key={k} className={"tab"+(tab===k?" on":"")} onClick={()=>setTab(k)}>{l}</button>)}
       </div>
@@ -665,7 +677,7 @@ function App(){
         {tab==="manage"&&<Manage events={events} toast={toast}/>}
         {tab==="events"&&<Events events={events} reload={loadEvents} staff={staff} reloadStaff={loadStaff} toast={toast}/>}
       </div></div>
-    </>}
+    </React.Fragment>}
     {toastMsg&&<div className="toast no-print">{toastMsg}</div>}
   </>;
 }
