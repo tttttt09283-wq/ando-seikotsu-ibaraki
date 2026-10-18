@@ -77,15 +77,30 @@ const supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY
 // 管理画面と同じく、IDに「@」が無ければ @ando.jp を付けてログインする（例：okuda → okuda@ando.jp）
 const LOGIN_ID_DOMAIN="ando.jp";
 function loginIdToEmail(id){ const v=String(id||"").trim(); return v.includes("@")?v:v+"@"+LOGIN_ID_DOMAIN; }
-const STAFF_LIST=[{id:1,name:"奥田"},{id:2,name:"佐藤"},{id:3,name:"細永"},{id:4,name:"田中"},{id:5,name:"岩永"}];
-const STAFF_BY_ID=Object.fromEntries(STAFF_LIST.map(s=>[s.id,s.name]));
+// 院ごとに URL を分ける（/taikan/kourien など）。記録・イベント・スタッフは院ごとに別管理
+// bookingFilter：「通院中の患者様」を検索する予約データの範囲（予約データが無い院は null＝手入力のみ）
+const CLINICS={
+  kourien:{name:"香里園駅前院",bookingFilter:"or=(store_id.eq.1,store_id.is.null)"},
+  ibaraki:{name:"茨木院",bookingFilter:"store_id=eq.2"},
+  owada:{name:"大和田院",bookingFilter:null},
+};
+function clinicFromUrl(){
+  const m=location.pathname.match(/\/taikan\/([a-z]+)/), q=new URLSearchParams(location.search).get("clinic");
+  const c=(m&&m[1])||q; return CLINICS[c]?c:null;
+}
+const CLINIC=clinicFromUrl();
+const CF=`clinic=eq.${CLINIC}`;
+function clinicUrl(code){ return location.protocol==="file:"?`?clinic=${code}`:`/taikan/${code}`; }
+// 以前の記録（香里園）は担当をID（staff_id）で保存していた
+const LEGACY_STAFF={1:"奥田",2:"佐藤",3:"細永",4:"田中",5:"岩永"};
+function staffNameOf(e){ return e.staff_name||LEGACY_STAFF[e.staff_id]||""; }
 
 // 参加者の個人情報を扱うため、読み書きはすべてログイン中のスタッフのみ（anonキーでは使わない）
-async function api(path,{method="GET",body}={}){
+async function api(path,{method="GET",body,prefer}={}){
   const {data:{session}}=await supabaseClient.auth.getSession();
   if(!session) throw new Error("ログインが切れました。もう一度ログインしてください");
   const res=await fetch(`${SUPABASE_URL}/rest/v1/${path}`,{method,
-    headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${session.access_token}`,"Content-Type":"application/json",Prefer:"return=representation"},
+    headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${session.access_token}`,"Content-Type":"application/json",Prefer:prefer||"return=representation"},
     body:body?JSON.stringify(body):undefined});
   const text=await res.text(); const data=text?JSON.parse(text):null;
   if(!res.ok) throw new Error((data&&(data.message||data.hint))||`通信に失敗しました（HTTP ${res.status}）`);
@@ -241,7 +256,7 @@ function ResultView({entry,previous,eventName}){
 
 // ===================== 測定（テスト → 結果 → 患者情報を入力して記録） =====================
 const EMPTY_PERSON={participant_name:"",kana:"",gender:"",age:"",phone:"",is_patient:false,consent:false};
-const DRAFT_KEY="ando-core-test:draft"; // 途中で画面を再読み込みしても続きから
+const DRAFT_KEY="ando-core-test:draft:"+CLINIC; // 途中で画面を再読み込みしても続きから
 function loadDraft(){ try{ return JSON.parse(sessionStorage.getItem(DRAFT_KEY)||"null"); }catch(e){ return null; } }
 function saveDraft(d){ try{ d?sessionStorage.setItem(DRAFT_KEY,JSON.stringify(d)):sessionStorage.removeItem(DRAFT_KEY); }catch(e){} }
 const N=C.CORE_TESTS.length, STEP_RESULT=N+1, STEP_PERSON=N+2, STEP_DONE=N+3;
@@ -262,7 +277,7 @@ function PatientSearch({onPick}){
   const [q,setQ]=useState(""); const [rows,setRows]=useState([]); const timer=useRef(null);
   const change=v=>{ setQ(v); clearTimeout(timer.current); if(!v.trim()){ setRows([]); return; }
     timer.current=setTimeout(async()=>{ try{
-      const data=await api(`bookings?patient_name=ilike.*${enc(v.trim())}*&select=patient_name,phone&order=date.desc&limit=50`)||[];
+      const data=await api(`bookings?patient_name=ilike.*${enc(v.trim())}*&${CLINICS[CLINIC].bookingFilter}&select=patient_name,phone&order=date.desc&limit=50`)||[];
       const map={}; data.forEach(r=>{ if(r.patient_name&&!map[r.patient_name]) map[r.patient_name]={name:r.patient_name,phone:r.phone||""}; });
       setRows(Object.values(map).slice(0,8)); }catch(e){ setRows([]); } },300); };
   return <div>
@@ -274,12 +289,12 @@ function PatientSearch({onPick}){
   </div>;
 }
 
-function Measure({events,toast}){
+function Measure({events,staff,toast}){
   const active=events.filter(e=>e.is_active);
   const draft=useMemo(loadDraft,[]);
   const [step,setStep]=useState(draft&&draft.step<STEP_DONE?draft.step:0);
   const [eventId,setEventId]=useState(draft?draft.eventId:(active[0]?active[0].id:""));
-  const [staffId,setStaffId]=useState(draft?draft.staffId:null);
+  const [staffName,setStaffName]=useState(draft?draft.staffName||"":"");
   const [ms,setMs]=useState(draft?draft.ms:{});
   const [p,setP]=useState(draft?draft.p:EMPTY_PERSON);
   const [comment,setComment]=useState(draft?draft.comment:"");
@@ -287,12 +302,12 @@ function Measure({events,toast}){
   const [saved,setSaved]=useState(null);
   const [history,setHistory]=useState([]);
   useEffect(()=>{ if(!draft&&eventId===""&&active[0]) setEventId(active[0].id); },[events]);
-  useEffect(()=>{ saveDraft(step>0&&step<STEP_DONE?{step,eventId,staffId,ms,p,comment}:null); },[step,eventId,staffId,ms,p,comment]);
+  useEffect(()=>{ saveDraft(step>0&&step<STEP_DONE?{step,eventId,staffName,ms,p,comment}:null); },[step,eventId,staffName,ms,p,comment]);
   const go=s=>{ setStep(s); window.scrollTo(0,0); };
   const ev=C.evaluate(ms);
   const lookup=async name=>{ // 同じ名前の過去の記録（前回との比較用）
     name=(name||"").trim(); if(!name){ setHistory([]); return; }
-    try{ setHistory(await api(`core_test_entries?participant_name=eq.${enc(name)}&order=measured_on.desc,created_at.desc&limit=5`)||[]); }catch(e){ setHistory([]); }
+    try{ setHistory(await api(`core_test_entries?participant_name=eq.${enc(name)}&${CF}&order=measured_on.desc,created_at.desc&limit=5`)||[]); }catch(e){ setHistory([]); }
   };
   const canSave=p.participant_name.trim()&&p.consent&&ev.score!=null&&!saving;
   const save=async()=>{
@@ -301,7 +316,7 @@ function Measure({events,toast}){
     try{
       const rows=await api("core_test_entries",{method:"POST",body:{
         event_id:eventId||null,participant_name:p.participant_name.trim(),kana:p.kana.trim()||null,gender:p.gender||null,
-        age:p.age===""?null:Number(p.age),phone:p.phone.trim()||null,is_patient:p.is_patient,consent:p.consent,staff_id:staffId,
+        age:p.age===""?null:Number(p.age),phone:p.phone.trim()||null,is_patient:p.is_patient,consent:p.consent,staff_name:staffName||null,clinic:CLINIC,
         measured_on:todayStr(),measurements:ms,item_points:ev.itemPoints,total_score:ev.score,rank:ev.rank,weak_items:ev.weak,comment:comment.trim()||null,
       }});
       setSaved(rows[0]); toast("✅ 記録しました"); go(STEP_DONE);
@@ -316,6 +331,7 @@ function Measure({events,toast}){
     <div style={{textAlign:"center",padding:"10px 0 14px"}}>
       <div style={{fontSize:40}}>💪</div>
       <div style={{fontSize:20,fontWeight:900,color:"#1e3a5f"}}>あんど式 体幹チェック</div>
+      <div style={{fontWeight:800,color:"#2d6a9f",marginTop:2}}>{CLINICS[CLINIC].name}</div>
       <p className="muted" style={{marginTop:4}}>6つのテストで体幹の力を100点満点で評価します（約10分）</p>
     </div>
     <div className="card"><div className="card-b">
@@ -327,7 +343,8 @@ function Measure({events,toast}){
       {active.map(e=><option key={e.id} value={e.id}>{e.name}（{fmtDate(e.event_date)}）</option>)}
     </select>
     <label className="label">担当スタッフ</label>
-    <div className="seg">{STAFF_LIST.map(s=><button type="button" key={s.id} className={staffId===s.id?"sel":""} onClick={()=>setStaffId(s.id)}>{s.name}</button>)}</div>
+    {staff.length?<div className="seg">{staff.map(n=><button type="button" key={n} className={staffName===n?"sel":""} onClick={()=>setStaffName(n)}>{n}</button>)}</div>
+      :<p className="muted">スタッフが未登録です。「イベント・設定」タブで登録できます（登録しなくても測定・記録はできます）</p>}
     <button className="btn btn-green btn-block" style={{marginTop:18,padding:16,fontSize:17}} onClick={()=>go(1)}>▶ 体幹チェックを始める</button>
     <p className="muted" style={{marginTop:8,textAlign:"center"}}>お名前などは、テストが終わってから入力します</p>
   </div>;
@@ -362,7 +379,7 @@ function Measure({events,toast}){
     <div className="card"><div className="card-h">👤 患者情報</div><div className="card-b">
       <label className="label">区分</label>
       <div className="seg" style={{marginBottom:12}}>{[[false,"新規の方"],[true,"通院中の患者様"]].map(([v,l])=><button type="button" key={l} className={p.is_patient===v?"sel":""} onClick={()=>setP({...p,is_patient:v})}>{l}</button>)}</div>
-      {p.is_patient&&<div style={{marginBottom:12}}><label className="label">患者様を検索（選ぶとお名前・電話が入ります）</label>
+      {p.is_patient&&CLINICS[CLINIC].bookingFilter&&<div style={{marginBottom:12}}><label className="label">患者様を検索（選ぶとお名前・電話が入ります）</label>
         <PatientSearch onPick={r=>{ setP(x=>({...x,participant_name:r.name,phone:r.phone||x.phone})); lookup(r.name); }}/></div>}
       <div className="grid2">
         <div><label className="label">お名前（必須）</label><input className="input" value={p.participant_name} onChange={e=>setP({...p,participant_name:e.target.value})} onBlur={e=>lookup(e.target.value)} placeholder="例：山田 花子"/></div>
@@ -408,7 +425,7 @@ function Manage({events,toast}){
     setEntries(null);
     try{
       const f=eventId==="all"?"":eventId==="none"?"&event_id=is.null":`&event_id=eq.${eventId}`;
-      setEntries(await api(`core_test_entries?select=*${f}&order=created_at.desc&limit=2000`)||[]);
+      setEntries(await api(`core_test_entries?select=*&${CF}${f}&order=created_at.desc&limit=2000`)||[]);
     }catch(e){ toast("❌ "+e.message); setEntries([]); }
   },[eventId]);
   useEffect(()=>{ load(); },[load]);
@@ -433,9 +450,9 @@ function Manage({events,toast}){
     catch(err){ toast("❌ "+err.message); }
   };
   const csv=()=>{
-    const blob=new Blob([C.toCsv(list,eventsById,STAFF_BY_ID)],{type:"text/csv"});
+    const blob=new Blob([C.toCsv(list,eventsById,LEGACY_STAFF)],{type:"text/csv"});
     const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
-    a.download=`体幹チェック_${eventId==="all"?"全件":(eventsById[eventId]||"イベントなし")}_${todayStr()}.csv`; a.click(); URL.revokeObjectURL(a.href);
+    a.download=`体幹チェック_${CLINICS[CLINIC].name}_${eventId==="all"?"全件":(eventsById[eventId]||"イベントなし")}_${todayStr()}.csv`; a.click(); URL.revokeObjectURL(a.href);
   };
   // ランキングは1人1件（同じ人は最高点）
   const ranking=useMemo(()=>{
@@ -521,7 +538,7 @@ function Detail({entry,all,eventsById,onClose,onPatch,onDelete}){
         <button className="btn btn-primary" style={{flex:1}} onClick={()=>window.print()}>🖨 印刷</button>
       </div>
     </>:<>
-      <div className="muted" style={{marginBottom:8}}>{fmtDate(entry.measured_on)}・{eventsById[entry.event_id]||"イベントなし"}・担当 {STAFF_BY_ID[entry.staff_id]||"未設定"}<br/>
+      <div className="muted" style={{marginBottom:8}}>{fmtDate(entry.measured_on)}・{eventsById[entry.event_id]||"イベントなし"}・担当 {staffNameOf(entry)||"未設定"}<br/>
         {[entry.age&&`${entry.age}歳`,entry.gender,entry.is_patient?"通院中の患者様":"新規の方",entry.phone&&`☎ ${entry.phone}`].filter(Boolean).join("・")}</div>
       <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:8}}>
         <div style={{fontSize:30,fontWeight:900,color:"#1e3a5f"}}>{entry.total_score}点</div>
@@ -551,11 +568,11 @@ function Detail({entry,all,eventsById,onClose,onPatch,onDelete}){
 }
 
 // ===================== イベント設定 =====================
-function Events({events,reload,toast}){
+function Events({events,reload,staff,reloadStaff,toast}){
   const [form,setForm]=useState({name:"",event_date:"",place:"",notes:""});
   const [edit,setEdit]=useState(null);
   const add=async e=>{ e.preventDefault(); if(!form.name.trim()) return;
-    try{ await api("core_test_events",{method:"POST",body:{name:form.name.trim(),event_date:form.event_date||null,place:form.place.trim()||null,notes:form.notes.trim()||null}});
+    try{ await api("core_test_events",{method:"POST",body:{clinic:CLINIC,name:form.name.trim(),event_date:form.event_date||null,place:form.place.trim()||null,notes:form.notes.trim()||null}});
       setForm({name:"",event_date:"",place:"",notes:""}); toast("✅ イベントを追加しました"); reload(); }catch(err){ toast("❌ "+err.message); } };
   const save=async()=>{ try{ await api(`core_test_events?id=eq.${edit.id}`,{method:"PATCH",body:{name:edit.name.trim(),event_date:edit.event_date||null,place:(edit.place||"").trim()||null,notes:(edit.notes||"").trim()||null,is_active:edit.is_active}});
       setEdit(null); toast("✅ 保存しました"); reload(); }catch(err){ toast("❌ "+err.message); } };
@@ -585,6 +602,31 @@ function Events({events,reload,toast}){
       </div>
       <button className="btn btn-primary btn-block" style={{marginTop:10}} disabled={!form.name.trim()}>追加する</button>
     </div></form>
+    <StaffSettings staff={staff} reload={reloadStaff} toast={toast}/>
+  </div>;
+}
+// 院ごとの担当スタッフ（測定画面のボタンに出る名前）
+function StaffSettings({staff,reload,toast}){
+  const [name,setName]=useState("");
+  const put=async list=>{ try{ await api(`core_test_settings?on_conflict=clinic`,{method:"POST",prefer:"resolution=merge-duplicates,return=representation",body:{clinic:CLINIC,staff:list,updated_at:new Date().toISOString()}}); reload(); toast("✅ スタッフを保存しました"); }catch(e){ toast("❌ "+e.message); } };
+  const add=e=>{ e.preventDefault(); const n=name.trim(); if(!n||staff.includes(n)) return; setName(""); put([...staff,n]); };
+  return <form className="card" onSubmit={add}><div className="card-h">👥 {CLINICS[CLINIC].name}の担当スタッフ</div><div className="card-b">
+    <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10}}>
+      {staff.length?staff.map(n=><span key={n} className="chip" style={{background:"#eef2ff",color:"#1e3a5f",fontSize:13,padding:"5px 10px"}}>{n}
+        <button type="button" aria-label={`${n}を外す`} onClick={()=>{ if(confirm(`${n} さんを担当スタッフから外しますか？（過去の記録は残ります）`)) put(staff.filter(x=>x!==n)); }} style={{border:"none",background:"none",marginLeft:6,cursor:"pointer",color:"#64748b",fontWeight:900}}>✕</button></span>)
+        :<span className="muted">まだ登録されていません</span>}
+    </div>
+    <div style={{display:"flex",gap:8}}><input className="input" value={name} onChange={e=>setName(e.target.value)} placeholder="例：山本"/><button className="btn btn-primary" disabled={!name.trim()}>追加</button></div>
+  </div></form>;
+}
+
+// ===================== 院の選択（URLに院が入っていないとき） =====================
+function ClinicChooser(){
+  let last=null; try{ last=localStorage.getItem("ando-core-test:clinic"); }catch(e){}
+  return <div className="container" style={{paddingTop:20}}>
+    <p style={{fontWeight:800,textAlign:"center",marginBottom:12}}>院を選んでください</p>
+    {Object.entries(CLINICS).map(([code,c])=><a key={code} href={clinicUrl(code)} className="btn btn-block" style={{background:"white",border:last===code?"2px solid #2d6a9f":"1.5px solid #e2e8f0",color:"#1e3a5f",marginBottom:10,padding:18,fontSize:17,textDecoration:"none"}}>
+      🏥 あんど整骨院 {c.name}{last===code&&<span className="chip" style={{background:"#eff6ff",color:"#2d6a9f",marginLeft:8}}>前回</span>}</a>)}
   </div>;
 }
 
@@ -592,32 +634,36 @@ function Events({events,reload,toast}){
 function App(){
   const [auth,setAuth]=useState("checking"); // checking | out | denied | ok
   const [events,setEvents]=useState([]);
+  const [staff,setStaff]=useState([]);
   const [tab,setTab]=useState("measure");
   const [toastMsg,toast]=useToast();
-  const loadEvents=useCallback(async()=>{ try{ setEvents(await api("core_test_events?order=event_date.desc.nullsfirst,id.desc")||[]); }catch(e){ toast("❌ "+e.message); } },[toast]);
+  const loadEvents=useCallback(async()=>{ try{ setEvents(await api(`core_test_events?${CF}&order=event_date.desc.nullsfirst,id.desc`)||[]); }catch(e){ toast("❌ "+e.message); } },[toast]);
+  const loadStaff=useCallback(async()=>{ try{ const r=await api(`core_test_settings?${CF}`); setStaff(r&&r[0]&&Array.isArray(r[0].staff)?r[0].staff:[]); }catch(e){ setStaff([]); } },[]);
   const check=useCallback(async()=>{
     const {data:{session}}=await supabaseClient.auth.getSession();
     if(!session){ setAuth("out"); return; }
     try{ const ok=await api("rpc/is_staff",{method:"POST",body:{}}); if(ok!==true){ setAuth("denied"); return; } }catch(e){ setAuth("out"); return; }
-    setAuth("ok"); loadEvents();
-  },[loadEvents]);
-  useEffect(()=>{ check(); },[check]);
+    setAuth("ok"); loadEvents(); loadStaff();
+  },[loadEvents,loadStaff]);
+  useEffect(()=>{ if(!CLINIC) return; try{ localStorage.setItem("ando-core-test:clinic",CLINIC); }catch(e){} check(); },[check]);
   const logout=async()=>{ await supabaseClient.auth.signOut(); setAuth("out"); };
   return <>
     <div className="header no-print"><div style={{maxWidth:760,margin:"0 auto",display:"flex",alignItems:"center",gap:10}}>
-      <div style={{flex:1}}><h1>💪 あんど式 体幹チェック</h1><p>院内・イベント用の測定と結果管理（スタッフ専用）</p></div>
+      <div style={{flex:1}}><h1>💪 あんど式 体幹チェック{CLINIC&&<span style={{fontSize:13,marginLeft:8,background:"rgba(255,255,255,.2)",borderRadius:8,padding:"2px 8px"}}>{CLINICS[CLINIC].name}</span>}</h1>
+        <p>院内・イベント用の測定と結果管理（スタッフ専用）{CLINIC&&<a href={location.protocol==="file:"?location.pathname:"/taikan"} style={{color:"white",marginLeft:8}}>院を切り替え</a>}</p></div>
       {auth==="ok"&&<button className="btn btn-sm" style={{background:"rgba(255,255,255,.2)",color:"white"}} onClick={logout}>ログアウト</button>}
     </div></div>
-    {auth==="checking"&&<p className="muted" style={{textAlign:"center",padding:40}}>読み込み中...</p>}
-    {(auth==="out"||auth==="denied")&&<Login onDone={check} error={auth==="denied"?"このアカウントはスタッフとして登録されていません":""}/>}
-    {auth==="ok"&&<>
+    {!CLINIC&&<ClinicChooser/>}
+    {CLINIC&&auth==="checking"&&<p className="muted" style={{textAlign:"center",padding:40}}>読み込み中...</p>}
+    {CLINIC&&(auth==="out"||auth==="denied")&&<Login onDone={check} error={auth==="denied"?"このアカウントはスタッフとして登録されていません":""}/>}
+    {CLINIC&&auth==="ok"&&<>
       <div className="tabs no-print">
-        {[["measure","📝 測定する"],["manage","📊 記録一覧・管理"],["events","📅 イベント設定"]].map(([k,l])=><button key={k} className={"tab"+(tab===k?" on":"")} onClick={()=>setTab(k)}>{l}</button>)}
+        {[["measure","📝 測定する"],["manage","📊 記録一覧・管理"],["events","📅 イベント・設定"]].map(([k,l])=><button key={k} className={"tab"+(tab===k?" on":"")} onClick={()=>setTab(k)}>{l}</button>)}
       </div>
       <div className="container"><div className="panel">
-        {tab==="measure"&&<Measure events={events} toast={toast}/>}
+        {tab==="measure"&&<Measure events={events} staff={staff} toast={toast}/>}
         {tab==="manage"&&<Manage events={events} toast={toast}/>}
-        {tab==="events"&&<Events events={events} reload={loadEvents} toast={toast}/>}
+        {tab==="events"&&<Events events={events} reload={loadEvents} staff={staff} reloadStaff={loadStaff} toast={toast}/>}
       </div></div>
     </>}
     {toastMsg&&<div className="toast no-print">{toastMsg}</div>}

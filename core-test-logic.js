@@ -114,7 +114,7 @@
     const rows=(entries||[]).map(e=>{
       const m=e.measurements||{};
       return [e.measured_on,(eventsById&&eventsById[e.event_id])||"",e.participant_name,e.kana,e.gender,e.age,e.phone,
-        e.is_patient?"患者様":"新規",(staffById&&staffById[e.staff_id])||"",
+        e.is_patient?"患者様":"新規",e.staff_name||(staffById&&staffById[e.staff_id])||"",
         ...CORE_TESTS.flatMap(t=>{ const x=m[t.key]||{}; if(x.skip) return t.sides?["スキップ","スキップ"]:["スキップ"]; return t.sides?[x.right,x.left]:[x.value]; }),
         e.total_score,e.rank,(e.weak_items||[]).map(k=>(testByKey(k)||{}).name||k).join("・"),e.comment,e.follow_status,e.follow_memo];
     });
