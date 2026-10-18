@@ -605,6 +605,7 @@ function Events({events,reload,staff,reloadStaff,toast}){
       <button className="btn btn-primary btn-block" style={{marginTop:10}} disabled={!form.name.trim()}>追加する</button>
     </div></form>
     <StaffSettings staff={staff} reload={reloadStaff} toast={toast}/>
+    <a className="btn btn-outline btn-block" href={`/taikan-pop.html?clinic=${CLINIC}`} target="_blank" rel="noreferrer" style={{textDecoration:"none"}}>🖨 患者様向けの院内POP（A4）を印刷する</a>
   </div>;
 }
 // 院ごとの担当スタッフ（測定画面のボタンに出る名前）
