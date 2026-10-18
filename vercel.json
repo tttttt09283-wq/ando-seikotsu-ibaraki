@@ -13,6 +13,10 @@
     {
       "source": "/beauty-menu",
       "destination": "/beauty-menu.html"
+    },
+    {
+      "source": "/taikan",
+      "destination": "/core-test.html"
     }
   ]
 }
