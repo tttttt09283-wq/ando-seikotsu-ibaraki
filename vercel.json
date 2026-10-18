@@ -17,6 +17,10 @@
     {
       "source": "/taikan",
       "destination": "/core-test.html"
+    },
+    {
+      "source": "/taikan/:clinic",
+      "destination": "/core-test.html"
     }
   ]
 }
