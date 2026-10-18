@@ -2,7 +2,7 @@
 
 - 対象：株式会社Enejoy Hand「あんど整骨院グループ」全7院
 - 作成日：2026-10-18
-- ステータス：**設計レビュー待ち（実装未着手）**
+- ステータス：**フェーズ1 実装済み**（フェーズ2以降は未着手）
 - 配置：本リポジトリの `attendance/` 配下に独立したNext.jsアプリとして実装する（既存の予約システム・`body-check/` とはコード・DBとも分離）
 
 目次
@@ -278,7 +278,8 @@ erDiagram
 | **staff_clinic_assignments** | assignment_id, staff_id, clinic_id, assignment_type(`primary`/`support`), valid_from, valid_to | 主所属は同期間に1件のみ（`EXCLUDE USING gist (staff_id WITH =, daterange(valid_from, valid_to, '[]') WITH &&) WHERE assignment_type='primary'`）。異動＝旧レコード終了＋新レコード |
 | **employment_contracts** | contract_id, staff_id, valid_from, valid_to, employment_type(`full_time`/`part_time`/`contract`…), working_time_system(`standard`/`monthly_variable`/`flex`…), weekly_scheduled_days, weekly_scheduled_minutes, daily_scheduled_minutes, legal_weekly_limit_minutes（2400 or 2640＝特例44h）, legal_holiday_rule（曜日 or 4週4休）, hourly_leave_enabled | 期間重複不可（EXCLUDE）。集計は勤務日時点の契約を参照 |
 | staff_holiday_credit_eligibility（追加） | id, staff_id, eligible bool, valid_from, valid_to, reason, set_by | 要件R6/R7。**勤務制度名では判定しない**ため独立管理 |
-| **user_roles** | id, user_id(auth.users), role(`super_admin`/`hq_admin`/`clinic_manager`/`staff`), clinic_id NULL, valid_from, valid_to, granted_by | clinic_manager は clinic_id 必須（CHECK）。兼務＝複数行 |
+| app_accounts（追加） | user_id PK(auth.users), email, display_name, disabled | auth.users はクライアントから読めないため表示用に保持。disabled のアカウントはロール無効扱い |
+| **user_roles** | id, user_id(auth.users), role(`super_admin`/`hq_admin`/`clinic_manager`/`staff`), clinic_id NULL, valid_from, valid_to, granted_by | clinic_manager は clinic_id 必須（CHECK）。兼務＝複数行。同一ロール・同一院の期間重複は EXCLUDE で禁止。行は削除せず valid_to で失効 |
 
 #### 共用端末
 
@@ -568,7 +569,7 @@ attendance/
 ├─ docs/                     設計書・運用マニュアル
 ├─ supabase/
 │  ├─ config.toml
-│  ├─ migrations/            0001_extensions.sql, 0002_core_masters.sql, 0003_rls_helpers.sql, 0004_rls_policies.sql, 0005_audit.sql
+│  ├─ migrations/            2026101800000{1..6}_*.sql（拡張・マスタ・RLSヘルパー・RLS・監査・マスタRPC）
 │  ├─ seed.sql               初期7院・テスト用ユーザー
 │  └─ tests/                 （DB/RLSテストから利用するSQLフィクスチャ）
 ├─ src/
@@ -598,7 +599,8 @@ attendance/
 1. **0001_extensions**：`pgcrypto`, `btree_gist`（EXCLUDE制約用）、スキーマ `app`（ヘルパー関数用・非公開）。
 2. **0002_core_masters**：`clinics`, `clinic_name_history`, `staff_profiles`, `staff_private_details`, `staff_clinic_assignments`（主所属期間重複のEXCLUDE）, `employment_contracts`, `user_roles`（clinic_manager は clinic_id 必須 CHECK）。`clinics` は DELETE 禁止トリガー、名称変更時に履歴を自動記録するトリガー。
 3. **0003_rls_helpers**：`app.current_staff_id()`, `app.is_hq()`, `app.is_super_admin()`, `app.managed_clinic_ids()`, `app.staff_primary_clinic(staff_id, on_date)`, `app.can_view_staff_basic(staff_id)`, `app.can_view_staff_private(staff_id)`。すべて `SECURITY DEFINER STABLE SET search_path = ''`。
-4. **0004_rls_policies**：全テーブル `ENABLE ROW LEVEL SECURITY` ＋ `FORCE`。
+4. **0004_rls_policies**：全テーブル `ENABLE ROW LEVEL SECURITY`。anon には権限を与えず、authenticated には必要な操作のみ GRANT（DELETE は与えない）。
+   ※ `FORCE ROW LEVEL SECURITY` は採用しない。判定ヘルパー（SECURITY DEFINER）が user_roles 等を所有者権限で読むため、FORCE にするとポリシーが再帰評価されるため。利用者のアクセスは authenticated ロールで RLS が必ず適用される。
    - clinics：SELECT=認証済み全員（院名のみの用途）／INSERT・UPDATE=is_hq
    - staff_profiles：SELECT=can_view_staff_basic／書込=is_hq
    - staff_private_details：SELECT=can_view_staff_private（hq・本人・**主所属院の院長**）／書込=is_hq

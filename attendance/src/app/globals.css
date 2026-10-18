@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+/* あんど整骨院グループ共通のブランドカラー（body-check と揃える） */
+@theme {
+  --color-brand-50: #ecf9fa;
+  --color-brand-100: #d0f0f3;
+  --color-brand-200: #a3e1e7;
+  --color-brand-500: #14a8b5;
+  --color-brand-600: #0e8893;
+  --color-brand-700: #0b6d76;
+
+  --color-navy-500: #3d5a80;
+  --color-navy-700: #284870;
+  --color-navy-900: #1e3a5f;
+
+  --font-sans: "Hiragino Sans", "Noto Sans JP", "Meiryo", sans-serif;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: #f6f8fa;
+  color: var(--color-navy-900);
+}
