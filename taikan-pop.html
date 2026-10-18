@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>体幹チェック 院内POP - あんど整骨院</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800;900&display=swap"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'M PLUS Rounded 1c','Hiragino Maru Gothic ProN','Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#e2e8f0;color:#1e293b;}
+/* ---- 操作パネル（印刷しない） ---- */
+.ctrl{max-width:820px;margin:0 auto;padding:14px 16px;font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;}
+.ctrl h1{font-size:16px;color:#1e3a5f;margin-bottom:8px;}
+.ctrl .row{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;background:white;border-radius:12px;padding:12px;}
+.ctrl label{font-size:12px;font-weight:700;color:#475569;display:flex;flex-direction:column;gap:4px;}
+.ctrl input,.ctrl select{padding:8px 10px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:14px;font-family:inherit;}
+.ctrl .chk{flex-direction:row;align-items:center;gap:6px;}
+.ctrl button{padding:10px 18px;border:none;border-radius:10px;background:#1e3a5f;color:white;font-weight:800;font-size:15px;cursor:pointer;font-family:inherit;}
+.ctrl p{font-size:12px;color:#64748b;margin-top:8px;}
+/* ---- POP本体（A4縦） ---- */
+.sheet-wrap{display:flex;justify-content:center;padding:0 12px 40px;}
+.sheet{width:210mm;height:297mm;background:#fffdf7;position:relative;overflow:hidden;box-shadow:0 6px 30px rgba(15,23,42,.25);display:flex;flex-direction:column;}
+.top{background:linear-gradient(160deg,#1e3a5f 0%,#2d6a9f 100%);color:white;padding:10mm 12mm 6mm;position:relative;}
+.top:after{content:"";position:absolute;left:0;right:0;bottom:-7mm;height:14mm;background:#fffdf7;border-radius:50% 50% 0 0/100% 100% 0 0;}
+.event{display:inline-block;background:#f59e0b;color:#1e293b;font-weight:900;font-size:5.5mm;padding:1.2mm 5mm;border-radius:20mm;margin-bottom:3mm;}
+.catch{font-size:7mm;font-weight:800;opacity:.92;}
+.title{font-size:17mm;font-weight:900;line-height:1.08;letter-spacing:.5mm;margin-top:1mm;}
+.title em{font-style:normal;color:#fcd34d;}
+.lead{font-size:5.2mm;font-weight:800;margin-top:3mm;line-height:1.5;position:relative;z-index:1;}
+.body{flex:1;padding:8mm 12mm 0;display:flex;flex-direction:column;gap:4mm;position:relative;z-index:1;}
+.ranks{display:flex;justify-content:center;gap:3.5mm;align-items:flex-end;}
+.rank{width:21mm;height:21mm;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:900;font-size:9mm;line-height:1;border:1mm solid;}
+.rank small{font-size:2.3mm;font-weight:800;margin-top:.8mm;white-space:nowrap;letter-spacing:-.1mm;}
+.rank.big{width:27mm;height:27mm;font-size:13mm;}
+.q{text-align:center;font-weight:900;font-size:6.2mm;color:#1e3a5f;}
+.q b{color:#ea580c;}
+.box{background:white;border-radius:5mm;padding:3.5mm 6mm;box-shadow:0 1mm 0 #e2e8f0;border:0.5mm solid #e2e8f0;}
+.box h2{font-size:5.4mm;font-weight:900;color:#1e3a5f;margin-bottom:2.5mm;display:flex;align-items:center;gap:2mm;}
+.checks{display:grid;grid-template-columns:1fr 1fr;gap:1.8mm 5mm;}
+.checks div{font-size:4.8mm;font-weight:800;display:flex;gap:2mm;align-items:center;}
+.checks div:before{content:"✓";display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;width:5.5mm;height:5.5mm;border-radius:1.2mm;background:#ea580c;color:white;font-size:3.8mm;}
+.tests{display:grid;grid-template-columns:repeat(6,1fr);gap:2mm;text-align:center;}
+.tests div{background:#eff6ff;border-radius:3mm;padding:2mm 1mm;}
+.tests i{font-style:normal;font-size:7mm;display:block;}
+.tests span{font-size:3.2mm;font-weight:800;color:#1e3a5f;display:block;margin-top:1mm;line-height:1.3;}
+.gets{display:grid;grid-template-columns:repeat(4,1fr);gap:3mm;}
+.gets div{text-align:center;font-size:3.9mm;font-weight:800;line-height:1.4;}
+.gets i{font-style:normal;font-size:7.5mm;display:block;margin-bottom:.5mm;}
+.cta{margin:auto -12mm 0;background:#ea580c;color:white;padding:5mm 12mm;display:flex;align-items:center;gap:6mm;}
+.cta .price{background:white;color:#ea580c;border-radius:4mm;padding:2mm 5mm;font-weight:900;font-size:9mm;white-space:nowrap;line-height:1.2;text-align:center;}
+.cta .price small{display:block;font-size:3.4mm;color:#64748b;}
+.cta .msg{flex:1;}
+.cta .msg b{display:block;font-size:7.2mm;font-weight:900;line-height:1.3;}
+.cta .msg span{font-size:4.2mm;font-weight:800;opacity:.95;}
+.foot{background:#1e3a5f;color:white;text-align:center;font-size:4.2mm;font-weight:800;padding:2.5mm;}
+.foot small{display:block;font-size:2.8mm;opacity:.75;font-weight:500;margin-top:.5mm;}
+.badge{position:absolute;right:9mm;top:9mm;width:36mm;height:36mm;border-radius:50%;background:#fcd34d;color:#1e293b;display:flex;flex-direction:column;align-items:center;justify-content:center;transform:rotate(10deg);font-weight:900;text-align:center;line-height:1.15;box-shadow:0 1.5mm 0 rgba(0,0,0,.15);}
+.badge b{font-size:5.6mm;white-space:nowrap;}
+.badge span{font-size:3.6mm;}
+@page{size:A4 portrait;margin:0;}
+@media print{
+  body{background:white;}
+  .ctrl{display:none;}
+  .sheet-wrap{padding:0;}
+  .sheet{box-shadow:none;}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+}
+@media screen and (max-width:860px){
+  .sheet-wrap{overflow:hidden;}
+  .sheet{zoom:.45;}
+}
+</style>
+</head>
+<body>
+<div class="ctrl">
+  <h1>🖨 体幹チェック 院内POP（A4）</h1>
+  <div class="row">
+    <label>院<select id="clinic">
+      <option value="kourien">香里園駅前院</option>
+      <option value="ibaraki">茨木院</option>
+      <option value="owada">大和田院</option>
+    </select></label>
+    <label>料金の表示<input id="price" value="無料" size="8"/></label>
+    <label class="chk"><input type="checkbox" id="showEvent" checked/>イベント告知を出す</label>
+    <label>イベントの文字<input id="eventText" value="12月 体幹チェックイベント開催！" size="22"/></label>
+    <label class="chk"><input type="checkbox" id="showRanking" checked/>「院内ランキング」の丸を出す</label>
+    <button type="button" onclick="window.print()">印刷する</button>
+  </div>
+  <p>下のPOPに、入力した内容がすぐ反映されます。印刷するときは「用紙：A4」「余白：なし」「背景のグラフィック：オン」にしてください。</p>
+</div>
+
+<div class="sheet-wrap"><div class="sheet" id="sheet">
+  <div class="top">
+    <div class="event" id="popEvent">12月 体幹チェックイベント開催！</div>
+    <div class="catch">あんど式 体幹チェック</div>
+    <div class="title">あなたの体幹、<br/><em>何点</em>ですか？</div>
+    <div class="lead">6つのかんたんなテスト（約10分）で、<br/>体を支える力を<span style="color:#fcd34d">100点満点</span>で採点します</div>
+    <div class="badge" id="popBadge"><span>院内</span><b>ランキング</b><span>に挑戦！</span></div>
+  </div>
+  <div class="body">
+    <div>
+      <div class="ranks" aria-label="S〜Dの5段階で判定">
+        <div class="rank" style="color:#dc2626;border-color:#dc2626;background:#fef2f2">D<small>ケアを始めよう</small></div>
+        <div class="rank" style="color:#d97706;border-color:#d97706;background:#fffbeb">C<small>伸びしろあり</small></div>
+        <div class="rank" style="color:#2563eb;border-color:#2563eb;background:#eff6ff">B<small>平均レベル</small></div>
+        <div class="rank" style="color:#059669;border-color:#059669;background:#ecfdf5">A<small>しっかり体幹</small></div>
+        <div class="rank big" style="color:#7c3aed;border-color:#7c3aed;background:#f5f3ff">S<small>体幹エリート</small></div>
+      </div>
+      <p class="q" style="margin-top:3mm">あなたは <b>S・A・B・C・D</b> どのランク？</p>
+    </div>
+
+    <div class="box">
+      <h2>☝ こんな方におすすめ</h2>
+      <div class="checks">
+        <div>腰痛・肩こりをくり返す</div>
+        <div>姿勢が悪いと言われる</div>
+        <div>片脚立ちでふらつく</div>
+        <div>ぽっこりお腹が気になる</div>
+        <div>最近つまずきやすい</div>
+        <div>スポーツでもっと動きたい</div>
+      </div>
+    </div>
+
+    <div class="box">
+      <h2>🎁 チェックでわかること</h2>
+      <div class="gets">
+        <div><i>💯</i>体幹の点数<br/>とランク</div>
+        <div><i>⚖️</i>体の左右差<br/>（ゆがみのサイン）</div>
+        <div><i>🏠</i>あなた専用の<br/>セルフケア</div>
+        <div><i>📈</i>前回からの<br/>成長がわかる</div>
+      </div>
+    </div>
+    <p style="text-align:center;font-size:3.8mm;font-weight:800;color:#64748b;">動きやすい服装でOK ／ 痛みがあるテストはスキップできます ／ 結果は紙でお渡しします</p>
+
+    <div class="cta">
+      <div class="price" id="popPriceBox"><small>料金</small><span id="popPrice">無料</span></div>
+      <div class="msg"><b>受付スタッフに<br/>お気軽にお声がけください！</b><span>施術の前後・待ち時間にもできます</span></div>
+    </div>
+  </div>
+  <div class="foot"><span id="popClinic">あんど整骨院 香里園駅前院</span><small>※本チェックは医療診断ではありません</small></div>
+</div></div>
+
+<script>
+const CLINIC_NAMES={kourien:"香里園駅前院",ibaraki:"茨木院",owada:"大和田院"};
+const KEY="ando-taikan-pop";
+const el=id=>document.getElementById(id);
+function load(){
+  let saved={}; try{ saved=JSON.parse(localStorage.getItem(KEY)||"{}"); }catch(e){}
+  const q=new URLSearchParams(location.search).get("clinic");
+  if(CLINIC_NAMES[q]) saved.clinic=q;
+  if(saved.clinic&&CLINIC_NAMES[saved.clinic]) el("clinic").value=saved.clinic;
+  if(typeof saved.price==="string") el("price").value=saved.price;
+  if(typeof saved.eventText==="string") el("eventText").value=saved.eventText;
+  if(typeof saved.showEvent==="boolean") el("showEvent").checked=saved.showEvent;
+  if(typeof saved.showRanking==="boolean") el("showRanking").checked=saved.showRanking;
+}
+function apply(){
+  const s={clinic:el("clinic").value,price:el("price").value,eventText:el("eventText").value,showEvent:el("showEvent").checked,showRanking:el("showRanking").checked};
+  el("popClinic").textContent="あんど整骨院 "+CLINIC_NAMES[s.clinic];
+  el("popPrice").textContent=s.price.trim();
+  el("popPriceBox").style.display=s.price.trim()?"":"none";
+  el("popEvent").textContent=s.eventText;
+  el("popEvent").style.display=s.showEvent&&s.eventText.trim()?"":"none";
+  el("popBadge").style.display=s.showRanking?"":"none";
+  try{ localStorage.setItem(KEY,JSON.stringify(s)); }catch(e){}
+}
+load(); apply();
+["clinic","price","eventText","showEvent","showRanking"].forEach(id=>el(id).addEventListener("input",apply));
+["clinic","showEvent","showRanking"].forEach(id=>el(id).addEventListener("change",apply));
+</script>
+</body>
+</html>
