@@ -74,6 +74,9 @@ const SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYm
 const supabaseClient=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{
   auth:{storage:window.sessionStorage,persistSession:true,autoRefreshToken:true}
 });
+// 管理画面と同じく、IDに「@」が無ければ @ando.jp を付けてログインする（例：okuda → okuda@ando.jp）
+const LOGIN_ID_DOMAIN="ando.jp";
+function loginIdToEmail(id){ const v=String(id||"").trim(); return v.includes("@")?v:v+"@"+LOGIN_ID_DOMAIN; }
 const STAFF_LIST=[{id:1,name:"奥田"},{id:2,name:"佐藤"},{id:3,name:"細永"},{id:4,name:"田中"},{id:5,name:"岩永"}];
 const STAFF_BY_ID=Object.fromEntries(STAFF_LIST.map(s=>[s.id,s.name]));
 
@@ -101,18 +104,18 @@ function useToast(){
 
 // ===================== ログイン =====================
 function Login({onDone,error}){
-  const [email,setEmail]=useState(""); const [pw,setPw]=useState(""); const [busy,setBusy]=useState(false); const [err,setErr]=useState(error||"");
+  const [loginId,setLoginId]=useState(""); const [pw,setPw]=useState(""); const [busy,setBusy]=useState(false); const [err,setErr]=useState(error||"");
   const submit=async e=>{
     e.preventDefault(); setBusy(true); setErr("");
-    const {error}=await supabaseClient.auth.signInWithPassword({email:email.trim(),password:pw});
+    const {error}=await supabaseClient.auth.signInWithPassword({email:loginIdToEmail(loginId),password:pw});
     setBusy(false);
-    if(error){ setErr("ログインできませんでした。メールアドレスとパスワードを確認してください"); return; }
+    if(error){ setErr("IDまたはパスワードが違います"); return; }
     onDone();
   };
   return <div className="container" style={{paddingTop:20}}>
     <form className="card" onSubmit={submit}><div className="card-h">🔒 スタッフログイン</div><div className="card-b">
-      <p className="muted" style={{marginBottom:12}}>参加者の名前・連絡先を扱うため、管理画面と同じスタッフアカウントでログインしてください。</p>
-      <label className="label">メールアドレス</label><input className="input" type="email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} required style={{marginBottom:10}}/>
+      <p className="muted" style={{marginBottom:12}}>参加者の名前・連絡先を扱うため、管理画面と同じIDとパスワードでログインしてください。</p>
+      <label className="label">ID</label><input className="input" type="text" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="IDを入力" value={loginId} onChange={e=>setLoginId(e.target.value)} required style={{marginBottom:10}}/>
       <label className="label">パスワード</label><input className="input" type="password" autoComplete="current-password" value={pw} onChange={e=>setPw(e.target.value)} required style={{marginBottom:12}}/>
       {err&&<p style={{color:"#b91c1c",fontSize:12.5,fontWeight:700,marginBottom:10}}>{err}</p>}
       <button className="btn btn-primary btn-block" disabled={busy}>{busy?"確認中...":"ログイン"}</button>
