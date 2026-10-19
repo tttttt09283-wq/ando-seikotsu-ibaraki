@@ -44,3 +44,10 @@ export function hm(minutes: number | null | undefined): string {
 export function fixedOvertimeExcess(statutoryOvertimeMinutes: number, fixedOvertimeMinutes: number): number {
   return Math.max(0, statutoryOvertimeMinutes - fixedOvertimeMinutes);
 }
+
+export const CLOSING_STATUS_LABELS: Record<string, { label: string; tone: "gray" | "yellow" | "green" | "red" }> = {
+  open: { label: "未締め", tone: "gray" },
+  manager_confirmed: { label: "院長確認済み", tone: "yellow" },
+  closed: { label: "締め済み", tone: "green" },
+  reopened: { label: "再開中", tone: "red" },
+};
