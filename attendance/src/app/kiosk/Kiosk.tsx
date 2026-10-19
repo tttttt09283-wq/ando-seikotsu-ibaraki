@@ -4,8 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   allowedPunches,
   KIOSK_ERROR_MESSAGES,
+  LEAVE_LABELS,
   PUNCH_LABELS,
   PUNCH_TYPES,
+  type LeaveKind,
   type PunchType,
   type StaffState,
 } from "@/lib/kiosk/protocol";
@@ -13,7 +15,7 @@ import { enqueue, loadQueue, removeFromQueue, type QueuedPunch } from "@/lib/kio
 
 /**
  * 共用端末（キオスク）画面。
- * - 本人確認：スタッフID → PIN。成功すると打刻1回分の一回限りトークンを受け取る
+ * - 本人確認：スタッフID → PIN。成功すると打刻（または休暇申請）1回分の一回限りトークンを受け取る
  * - 打刻完了後は5秒、操作がなければ30秒で待受画面に戻り、氏名・トークン・入力値をすべて破棄する
  * - 打刻時刻はサーバーで確定する。通信障害時は送信待ちに保存して自動で再送する
  */
@@ -25,14 +27,34 @@ const RETRY_MS = 20000;
 
 type Device = { status: "loading" } | { status: "unregistered" } | { status: "ready"; clinicName: string; deviceName: string };
 
+type Purpose = "punch" | "leave";
+type Balances = { paid: number; holidayCredit: number; halfDay: boolean };
+type LeaveForm = { leaveType: LeaveKind; startDate: string; endDate: string; unit: "full" | "am" | "pm" };
+
 type Step =
   | { name: "idle" }
-  | { name: "code"; code: string }
-  | { name: "pin"; code: string; pin: string }
-  | { name: "change_pin"; token: string; staffName: string; state: StaffState; first: string; second: string; confirming: boolean }
+  | { name: "code"; code: string; purpose: Purpose }
+  | { name: "pin"; code: string; pin: string; purpose: Purpose }
+  | {
+      name: "change_pin";
+      token: string;
+      staffName: string;
+      state: StaffState;
+      purpose: Purpose;
+      first: string;
+      second: string;
+      confirming: boolean;
+    }
   | { name: "choose"; token: string; staffName: string; state: StaffState }
+  | { name: "leave"; token: string; staffName: string; balances: Balances | null; form: LeaveForm }
   | { name: "done"; staffName: string; punchType: PunchType; punchedAt: string | null; queued: boolean; delayed: boolean }
+  | { name: "leave_done"; staffName: string; summary: string }
   | { name: "error"; message: string };
+
+const tomorrowJst = () => {
+  const d = new Date(Date.now() + 9 * 3600 * 1000 + 24 * 3600 * 1000);
+  return d.toISOString().slice(0, 10);
+};
 
 const INITIAL: Step = { name: "idle" };
 
@@ -116,8 +138,8 @@ export function Kiosk() {
   // 自動で待受画面に戻す
   useEffect(() => {
     if (step.name === "idle") return;
-    if (step.name === "done" || step.name === "error") {
-      const id = window.setTimeout(reset, step.name === "done" ? DONE_RESET_MS : ERROR_RESET_MS);
+    if (step.name === "done" || step.name === "leave_done" || step.name === "error") {
+      const id = window.setTimeout(reset, step.name === "error" ? ERROR_RESET_MS : DONE_RESET_MS);
       return () => window.clearTimeout(id);
     }
     const id = window.setInterval(() => {
@@ -164,7 +186,45 @@ export function Kiosk() {
     };
   }, [flushQueue]);
 
-  async function authenticate(code: string, pin: string) {
+  async function openLeave(token: string, staffName: string) {
+    const form: LeaveForm = { leaveType: "paid", startDate: tomorrowJst(), endDate: "", unit: "full" };
+    setStep({ name: "leave", token, staffName, balances: null, form });
+    try {
+      const r = await postJson("/api/kiosk/leave/balances", { sessionToken: token });
+      if (r.ok) {
+        const balances = { paid: Number(r.paid), holidayCredit: Number(r.holidayCredit), halfDay: Boolean(r.halfDay) };
+        setStep((cur) => (cur.name === "leave" && cur.token === token ? { ...cur, balances } : cur));
+      }
+    } catch {
+      setOnline(false);
+    }
+  }
+
+  async function submitLeave(token: string, staffName: string, form: LeaveForm) {
+    setBusy(true);
+    try {
+      const r = await postJson("/api/kiosk/leave/request", {
+        sessionToken: token,
+        leaveType: form.leaveType,
+        startDate: form.startDate,
+        endDate: form.endDate || undefined,
+        unit: form.unit,
+      });
+      if (!r.ok) {
+        setStep({ name: "error", message: typeof r.message === "string" ? r.message : errorMessage(r.error) });
+        return;
+      }
+      const range = form.endDate && form.endDate !== form.startDate ? `${form.startDate} 〜 ${form.endDate}` : form.startDate;
+      const unit = form.unit === "full" ? "" : form.unit === "am" ? "（午前半休）" : "（午後半休）";
+      setStep({ name: "leave_done", staffName, summary: `${LEAVE_LABELS[form.leaveType]} ${range}${unit}` });
+    } catch {
+      setStep({ name: "error", message: "通信できないため申請できませんでした。通信が回復してからもう一度お試しください" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function authenticate(code: string, pin: string, purpose: Purpose) {
     setBusy(true);
     try {
       const r = await postJson("/api/kiosk/auth", { staffCode: code, pin });
@@ -173,7 +233,9 @@ export function Kiosk() {
         return;
       }
       const base = { token: String(r.sessionToken), staffName: String(r.staffName), state: r.state as StaffState };
-      setStep(r.mustChangePin ? { name: "change_pin", ...base, first: "", second: "", confirming: false } : { name: "choose", ...base });
+      if (r.mustChangePin) setStep({ name: "change_pin", ...base, purpose, first: "", second: "", confirming: false });
+      else if (purpose === "leave") void openLeave(base.token, base.staffName);
+      else setStep({ name: "choose", ...base });
     } catch {
       setOnline(false);
       setStep({ name: "error", message: "通信できないため本人確認ができません。通信が回復してから打刻してください。急ぎの場合は院長に時刻を伝えてください" });
@@ -182,7 +244,7 @@ export function Kiosk() {
     }
   }
 
-  async function changePin(token: string, newPin: string, staffName: string, state: StaffState) {
+  async function changePin(token: string, newPin: string, staffName: string, state: StaffState, purpose: Purpose) {
     setBusy(true);
     try {
       const r = await postJson("/api/kiosk/pin", { sessionToken: token, newPin });
@@ -190,7 +252,8 @@ export function Kiosk() {
         setStep({ name: "error", message: errorMessage(r.error) });
         return;
       }
-      setStep({ name: "choose", token: String(r.sessionToken), staffName, state });
+      if (purpose === "leave") void openLeave(String(r.sessionToken), staffName);
+      else setStep({ name: "choose", token: String(r.sessionToken), staffName, state });
     } catch {
       setStep({ name: "error", message: errorMessage("network") });
     } finally {
@@ -254,13 +317,24 @@ export function Kiosk() {
             type="button"
             onClick={() => {
               touch();
-              setStep({ name: "code", code: "" });
+              setStep({ name: "code", code: "", purpose: "punch" });
             }}
             className="mt-12 rounded-2xl bg-brand-500 px-20 py-8 text-4xl font-bold text-white shadow-lg active:bg-brand-600"
           >
             打刻する
           </button>
-          <p className="mt-6 text-sm text-slate-400">休暇申請は準備中です</p>
+          <div>
+            <button
+              type="button"
+              onClick={() => {
+                touch();
+                setStep({ name: "code", code: "", purpose: "leave" });
+              }}
+              className="mt-8 rounded-xl border border-white/30 px-10 py-4 text-xl text-slate-200 active:bg-white/10"
+            >
+              休暇申請
+            </button>
+          </div>
         </div>
       )}
 
@@ -269,10 +343,10 @@ export function Kiosk() {
           title="スタッフIDを入力"
           value={step.code}
           masked={false}
-          onChange={(code) => setStep({ name: "code", code })}
+          onChange={(code) => setStep({ ...step, code })}
           submitLabel="次へ"
           canSubmit={/^[0-9]{4,8}$/.test(step.code)}
-          onSubmit={() => setStep({ name: "pin", code: step.code, pin: "" })}
+          onSubmit={() => setStep({ name: "pin", code: step.code, pin: "", purpose: step.purpose })}
           onCancel={reset}
           onTouch={touch}
         />
@@ -286,7 +360,7 @@ export function Kiosk() {
           onChange={(pin) => setStep({ ...step, pin })}
           submitLabel={busy ? "確認中…" : "確認"}
           canSubmit={/^[0-9]{4,8}$/.test(step.pin) && !busy}
-          onSubmit={() => authenticate(step.code, step.pin)}
+          onSubmit={() => authenticate(step.code, step.pin, step.purpose)}
           onCancel={reset}
           onTouch={touch}
         />
@@ -303,7 +377,7 @@ export function Kiosk() {
           onSubmit={() => {
             if (!step.confirming) return setStep({ ...step, confirming: true });
             if (step.first !== step.second) return setStep({ name: "error", message: "2回入力したPINが一致しません。もう一度最初から操作してください" });
-            void changePin(step.token, step.first, step.staffName, step.state);
+            void changePin(step.token, step.first, step.staffName, step.state, step.purpose);
           }}
           onCancel={reset}
           onTouch={touch}
@@ -349,6 +423,29 @@ export function Kiosk() {
             </p>
           )}
           {step.delayed && <p className="mt-6 text-lg text-amber-300">送信が遅れたため、院長の確認対象になります</p>}
+          <p className="mt-10 text-sm text-slate-400">まもなく最初の画面に戻ります</p>
+        </div>
+      )}
+
+      {step.name === "leave" && (
+        <LeaveScreen
+          step={step}
+          busy={busy}
+          onChange={(form) => {
+            touch();
+            setStep({ ...step, form });
+          }}
+          onSubmit={() => submitLeave(step.token, step.staffName, step.form)}
+          onCancel={reset}
+        />
+      )}
+
+      {step.name === "leave_done" && (
+        <div className="text-center" role="status">
+          <p className="text-3xl">{step.staffName}さん</p>
+          <p className="mt-4 text-4xl font-bold text-emerald-300">休暇を申請しました</p>
+          <p className="mt-4 text-2xl">{step.summary}</p>
+          <p className="mt-6 text-lg text-slate-300">院長・本部の承認後に確定します</p>
           <p className="mt-10 text-sm text-slate-400">まもなく最初の画面に戻ります</p>
         </div>
       )}
@@ -492,5 +589,91 @@ function Setup({ onRegistered }: { onRegistered: () => void }) {
       </form>
       {message && <p className="mt-4 text-rose-300" role="alert">{message}</p>}
     </Screen>
+  );
+}
+
+function LeaveScreen({
+  step,
+  busy,
+  onChange,
+  onSubmit,
+  onCancel,
+}: {
+  step: { staffName: string; balances: Balances | null; form: LeaveForm };
+  busy: boolean;
+  onChange: (form: LeaveForm) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  const { form, balances } = step;
+  const available = form.leaveType === "paid" ? balances?.paid : form.leaveType === "holiday_credit" ? balances?.holidayCredit : null;
+  const option = (active: boolean) => `rounded-xl px-5 py-4 text-xl font-bold ${active ? "bg-brand-500 text-white" : "bg-white/10 text-slate-200"}`;
+  return (
+    <div className="w-full max-w-2xl text-center">
+      <p className="text-3xl font-bold">{step.staffName}さん：休暇申請</p>
+      <div className="mt-6 grid grid-cols-3 gap-3">
+        {(Object.keys(LEAVE_LABELS) as LeaveKind[]).map((k) => (
+          <button key={k} type="button" className={option(form.leaveType === k)} onClick={() => onChange({ ...form, leaveType: k })}>
+            {LEAVE_LABELS[k]}
+          </button>
+        ))}
+      </div>
+      <p className="mt-3 text-lg text-slate-300">
+        {available === null ? "残数管理のない休暇です" : balances ? `使用可能：${available}日（申請中の分を差し引き済み）` : "残数を確認中…"}
+      </p>
+      <div className="mt-6 grid grid-cols-2 gap-4 text-left">
+        <label className="text-lg">
+          日付
+          <input
+            type="date"
+            value={form.startDate}
+            onChange={(e) => onChange({ ...form, startDate: e.target.value })}
+            className="mt-1 w-full rounded-lg bg-white px-3 py-3 text-xl text-navy-900"
+          />
+        </label>
+        <label className="text-lg">
+          終了日（連続して休む場合）
+          <input
+            type="date"
+            value={form.endDate}
+            disabled={form.unit !== "full"}
+            onChange={(e) => onChange({ ...form, endDate: e.target.value })}
+            className="mt-1 w-full rounded-lg bg-white px-3 py-3 text-xl text-navy-900 disabled:opacity-40"
+          />
+        </label>
+      </div>
+      <div className="mt-4 grid grid-cols-3 gap-3">
+        {(
+          [
+            ["full", "全日"],
+            ["am", "午前半休"],
+            ["pm", "午後半休"],
+          ] as const
+        ).map(([u, label]) => (
+          <button
+            key={u}
+            type="button"
+            disabled={u !== "full" && balances?.halfDay === false}
+            className={`${option(form.unit === u)} disabled:opacity-40`}
+            onClick={() => onChange({ ...form, unit: u, endDate: u === "full" ? form.endDate : "" })}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="mt-8 flex gap-3">
+        <button type="button" onClick={onCancel} className="flex-1 rounded-xl bg-slate-700 py-4 text-2xl">
+          やめる
+        </button>
+        <button
+          type="button"
+          disabled={busy || !form.startDate}
+          onClick={onSubmit}
+          className="flex-1 rounded-xl bg-brand-500 py-4 text-2xl font-bold disabled:opacity-40"
+        >
+          {busy ? "申請中…" : "申請する"}
+        </button>
+      </div>
+    </div>
   );
 }

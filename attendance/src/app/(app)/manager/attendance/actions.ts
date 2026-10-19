@@ -38,7 +38,14 @@ export async function confirmAttendance(_prev: ActionResult | null, formData: Fo
   });
   if (error) return { ok: false, message: toUserMessage(error) };
   const r = data as { confirmed: number; skipped: number };
+  // 院長確認した祝日勤務から、振休の付与候補を作る（付与対象スタッフのみ。残数にはまだ加算しない）
+  await supabase.rpc("generate_holiday_credit_candidates", {
+    p_clinic_id: parsed.data.clinic_id,
+    p_from: parsed.data.from,
+    p_to: parsed.data.to,
+  });
   revalidateAttendance();
+  revalidatePath("/manager/holiday-credits");
   return {
     ok: true,
     message: `${r.confirmed}件を院長確認済みにしました${r.skipped ? `（打刻漏れ・再計算待ちの${r.skipped}件は修正後に確認してください）` : ""}`,

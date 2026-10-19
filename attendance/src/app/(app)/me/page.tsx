@@ -35,6 +35,10 @@ export default async function MyPage() {
       ])
     : [{ data: [] }, { data: [] }];
   const shifts = ((shiftData ?? []) as ShiftRow[]).map(toShiftView);
+  const { data: balanceData } = staff ? await supabase.rpc("leave_balances", { p_staff_id: staff.staff_id }) : { data: [] };
+  const balances = Object.fromEntries(
+    ((balanceData ?? []) as { leave_type: string; balance: string; reserved: string }[]).map((b) => [b.leave_type, b]),
+  );
   const clinicName = new Map(((clinicData ?? []) as Pick<ClinicRow, "clinic_id" | "name">[]).map((c) => [c.clinic_id, c.name]));
 
   return (
@@ -53,6 +57,26 @@ export default async function MyPage() {
             <dd>{staff ? `${staffName(staff)}（${staff.staff_code}）` : "紐付けなし"}</dd>
           </dl>
         </Card>
+
+        {staff && (
+          <Card title="休暇の残数">
+            <dl className="grid grid-cols-[8rem_1fr] gap-y-2 text-sm">
+              <dt className="text-slate-500">有給休暇</dt>
+              <dd>
+                {Number(balances.paid?.balance ?? 0)}日
+                {Number(balances.paid?.reserved ?? 0) > 0 && <span className="ml-2 text-slate-500">（申請中 {Number(balances.paid?.reserved)}日）</span>}
+              </dd>
+              <dt className="text-slate-500">振休</dt>
+              <dd>
+                {Number(balances.holiday_credit?.balance ?? 0)}日
+                {Number(balances.holiday_credit?.reserved ?? 0) > 0 && (
+                  <span className="ml-2 text-slate-500">（申請中 {Number(balances.holiday_credit?.reserved)}日）</span>
+                )}
+              </dd>
+            </dl>
+            <p className="mt-2 text-xs text-slate-500">休暇の申請は各院の共用端末の「休暇申請」から行えます。</p>
+          </Card>
+        )}
 
         {staff && (
           <Card title="自分のシフト（確定分・今月と来月）">

@@ -15,10 +15,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           { href: "/manager", label: "院ホーム" },
           { href: "/manager/shifts", label: "シフト" },
           { href: "/manager/attendance", label: "勤怠" },
+          { href: "/manager/leave", label: "休暇申請" },
+          { href: "/manager/holiday-credits", label: "振休" },
         ]
       : []),
     ...(hq
       ? [
+          { href: "/hq/leave", label: "有給台帳" },
           { href: "/admin/clinics", label: "店舗マスタ" },
           { href: "/admin/holidays", label: "会社カレンダー" },
           { href: "/admin/staff", label: "スタッフ" },

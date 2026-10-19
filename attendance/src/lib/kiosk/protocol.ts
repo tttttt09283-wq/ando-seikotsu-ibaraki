@@ -64,5 +64,22 @@ export const KIOSK_ERROR_MESSAGES: Record<string, string> = {
   weak_pin: "同じ数字の繰り返しや連番はPINに使えません",
   invalid_code: "登録コードが正しくないか、有効期限が切れています",
   bad_request: "入力内容を確認してください",
+  rejected: "申請できませんでした",
   network: "通信できませんでした",
 };
+
+export const leaveBalanceBody = z.object({ sessionToken: z.string().regex(/^[0-9a-f]{64}$/) });
+
+export const leaveRequestBody = z
+  .object({
+    sessionToken: z.string().regex(/^[0-9a-f]{64}$/),
+    leaveType: z.enum(["paid", "holiday_credit", "other"]),
+    startDate: z.iso.date(),
+    endDate: z.iso.date().optional(),
+    unit: z.enum(["full", "am", "pm"]),
+    note: z.string().trim().max(200).optional(),
+  })
+  .refine((v) => !v.endDate || v.endDate >= v.startDate);
+
+export const LEAVE_LABELS = { paid: "有給休暇", holiday_credit: "振休", other: "その他休暇" } as const;
+export type LeaveKind = keyof typeof LEAVE_LABELS;

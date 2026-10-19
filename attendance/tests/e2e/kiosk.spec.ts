@@ -21,6 +21,12 @@ async function mockKiosk(page: Page, options: { punchFails?: boolean; mustChange
       if (pin !== "482916") return route.fulfill({ status: 401, json: { ok: false, error: "invalid", remaining: 4 } });
       return route.fulfill({ json: { ok: true, sessionToken: TOKEN, staffName: "安藤 太郎", state: "off", mustChangePin: options.mustChangePin ?? false } });
     }
+    if (url.endsWith("/leave/balances")) {
+      return route.fulfill({ json: { ok: true, paid: 8.5, holidayCredit: 1, halfDay: true } });
+    }
+    if (url.endsWith("/leave/request")) {
+      return route.fulfill({ json: { ok: true } });
+    }
     if (url.endsWith("/punch")) {
       if (options.punchFails) return route.abort("internetdisconnected");
       return route.fulfill({ json: { ok: true, duplicate: false, punchType: "clock_in", punchedAt: "2026-10-19T00:01:00Z", staffName: "安藤 太郎" } });
@@ -103,5 +109,28 @@ test.describe("共用端末（キオスク）", () => {
     expect(saved).toContain("clock_in");
     expect(saved).not.toContain("安藤");
     expect(saved).not.toContain("482916");
+  });
+
+  test("休暇申請：本人確認後に残数を表示し、申請すると自動で待受画面に戻る", async ({ page }) => {
+    const calls = await mockKiosk(page);
+    await page.goto("/kiosk");
+    await page.getByRole("button", { name: "休暇申請" }).click();
+    await enterDigits(page, "1001");
+    await page.getByRole("button", { name: "次へ" }).click();
+    await enterDigits(page, "482916");
+    await page.getByRole("button", { name: "確認" }).click();
+
+    await expect(page.getByText("安藤 太郎さん：休暇申請")).toBeVisible();
+    await expect(page.getByText("使用可能：8.5日")).toBeVisible();
+    await page.getByRole("button", { name: "振休" }).click();
+    await expect(page.getByText("使用可能：1日")).toBeVisible();
+    await page.getByRole("button", { name: "午前半休" }).click();
+    await page.getByRole("button", { name: "申請する" }).click();
+
+    await expect(page.getByRole("status")).toContainText("休暇を申請しました");
+    const body = calls.find((c) => c.url.endsWith("/leave/request"))?.body as Record<string, unknown>;
+    expect(body).toMatchObject({ sessionToken: TOKEN, leaveType: "holiday_credit", unit: "am" });
+    await expect(page.getByRole("button", { name: "打刻する" })).toBeVisible({ timeout: 8000 });
+    await expect(page.locator("body")).not.toContainText("安藤");
   });
 });

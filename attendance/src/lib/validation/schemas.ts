@@ -401,3 +401,84 @@ export const adjustmentDecisionSchema = z.object({
   decision: z.enum(["approve", "reject"]),
   comment: z.string().trim().max(300).optional(),
 });
+
+// ===== 休暇 =====
+export const LEAVE_TYPE_LABELS = { paid: "有給休暇", holiday_credit: "振休", other: "その他休暇" } as const;
+export const LEAVE_UNIT_LABELS = { full: "全日", am: "午前半休", pm: "午後半休", hour: "時間単位" } as const;
+
+export const leaveRequestSchema = z
+  .object({
+    clinic_id: uuid("院"),
+    staff_id: uuid("スタッフ"),
+    leave_type: z.enum(["paid", "holiday_credit", "other"], { error: "休暇の種類を選択してください" }),
+    start_date: dateString("開始日"),
+    end_date: optionalDate("終了日"),
+    unit: z.enum(["full", "am", "pm"], { error: "単位を選択してください" }),
+    note: optionalText(200),
+  })
+  .refine((v) => v.end_date === null || v.end_date >= v.start_date, { message: "終了日は開始日以降にしてください", path: ["end_date"] });
+
+export const leaveDecisionSchema = z.object({
+  leave_request_id: uuid("申請"),
+  decision: z.enum(["manager_approve", "final_approve", "reject", "cancel"]),
+  comment: z.string().trim().max(300).optional(),
+});
+
+export const paidGrantSchema = z.object({
+  staff_id: uuid("スタッフ"),
+  grant_date: dateString("付与日"),
+  days: z.coerce
+    .number({ error: "日数を入力してください" })
+    .positive("日数を入力してください")
+    .max(40)
+    .refine((v) => Number.isInteger(v * 2), "日数は0.5日単位で入力してください"),
+  grant_type: z.enum(["statutory", "proportional", "advance", "manual", "migration"]),
+  expiration_date: optionalDate("有効期限"),
+  note: optionalText(200),
+});
+
+export const paidAdjustSchema = z.object({
+  staff_id: uuid("スタッフ"),
+  leave_grant_id: uuid("付与"),
+  days: z.coerce
+    .number({ error: "日数を入力してください" })
+    .refine((v) => v !== 0 && Number.isInteger(v * 2), "日数は0.5日単位（マイナス可）で入力してください"),
+  effective_date: dateString("適用日"),
+  reason: requiredText("理由", 200),
+});
+
+export const eligibilitySchema = z.object({
+  staff_id: uuid("スタッフ"),
+  eligible: z.enum(["true", "false"]).transform((v) => v === "true"),
+  valid_from: dateString("適用開始日"),
+  reason: requiredText("理由", 200),
+});
+
+export const holidayCreditDecisionSchema = z.object({
+  request_id: uuid("申請"),
+  clinic_id: uuid("院"),
+  decision: z.enum(["submit", "approve", "reject", "revoke"]),
+  comment: z.string().trim().max(300).optional(),
+});
+
+export const holidayCreditExpirationSchema = z.object({
+  holiday_credit_id: uuid("付与"),
+  clinic_id: uuid("院"),
+  expiration_date: dateString("新しい期限"),
+  reason: requiredText("理由", 200),
+});
+
+export const leavePolicySchema = z.object({
+  leave_type: z.enum(["paid", "holiday_credit", "other"]),
+  half_day_allowed: z.string().optional().transform((v) => v === "on"),
+  hourly_allowed: z.string().optional().transform((v) => v === "on"),
+  agreement_note: optionalText(300),
+});
+
+export const holidayCreditPolicySchema = z.object({
+  credit_type: z.enum(["substitute_holiday", "compensatory_day_off", "company_holiday_work_leave"]),
+  is_active: z.string().optional().transform((v) => v === "on"),
+  min_worked_minutes: z.coerce.number().int().min(1).max(1440),
+  expiration_rule: z.enum(["end_of_month", "days", "none"]),
+  expiration_days: z.coerce.number().int().min(1).max(730).optional().or(z.literal("").transform(() => undefined)),
+});

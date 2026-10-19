@@ -209,6 +209,12 @@ export default async function StaffDetailPage({
           </Card>
         </div>
 
+        <Card title="休暇">
+          <Link href={`/hq/leave/${s.staff_id}`} className="text-sm text-brand-700 underline">
+            有給・振休の台帳と、振休の付与対象の設定へ
+          </Link>
+        </Card>
+
         <Card title="管理画面アカウント">
           <p className="text-sm text-slate-700">
             {account
