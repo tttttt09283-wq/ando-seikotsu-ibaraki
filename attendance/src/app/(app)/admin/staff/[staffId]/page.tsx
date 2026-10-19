@@ -12,12 +12,14 @@ import {
   type AccountRow,
   type AssignmentRow,
   type ClinicRow,
+  type ContractRow,
   type StaffPrivateRow,
   type StaffRow,
 } from "@/lib/data/types";
 import { todayJst } from "@/lib/time/jst";
 import { addSupportAssignment, endAssignment, transferStaff, updateStaff } from "../actions";
 import { StaffNameFields, StaffPrivateFields } from "../StaffFields";
+import { ContractCard } from "./ContractCard";
 
 export default async function StaffDetailPage({
   params,
@@ -32,11 +34,12 @@ export default async function StaffDetailPage({
   if (!z.uuid().safeParse(staffId).success) notFound();
 
   const supabase = await createSupabaseServer();
-  const [{ data: staff }, { data: details }, { data: assignmentData }, { data: clinicData }] = await Promise.all([
+  const [{ data: staff }, { data: details }, { data: assignmentData }, { data: clinicData }, { data: contractData }] = await Promise.all([
     supabase.from("staff_profiles").select("*").eq("staff_id", staffId).maybeSingle(),
     supabase.from("staff_private_details").select("*").eq("staff_id", staffId).maybeSingle(),
     supabase.from("staff_clinic_assignments").select("*").eq("staff_id", staffId).order("valid_from", { ascending: false }),
     supabase.from("clinics").select("clinic_id, name, status").order("display_order"),
+    supabase.from("employment_contracts").select("*").eq("staff_id", staffId).order("valid_from", { ascending: false }),
   ]);
   if (!staff) notFound();
   const s = staff as StaffRow;
@@ -91,6 +94,8 @@ export default async function StaffDetailPage({
             <StaffPrivateFields details={details as StaffPrivateRow | null} />
           </ActionForm>
         </Card>
+
+        <ContractCard staffId={s.staff_id} contracts={(contractData ?? []) as ContractRow[]} today={today} />
 
         <Card title="所属・応援勤務の履歴">
           {assignments.length === 0 ? (

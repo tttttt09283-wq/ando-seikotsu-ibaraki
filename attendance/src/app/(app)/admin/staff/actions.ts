@@ -6,6 +6,7 @@ import { requireHq } from "@/lib/auth/session";
 import { createSupabaseServer } from "@/lib/supabase/server";
 import { toUserMessage, type ActionResult } from "@/lib/errors";
 import {
+  contractSchema,
   endAssignmentSchema,
   parseForm,
   staffCreateSchema,
@@ -145,4 +146,28 @@ export async function endAssignment(_prev: ActionResult | null, formData: FormDa
 
   revalidatePath(`/admin/staff/${data[0].staff_id as string}`);
   return { ok: true, message: "応援登録の終了日を設定しました" };
+}
+
+export async function saveContract(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  await requireHq();
+  const parsed = parseForm(contractSchema, formData);
+  if (!parsed.ok) return parsed;
+  const d = parsed.data;
+
+  const supabase = await createSupabaseServer();
+  const { error } = await supabase.rpc("set_employment_contract", {
+    p_staff_id: d.staff_id,
+    p_valid_from: d.valid_from,
+    p_employment_type: d.employment_type,
+    p_weekly_scheduled_days: d.weekly_scheduled_days,
+    p_weekly_scheduled_minutes: d.weekly_scheduled_minutes,
+    p_daily_scheduled_minutes: d.daily_scheduled_minutes,
+    p_fixed_overtime_minutes: d.fixed_overtime_minutes,
+    p_legal_weekly_limit_minutes: d.legal_weekly_limit_minutes,
+    p_reason: d.reason,
+  });
+  if (error) return { ok: false, message: toUserMessage(error) };
+
+  revalidatePath(`/admin/staff/${d.staff_id}`);
+  return { ok: true, message: `${d.valid_from} から適用する勤務条件を保存しました` };
 }

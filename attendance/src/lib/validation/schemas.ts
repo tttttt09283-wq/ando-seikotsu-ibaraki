@@ -225,3 +225,45 @@ export const holidayCreditTargetSchema = z.object({
   holiday_date: dateString("日付"),
   credit_target: z.enum(["true", "false"]).transform((v) => v === "true"),
 });
+
+// ===== 勤務条件（雇用契約） =====
+const hoursToMinutes = (label: string, max: number) =>
+  z.coerce
+    .number({ error: `${label}を数値で入力してください` })
+    .min(0, `${label}は0以上で入力してください`)
+    .max(max, `${label}は${max}時間以内で入力してください`)
+    .refine((v) => Number.isInteger(v * 4), `${label}は15分（0.25時間）単位で入力してください`)
+    .transform((v) => Math.round(v * 60));
+
+export const EMPLOYMENT_TYPE_LABELS = {
+  full_time: "正社員",
+  part_time: "パート・アルバイト",
+  contract: "契約社員",
+  other: "その他",
+} as const;
+
+export const contractSchema = z.object({
+  staff_id: uuid("スタッフ"),
+  valid_from: dateString("適用開始日"),
+  employment_type: z.enum(["full_time", "part_time", "contract", "other"], { error: "雇用形態を選択してください" }),
+  weekly_scheduled_days: z.coerce
+    .number({ error: "週の勤務日数を入力してください" })
+    .min(0)
+    .max(7, "週の勤務日数は7日以内で入力してください")
+    .refine((v) => Number.isInteger(v * 2), "週の勤務日数は0.5日単位で入力してください"),
+  daily_scheduled_minutes: hoursToMinutes("1日の所定労働時間", 24),
+  weekly_scheduled_minutes: hoursToMinutes("週の所定労働時間", 168),
+  // 空欄なら雇用形態の標準（正社員 24時間、その他 0時間）を DB 側で適用する
+  fixed_overtime_minutes: z
+    .string()
+    .optional()
+    .transform((v, ctx) => {
+      if (v === undefined || v.trim() === "") return null;
+      const result = hoursToMinutes("みなし残業時間", 100).safeParse(v);
+      if (result.success) return result.data;
+      ctx.addIssue({ code: "custom", message: result.error.issues[0]?.message ?? "みなし残業時間を確認してください" });
+      return z.NEVER;
+    }),
+  legal_weekly_limit_minutes: z.enum(["2400", "2640"], { error: "週の法定労働時間を選択してください" }).transform(Number),
+  reason: requiredText("理由", 200),
+});

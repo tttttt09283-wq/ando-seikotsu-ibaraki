@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   clinicCreateSchema,
+  contractSchema,
   parseForm,
   roleGrantSchema,
   staffCreateSchema,
@@ -73,5 +74,41 @@ describe("DBエラーの日本語化", () => {
 
   it("想定外のエラーでは内部情報を出さない", () => {
     expect(toUserMessage({ code: "XX000", message: "internal: relation secret" })).not.toContain("secret");
+  });
+});
+
+describe("勤務条件の入力", () => {
+  const base = {
+    staff_id: "3f2504e0-4f89-41d3-9a0c-0305e82c3301",
+    valid_from: "2026-10-01",
+    employment_type: "full_time",
+    weekly_scheduled_days: "5",
+    daily_scheduled_minutes: "8",
+    weekly_scheduled_minutes: "40",
+    legal_weekly_limit_minutes: "2400",
+    reason: "入社時の契約",
+  };
+
+  it("時間入力を分に変換し、みなし残業の空欄は標準値（DB側）に任せる", () => {
+    const fd = new FormData();
+    for (const [k, v] of Object.entries({ ...base, fixed_overtime_minutes: "" })) fd.set(k, v);
+    const r = parseForm(contractSchema, fd);
+    expect(r.ok && r.data).toMatchObject({
+      daily_scheduled_minutes: 480,
+      weekly_scheduled_minutes: 2400,
+      fixed_overtime_minutes: null,
+      legal_weekly_limit_minutes: 2400,
+    });
+  });
+
+  it("みなし残業を個別に指定でき、15分単位以外は拒否する", () => {
+    const ok = new FormData();
+    for (const [k, v] of Object.entries({ ...base, fixed_overtime_minutes: "30" })) ok.set(k, v);
+    const r = parseForm(contractSchema, ok);
+    expect(r.ok && r.data.fixed_overtime_minutes).toBe(1800);
+
+    const ng = new FormData();
+    for (const [k, v] of Object.entries({ ...base, fixed_overtime_minutes: "24.1" })) ng.set(k, v);
+    expect(parseForm(contractSchema, ng)).toEqual({ ok: false, message: "みなし残業時間は15分（0.25時間）単位で入力してください" });
   });
 });

@@ -50,6 +50,25 @@ export interface AssignmentRow {
   note: string | null;
 }
 
+export interface ContractRow {
+  contract_id: string;
+  staff_id: string;
+  valid_from: string;
+  valid_to: string | null;
+  employment_type: "full_time" | "part_time" | "contract" | "other";
+  weekly_scheduled_days: number;
+  weekly_scheduled_minutes: number;
+  daily_scheduled_minutes: number;
+  legal_weekly_limit_minutes: number;
+  fixed_overtime_minutes: number;
+  note: string | null;
+}
+
+/** 分 → 「8時間」「7.5時間」 */
+export function minutesToHours(minutes: number) {
+  return `${Number((minutes / 60).toFixed(2))}時間`;
+}
+
 export interface AccountRow {
   user_id: string;
   email: string;
