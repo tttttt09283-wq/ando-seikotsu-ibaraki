@@ -1038,6 +1038,95 @@ function LoginScreen({onLogin}){
   );
 }
 
+// ===== 予約ではない枠（不在枠・新患の仮枠） =====
+// staff_breaks に reason で保存する。予約（bookings）ではないので、来院数・売上・KPIなどの数字には入らない。
+// 患者様のWEB予約ページは staff_breaks を見て空き枠を判定しているため、この時間は予約できなくなる。
+// 新患の仮枠の名前・電話・メモは個人情報なので、誰でも読める staff_breaks ではなく staff_break_notes（スタッフのみ）に保存する
+const AWAY_REASONS=["銀行","用事","研修","外出","会議","その他"];
+const NEWPT_HOLD_REASON="新患仮枠";
+const AWAY_ICONS={"銀行":"🏦","用事":"🚶","研修":"📚","外出":"🚶","会議":"💬","その他":"📌"};
+function breakStyleOf(reason){
+  if(reason===NEWPT_HOLD_REASON) return {bg:"repeating-linear-gradient(135deg,#ecfdf5,#ecfdf5 6px,#d1fae5 6px,#d1fae5 12px)",border:"2px dashed #059669",color:"#047857",icon:"🆕",label:"仮枠"};
+  if(AWAY_REASONS.includes(reason)) return {bg:"repeating-linear-gradient(135deg,#fffbeb,#fffbeb 6px,#fef3c7 6px,#fef3c7 12px)",border:"1.5px solid #f59e0b",color:"#92400e",icon:AWAY_ICONS[reason]||"📌",label:reason};
+  return {bg:"#f1f5f9",border:"1px solid #e2e8f0",color:"#94a3b8",icon:"",label:reason||"休憩"};
+}
+function CalendarHoldModal({init,onClose,onSaved}){
+  const isNew=init.kind==="newpt";
+  const [time,setTime]=React.useState(init.time);
+  const [duration,setDuration]=React.useState(60);
+  const [reason,setReason]=React.useState(isNew?NEWPT_HOLD_REASON:"銀行");
+  const [name,setName]=React.useState("");
+  const [phone,setPhone]=React.useState("");
+  const [menu,setMenu]=React.useState("");
+  const [memo,setMemo]=React.useState("");
+  const [saving,setSaving]=React.useState(false);
+  const staff=STAFF_ACCOUNTS.find(x=>x.id===init.staffId)||{name:"",color:"#64748b"};
+  const durs=[10,20,30,40,60,90,120,180];
+  async function save(){
+    setSaving(true);
+    try{
+      const rows=await sb.insert("staff_breaks",{staff_id:init.staffId,date:init.date,time,duration,reason});
+      if(!Array.isArray(rows)||rows.length===0) throw new Error((rows&&rows.message)||"登録できませんでした");
+      let note=null;
+      if(isNew&&(name.trim()||phone.trim()||menu||memo.trim())){
+        const nr=await sb.insert("staff_break_notes",{break_id:rows[0].id,patient_name:name.trim()||null,phone:phone.trim()||null,menu:menu||null,memo:memo.trim()||null});
+        note=Array.isArray(nr)&&nr[0]?nr[0]:null;
+      }
+      onSaved(rows[0],note);
+    }catch(e){ alert("登録に失敗しました："+(e.message||"不明なエラー")); }
+    setSaving(false);
+  }
+  const chip=(on)=>({padding:"6px 12px",borderRadius:8,border:`2px solid ${on?"#1e3a5f":"#e2e8f0"}`,background:on?"#1e3a5f":"white",color:on?"white":"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"});
+  return(
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-box" style={{overflowY:"auto",maxWidth:460}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-header" style={{background:isNew?"linear-gradient(135deg,#047857,#059669)":"linear-gradient(135deg,#b45309,#d97706)"}}>
+          <div>
+            <div style={{fontWeight:800,fontSize:16,color:"white"}}>{isNew?"🆕 新患の仮枠を取る":"🏦 不在枠を入れる（銀行・用事・研修など）"}</div>
+            <div style={{fontSize:12,color:"rgba(255,255,255,.85)",marginTop:2}}>{init.date}　{staff.name}</div>
+          </div>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div style={{padding:18}}>
+          {!isNew&&<div className="form-group">
+            <label className="form-label">内容</label>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{AWAY_REASONS.map(r=><button key={r} type="button" onClick={()=>setReason(r)} style={chip(reason===r)}>{AWAY_ICONS[r]} {r}</button>)}</div>
+          </div>}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <div className="form-group">
+              <label className="form-label">開始</label>
+              <select className="form-input" value={time} onChange={e=>setTime(e.target.value)}>{SLOTS.map(t=><option key={t} value={t}>{t}</option>)}</select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">終了</label>
+              <div className="form-input" style={{background:"#f8fafc",fontWeight:700}}>{addMinutesToTime(time,duration)}</div>
+            </div>
+          </div>
+          <div className="form-group">
+            <label className="form-label">長さ</label>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{durs.map(d=><button key={d} type="button" onClick={()=>setDuration(d)} style={chip(duration===d)}>{d>=60&&d%60===0?`${d/60}時間`:d>60?`${Math.floor(d/60)}時間${d%60}分`:`${d}分`}</button>)}</div>
+          </div>
+          {isNew&&<>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <div className="form-group"><label className="form-label">お名前（わかれば）</label><input className="form-input" value={name} onChange={e=>setName(e.target.value)} placeholder="例：山田 花子"/></div>
+              <div className="form-group"><label className="form-label">電話番号（わかれば）</label><input className="form-input" value={phone} onChange={e=>setPhone(e.target.value)} inputMode="tel"/></div>
+            </div>
+            <div className="form-group"><label className="form-label">メニュー（わかれば）</label>
+              <select className="form-input" value={menu} onChange={e=>setMenu(e.target.value)}><option value="">未定</option>{MENUS.map(m=><option key={m} value={m}>{m}</option>)}</select></div>
+            <div className="form-group"><label className="form-label">メモ</label><input className="form-input" value={memo} onChange={e=>setMemo(e.target.value)} placeholder="例：電話で問い合わせ。折り返し待ち"/></div>
+          </>}
+          <div style={{fontSize:11.5,color:"#64748b",background:"#f8fafc",borderRadius:8,padding:"8px 10px",marginBottom:12,lineHeight:1.6}}>
+            ・この枠は<b>予約数・売上・KPIなどの数字には入りません</b><br/>
+            ・患者様のWEB予約では、この時間は埋まって予約できなくなります
+            {isNew&&<><br/>・確定したら、カレンダーの仮枠をタップ →「予約に変更」で本予約にできます</>}
+          </div>
+          <button onClick={save} disabled={saving} className="btn btn-primary" style={{width:"100%",justifyContent:"center",padding:12,fontSize:15,borderRadius:10,background:isNew?"#059669":"#d97706",opacity:saving?.7:1}}>{saving?"登録中...":isNew?"仮枠を取る":"不在枠を入れる"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ===== 休憩管理モーダル =====
 function BreakModal({onClose,bookings,breaks,setBreaks}){
   const [selDate,setSelDate]=React.useState(fmtDate(today));
@@ -1107,7 +1196,7 @@ function BreakModal({onClose,bookings,breaks,setBreaks}){
             <div className="form-group" style={{marginBottom:14}}>
               <label className="form-label">理由</label>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                {["休憩","昼休み","研修","外出","その他"].map(r=>(<button key={r} onClick={()=>setReason(r)} className="btn" style={{padding:"5px 10px",borderRadius:7,border:`2px solid ${reason===r?"#1e3a5f":"#e2e8f0"}`,background:reason===r?"#1e3a5f":"white",color:reason===r?"white":"#374151",fontSize:12,fontWeight:reason===r?700:400}}>{r}</button>))}
+                {["休憩","昼休み","銀行","用事","研修","外出","会議","その他"].map(r=>(<button key={r} onClick={()=>setReason(r)} className="btn" style={{padding:"5px 10px",borderRadius:7,border:`2px solid ${reason===r?"#1e3a5f":"#e2e8f0"}`,background:reason===r?"#1e3a5f":"white",color:reason===r?"white":"#374151",fontSize:12,fontWeight:reason===r?700:400}}>{r}</button>))}
               </div>
             </div>
             <button onClick={addBreak} disabled={saving} className="btn btn-primary" style={{width:"100%",justifyContent:"center",padding:11,fontSize:14,borderRadius:9,opacity:saving?.7:1}}>{saving?"登録中...":"休憩を登録する"}</button>
@@ -12823,6 +12912,11 @@ function Dashboard({user,onLogout}){
   const [showBreakModal,setShowBreakModal]=React.useState(false);
   const [viewIntake,setViewIntake]=React.useState(null);
   const [bookingPopup,setBookingPopup]=React.useState(null); // {booking, x, y}
+  const [holdModal,setHoldModal]=React.useState(null); // 不在枠・新患仮枠の登録 {kind:"away"|"newpt", date, time, staffId}
+  const [holdPopup,setHoldPopup]=React.useState(null); // カレンダー上の休憩・不在・仮枠をタップしたとき {br, x, y}
+  const [breakNotes,setBreakNotes]=React.useState({}); // 新患仮枠のメモ（break_id → {patient_name, phone, menu, memo}）
+  const [convertingHoldId,setConvertingHoldId]=React.useState(null); // 「予約に変更」中の仮枠（予約が保存できたら消す）
+  const lastBreakResizeAt=React.useRef(0);
   const [iframeModal,setIframeModal]=React.useState(null); // {url, title} | null
 
   // intake.html / pos.html から「モーダルを閉じて」というメッセージを受け取る
@@ -13012,6 +13106,7 @@ function Dashboard({user,onLogout}){
       DURATION={...BASE_DURATION,...Object.fromEntries(custom.map(m=>[m.name,m.duration||30]))};
       MENU_PRICE={...BASE_MENU_PRICE,...Object.fromEntries(custom.map(m=>[m.name,m.price||0]))};
     }catch(e){console.error(e);}
+    sb.select("staff_break_notes","").then(rows=>{ if(Array.isArray(rows)) setBreakNotes(Object.fromEntries(rows.map(r=>[r.break_id,r]))); }).catch(()=>{});
     setLoading(false);
   }
 
@@ -13237,14 +13332,14 @@ function Dashboard({user,onLogout}){
 
   function openAdd(date=null,time=null,patientName="",phone=""){
     setForm({patient_name:patientName,phone:phone,staff_id:isAdmin?1:user.id,date:date||todayStr,time:time||"10:00",menu:MENUS[0],line_notify:true,reminded:false,store_id:selStoreId});
-    setConflict(false);setEditId(null);setView("form");
+    setConflict(false);setEditId(null);setView("form");setConvertingHoldId(null);
   }
   function openEdit(b){
     if(!isAdmin&&b.staff_id!==user.id)return;
     // トレーニングモード中にカレンダー上で見えている本番予約（is_training:false）は、
     // 練習の練習で本番データを書き換えてしまわないよう編集不可（閲覧のみ）にする
     if(trainingMode&&!b.is_training){ showToast("本番の予約はトレーニングモードでは編集できません（閲覧のみ）","delete"); return; }
-    setForm({...b});setEditId(b.id);setConflict(false);setView("form");
+    setForm({...b});setEditId(b.id);setConflict(false);setView("form");setConvertingHoldId(null);
   }
 
   // ===== 回数券・フリーパスをpassesテーブルへ反映 =====
@@ -13357,6 +13452,12 @@ function Dashboard({user,onLogout}){
           throw new Error((result&&result.message)||"登録に失敗しました");
         }
         setAllBookings(prev=>[...prev,result[0]]);
+        // 新患の仮枠から「予約に変更」した場合は、本予約ができたので仮枠を消す
+        if(convertingHoldId!=null){
+          const hid=convertingHoldId; setConvertingHoldId(null);
+          try{ await sb.delete("staff_breaks",hid); }catch(e){}
+          setBreaks(prev=>prev.filter(x=>x.id!==hid));
+        }
         if(!trainingMode){
           const staffNm=(STAFF_ACCOUNTS.find(s=>s.id===result[0].staff_id)||{}).name||"担当未定";
           notifyStaffGroup(`🆕 新規予約\n${result[0].patient_name||""} 様\n${result[0].date} ${result[0].time}\n担当：${staffNm}\nメニュー：${result[0].menu||""}`);
@@ -13733,6 +13834,7 @@ function Dashboard({user,onLogout}){
       e.preventDefault();
       e.stopPropagation();
       suppressNextClick();
+      lastBreakResizeAt.current=Date.now();
       const br=resizeBreak;
       const currentDuration=br.duration||10;
       const headerW=100;
@@ -13743,7 +13845,7 @@ function Dashboard({user,onLogout}){
       setResizeBreak(null);
       setResizeBreakDeltaPx(0);
     }
-    function onCancel(){ setResizeBreak(null); setResizeBreakDeltaPx(0); }
+    function onCancel(){ lastBreakResizeAt.current=Date.now(); setResizeBreak(null); setResizeBreakDeltaPx(0); }
     window.addEventListener("pointermove",onMove);
     window.addEventListener("pointerup",onUp);
     window.addEventListener("pointercancel",onCancel);
@@ -14321,14 +14423,18 @@ function Dashboard({user,onLogout}){
                                     const baseWBr=(br.duration||10)/10*CELL_W;
                                     const liveWBr=isBeingResizedBr?Math.max(baseWBr+resizeBreakDeltaPx,CELL_W):baseWBr;
                                     const liveDurBr=isBeingResizedBr?Math.max(10,(br.duration||10)+Math.round(resizeBreakDeltaPx/CELL_W)*10):(br.duration||10);
+                                    const bst=breakStyleOf(br.reason);
                                     return(
-                                    <div key={`br-${br.id}`} style={{position:"absolute",left:timeToX(br.time),top:4,bottom:4,width:liveWBr,background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1,overflow:"hidden"}}>
-                                      <span style={{fontSize:9,color:"#94a3b8",fontWeight:600,pointerEvents:"none"}}>{br.reason}{isBeingResizedBr&&<span style={{marginLeft:2,fontWeight:800}}>（{liveDurBr}分）</span>}</span>
+                                    <div key={`br-${br.id}`} data-break-id={br.id}
+                                      onClick={e=>{ e.stopPropagation(); if(Date.now()-lastBreakResizeAt.current<400) return; setTimePickerPopup(null); setBookingPopup(null); setHoldPopup({br,x:e.clientX,y:e.clientY}); }}
+                                      style={{position:"absolute",left:timeToX(br.time),top:4,bottom:4,width:liveWBr,background:bst.bg,border:bst.border,borderRadius:5,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1,overflow:"hidden",cursor:"pointer"}}>
+                                      <span style={{fontSize:9,color:bst.color,fontWeight:700,pointerEvents:"none",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",padding:"0 3px"}}>{bst.icon}{br.reason===NEWPT_HOLD_REASON?`仮）${(breakNotes[br.id]&&breakNotes[br.id].patient_name)||"新患"}`:br.reason}{isBeingResizedBr&&<span style={{marginLeft:2,fontWeight:800}}>（{liveDurBr}分）</span>}</span>
                                       {isAdmin&&(
                                         <div
                                           onPointerDown={e=>{
                                             e.stopPropagation();e.preventDefault();
                                             resizeRef.current={startX:e.clientX,deltaPx:0};
+                                            lastBreakResizeAt.current=Date.now()+60000; // ドラッグ中〜直後のタップで詳細が開かないように
                                             setResizeBreak(br);setResizeBreakDeltaPx(0);
                                           }}
                                           style={{position:"absolute",right:0,top:0,bottom:0,width:8,cursor:"ew-resize",background:"rgba(148,163,184,.35)"}}
@@ -14509,7 +14615,7 @@ function Dashboard({user,onLogout}){
         const tvw=(window.visualViewport&&window.visualViewport.width)||window.innerWidth;
         const tvh=(window.visualViewport&&window.visualViewport.height)||window.innerHeight;
         const posLeft=Math.min(timePickerPopup.x-70,tvw-160);
-        const posTop=Math.min(timePickerPopup.y-90,tvh-220);
+        const posTop=Math.min(timePickerPopup.y-90,tvh-330);
         return(
           <>
             <div onClick={()=>setTimePickerPopup(null)} style={{position:"fixed",inset:0,zIndex:300}}/>
@@ -14523,9 +14629,61 @@ function Dashboard({user,onLogout}){
                   {t}
                 </button>
               ))}
+              {/* 予約ではない枠：数字には入らず、WEB予約ではこの時間が埋まる */}
+              <button onClick={()=>{ setHoldModal({kind:"newpt",date:timePickerPopup.date,time:timePickerPopup.centerTime,staffId:timePickerPopup.staffId}); setTimePickerPopup(null); }}
+                style={{width:"100%",padding:"10px 8px",border:"none",borderTop:"2px solid #e2e8f0",background:"#ecfdf5",color:"#047857",fontWeight:800,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>🆕 新患の仮枠</button>
+              <button onClick={()=>{ setHoldModal({kind:"away",date:timePickerPopup.date,time:timePickerPopup.centerTime,staffId:timePickerPopup.staffId}); setTimePickerPopup(null); }}
+                style={{width:"100%",padding:"10px 8px",border:"none",borderTop:"1px solid #fde68a",background:"#fffbeb",color:"#92400e",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit",lineHeight:1.3}}>🏦 不在枠<br/><span style={{fontSize:10,fontWeight:700}}>銀行・用事・研修など</span></button>
             </div>
           </>
         );
+      })()}
+
+      {/* 不在枠・新患の仮枠を登録 */}
+      {holdModal&&<CalendarHoldModal init={holdModal} onClose={()=>setHoldModal(null)} onSaved={(br,note)=>{
+        setBreaks(prev=>[...prev,br]);
+        if(note) setBreakNotes(prev=>({...prev,[br.id]:note}));
+        setHoldModal(null);
+        showToast(br.reason===NEWPT_HOLD_REASON?"新患の仮枠を取りました":`${br.reason}の不在枠を入れました`);
+      }}/>}
+
+      {/* カレンダー上の休憩・不在枠・仮枠をタップしたとき */}
+      {holdPopup&&(()=>{
+        const br=holdPopup.br, note=breakNotes[br.id]||{}, isNew=br.reason===NEWPT_HOLD_REASON, bst=breakStyleOf(br.reason);
+        const st=STAFF_ACCOUNTS.find(x=>x.id===br.staff_id)||{name:""};
+        const tvw=(window.visualViewport&&window.visualViewport.width)||window.innerWidth;
+        const tvh=(window.visualViewport&&window.visualViewport.height)||window.innerHeight;
+        const close=()=>setHoldPopup(null);
+        async function remove(){
+          if(!window.confirm(`${br.date} ${br.time}〜${addMinutesToTime(br.time,br.duration||10)}（${st.name}）の「${isNew?"新患の仮枠":br.reason}」を削除しますか？`)) return;
+          try{ await sb.delete("staff_breaks",br.id); }catch(e){}
+          setBreaks(prev=>prev.filter(x=>x.id!==br.id)); close(); showToast("削除しました","delete");
+        }
+        function convert(){
+          openAdd(br.date,br.time,note.patient_name||"",note.phone||"");
+          setForm(f=>f?{...f,staff_id:br.staff_id,menu:note.menu||f.menu}:f);
+          setConvertingHoldId(br.id); close();
+        }
+        return(<>
+          <div onClick={close} style={{position:"fixed",inset:0,zIndex:300}}/>
+          <div style={{position:"fixed",left:Math.max(8,Math.min(holdPopup.x-120,tvw-260)),top:Math.max(8,Math.min(holdPopup.y+10,tvh-300)),zIndex:400,background:"white",borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,.22)",width:250,border:"1px solid #e2e8f0",overflow:"hidden"}}>
+            <div style={{background:bst.bg,borderBottom:bst.border,padding:"10px 12px"}}>
+              <div style={{fontWeight:800,fontSize:14,color:bst.color}}>{bst.icon} {isNew?"新患の仮枠":br.reason}</div>
+              <div style={{fontSize:12,color:"#374151",marginTop:2}}>{br.date}　{br.time}〜{addMinutesToTime(br.time,br.duration||10)}（{br.duration||10}分）<br/>担当：{st.name}</div>
+            </div>
+            {isNew&&<div style={{padding:"8px 12px",fontSize:12.5,lineHeight:1.7,borderBottom:"1px solid #f1f5f9"}}>
+              <div>👤 {note.patient_name||<span style={{color:"#94a3b8"}}>お名前未入力</span>}</div>
+              {note.phone&&<div>📞 {note.phone}</div>}
+              {note.menu&&<div>📋 {note.menu}</div>}
+              {note.memo&&<div>📝 {note.memo}</div>}
+            </div>}
+            <div style={{padding:10,display:"flex",flexDirection:"column",gap:6}}>
+              {isNew&&<button onClick={convert} className="btn" style={{justifyContent:"center",background:"#059669",color:"white",fontWeight:800,padding:"9px",borderRadius:8}}>📅 予約に変更する</button>}
+              <div style={{fontSize:10.5,color:"#94a3b8",lineHeight:1.5}}>予約数・売上には数えていません{isNew?"。予約に変更して保存すると、この仮枠は自動で消えます":""}</div>
+              <button onClick={remove} className="btn" style={{justifyContent:"center",background:"#fef2f2",color:"#dc2626",fontWeight:700,padding:"7px",borderRadius:8,border:"1px solid #fecaca"}}>🗑 削除</button>
+            </div>
+          </div>
+        </>);
       })()}
 
       {/* ドラッグ移動中のゴースト表示（実際の予約ブロックに似た見た目でカーソルに追従） */}
