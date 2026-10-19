@@ -1963,12 +1963,14 @@ function KarteListPanel({bookings,payments,stores,todayStr}){
   const [onlyInsured,setOnlyInsured]=React.useState(true);
   const [copied,setCopied]=React.useState(false);
 
-  const patientKey=b=>(b.phone||"")+"|"+(b.patient_name||"");
+  // 患者様は名前で見分ける（患者管理と同じ）。古い予約は電話番号が空のことがあり、電話番号まで含めると
+  // 同じ方なのに別人扱いになって「未登録」と表示されていたため、名前（空白の違いは無視）だけで判定する
+  const patientKey=b=>String(b.patient_name||"").replace(/[\s　]/g,"");
   const result=React.useMemo(()=>{
-    // 患者様ごとのカルテ番号（どれかの予約に入っていれば採用）
+    // 患者様ごとのカルテ番号（どれかの予約に入っていれば採用。複数あれば新しい予約のものを優先）
     const karteByPatient={};
-    bookings.forEach(b=>{
-      const k=(b.karte_no||"").trim();
+    bookings.slice().sort((a,c)=>(a.date||"").localeCompare(c.date||"")).forEach(b=>{
+      const k=String(b.karte_no||"").trim();
       if(k) karteByPatient[patientKey(b)]=k;
     });
     const payByBooking=mergePaymentsByBooking(payments);
@@ -7855,7 +7857,7 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
         :`次回予約がないため、最新の来院（${latestBk.date} ${latestBk.time}）の記録に保存します。`)+
       (nameChanged?`\n\n名前を「${selPatient}」→「${newName}」に変更します（来院履歴・会計・回数券がばらばらにならないよう、この方の全${selBks.length}件の予約と会計・回数券の名前もまとめて変更します）。`:"")+
       (kanaChanged?`\n\nフリガナを「${patientInfo.patient_kana||"（未設定）"}」→「${editForm.kana.trim()||"（未設定）"}」に変更します。`:"")+
-      (karteChanged?`\n\nカルテ番号を「${patientInfo.karte_no||"（未設定）"}」→「${editForm.karte_no.trim()||"（未設定）"}」に変更します。`:"")+
+      (karteChanged?`\n\nカルテ番号を「${patientInfo.karte_no||"（未設定）"}」→「${editForm.karte_no.trim()||"（未設定）"}」に変更します（この方の全${selBks.length}件の予約に反映し、カルテ番号一覧にも表示されます）。`:"")+
       `\n\nよろしいですか？`;
     if(!window.confirm(confirmMsg)) return;
     // 更新できなかった場合（権限がない等）に「保存できたように見えて実は変わっていない」を防ぐため、結果を確かめる
@@ -7867,12 +7869,21 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
         check(await sb.update("bookings",b.id,info));
         changed[b.id]=info;
       }
+      // カルテ番号は患者様ごとに1つ。今後の予約だけでなく過去の予約にも入れて、どの画面（カルテ番号一覧など）からも同じ番号が見えるようにする
+      if(karteChanged){
+        const targetIds=new Set(targets.map(b=>b.id));
+        for(const b of selBks){
+          if(targetIds.has(b.id)) continue;
+          check(await sb.update("bookings",b.id,{karte_no:info.karte_no}));
+          changed[b.id]={...(changed[b.id]||{}),karte_no:info.karte_no};
+        }
+      }
       if(nameChanged){
         const targetIds=new Set(targets.map(b=>b.id));
         for(const b of selBks){
           if(targetIds.has(b.id)) continue;
           check(await sb.update("bookings",b.id,{patient_name:newName}));
-          changed[b.id]={patient_name:newName};
+          changed[b.id]={...(changed[b.id]||{}),patient_name:newName};
         }
         const enc=encodeURIComponent(selPatient);
         await sb.query("payments","PATCH",{patient_name:newName},`?patient_name=eq.${enc}`);
@@ -8141,6 +8152,7 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
                     ?<>⚠️ この内容は「{selPatient}」の<b>今後の予約（{editableBks.length}件）</b>に反映されます。過去の来院記録・カルテは変更されません。</>
                     :<>ℹ️ 次回予約がないため、<b>最新の来院（{latestBk?.date}）の記録</b>に保存します（それより前の来院記録は変更されません）。</>}
                   {editForm.name.trim()&&editForm.name.trim()!==selPatient&&<div style={{marginTop:4}}>名前を変えると、来院履歴・会計・回数券の名前もまとめて変更されます。</div>}
+                  {(editForm.karte_no||"").trim()!==(patientInfo?.karte_no||"")&&<div style={{marginTop:4}}>カルテ番号は、過去の来院も含めたこの方の全予約に反映されます（カルテ番号一覧にもすぐ表示されます）。</div>}
                 </div>
                 <div style={{display:"flex",gap:8}}>
                   <button onClick={()=>setEditMode(false)} style={{flex:1,padding:"8px",background:"white",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit",color:"#374151"}}>キャンセル</button>
