@@ -332,3 +332,29 @@ export const shiftTemplateToggleSchema = z.object({
   clinic_id: uuid("院"),
   is_active: z.enum(["true", "false"]).transform((v) => v === "true"),
 });
+
+// ===== 共用端末・PIN =====
+export const kioskIssueSchema = z.object({
+  clinic_id: uuid("院"),
+  name: requiredText("端末名", 40),
+  device_id: z
+    .string()
+    .optional()
+    .transform((v) => (v ? v : null)),
+});
+
+export const kioskDisableSchema = z.object({ device_id: uuid("端末") });
+
+export const pinSetSchema = z.object({
+  staff_id: uuid("スタッフ"),
+  mode: z.enum(["random", "manual"]),
+  pin: z.string().optional(),
+});
+
+export const pinUnlockSchema = z.object({ staff_id: uuid("スタッフ") });
+
+export const legalHolidaySchema = z.object({
+  clinic_id: uuid("院"),
+  weekday: z.enum(["", "0", "1", "2", "3", "4", "5", "6"]).transform((v) => (v === "" ? null : Number(v))),
+  reason: requiredText("理由", 200),
+});

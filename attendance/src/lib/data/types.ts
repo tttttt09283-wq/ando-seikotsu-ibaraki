@@ -13,6 +13,7 @@ export interface ClinicRow {
   suspended_on: string | null;
   closed_on: string | null;
   display_order: number;
+  legal_holiday_weekday: number | null;
 }
 
 export interface StaffRow {

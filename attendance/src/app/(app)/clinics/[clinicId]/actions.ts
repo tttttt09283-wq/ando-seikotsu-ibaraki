@@ -9,6 +9,7 @@ import {
   businessHoursMetaSchema,
   calendarExceptionDeleteSchema,
   calendarExceptionSchema,
+  legalHolidaySchema,
   parseForm,
 } from "@/lib/validation/schemas";
 
@@ -91,3 +92,25 @@ export async function deleteCalendarException(_prev: ActionResult | null, formDa
   return { ok: true, message: "取り消しました（通常の診療時間に戻ります）" };
 }
 
+
+/** 院の法定休日（割増35%の対象となる休日）の曜日を登録する（本部のみ） */
+export async function saveLegalHoliday(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  await requireHq();
+  const parsed = parseForm(legalHolidaySchema, formData);
+  if (!parsed.ok) return parsed;
+  const supabase = await createSupabaseServer();
+  const { error } = await supabase.rpc("set_clinic_legal_holiday", {
+    p_clinic_id: parsed.data.clinic_id,
+    p_weekday: parsed.data.weekday,
+    p_reason: parsed.data.reason,
+  });
+  if (error) return { ok: false, message: toUserMessage(error) };
+  revalidatePath(`/clinics/${parsed.data.clinic_id}`);
+  return {
+    ok: true,
+    message:
+      parsed.data.weekday === null
+        ? "法定休日を未登録に戻しました"
+        : "法定休日を登録しました。過去の勤怠に反映するには、勤怠画面で再計算してください",
+  };
+}

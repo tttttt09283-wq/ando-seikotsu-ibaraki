@@ -4,13 +4,13 @@ import { NextResponse, type NextRequest } from "next/server";
 /**
  * 全リクエストで Supabase のセッション Cookie を更新し、未ログインならログイン画面へ送る。
  * ここは「楽観的チェック」のみ。権限の最終判定は各ページ・Server Action・DB（RLS）で行う。
- * /kiosk は共用端末専用で、管理画面のセッションを一切使わない（フェーズ3で端末認証を実装）。
+ * /kiosk と /api/kiosk は共用端末専用で、管理画面のセッションを一切使わない（端末シークレットで認証）。
  */
 const PUBLIC_PATHS = ["/login", "/forbidden"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  if (pathname.startsWith("/kiosk")) {
+  if (pathname.startsWith("/kiosk") || pathname.startsWith("/api/kiosk/")) {
     return NextResponse.next();
   }
 

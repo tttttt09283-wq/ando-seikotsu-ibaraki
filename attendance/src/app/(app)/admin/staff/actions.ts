@@ -5,10 +5,13 @@ import { redirect } from "next/navigation";
 import { requireHq } from "@/lib/auth/session";
 import { createSupabaseServer } from "@/lib/supabase/server";
 import { toUserMessage, type ActionResult } from "@/lib/errors";
+import { generatePin, isAcceptablePin } from "@/lib/kiosk/pin";
 import {
   contractSchema,
   endAssignmentSchema,
   parseForm,
+  pinSetSchema,
+  pinUnlockSchema,
   staffCreateSchema,
   staffTransferSchema,
   staffUpdateSchema,
@@ -170,4 +173,36 @@ export async function saveContract(_prev: ActionResult | null, formData: FormDat
 
   revalidatePath(`/admin/staff/${d.staff_id}`);
   return { ok: true, message: `${d.valid_from} から適用する勤務条件を保存しました` };
+}
+
+/** 共用端末の PIN を発行する（本部のみ）。発行した PIN はこの結果メッセージで1回だけ表示する */
+export async function issuePin(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  await requireHq();
+  const parsed = parseForm(pinSetSchema, formData);
+  if (!parsed.ok) return parsed;
+  const pin = parsed.data.mode === "random" ? generatePin() : (parsed.data.pin ?? "");
+  if (!isAcceptablePin(pin)) return { ok: false, message: "PINは4〜8桁の数字で、同じ数字の繰り返しや連番以外にしてください" };
+
+  const supabase = await createSupabaseServer();
+  const { error } = await supabase.rpc("set_kiosk_pin", { p_staff_id: parsed.data.staff_id, p_pin: pin });
+  if (error) return { ok: false, message: toUserMessage(error) };
+  revalidatePath(`/admin/staff/${parsed.data.staff_id}`);
+  return {
+    ok: true,
+    message:
+      parsed.data.mode === "random"
+        ? `PINを発行しました：${pin}（この画面でのみ表示。本人に直接伝えてください。初回の打刻時に本人が変更します）`
+        : "PINを設定しました（初回の打刻時に本人が変更します）",
+  };
+}
+
+export async function unlockPin(_prev: ActionResult | null, formData: FormData): Promise<ActionResult> {
+  await requireHq();
+  const parsed = parseForm(pinUnlockSchema, formData);
+  if (!parsed.ok) return parsed;
+  const supabase = await createSupabaseServer();
+  const { error } = await supabase.rpc("unlock_kiosk_pin", { p_staff_id: parsed.data.staff_id });
+  if (error) return { ok: false, message: toUserMessage(error) };
+  revalidatePath(`/admin/staff/${parsed.data.staff_id}`);
+  return { ok: true, message: "PINのロックを解除しました" };
 }

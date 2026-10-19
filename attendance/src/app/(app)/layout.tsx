@@ -22,6 +22,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           { href: "/admin/holidays", label: "会社カレンダー" },
           { href: "/admin/staff", label: "スタッフ" },
           { href: "/admin/users", label: "アカウント・権限" },
+          { href: "/admin/kiosks", label: "共用端末" },
         ]
       : []),
     { href: "/me", label: "マイページ" },

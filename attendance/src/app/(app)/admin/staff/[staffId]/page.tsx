@@ -20,6 +20,7 @@ import { todayJst } from "@/lib/time/jst";
 import { addSupportAssignment, endAssignment, transferStaff, updateStaff } from "../actions";
 import { StaffNameFields, StaffPrivateFields } from "../StaffFields";
 import { ContractCard } from "./ContractCard";
+import { PinCard, type PinStatus } from "./PinCard";
 
 export default async function StaffDetailPage({
   params,
@@ -34,12 +35,13 @@ export default async function StaffDetailPage({
   if (!z.uuid().safeParse(staffId).success) notFound();
 
   const supabase = await createSupabaseServer();
-  const [{ data: staff }, { data: details }, { data: assignmentData }, { data: clinicData }, { data: contractData }] = await Promise.all([
+  const [{ data: staff }, { data: details }, { data: assignmentData }, { data: clinicData }, { data: contractData }, { data: pinData }] = await Promise.all([
     supabase.from("staff_profiles").select("*").eq("staff_id", staffId).maybeSingle(),
     supabase.from("staff_private_details").select("*").eq("staff_id", staffId).maybeSingle(),
     supabase.from("staff_clinic_assignments").select("*").eq("staff_id", staffId).order("valid_from", { ascending: false }),
     supabase.from("clinics").select("clinic_id, name, status").order("display_order"),
     supabase.from("employment_contracts").select("*").eq("staff_id", staffId).order("valid_from", { ascending: false }),
+    supabase.rpc("kiosk_pin_status", { p_staff_id: staffId }),
   ]);
   if (!staff) notFound();
   const s = staff as StaffRow;
@@ -96,6 +98,8 @@ export default async function StaffDetailPage({
         </Card>
 
         <ContractCard staffId={s.staff_id} contracts={(contractData ?? []) as ContractRow[]} today={today} />
+
+        <PinCard staffId={s.staff_id} staffCode={s.staff_code} status={((pinData ?? []) as PinStatus[])[0] ?? null} />
 
         <Card title="所属・応援勤務の履歴">
           {assignments.length === 0 ? (

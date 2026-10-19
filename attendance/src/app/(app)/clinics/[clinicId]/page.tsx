@@ -9,7 +9,7 @@ import { Badge, Card, EmptyState, Field, Input, PageHeader, Select, Table, Td } 
 import { DAY_KINDS, DAY_KIND_LABELS, SLOTS_PER_DAY, formatSlots, hhmm, slotFieldName, type TimeSlot } from "@/lib/calendar";
 import { isActiveOn, type ClinicRow } from "@/lib/data/types";
 import { addDays, todayJst } from "@/lib/time/jst";
-import { deleteCalendarException, saveBusinessHours, saveCalendarException } from "./actions";
+import { deleteCalendarException, saveBusinessHours, saveCalendarException, saveLegalHoliday } from "./actions";
 
 interface HoursRow {
   day_of_week: number;
@@ -122,6 +122,38 @@ export default async function ClinicCalendarPage({ params }: { params: Promise<{
               );
             })}
           </div>
+        </Card>
+
+        <Card title="法定休日">
+          <p className="text-sm">
+            現在：
+            {c.legal_holiday_weekday === null ? (
+              <Badge tone="yellow">未登録（法定休日労働は判定されません）</Badge>
+            ) : (
+              <span className="font-bold">毎週{DAY_KIND_LABELS[c.legal_holiday_weekday]}曜日</span>
+            )}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            法定休日の労働は割増35%の対象として、時間外労働とは別に集計します。スタッフ個別の勤務条件で曜日が指定されている場合はそちらを優先します。
+          </p>
+          {hq && (
+            <ActionForm action={saveLegalHoliday} submitLabel="登録" resetOnSuccess={false} className="mt-4 flex flex-wrap items-end gap-3">
+              <input type="hidden" name="clinic_id" value={clinicId} />
+              <Field label="曜日">
+                <Select name="weekday" defaultValue={c.legal_holiday_weekday === null ? "" : String(c.legal_holiday_weekday)}>
+                  <option value="">未登録</option>
+                  {[0, 1, 2, 3, 4, 5, 6].map((d) => (
+                    <option key={d} value={d}>
+                      {DAY_KIND_LABELS[d]}曜日
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <Field label="理由">
+                <Input name="reason" placeholder="例：就業規則の確認結果" required />
+              </Field>
+            </ActionForm>
+          )}
         </Card>
 
         <Card title="臨時休診・特別診療日">

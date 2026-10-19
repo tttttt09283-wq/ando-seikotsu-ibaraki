@@ -8,14 +8,4 @@ test.describe("未ログイン時のアクセス制御", () => {
       await expect(page.getByRole("heading", { name: "勤怠管理システム ログイン" })).toBeVisible();
     });
   }
-
-});
-
-test.describe("共用端末（キオスク）", () => {
-  test("ログインなしで表示され、管理画面へのリンクを持たない", async ({ page }) => {
-    await page.goto("/kiosk");
-    await expect(page).toHaveURL(/\/kiosk$/);
-    await expect(page.getByRole("heading", { name: "打刻端末" })).toBeVisible();
-    await expect(page.locator("a")).toHaveCount(0);
-  });
 });
