@@ -7794,11 +7794,15 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
   const allPatients=Object.values(pm);
 
   const q=patientQ.trim().toLowerCase();
-  const qKana=normKana(patientQ);
+  // かなだけで検索したときは「頭の文字から」一致（例：「き」→ キヤマ（木山）・キノシタ（木下））。
+  // 濁点は区別する（「き」で「ギ」は出さない）。ひらがな・カタカナ・半角カナはどれでもOK
+  const toSearchKana=str=>String(str||"").normalize("NFKC").replace(/[\u30a1-\u30f6]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60)).replace(/[\s　・]/g,"");
+  const qSearchKana=toSearchKana(patientQ);
+  const kanaOnlyQuery=qSearchKana!==""&&/^[\u3041-\u3096ー]+$/.test(qSearchKana);
   const filtered=allPatients.filter(p=>{
     if(!q) return true;
-    return p.name.toLowerCase().includes(q)||(p.phone&&p.phone.replace(/-/g,"").includes(q.replace(/-/g,"")))
-      ||(qKana&&(normKana(p.kana).includes(qKana)||normKana(p.name).includes(qKana)));
+    if(kanaOnlyQuery) return toSearchKana(p.kana).startsWith(qSearchKana)||toSearchKana(p.name).startsWith(qSearchKana);
+    return p.name.toLowerCase().includes(q)||(p.phone&&p.phone.replace(/-/g,"").includes(q.replace(/-/g,"")));
   });
   // 並び順もフリガナ（あいうえお順）で。フリガナが無い方は名前で
   const sortKey=p=>normKana(p.kana)||normKana(p.name)||p.name;
