@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("未ログイン時のアクセス制御", () => {
-  for (const path of ["/", "/hq", "/manager", "/admin/clinics", "/admin/staff", "/admin/users", "/me"]) {
+  for (const path of ["/", "/hq", "/manager", "/admin/clinics", "/admin/staff", "/admin/users", "/admin/holidays", "/me"]) {
     test(`${path} はログイン画面へ転送される`, async ({ page }) => {
       await page.goto(path);
       await expect(page).toHaveURL(/\/login/);

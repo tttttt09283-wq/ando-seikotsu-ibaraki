@@ -22,6 +22,8 @@
 | `/hq` | 本部 | 本部ホーム（院別スタッフ数） |
 | `/manager` | 院長・本部 | 院ホーム（担当院のスタッフ一覧。兼務は複数院） |
 | `/admin/clinics` | 本部 | 店舗マスタ（追加・院名変更・休止・閉鎖） |
+| `/clinics/[院ID]` | 本部・担当院長 | 院ごとの診療時間（本部が登録）・臨時休診/特別診療日（院長も調整可）・2週間の診療予定 |
+| `/admin/holidays` | 本部 | 会社カレンダー（祝日・会社指定日、振休の対象日） |
 | `/admin/staff` | 本部 | スタッフ一覧・登録・詳細（個人情報・異動・応援） |
 | `/admin/users` | 本部 | 管理画面アカウント・ロール付与（院長は院単位）・パスワード再設定・停止 |
 | `/me` | 全員 | マイページ |
@@ -45,7 +47,7 @@ Next.js（App Router）/ TypeScript / Tailwind CSS / Supabase（Auth・PostgreSQ
 supabase init        # supabase/config.toml が無い場合のみ（既存の migrations はそのまま使われます）
 supabase link --project-ref <project-ref>
 supabase db push
-# 初期7院を投入
+# 初期7院と祝日（2026〜2027年）を投入
 psql "<接続文字列>" -f supabase/seed.sql
 ```
 

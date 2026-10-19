@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireHq } from "@/lib/auth/session";
 import { createSupabaseServer } from "@/lib/supabase/server";
 import { ActionForm } from "@/components/ActionForm";
@@ -27,7 +28,12 @@ export default async function ClinicsPage() {
           {clinics.map((c) => (
             <tr key={c.clinic_id}>
               <Td className="font-mono text-xs">{c.clinic_code}</Td>
-              <Td className="font-medium">{c.name}</Td>
+              <Td className="font-medium">
+                {c.name}
+                <Link href={`/clinics/${c.clinic_id}`} className="mt-1 block text-xs font-normal text-brand-700 underline">
+                  診療時間・休診日
+                </Link>
+              </Td>
               <Td>
                 <Badge tone={statusTone[c.status]}>{CLINIC_STATUS_LABELS[c.status]}</Badge>
                 {c.status === "suspended" && <div className="mt-1 text-xs text-slate-500">{c.suspended_on} から</div>}

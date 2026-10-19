@@ -2,7 +2,7 @@ import "server-only";
 import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createSupabaseServer } from "@/lib/supabase/server";
-import { ROLES, isHq, managedClinicIds, type Actor, type Role } from "./permissions";
+import { ROLES, canManageClinic, isHq, managedClinicIds, type Actor, type Role } from "./permissions";
 
 /**
  * ログイン中ユーザーとロールを取得する（1リクエスト内でキャッシュ）。
@@ -49,5 +49,12 @@ export async function requireHq(): Promise<Actor> {
 export async function requireManager(): Promise<Actor> {
   const actor = await requireActor();
   if (!isHq(actor) && managedClinicIds(actor).length === 0) redirect("/forbidden");
+  return actor;
+}
+
+/** 指定院の運営権限（本部、または担当院の院長） */
+export async function requireClinicManager(clinicId: string): Promise<Actor> {
+  const actor = await requireActor();
+  if (!canManageClinic(actor, clinicId)) redirect("/forbidden");
   return actor;
 }

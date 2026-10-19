@@ -192,3 +192,36 @@ export function parseForm<T extends z.ZodType>(
   if (result.success) return { ok: true, data: result.data };
   return { ok: false, message: result.error.issues[0]?.message ?? "入力内容を確認してください" };
 }
+
+// ===== 院カレンダー =====
+export const businessHoursMetaSchema = z.object({
+  clinic_id: uuid("店舗"),
+  valid_from: dateString("適用開始日"),
+});
+
+export const calendarExceptionSchema = z.object({
+  clinic_id: uuid("店舗"),
+  target_date: dateString("日付"),
+  is_closed: z.enum(["true", "false"], { error: "休診か特別診療かを選択してください" }).transform((v) => v === "true"),
+  reason: requiredText("理由", 200),
+});
+
+export const calendarExceptionDeleteSchema = z.object({
+  clinic_id: uuid("店舗"),
+  exception_id: uuid("対象"),
+});
+
+export const companyHolidaySchema = z.object({
+  holiday_date: dateString("日付"),
+  name: requiredText("名称", 50),
+  holiday_kind: z.enum(["national", "company_designated"], { error: "種別を選択してください" }),
+  credit_target: z
+    .string()
+    .optional()
+    .transform((v) => v === "on" || v === "true"),
+});
+
+export const holidayCreditTargetSchema = z.object({
+  holiday_date: dateString("日付"),
+  credit_target: z.enum(["true", "false"]).transform((v) => v === "true"),
+});

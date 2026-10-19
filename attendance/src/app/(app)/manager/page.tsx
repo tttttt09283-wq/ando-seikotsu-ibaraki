@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireManager } from "@/lib/auth/session";
 import { createSupabaseServer } from "@/lib/supabase/server";
 import { isHq, managedClinicIds } from "@/lib/auth/permissions";
@@ -39,6 +40,9 @@ export default async function ManagerHomePage() {
             .sort((a, b) => (a.assignment_type === b.assignment_type ? 0 : a.assignment_type === "primary" ? -1 : 1));
           return (
             <Card key={clinic.clinic_id} title={clinic.name}>
+              <Link href={`/clinics/${clinic.clinic_id}`} className="mb-3 inline-block text-sm text-brand-700 underline">
+                診療時間・休診日の調整
+              </Link>
               {members.length === 0 ? (
                 <EmptyState>所属スタッフはいません</EmptyState>
               ) : (
