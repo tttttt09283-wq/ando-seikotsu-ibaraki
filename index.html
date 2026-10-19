@@ -7757,37 +7757,57 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
     {label:"ら行",chars:["ら","り","る","れ","ろ","ラ","リ","ル","レ","ロ"]},
     {label:"わ行",chars:["わ","を","ん","ワ","ヲ","ン"]},
     {label:"英数",chars:[]},
+    {label:"フリガナ未登録",chars:[]},
   ];
 
-  function getGroup(name){
-    if(!name) return "英数";
-    const first=name.charAt(0);
+  // ふりがな・フリガナ（ひらがな／カタカナ／半角カナ、濁点・小さい文字も）を、比べやすいひらがなにそろえる
+  // 例：「ダイゴ」「ﾀﾞｲｺﾞ」「だいご」→「たいこ」（行の判定・並び替え・検索に使う）
+  const SMALL_KANA={"ぁ":"あ","ぃ":"い","ぅ":"う","ぇ":"え","ぉ":"お","っ":"つ","ゃ":"や","ゅ":"ゆ","ょ":"よ","ゎ":"わ","ゕ":"か","ゖ":"け"};
+  function normKana(str){
+    return String(str||"").normalize("NFKC")
+      .replace(/[\u30a1-\u30f6]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60)) // カタカナ→ひらがな
+      .normalize("NFD").replace(/[\u3099\u309a]/g,"") // 濁点・半濁点を外す（だ→た、ぱ→は）
+      .replace(/[ぁぃぅぇぉっゃゅょゎゕゖ]/g,c=>SMALL_KANA[c])
+      .replace(/ゔ/g,"う").replace(/[\s　・]/g,"");
+  }
+  // 行の判定：フリガナがあればフリガナで。無ければ名前がかなで始まる方だけ名前で判定（漢字の方は「フリガナ未登録」）
+  function getGroup(p){
+    const src=normKana(p.kana)||normKana(p.name);
+    const first=src.charAt(0);
     for(const g of GOJUON){
-      if(g.label==="英数") continue;
       if(g.chars.includes(first)) return g.label;
     }
+    if(!p.kana&&/^[\u4e00-\u9fff\u3005]/.test(String(p.name||"").trim())) return "フリガナ未登録";
     return "英数";
   }
 
   const pm={};
   bookings.forEach(b=>{
-    if(!pm[b.patient_name])pm[b.patient_name]={name:b.patient_name,phone:b.phone,count:0,lastDate:"",lastStaff:null};
-    pm[b.patient_name].count++;
-    if(b.date>pm[b.patient_name].lastDate){pm[b.patient_name].lastDate=b.date;pm[b.patient_name].lastStaff=b.staff_id;}
+    if(!pm[b.patient_name])pm[b.patient_name]={name:b.patient_name,phone:b.phone,count:0,lastDate:"",lastStaff:null,kana:"",kanaDate:""};
+    const r=pm[b.patient_name];
+    r.count++;
+    if(b.date>r.lastDate){r.lastDate=b.date;r.lastStaff=b.staff_id;}
+    // フリガナは予約ごとに保存されているので、入っている中で一番新しいものを使う
+    const k=String(b.patient_kana||"").trim();
+    if(k&&(b.date||"")>=r.kanaDate){r.kana=k;r.kanaDate=b.date||"";}
   });
   const allPatients=Object.values(pm);
 
   const q=patientQ.trim().toLowerCase();
+  const qKana=normKana(patientQ);
   const filtered=allPatients.filter(p=>{
     if(!q) return true;
-    return p.name.toLowerCase().includes(q)||(p.phone&&p.phone.replace(/-/g,"").includes(q.replace(/-/g,"")));
+    return p.name.toLowerCase().includes(q)||(p.phone&&p.phone.replace(/-/g,"").includes(q.replace(/-/g,"")))
+      ||(qKana&&(normKana(p.kana).includes(qKana)||normKana(p.name).includes(qKana)));
   });
-  const sorted=[...filtered].sort((a,b)=>a.name.localeCompare(b.name,"ja"));
+  // 並び順もフリガナ（あいうえお順）で。フリガナが無い方は名前で
+  const sortKey=p=>normKana(p.kana)||normKana(p.name)||p.name;
+  const sorted=[...filtered].sort((a,b)=>sortKey(a).localeCompare(sortKey(b),"ja")||a.name.localeCompare(b.name,"ja"));
   const isSearching=q.length>0;
   const groups={};
   if(!isSearching){
     GOJUON.forEach(g=>{groups[g.label]=[];});
-    sorted.forEach(p=>{const g=getGroup(p.name);if(groups[g])groups[g].push(p);else groups["英数"].push(p);});
+    sorted.forEach(p=>{const g=getGroup(p);if(groups[g])groups[g].push(p);else groups["英数"].push(p);});
   }
 
   // 患者選択時に施術録を取得
@@ -7974,7 +7994,7 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
         <div style={{background:"white",borderRadius:12,padding:"10px 14px",boxShadow:"0 1px 4px rgba(0,0,0,.06)"}}>
           <div style={{position:"relative"}}>
             <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:14,color:"#94a3b8",pointerEvents:"none"}}>🔍</span>
-            <input className="form-input" placeholder="患者名・電話番号で検索..."
+            <input className="form-input" placeholder="患者名・フリガナ・電話番号で検索..."
               value={patientQ} onChange={e=>setPatientQ(e.target.value)}
               style={{paddingLeft:32,paddingRight:patientQ?32:12,fontSize:13}}/>
             {patientQ&&<button onClick={()=>setPatientQ("")} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"#e2e8f0",border:"none",borderRadius:"50%",width:20,height:20,cursor:"pointer",fontSize:11,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>}
@@ -8019,6 +8039,7 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
                     <div style={{flex:1,height:1,background:"#e2e8f0"}}/>
                     <span style={{fontSize:10,color:"#94a3b8"}}>{patients.length}名</span>
                   </div>
+                  {g.label==="フリガナ未登録"&&<div style={{fontSize:10.5,color:"#92400e",background:"#fef3c7",borderRadius:8,padding:"6px 10px",marginBottom:6,lineHeight:1.5}}>患者様を選んで「✏️ 情報編集」でフリガナを入れると、あ行・か行…に分かれます</div>}
                   {patients.map(p=>{
                     const s=STAFF_ACCOUNTS.find(x=>x.id===p.lastStaff)||{color:"#888",initial:"？"};
                     const isSel=selPatient===p.name;
@@ -8032,6 +8053,7 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
                               <span style={{fontWeight:800,fontSize:13,color:isSel?"#2563eb":"#1e293b"}}>{p.name}</span>
                               {p.count>=2?<span className="badge badge-yellow" style={{fontSize:9}}>{p.count}回</span>:<span className="badge badge-gray" style={{fontSize:9}}>初回</span>}
                             </div>
+                            {p.kana&&<div style={{fontSize:10,color:"#64748b"}}>{p.kana}</div>}
                             <div style={{fontSize:10,color:"#94a3b8"}}>{p.lastDate}　{p.phone}</div>
                           </div>
                           {isSel&&<span style={{color:"#2563eb",fontSize:16}}>›</span>}
