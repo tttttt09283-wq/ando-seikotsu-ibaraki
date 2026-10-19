@@ -17,18 +17,27 @@ function plainCell(value: ExcelJS.CellValue): Cell {
   return String(value);
 }
 
-async function readXlsx(buffer: ArrayBuffer): Promise<Cell[][]> {
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer);
-  // 非表示でなく、データのある最初のシート
-  const sheet = workbook.worksheets.find((ws) => ws.state === "visible" && ws.actualRowCount > 0) ?? workbook.worksheets[0];
-  if (!sheet) return [];
+export interface SheetTable {
+  name: string;
+  table: Cell[][];
+}
+
+function sheetToTable(sheet: ExcelJS.Worksheet): Cell[][] {
   const table: Cell[][] = [];
   sheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
     const values = row.values as ExcelJS.CellValue[]; // values[0] は未使用（1始まり）
     table[rowNumber - 1] = values.slice(1).map(plainCell);
   });
   return Array.from(table, (r) => r ?? []);
+}
+
+/** 表示されていて、データのあるシート（ファイル内の順） */
+async function readXlsxSheets(buffer: ArrayBuffer): Promise<SheetTable[]> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  return workbook.worksheets
+    .filter((ws) => ws.state === "visible" && ws.actualRowCount > 0)
+    .map((ws) => ({ name: ws.name, table: sheetToTable(ws) }));
 }
 
 /** CSV（UTF-8 / Shift_JIS）。ダブルクォートで囲まれた値・改行を含む値に対応 */
@@ -71,15 +80,24 @@ function readCsv(buffer: ArrayBuffer): Cell[][] {
   return rows;
 }
 
-/** アップロードされた Excel（.xlsx）・CSV を表（行×列）として読み込む */
-export async function readSpreadsheet(file: File): Promise<Cell[][]> {
+/** アップロードされた Excel（.xlsx）・CSV をシートごとの表（行×列）として読み込む */
+export async function readWorkbook(file: File): Promise<SheetTable[]> {
   if (file.size > MAX_IMPORT_BYTES) throw new Error("ファイルが大きすぎます（5MBまで）");
   const name = file.name.toLowerCase();
   const buffer = await file.arrayBuffer();
-  if (name.endsWith(".xlsx") || name.endsWith(".xlsm")) return readXlsx(buffer);
-  if (name.endsWith(".csv")) return readCsv(buffer);
+  if (name.endsWith(".xlsx") || name.endsWith(".xlsm")) {
+    const sheets = await readXlsxSheets(buffer);
+    if (sheets.length === 0) throw new Error("データのあるシートがありません");
+    return sheets;
+  }
+  if (name.endsWith(".csv")) return [{ name: file.name, table: readCsv(buffer) }];
   if (name.endsWith(".xls")) throw new Error("古い形式（.xls）は読み込めません。Excel で「.xlsx」形式で保存し直してください");
-  throw new Error("Excel（.xlsx）または CSV ファイルを選択してください");
+  throw new Error("Excel（.xlsx）または CSV ファイルを選択してください（Google スプレッドシートは「ファイル → ダウンロード → Microsoft Excel」で保存）");
+}
+
+/** 最初のシートを表として読み込む */
+export async function readSpreadsheet(file: File): Promise<Cell[][]> {
+  return (await readWorkbook(file))[0].table;
 }
 
 /** 取込用テンプレート（.xlsx） */

@@ -451,3 +451,48 @@ describe("有給残数の取込（Excel）", () => {
     });
   });
 });
+
+describe("有給残数の取込（月末残数形式）", () => {
+  it("残数を推定した付与に登録し、最新月で取り込み直すと差分だけ調整する", async () => {
+    await withTx(async (tx) => {
+      const { hq, staff } = await setup(tx); // 入社 2024-04-01
+      const plan = [
+        { grant_date: "2024-10-01", days: 7, expiration_date: "2026-09-30" },
+        { grant_date: "2025-10-01", days: 11, expiration_date: "2027-09-30" },
+      ];
+      const imp = async (asOf: string, remaining: number) =>
+        (await tx
+          .as(hq)
+          .sql<{ r: Record<string, number> }>("select public.import_paid_leave_snapshot($1, $2::date, '出勤簿.xlsx') as r", [
+            JSON.stringify([{ row: 5, staff_id: staff, remaining_days: remaining, plan }]),
+            asOf,
+          ]))[0].r;
+
+      expect(await imp("2026-06-30", 18)).toEqual({ created: 1, adjusted: 0, unchanged: 0 });
+      expect((await balance(tx, hq, staff, "paid", "2026-06-30")).balance).toBe(18);
+      expect(await imp("2026-06-30", 18)).toEqual({ created: 0, adjusted: 0, unchanged: 1 });
+      // 翌月の表で残が 15.5 日に減った → 期限の近い付与から 2.5 日を調整
+      expect(await imp("2026-07-31", 15.5)).toEqual({ created: 0, adjusted: 1, unchanged: 0 });
+      const grants = await tx.sql<{ grant_date: string; remaining: string }>(
+        "select grant_date::text, app.leave_grant_remaining(leave_grant_id) as remaining from public.leave_grants where staff_id = $1 order by grant_date",
+        [staff],
+      );
+      expect(grants).toEqual([
+        { grant_date: "2024-10-01", remaining: "4.50" },
+        { grant_date: "2025-10-01", remaining: "11.00" },
+      ]);
+      expect(await tx.as(hq).sql("select * from public.check_leave_ledger_consistency()")).toHaveLength(0);
+    });
+  });
+
+  it("振り分けの合計が残数と合わなければ取り込まない", async () => {
+    await withTx(async (tx) => {
+      const { hq, staff } = await setup(tx);
+      await expect(
+        tx.as(hq).sql("select public.import_paid_leave_snapshot($1, '2026-06-30', 'x')", [
+          JSON.stringify([{ row: 5, staff_id: staff, remaining_days: 18, plan: [{ grant_date: "2025-10-01", days: 11, expiration_date: "2027-09-30" }] }]),
+        ]),
+      ).rejects.toThrow(/一致しません/);
+    });
+  });
+});

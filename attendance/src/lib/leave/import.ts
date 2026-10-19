@@ -37,11 +37,14 @@ export interface ImportIssue {
 
 export type Cell = string | number | boolean | Date | null | undefined;
 
-const normalizeHeader = (value: Cell) =>
+/** 見出しの比較用：全角/半角・空白・改行・括弧を無視する */
+export const normalizeHeaderText = (value: Cell) =>
   String(value ?? "")
     .normalize("NFKC")
     .replace(/[\s　()（）]/g, "")
     .toLowerCase();
+
+const normalizeHeader = normalizeHeaderText;
 
 /** 見出し行を探し、列番号と項目の対応を返す（先頭10行まで） */
 export function detectHeader(table: Cell[][]): { headerRow: number; columns: Partial<Record<ImportField, number>> } | null {
