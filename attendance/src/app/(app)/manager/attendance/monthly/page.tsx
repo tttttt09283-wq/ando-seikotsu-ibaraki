@@ -1,13 +1,14 @@
 import { requireManager } from "@/lib/auth/session";
 import { createSupabaseServer } from "@/lib/supabase/server";
 import { ActionForm } from "@/components/ActionForm";
-import { Badge, Card, EmptyState, PageHeader, Table, Td } from "@/components/ui";
+import { Badge, Card, EmptyState, Input, PageHeader, Table, Td } from "@/components/ui";
 import { selectableClinics } from "@/lib/shifts/load";
-import { fixedOvertimeExcess, hm } from "@/lib/attendance/labels";
+import { CLOSING_STATUS_LABELS, fixedOvertimeExcess, hm } from "@/lib/attendance/labels";
 import { isActiveOn, staffName, type ContractRow, type StaffRow } from "@/lib/data/types";
 import { addMonths, isValidMonth, monthDates, todayJst } from "@/lib/time/jst";
 import { AttendanceToolbar } from "../AttendanceToolbar";
 import { confirmAttendance, recalcAttendance } from "../actions";
+import { confirmMonth, unconfirmMonth } from "@/app/(app)/hq/closings/actions";
 
 interface DailyRow {
   staff_id: string;
@@ -50,6 +51,13 @@ export default async function AttendanceMonthlyPage({ searchParams }: { searchPa
     .gte("work_date", from)
     .lte("work_date", to);
   const rows = (dailyData ?? []) as DailyRow[];
+  const [{ data: closingData }, { data: issueData }] = await Promise.all([
+    supabase.from("monthly_closings").select("status, manager_confirmed_at, closed_at").eq("clinic_id", clinicId).eq("year_month", from).maybeSingle(),
+    supabase.rpc("closing_issues", { p_clinic_id: clinicId, p_month: from }),
+  ]);
+  const closingStatus = (closingData as { status: string } | null)?.status ?? "open";
+  const issues = (issueData ?? {}) as Record<string, number>;
+  const monthEnded = month < todayJst().slice(0, 7);
   const staffIds = [...new Set(rows.map((r) => r.staff_id))];
   const [{ data: staffData }, { data: contractData }] = staffIds.length
     ? await Promise.all([
@@ -91,8 +99,41 @@ export default async function AttendanceMonthlyPage({ searchParams }: { searchPa
 
   return (
     <>
-      <PageHeader title={`月次集計：${clinic.name}`} description="主所属スタッフの勤怠（応援先での勤務を含む）。月次締めは本部が行います（フェーズ6）。" />
+      <PageHeader title={`月次集計：${clinic.name}`} description="主所属スタッフの勤怠（応援先での勤務を含む）。月が終わったら内容を確認して「月次の院長確認」を行い、本部が締めます。" />
       <AttendanceToolbar current="/manager/attendance/monthly" clinics={clinics} clinicId={clinicId} month={month} />
+      <Card title="月次の院長確認・締め" className="mb-4">
+        <div className="mb-3 flex flex-wrap items-center gap-3 text-sm">
+          <Badge tone={CLOSING_STATUS_LABELS[closingStatus].tone}>{CLOSING_STATUS_LABELS[closingStatus].label}</Badge>
+          <span>打刻漏れ {issues.missing_punch ?? 0}日</span>
+          <span>再計算待ち {issues.needs_recalc ?? 0}日</span>
+          <span>未確認 {issues.unconfirmed ?? 0}日</span>
+          <span>打刻修正の承認待ち {issues.pending_adjustments ?? 0}件</span>
+          <span>休暇の承認待ち {issues.pending_leave ?? 0}件</span>
+        </div>
+        {!monthEnded ? (
+          <p className="text-sm text-slate-600">月が終わってから院長確認できます。</p>
+        ) : closingStatus === "open" ? (
+          <ActionForm
+            action={confirmMonth}
+            submitLabel="この月を院長確認して本部へ"
+            className="flex flex-wrap items-center gap-3"
+            confirmMessage="この月の勤怠を確認済みにして本部に締めを依頼します。よろしいですか？"
+          >
+            <input type="hidden" name="clinic_id" value={clinicId} />
+            <input type="hidden" name="month" value={month} />
+            <Input name="reason" maxLength={500} placeholder="未解決の事項が残る場合はその理由（例：9/8 の退勤は本人確認済み）" className="w-[28rem]" aria-label="確認の理由" />
+          </ActionForm>
+        ) : closingStatus === "manager_confirmed" ? (
+          <ActionForm action={unconfirmMonth} submitLabel="院長確認を取り消す" tone="secondary" className="flex items-center gap-3">
+            <input type="hidden" name="clinic_id" value={clinicId} />
+            <input type="hidden" name="month" value={month} />
+          </ActionForm>
+        ) : (
+          <p className="text-sm text-slate-600">
+            {closingStatus === "closed" ? "本部が締めました。修正が必要な場合は本部に再開を依頼してください。" : "本部が締めを再開中です。修正後に本部が再度締めます。"}
+          </p>
+        )}
+      </Card>
       <div className="mb-4 flex flex-wrap gap-4">
         <ActionForm action={recalcAttendance} submitLabel="この月を再計算" tone="secondary" className="flex items-center gap-3">
           <input type="hidden" name="clinic_id" value={clinicId} />
@@ -101,7 +142,7 @@ export default async function AttendanceMonthlyPage({ searchParams }: { searchPa
         </ActionForm>
         <ActionForm
           action={confirmAttendance}
-          submitLabel="この月を院長確認"
+          submitLabel="問題のない日を確認済みにする"
           className="flex items-center gap-3"
           confirmMessage="この月の勤怠（昨日まで）を院長確認済みにします。打刻漏れ・再計算待ちの日は確認されません。よろしいですか？"
         >
