@@ -91,9 +91,14 @@ export default async function PaidLeaveLedgerPage({ searchParams }: { searchPara
         title="有給台帳"
         description="残数は付与・使用・失効・調整の台帳から計算しています。付与予定は入社日と勤務条件（週の日数・時間）から計算し、出勤率8割の確認後に付与してください。"
         actions={
-          <Link href="/admin/leave-policies" className="text-sm text-brand-700 underline">
-            休暇の設定
-          </Link>
+          <div className="flex gap-4">
+            <Link href="/hq/leave/import" className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
+              Excelから取込
+            </Link>
+            <Link href="/admin/leave-policies" className="self-center text-sm text-brand-700 underline">
+              休暇の設定
+            </Link>
+          </div>
         }
       />
       <div className="mb-4 flex flex-wrap items-center gap-4">

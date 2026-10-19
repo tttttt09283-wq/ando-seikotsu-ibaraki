@@ -14,6 +14,7 @@ interface CreditRequestRow {
   staff_id: string;
   source_work_date: string;
   source_worked_minutes: number;
+  credited_days: string;
   status: "candidate" | "pending" | "approved" | "rejected" | "cancelled";
   report_reason: string | null;
   reject_reason: string | null;
@@ -35,7 +36,7 @@ interface Inconsistency {
   request_id: string;
   staff_id: string;
   source_work_date: string;
-  issue: "no_work" | "not_holiday" | "not_eligible" | "attendance_changed";
+  issue: "no_work" | "not_holiday" | "not_eligible" | "attendance_changed" | "days_changed";
   current_worked_minutes: number;
 }
 
@@ -44,6 +45,7 @@ const ISSUE_LABELS = {
   not_holiday: "対象祝日ではなくなった",
   not_eligible: "付与対象外になった",
   attendance_changed: "付与後に勤怠が修正された",
+  days_changed: "付与日数が変わる修正（1日⇔0.5日）",
 } as const;
 
 /**
@@ -107,7 +109,7 @@ export default async function HolidayCreditsPage({ searchParams }: { searchParam
     <>
       <PageHeader
         title="振休（祝日勤務）"
-        description="祝日の振休は原則当日に使用します。祝日に勤務して当日休めなかった場合、院長が理由を付けて本部に報告し、本部の承認で1日付与されます（期限は原則その月末）。"
+        description="祝日の振休は原則当日に使用します。祝日に勤務して当日休めなかった場合、院長が理由を付けて本部に報告し、本部の承認で付与されます（4時間以下の半日勤務は0.5日、それ以外は1日。期限は原則その月末）。"
       />
       <div className="mb-6 flex flex-wrap items-center gap-4">
         <form method="get" className="flex items-center gap-2">
@@ -153,12 +155,13 @@ export default async function HolidayCreditsPage({ searchParams }: { searchParam
           {candidates.length === 0 ? (
             <EmptyState>候補はありません。祝日の勤怠を院長確認すると、付与対象スタッフの候補が表示されます</EmptyState>
           ) : (
-            <Table head={["スタッフ", "祝日", "実労働", "報告（当日休めなかった理由）", ""]}>
+            <Table head={["スタッフ", "祝日", "実労働", "付与日数", "報告（当日休めなかった理由）", ""]}>
               {candidates.map((r) => (
                 <tr key={r.request_id} className="align-top">
                   <Td>{name(r.staff_id)}</Td>
                   <Td>{r.source_work_date}</Td>
                   <Td>{hm(r.source_worked_minutes)}</Td>
+                  <Td>{Number(r.credited_days)}日</Td>
                   <Td>{decision(r, "submit", "本部に報告", "例：予約が多く当日休めなかった")}</Td>
                   <Td>{decision(r, "reject", "付与しない", "理由（後日休んだ等）")}</Td>
                 </tr>
@@ -171,17 +174,18 @@ export default async function HolidayCreditsPage({ searchParams }: { searchParam
           {pending.length === 0 ? (
             <EmptyState>承認待ちはありません</EmptyState>
           ) : (
-            <Table head={["スタッフ", "祝日", "実労働", "院長の報告", ""]}>
+            <Table head={["スタッフ", "祝日", "実労働", "付与日数", "院長の報告", ""]}>
               {pending.map((r) => (
                 <tr key={r.request_id} className="align-top">
                   <Td>{name(r.staff_id)}</Td>
                   <Td>{r.source_work_date}</Td>
                   <Td>{hm(r.source_worked_minutes)}</Td>
+                  <Td>{Number(r.credited_days)}日</Td>
                   <Td className="whitespace-normal">{r.report_reason}</Td>
                   <Td>
                     {hq ? (
                       <div className="flex flex-col gap-2">
-                        {decision(r, "approve", "承認（1日付与）")}
+                        {decision(r, "approve", `承認（${Number(r.credited_days)}日付与）`)}
                         {decision(r, "reject", "却下", "却下理由")}
                       </div>
                     ) : (

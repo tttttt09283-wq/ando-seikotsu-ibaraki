@@ -394,3 +394,60 @@ describe("共用端末からの休暇申請", () => {
     });
   });
 });
+
+describe("祝日の半日勤務（0.5日）", () => {
+  it("祝日の実労働が4時間以下なら振休は0.5日付与される", async () => {
+    await withTx(async (tx) => {
+      const { ibaraki, hq, manager, staff } = await setup(tx);
+      await tx.as(hq).sql("select public.set_holiday_credit_eligibility($1, true, '2026-04-01', '対象')", [staff]);
+      await tx.sql(
+        `insert into public.raw_punch_events (staff_id, clinic_id, home_clinic_id, punch_type, punched_at, source) values
+         ($1, $2, $2, 'clock_in', '2026-10-12 09:00+09', 'adjustment'), ($1, $2, $2, 'clock_out', '2026-10-12 13:00+09', 'adjustment')`,
+        [staff, ibaraki],
+      );
+      await tx.sql("select app.recalc_attendance($1, '2026-10-12', '2026-10-12')", [staff]);
+      await tx.as(manager).sql("select public.confirm_attendance($1, '2026-10-01', '2026-10-31')", [ibaraki]);
+      await tx.as(manager).sql("select public.generate_holiday_credit_candidates($1, '2026-10-01', '2026-10-31')", [ibaraki]);
+      const [r] = await tx.sql<{ request_id: string; credited_days: string }>("select request_id, credited_days from public.holiday_credit_requests");
+      expect(r.credited_days).toBe("0.5");
+      await tx.as(manager).sql("select public.submit_holiday_credit($1, '午前のみ勤務')", [r.request_id]);
+      await tx.as(hq).sql("select public.approve_holiday_credit($1)", [r.request_id]);
+      expect((await balance(tx, hq, staff, "holiday_credit", "2026-10-20")).balance).toBe(0.5);
+    });
+  });
+});
+
+describe("有給残数の取込（Excel）", () => {
+  const rows = (taken: number) => [
+    { row: 2, staff_code: "1001", grant_date: "2025-10-01", granted_days: 11, taken_days: taken },
+    { row: 3, staff_code: "1001", grant_date: "2024-10-01", granted_days: 10, taken_days: 10, expiration_date: "2026-09-30" },
+  ];
+
+  it("未登録の付与は移行として登録し、取り込み直すと差分だけ調整する（同じデータなら変化なし）", async () => {
+    await withTx(async (tx) => {
+      const { hq, staff } = await setup(tx);
+      const imp = async (r: unknown[]) =>
+        (await tx.as(hq).sql<{ r: Record<string, number> }>("select public.import_paid_leave($1, '有給管理.xlsx') as r", [JSON.stringify(r)]))[0].r;
+
+      expect(await imp(rows(3))).toEqual({ created: 2, adjusted: 0, unchanged: 0 });
+      expect((await balance(tx, hq, staff, "paid", "2026-10-19")).balance).toBe(8);
+      expect(await imp(rows(3))).toEqual({ created: 0, adjusted: 0, unchanged: 2 });
+      expect(await imp(rows(5))).toEqual({ created: 0, adjusted: 1, unchanged: 1 }); // 最新データで取得が2日増えた
+      expect((await balance(tx, hq, staff, "paid", "2026-10-19")).balance).toBe(6);
+
+      const [obl] = await tx.as(hq).sql<{ taken_days: string }>("select * from public.annual_leave_obligations('2026-09-01')");
+      expect(Number(obl.taken_days)).toBe(3); // 取込時の取得済み日数を年5日の集計に含める
+      expect(await tx.as(hq).sql("select * from public.check_leave_ledger_consistency()")).toHaveLength(0);
+    });
+  });
+
+  it("1行でも誤りがあれば全件取り込まない。院長は取り込めない", async () => {
+    await withTx(async (tx) => {
+      const { hq, manager, staff } = await setup(tx);
+      const bad = [...rows(3), { row: 4, staff_code: "9999", grant_date: "2025-10-01", granted_days: 10, taken_days: 0 }];
+      await expect(tx.as(hq).sql("select public.import_paid_leave($1, 'x.xlsx')", [JSON.stringify(bad)])).rejects.toThrow(/4行目/);
+      expect(await tx.sql("select * from public.leave_grants where staff_id = $1", [staff])).toHaveLength(0);
+      await expect(tx.as(manager).sql("select public.import_paid_leave($1, 'x.xlsx')", [JSON.stringify(rows(0))])).rejects.toThrow(/本部のみ/);
+    });
+  });
+});

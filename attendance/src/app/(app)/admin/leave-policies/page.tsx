@@ -17,6 +17,7 @@ interface CreditPolicy {
   name: string;
   credited_days: string;
   min_worked_minutes: number;
+  half_day_max_minutes: number;
   expiration_rule: "end_of_month" | "days" | "none";
   expiration_days: number | null;
   is_active: boolean;
@@ -66,9 +67,9 @@ export default async function LeavePoliciesPage() {
         <Card title="祝日勤務に伴う休日の区分">
           <div className="space-y-4">
             {creditPolicies.map((p) => (
-              <ActionForm key={p.credit_type} action={saveHolidayCreditPolicy} submitLabel="保存" tone="secondary" resetOnSuccess={false} className="grid gap-3 border-b border-slate-100 pb-4 sm:grid-cols-5">
+              <ActionForm key={p.credit_type} action={saveHolidayCreditPolicy} submitLabel="保存" tone="secondary" resetOnSuccess={false} className="grid gap-3 border-b border-slate-100 pb-4 sm:grid-cols-6">
                 <input type="hidden" name="credit_type" value={p.credit_type} />
-                <div className="sm:col-span-5">
+                <div className="sm:col-span-6">
                   <span className="font-medium">{p.name}</span>
                   <span className="ml-2">{p.is_active ? <Badge tone="green">正式付与中</Badge> : <Badge>未設定（付与しない）</Badge>}</span>
                   {p.wage_note && <p className="mt-1 text-xs text-slate-500">{p.wage_note}</p>}
@@ -78,6 +79,9 @@ export default async function LeavePoliciesPage() {
                 </label>
                 <Field label="付与に必要な最低勤務（分）">
                   <Input name="min_worked_minutes" type="number" min={1} defaultValue={p.min_worked_minutes} />
+                </Field>
+                <Field label="0.5日になる勤務（分以下）" hint="既定240分＝4時間以下は半日">
+                  <Input name="half_day_max_minutes" type="number" min={0} defaultValue={p.half_day_max_minutes} />
                 </Field>
                 <Field label="期限">
                   <Select name="expiration_rule" defaultValue={p.expiration_rule}>
