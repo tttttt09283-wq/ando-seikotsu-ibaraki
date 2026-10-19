@@ -358,3 +358,46 @@ export const legalHolidaySchema = z.object({
   weekday: z.enum(["", "0", "1", "2", "3", "4", "5", "6"]).transform((v) => (v === "" ? null : Number(v))),
   reason: requiredText("理由", 200),
 });
+
+// ===== 勤怠 =====
+export const attendanceRangeSchema = z.object({
+  clinic_id: uuid("院"),
+  from: dateString("開始日"),
+  to: dateString("終了日"),
+});
+
+export const adjustmentRequestSchema = z
+  .object({
+    clinic_id: uuid("院"),
+    staff_id: uuid("スタッフ"),
+    work_date: dateString("勤務日"),
+    change_type: z.enum(["add", "void", "replace"], { error: "修正の種類を選択してください" }),
+    target_event_id: z
+      .string()
+      .optional()
+      .transform((v) => (v ? v : null)),
+    punch_type: z.enum(["", "clock_in", "break_start", "break_end", "clock_out"]).optional(),
+    time: z.string().optional(),
+    next_day: z
+      .string()
+      .optional()
+      .transform((v) => v === "on"),
+    reason: requiredText("修正理由", 300),
+  })
+  .superRefine((v, ctx) => {
+    if (v.change_type !== "void" && !/^([01]\d|2[0-3]):[0-5]\d$/.test(v.time ?? "")) {
+      ctx.addIssue({ code: "custom", message: "修正後の時刻を入力してください", path: ["time"] });
+    }
+    if (v.change_type === "add" && !v.punch_type) {
+      ctx.addIssue({ code: "custom", message: "追加する打刻の種類を選択してください", path: ["punch_type"] });
+    }
+    if (v.change_type !== "add" && !v.target_event_id) {
+      ctx.addIssue({ code: "custom", message: "修正する打刻を選択してください", path: ["target_event_id"] });
+    }
+  });
+
+export const adjustmentDecisionSchema = z.object({
+  request_id: uuid("申請"),
+  decision: z.enum(["approve", "reject"]),
+  comment: z.string().trim().max(300).optional(),
+});

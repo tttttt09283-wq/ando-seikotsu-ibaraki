@@ -44,6 +44,9 @@ export default async function ManagerHomePage() {
                 <Link href={`/manager/shifts?clinic=${clinic.clinic_id}`} className="text-brand-700 underline">
                   シフト作成
                 </Link>
+                <Link href={`/manager/attendance?clinic=${clinic.clinic_id}`} className="text-brand-700 underline">
+                  勤怠確認
+                </Link>
                 <Link href={`/clinics/${clinic.clinic_id}`} className="text-brand-700 underline">
                   診療時間・休診日の調整
                 </Link>

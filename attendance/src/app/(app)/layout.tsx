@@ -14,6 +14,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       ? [
           { href: "/manager", label: "院ホーム" },
           { href: "/manager/shifts", label: "シフト" },
+          { href: "/manager/attendance", label: "勤怠" },
         ]
       : []),
     ...(hq

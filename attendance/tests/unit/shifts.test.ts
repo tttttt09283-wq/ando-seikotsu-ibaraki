@@ -126,3 +126,13 @@ describe("前月コピー", () => {
     }
   });
 });
+
+describe("勤怠の表示", () => {
+  it("分を時:分で表示し、みなし残業の超過分を計算する", async () => {
+    const { hm, fixedOvertimeExcess } = await import("@/lib/attendance/labels");
+    expect(hm(485)).toBe("8:05");
+    expect(hm(0)).toBe("0:00");
+    expect(fixedOvertimeExcess(30 * 60, 24 * 60)).toBe(360);
+    expect(fixedOvertimeExcess(10 * 60, 24 * 60)).toBe(0);
+  });
+});
