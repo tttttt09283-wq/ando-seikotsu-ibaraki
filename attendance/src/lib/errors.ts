@@ -18,7 +18,14 @@ const CONSTRAINT_MESSAGES: Record<string, string> = {
   clinics_clinic_code_key: "その院コードは既に使われています",
   staff_profiles_staff_code_key: "そのスタッフIDは既に使われています",
   staff_profiles_auth_user_id_key: "そのアカウントは既に別のスタッフに紐付いています",
+  shifts_break_within: "休憩時間が勤務時間以上になっています",
+  shifts_time_order: "勤務時間は24時間以内にしてください",
+  shift_templates_not_zero: "開始と終了が同じです",
+  calendar_exception_unique: "その日付は既に登録されています",
 };
+
+/** DB の関数（RPC）が利用者向けに日本語で返したメッセージか */
+const isJapanese = (message?: string) => Boolean(message && /[ぁ-んァ-ン一-龥]/.test(message));
 
 /**
  * DB / Supabase のエラーを、利用者に見せられる日本語メッセージに変換する。
@@ -31,19 +38,20 @@ export function toUserMessage(error: unknown): string {
   for (const [constraint, message] of Object.entries(CONSTRAINT_MESSAGES)) {
     if (text.includes(constraint)) return message;
   }
+  if (isJapanese(e.message) && ["42501", "23505", "23P01", "40001", "P0001", "P0002", "22023"].includes(e.code ?? "")) {
+    return e.message as string;
+  }
   switch (e.code) {
     case "42501":
-      return e.message && /[ぁ-んァ-ン一-龥]/.test(e.message) ? e.message : "この操作を行う権限がありません";
+      return "この操作を行う権限がありません";
     case "23505":
       return "同じ内容が既に登録されています";
     case "23P01":
       return "期間が重複しています";
     case "23514":
       return "入力内容が条件を満たしていません";
-    case "P0001":
-    case "P0002":
-    case "22023":
-      return e.message ?? "処理できませんでした";
+    case "40001":
+      return "他の人が先に更新しました。画面を再読み込みしてください";
   }
   return "処理中にエラーが発生しました。時間をおいて再度お試しください";
 }

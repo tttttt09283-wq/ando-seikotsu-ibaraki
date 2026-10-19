@@ -10,7 +10,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const nav = [
     ...(hq ? [{ href: "/hq", label: "本部ホーム" }] : []),
-    ...(manager || hq ? [{ href: "/manager", label: "院ホーム" }] : []),
+    ...(manager || hq
+      ? [
+          { href: "/manager", label: "院ホーム" },
+          { href: "/manager/shifts", label: "シフト" },
+        ]
+      : []),
     ...(hq
       ? [
           { href: "/admin/clinics", label: "店舗マスタ" },

@@ -49,3 +49,14 @@ insert into public.company_holidays (holiday_date, name) values
   ('2027-11-03', '文化の日'),
   ('2027-11-23', '勤労感謝の日')
 on conflict (holiday_date) do nothing;
+
+-- 全院共通の初期勤務パターン（院ごとの診療時間に合わせて院長が追加・調整する）
+insert into public.shift_templates (clinic_id, name, start_time, end_time, break_minutes, color, display_order)
+select null, v.name, v.start_time::time, v.end_time::time, v.break_minutes, v.color, v.display_order
+  from (values
+    ('通し', '09:00', '20:00', 180, 'sky', 10),
+    ('早番', '09:00', '18:00', 60, 'emerald', 20),
+    ('遅番', '11:00', '20:00', 60, 'amber', 30),
+    ('午前', '09:00', '13:00', 0, 'violet', 40)
+  ) as v (name, start_time, end_time, break_minutes, color, display_order)
+ where not exists (select 1 from public.shift_templates where clinic_id is null);

@@ -267,3 +267,68 @@ export const contractSchema = z.object({
   legal_weekly_limit_minutes: z.enum(["2400", "2640"], { error: "週の法定労働時間を選択してください" }).transform(Number),
   reason: requiredText("理由", 200),
 });
+
+// ===== シフト =====
+const timeString = (label: string) =>
+  z.string({ error: `${label}を入力してください` }).regex(/^([01]\d|2[0-3]):[0-5]\d$/, `${label}を HH:mm で入力してください`);
+
+export const shiftEditSchema = z
+  .object({
+    clinic_id: uuid("院"),
+    month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "年月が正しくありません"),
+    mode: z.enum(["template", "custom", "day_off", "cancel"], { error: "操作を選択してください" }),
+    template_id: z.string().optional(),
+    start: z.string().optional(),
+    end: z.string().optional(),
+    break_minutes: z.coerce.number().int().min(0).max(600).optional(),
+    reason: z.string().trim().max(500).optional(),
+    cells: z
+      .array(
+        z.object({
+          staff_id: uuid("スタッフ"),
+          date: dateString("日付"),
+          shifts: z.array(z.object({ shift_id: uuid("シフト"), version: z.number().int(), status: z.string(), type: z.string() })),
+        }),
+      )
+      .min(1, "シフトを入れる欄を選択してください")
+      .max(500, "一度に変更できるのは500欄までです"),
+  })
+  .superRefine((v, ctx) => {
+    if (v.mode === "template" && !z.uuid().safeParse(v.template_id).success) {
+      ctx.addIssue({ code: "custom", message: "勤務パターンを選択してください", path: ["template_id"] });
+    }
+    if (v.mode === "custom") {
+      for (const key of ["start", "end"] as const) {
+        const r = timeString(key === "start" ? "開始時刻" : "終了時刻").safeParse(v[key]);
+        if (!r.success) ctx.addIssue({ code: "custom", message: r.error.issues[0].message, path: [key] });
+      }
+      if (v.start && v.start === v.end) ctx.addIssue({ code: "custom", message: "開始と終了が同じです", path: ["end"] });
+    }
+  });
+
+export type ShiftEditInput = z.infer<typeof shiftEditSchema>;
+
+export const shiftMonthActionSchema = z.object({
+  clinic_id: uuid("院"),
+  month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "年月が正しくありません"),
+});
+
+export const shiftTemplateSchema = z.object({
+  template_id: z
+    .string()
+    .optional()
+    .transform((v) => (v ? v : null)),
+  clinic_id: uuid("院"),
+  name: requiredText("パターン名", 20),
+  start_time: timeString("開始時刻"),
+  end_time: timeString("終了時刻"),
+  break_minutes: z.coerce.number({ error: "休憩を分で入力してください" }).int().min(0).max(600),
+  color: z.enum(["sky", "emerald", "amber", "rose", "violet", "slate"]).default("sky"),
+  display_order: z.coerce.number().int().min(0).max(9999).default(100),
+});
+
+export const shiftTemplateToggleSchema = z.object({
+  template_id: uuid("勤務パターン"),
+  clinic_id: uuid("院"),
+  is_active: z.enum(["true", "false"]).transform((v) => v === "true"),
+});

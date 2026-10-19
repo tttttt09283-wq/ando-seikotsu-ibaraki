@@ -61,3 +61,33 @@ export function addDays(dateString: string, days: number): string {
 export function jstDateTimeToUtc(dateString: string, time: string): Date {
   return new Date(`${dateString}T${time}:00+09:00`);
 }
+
+const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/** YYYY-MM 形式の年月か */
+export function isValidMonth(value: string): boolean {
+  return MONTH_PATTERN.test(value);
+}
+
+/** 年月に月数を加算（YYYY-MM） */
+export function addMonths(month: string, months: number): string {
+  const [y, m] = month.split("-").map(Number);
+  const date = new Date(Date.UTC(y, m - 1 + months, 1));
+  return date.toISOString().slice(0, 7);
+}
+
+/** その月のすべての日付（YYYY-MM-DD） */
+export function monthDates(month: string): string[] {
+  const first = `${month}-01`;
+  const dates: string[] = [];
+  for (let d = first; d.startsWith(month); d = addDays(d, 1)) dates.push(d);
+  return dates;
+}
+
+/** 曜日（0=日曜 … 6=土曜） */
+export function weekdayOf(dateString: string): number {
+  const [y, m, d] = dateString.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+export const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"] as const;

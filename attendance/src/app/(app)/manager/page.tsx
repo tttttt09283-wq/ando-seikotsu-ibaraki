@@ -40,9 +40,14 @@ export default async function ManagerHomePage() {
             .sort((a, b) => (a.assignment_type === b.assignment_type ? 0 : a.assignment_type === "primary" ? -1 : 1));
           return (
             <Card key={clinic.clinic_id} title={clinic.name}>
-              <Link href={`/clinics/${clinic.clinic_id}`} className="mb-3 inline-block text-sm text-brand-700 underline">
-                診療時間・休診日の調整
-              </Link>
+              <div className="mb-3 flex gap-4 text-sm">
+                <Link href={`/manager/shifts?clinic=${clinic.clinic_id}`} className="text-brand-700 underline">
+                  シフト作成
+                </Link>
+                <Link href={`/clinics/${clinic.clinic_id}`} className="text-brand-700 underline">
+                  診療時間・休診日の調整
+                </Link>
+              </div>
               {members.length === 0 ? (
                 <EmptyState>所属スタッフはいません</EmptyState>
               ) : (
