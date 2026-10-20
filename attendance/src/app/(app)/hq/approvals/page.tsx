@@ -38,6 +38,7 @@ interface CreditRow {
   request_id: string;
   staff_id: string;
   home_clinic_id: string | null;
+  credit_type: string;
   source_work_date: string;
   source_worked_minutes: number;
   credited_days: string | null;
@@ -45,11 +46,12 @@ interface CreditRow {
   submitted_at: string | null;
 }
 
+const CREDIT_TYPE_LABELS: Record<string, string> = { company_holiday_work_leave: "振休（祝日勤務）", compensatory_day_off: "代休（休日出勤）" };
 const CHANGE_LABELS = { add: "打刻を追加", void: "打刻を取消", replace: "時刻を訂正" } as const;
 const timeFmt = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit", hour12: false });
 
 /**
- * 本部の一括承認：全院の本部承認待ち（打刻修正・休暇の最終承認・振休）をまとめて承認する。
+ * 本部の一括承認：全院の本部承認待ち（打刻修正・休暇の最終承認・振休・代休）をまとめて承認する。
  * 承認は1件ずつ既存の承認処理を通し、承認履歴も1件ずつ（同じ一括処理ID付きで）残る。
  */
 export default async function HqApprovalsPage({ searchParams }: { searchParams: Promise<{ clinic?: string }> }) {
@@ -164,20 +166,23 @@ export default async function HqApprovalsPage({ searchParams }: { searchParams: 
           <p className="mt-2 text-xs text-slate-500">院長の一次承認前の申請は、各院の「休暇申請」画面で一次承認されてからここに表示されます。</p>
         </Card>
 
-        <Card title={`振休の承認（${credits.length}件）`}>
+        <Card title={`振休・代休の承認（${credits.length}件）`}>
           {credits.length === 0 ? (
-            <EmptyState>報告済みで本部承認待ちの振休はありません</EmptyState>
+            <EmptyState>報告済みで本部承認待ちの振休・代休はありません</EmptyState>
           ) : (
             <BulkApproveForm
               kind="holiday_credit"
-              label="振休"
-              head={["院", "スタッフ", "祝日勤務日", "実働", "付与日数", "当日使えなかった理由", "報告日時"]}
+              label="振休・代休"
+              head={["院", "スタッフ", "勤務日（種類）", "実働", "付与日数", "当日使えなかった理由", "報告日時"]}
               items={credits.map((r) => ({
                 id: r.request_id,
                 cells: [
                   clinicLabel(r.home_clinic_id),
                   who(r.staff_id),
-                  r.source_work_date,
+                  <>
+                    {r.source_work_date}
+                    <div className="text-xs text-slate-500">{CREDIT_TYPE_LABELS[r.credit_type] ?? ""}</div>
+                  </>,
                   hm(r.source_worked_minutes),
                   r.credited_days ? `${Number(r.credited_days)}日` : "—",
                   r.report_reason ?? "",

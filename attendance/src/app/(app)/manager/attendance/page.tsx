@@ -44,6 +44,22 @@ interface PunchRow {
   is_delayed_submission: boolean;
 }
 
+/**
+ * その日の勤務の打刻だけを返す。翌日（正午まで）の打刻は、日跨ぎの勤務が終わっていない場合だけ含め、
+ * 翌日の出勤打刻以降（翌日の勤務）は含めない。
+ */
+function punchesOfDay(sorted: PunchRow[], nextDayStart: number): PunchRow[] {
+  const sameDay = sorted.filter((p) => Date.parse(p.punched_at) < nextDayStart);
+  if (sameDay.length === 0 || sameDay[sameDay.length - 1].punch_type === "clock_out") return sameDay;
+  const out = [...sameDay];
+  for (const p of sorted.filter((x) => Date.parse(x.punched_at) >= nextDayStart)) {
+    if (p.punch_type === "clock_in") break;
+    out.push(p);
+    if (p.punch_type === "clock_out") break;
+  }
+  return out;
+}
+
 const timeFmt = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit", hour12: false });
 
 /**
@@ -69,6 +85,7 @@ export default async function AttendanceDailyPage({ searchParams }: { searchPara
 
   const windowStart = new Date(`${date}T00:00:00+09:00`).toISOString();
   const windowEnd = new Date(`${addDays(date, 1)}T12:00:00+09:00`).toISOString();
+  const nextDayStart = Date.parse(`${addDays(date, 1)}T00:00:00+09:00`);
   const [{ data: staffData }, { data: dailyData }, { data: punchData }, { data: shiftData }] = staffIds.length
     ? await Promise.all([
         supabase.from("staff_profiles").select("staff_id, staff_code, family_name, given_name").in("staff_id", staffIds),
@@ -127,7 +144,7 @@ export default async function AttendanceDailyPage({ searchParams }: { searchPara
           <Table head={["スタッフ", "確定シフト", "打刻（原本）", "実働 / 休憩", "法定外 / 深夜", "遅刻 / 早退", "状態・異常", "打刻修正"]}>
             {staff.map((s) => {
               const d = daily.get(s.staff_id);
-              const mine = punches.filter((p) => p.staff_id === s.staff_id && !p.is_void);
+              const mine = punchesOfDay(punches.filter((p) => p.staff_id === s.staff_id && !p.is_void), nextDayStart);
               const myShifts = shifts.filter((sh) => sh.staffId === s.staff_id);
               return (
                 <tr key={s.staff_id} className="align-top">

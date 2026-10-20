@@ -188,3 +188,16 @@ describe("勤怠管理表（1人1ファイル）の取込", () => {
     });
   });
 });
+
+describe("法定休日の判定済みの表示", () => {
+  it("その週に休日管理の区分があれば、区分の無い勤務日も判定済みになる", async () => {
+    await withTx(async (tx) => {
+      const { ibaraki, hq, staff } = await setup(tx);
+      await workDay(tx, staff, ibaraki, "2026-09-08");
+      await workDay(tx, staff, ibaraki, "2026-09-15");
+      await tx.as(hq).sql("select public.set_staff_day_records($1, $2)", [staff, JSON.stringify([{ date: "2026-09-06", code: "legal_holiday" }])]);
+      expect(await daily(tx, staff, "2026-09-08")).toMatchObject({ legal_holiday_configured: true });
+      expect(await daily(tx, staff, "2026-09-15")).toMatchObject({ legal_holiday_configured: false }); // 区分の無い週
+    });
+  });
+});

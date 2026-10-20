@@ -1,7 +1,7 @@
 import "server-only";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { publicEnv } from "@/lib/env";
 
 /** 端末シークレットを保存する Cookie（httpOnly：画面の JavaScript からは読めない） */
@@ -33,18 +33,7 @@ export function setDeviceCookie(response: NextResponse, secret: string) {
   });
 }
 
-/** 別サイトからの送信（CSRF）を拒否する：JSON かつ同一オリジンのみ受け付ける */
-export function rejectCrossSite(request: NextRequest): NextResponse | null {
-  const contentType = request.headers.get("content-type") ?? "";
-  if (!contentType.includes("application/json")) {
-    return NextResponse.json({ ok: false, error: "bad_request" }, { status: 415 });
-  }
-  const origin = request.headers.get("origin");
-  if (origin && origin !== request.nextUrl.origin) {
-    return NextResponse.json({ ok: false, error: "forbidden" }, { status: 403 });
-  }
-  return null;
-}
+export { rejectCrossSite } from "./origin";
 
 export const noStore = { "Cache-Control": "no-store" };
 
