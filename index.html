@@ -2172,6 +2172,25 @@ function specialBookingKind(b){
 
 // ===== 1つの予約に会計が複数ある場合（体験¥0＋FP購入、物販の追加会計など）は、全部の会計を合計して1件として扱う =====
 // （以前は最初に見つかった1件だけを見ていたため、¥0の方が表示されて「修正が反映されていない」ように見えることがあった）
+// 会計1件を担当スタッフごとの金額に分ける（会計画面で項目ごとに担当を選べる：保険施術は奥田、鍼は田中など）
+// 保険分＝insurance_staff_id、自費＝各項目の staff_id。指定が無いもの・ずれ（割引や古いデータ）は予約の担当にまとめる。
+// 返金（is_refund のマイナス行）や担当を分けていない会計は、これまで通り予約の担当に全額。戻り値：[{staffId,total,insurance,jifee}]
+function splitPaymentByStaff(p,defaultStaffId){
+  const def=defaultStaffId||p.staff_id||0;
+  const items=Array.isArray(p.jifee_items)?p.jifee_items.filter(Boolean):[];
+  const total=Number(p.total_amount)||0, ins=Number(p.insurance_amount)||0, jif=Number(p.jifee_amount)||0;
+  const whole=[{staffId:def,total,insurance:ins,jifee:jif}];
+  if(p.is_refund||!(p.insurance_staff_id||items.some(i=>i.staff_id))) return whole;
+  const m={};
+  const row=sid=>(m[sid]=m[sid]||{staffId:sid,total:0,insurance:0,jifee:0});
+  if(ins){ const r=row(p.insurance_staff_id||def); r.insurance+=ins; r.total+=ins; }
+  let itemSum=0;
+  items.forEach(i=>{ const a=Number(i.amount)||0; itemSum+=a; if(a){ const r=row(i.staff_id||def); r.jifee+=a; r.total+=a; } });
+  if(jif-itemSum){ const r=row(def); r.jifee+=jif-itemSum; r.total+=jif-itemSum; }
+  if(total-ins-jif){ row(def).total+=total-ins-jif; }
+  const out=Object.values(m);
+  return out.length?out:whole;
+}
 function mergePaymentsByBooking(list){
   const m={};
   (list||[]).forEach(p=>{
@@ -2509,9 +2528,12 @@ function MoneyCalcPanel({bookings,payments,refunds,stores,todayStr,user,training
         if(nm&&nm!=="現金"){nonCash+=amt;byMethod[nm]=(byMethod[nm]||0)+amt;}
       });
       if(tot-nonCash>0) byMethod["現金"]=(byMethod["現金"]||0)+(tot-nonCash);
-      const b=bk[p.booking_id];const sid=b?b.staff_id:p.staff_id;
-      const sname=(STAFF_ACCOUNTS.find(s=>s.id===sid)||{}).name||"不明";
-      byStaff[sname]=byStaff[sname]||{n:0,total:0};byStaff[sname].n++;byStaff[sname].total+=tot;
+      const b=bk[p.booking_id];
+      // 担当別は、会計で項目ごとに選んだ担当で分ける（分けていない会計は予約の担当に全額）
+      splitPaymentByStaff(p,b?b.staff_id:p.staff_id).forEach(x=>{
+        const sname=(STAFF_ACCOUNTS.find(s=>s.id===x.staffId)||{}).name||"不明";
+        byStaff[sname]=byStaff[sname]||{n:0,total:0};byStaff[sname].n++;byStaff[sname].total+=x.total;
+      });
       const d=p.payment_date;byDay[d]=byDay[d]||{n:0,paid:0,total:0,ins:0,jifee:0,refund:0};
       byDay[d].n++;if(tot>0)byDay[d].paid++;byDay[d].total+=tot;byDay[d].ins+=n(p.insurance_amount);byDay[d].jifee+=n(p.jifee_amount);
     });
@@ -4566,21 +4588,25 @@ function StatsPanel({bookings,payments,stores,todayStr}){
   const insSales=pays.reduce((s,p)=>s+(p.insurance_amount||0),0);
   const jifeeSales=pays.reduce((s,p)=>s+(p.jifee_amount||0),0);
 
-  // スタッフ別売上（会計に紐づく予約の担当スタッフで集計）
+  // スタッフ別売上：会計で項目ごとに選んだ担当で分ける（保険施術は奥田、鍼は田中など。分けていない会計は予約の担当に全額）。
+  // ほかの人の予約で担当した分も入るよう、スタッフで絞る前の（院の）会計から集計して、絞り込み中ならその人だけを残す
   const bookingByIdForStats=React.useMemo(()=>{
     const map={};
-    scopedBookings.forEach(b=>{map[b.id]=b;});
+    storeOnlyBookings.forEach(b=>{map[b.id]=b;});
     return map;
-  },[scopedBookings]);
+  },[storeOnlyBookings]);
   const salesByStaffMap={};
-  pays.forEach(p=>{
+  storeOnlyPays.forEach(p=>{
     const booking=bookingByIdForStats[p.booking_id];
-    const sid=(booking&&booking.staff_id)||0;
-    if(!salesByStaffMap[sid]) salesByStaffMap[sid]={total:0,insurance:0,jifee:0,count:0};
-    salesByStaffMap[sid].total+=(p.total_amount||0);
-    salesByStaffMap[sid].insurance+=(p.insurance_amount||0);
-    salesByStaffMap[sid].jifee+=(p.jifee_amount||0);
-    if(!p.is_refund) salesByStaffMap[sid].count++;
+    splitPaymentByStaff(p,(booking&&booking.staff_id)||0).forEach(x=>{
+      const sid=x.staffId||0;
+      if(selStatsStaffId!==null&&sid!==selStatsStaffId) return;
+      if(!salesByStaffMap[sid]) salesByStaffMap[sid]={total:0,insurance:0,jifee:0,count:0};
+      salesByStaffMap[sid].total+=x.total;
+      salesByStaffMap[sid].insurance+=x.insurance;
+      salesByStaffMap[sid].jifee+=x.jifee;
+      if(!p.is_refund) salesByStaffMap[sid].count++;
+    });
   });
   const salesByStaffList=Object.entries(salesByStaffMap).map(([sid,v])=>{
     const staffInfo=STAFF_ACCOUNTS.find(s=>s.id===Number(sid))||{name:"担当未定",color:"#888",initial:"？"};
