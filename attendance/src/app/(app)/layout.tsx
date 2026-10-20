@@ -25,6 +25,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           { href: "/hq/approvals", label: "一括承認" },
           { href: "/hq/closings", label: "月次締め" },
           { href: "/hq/holidays", label: "休日管理" },
+          { href: "/hq/payroll", label: "賃金管理" },
           { href: "/hq/leave", label: "有給台帳" },
           { href: "/admin/clinics", label: "店舗マスタ" },
           { href: "/admin/holidays", label: "会社カレンダー" },

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("未ログイン時のアクセス制御", () => {
-  for (const path of ["/", "/hq", "/manager", "/admin/clinics", "/admin/staff", "/admin/users", "/admin/holidays", "/me", "/manager/shifts", "/manager/shifts/calendar", "/manager/attendance", "/admin/kiosks", "/manager/leave", "/manager/holiday-credits", "/hq/leave", "/admin/leave-policies", "/hq/approvals", "/hq/leave/import", "/hq/closings", "/exports", "/hq/holidays", "/hq/holidays/import"]) {
+  for (const path of ["/", "/hq", "/manager", "/admin/clinics", "/admin/staff", "/admin/users", "/admin/holidays", "/me", "/manager/shifts", "/manager/shifts/calendar", "/manager/attendance", "/admin/kiosks", "/manager/leave", "/manager/holiday-credits", "/hq/leave", "/admin/leave-policies", "/hq/approvals", "/hq/leave/import", "/hq/closings", "/exports", "/hq/holidays", "/hq/holidays/import", "/hq/payroll", "/hq/wages", "/hq/wages/import"]) {
     test(`${path} はログイン画面へ転送される`, async ({ page }) => {
       await page.goto(path);
       await expect(page).toHaveURL(/\/login/);

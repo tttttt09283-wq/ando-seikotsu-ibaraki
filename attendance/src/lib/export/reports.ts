@@ -1,5 +1,5 @@
 /**
- * 帳票（9種）の定義とデータの読み込み。読み込みは利用者本人の権限（RLS）で行い、
+ * 帳票（9種＋給与一覧）の定義とデータの読み込み。読み込みは利用者本人の権限（RLS）で行い、
  * さらに院長は担当院の分だけに絞る。時間は「時間（小数2桁）」、日数は「日」で出す。
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -8,6 +8,9 @@ import { ANOMALY_LABELS, ATTENDANCE_STATUS_LABELS, CLOSING_STATUS_LABELS, DAY_TY
 import { isActiveOn, staffName, type AssignmentRow, type ContractRow, type StaffRow } from "@/lib/data/types";
 import { EMPLOYMENT_TYPE_LABELS } from "@/lib/validation/schemas";
 import { addDays, addMonths, todayJst, WEEKDAY_LABELS, weekdayOf } from "@/lib/time/jst";
+import { fetchAll } from "@/lib/data/fetch-all";
+import { loadPayrollMonth } from "@/lib/payroll/load";
+import { toPayrollTable } from "@/lib/payroll/table";
 import { toHours, type ExportCell, type ExportTable } from "./format";
 
 export type ReportId =
@@ -19,7 +22,8 @@ export type ReportId =
   | "credit_balance"
   | "credit_history"
   | "anomalies"
-  | "closings";
+  | "closings"
+  | "payroll";
 
 export interface ReportDefinition {
   id: ReportId;
@@ -38,6 +42,7 @@ export const REPORTS: ReportDefinition[] = [
   { id: "credit_history", label: "祝日勤務休日（振休）付与履歴", description: "対象月の振休の付与・使用・失効・取消", hqOnly: true },
   { id: "anomalies", label: "勤怠異常一覧", description: "打刻漏れ・欠勤・遅刻・早退・休憩不足・再計算待ちなど", hqOnly: false },
   { id: "closings", label: "月次締め状況一覧", description: "院ごとの院長確認・締め・再開の状況と未解決の件数", hqOnly: false },
+  { id: "payroll", label: "給与一覧（残業代計算表）", description: "賃金管理：残業・深夜・法定休日・60時間超の割増と支給総額（本部のみ）", hqOnly: true },
 ];
 
 export const reportById = (id: string) => REPORTS.find((r) => r.id === id);
@@ -73,18 +78,6 @@ interface DailyRow {
   needs_recalc: boolean;
 }
 
-type Page<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
-
-/** 1000行ずつ全件を読み込む（API の1回あたりの上限を超える帳票のため） */
-async function fetchAll<T>(build: (from: number, to: number) => Page<T>): Promise<T[]> {
-  const out: T[] = [];
-  for (let from = 0; ; from += 1000) {
-    const { data, error } = await build(from, from + 999);
-    if (error) throw new Error(error.message);
-    out.push(...(data ?? []));
-    if (!data || data.length < 1000) return out;
-  }
-}
 
 const monthRange = (month: string) => ({ from: `${month}-01`, to: addDays(`${addMonths(month, 1)}-01`, -1) });
 const timeFmt = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit", hour12: false });
@@ -607,6 +600,16 @@ async function closingsReport(ctx: Context): Promise<ExportTable> {
   };
 }
 
+// ---- 10. 給与一覧（賃金管理・本部のみ） ----
+async function payroll(ctx: Context): Promise<ExportTable> {
+  const rows = (await loadPayrollMonth(ctx.supabase, ctx.params.month)).filter((r) => r.clinicId === null || ctx.clinicIds.includes(r.clinicId));
+  return toPayrollTable(
+    sortByClinicStaff(ctx, rows, (r) => r.clinicId, (r) => r.staff.staff_id),
+    ctx.clinicName,
+    ctx.params.month,
+  );
+}
+
 const BUILDERS: Record<ReportId, (ctx: Context) => Promise<ExportTable>> = {
   monthly_all: monthlyAll,
   monthly_clinic: monthlyClinic,
@@ -617,6 +620,7 @@ const BUILDERS: Record<ReportId, (ctx: Context) => Promise<ExportTable>> = {
   credit_history: creditHistory,
   anomalies,
   closings: closingsReport,
+  payroll,
 };
 
 /** 帳票を作る（権限は呼び出し側で確認済みであること） */

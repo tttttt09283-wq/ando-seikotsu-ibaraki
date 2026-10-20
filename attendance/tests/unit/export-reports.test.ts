@@ -98,8 +98,8 @@ const tables = {
 };
 
 describe("帳票", () => {
-  it("9種の帳票を定義し、有給・振休・全院一覧は本部のみ", () => {
-    expect(REPORTS).toHaveLength(9);
+  it("9種の帳票＋給与一覧を定義し、有給・振休・全院一覧・給与一覧は本部のみ", () => {
+    expect(REPORTS).toHaveLength(10);
     expect(REPORTS.filter((r) => !r.hqOnly).map((r) => r.id)).toEqual(["monthly_clinic", "daily_detail", "anomalies", "closings"]);
   });
 
@@ -158,5 +158,37 @@ describe("帳票", () => {
       ["茨木院", "締め済み", 1],
       ["香里園院", "未締め", 0],
     ]);
+  });
+
+  it("給与一覧：賃金の登録があるスタッフの残業代・支給総額を出す（未登録は「未登録」）", async () => {
+    const t = await buildReport(
+      fakeSupabase(
+        {
+          ...tables,
+          staff_wage_settings: [
+            {
+              id: "w1", staff_id: "s1", valid_from: "2026-04-01", pay_type: "monthly", basic_wage: 151000, qualification_allowance: 0, hourly_wage: null,
+              daily_wage: null, monthly_hours: "151.0", overtime_threshold_hours: "0", fixed_overtime_allowance: 0, commute_type: "monthly",
+              commute_amount: 5000, misc_allowance: 0, note: null,
+            },
+          ],
+          payroll_inputs: [],
+          staff_day_records: [],
+        },
+        { leave_balance_list: () => [] },
+      ),
+      hq,
+      "payroll",
+      { month: "2026-09", clinicId: null },
+    );
+    const col = (name: string) => t.headers.indexOf(name);
+    expect(t.rows).toHaveLength(2);
+    const [s1, s2] = t.rows;
+    expect(s1[col("給与形態")]).toBe("月給");
+    // 基本時給 1000円：通常10時間＋有休1日（8時間）−基準0時間−固定残業1時間 ＝ 超過17時間 × 1.25
+    expect(s1[col("超過残業数")]).toBe(17);
+    expect(s1[col("支給総額")]).toBe(151000 + Math.round(17 * 1000 * 1.25) + 5000);
+    expect(s2[col("給与形態")]).toBe("未登録");
+    expect(s2[col("確認事項・備考")]).toBe("賃金が未登録です");
   });
 });

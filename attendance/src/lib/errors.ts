@@ -19,6 +19,7 @@ const CONSTRAINT_MESSAGES: Record<string, string> = {
   staff_profiles_staff_code_key: "そのスタッフIDは既に使われています",
   staff_profiles_auth_user_id_key: "そのアカウントは既に別のスタッフに紐付いています",
   shifts_break_within: "休憩時間が勤務時間以上になっています",
+  staff_wage_settings_shape: "月給は基礎賃金と月の所定時間、時給は時給、日給は日給を入力してください",
   shifts_time_order: "勤務時間は24時間以内にしてください",
   shift_templates_not_zero: "開始と終了が同じです",
   calendar_exception_unique: "その日付は既に登録されています",
