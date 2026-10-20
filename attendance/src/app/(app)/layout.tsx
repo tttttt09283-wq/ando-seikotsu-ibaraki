@@ -16,7 +16,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           { href: "/manager/shifts", label: "シフト" },
           { href: "/manager/attendance", label: "勤怠" },
           { href: "/manager/leave", label: "休暇申請" },
-          { href: "/manager/holiday-credits", label: "振休" },
+          { href: "/manager/holiday-credits", label: "振休・代休" },
           { href: "/exports", label: "帳票出力" },
         ]
       : []),
@@ -24,6 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       ? [
           { href: "/hq/approvals", label: "一括承認" },
           { href: "/hq/closings", label: "月次締め" },
+          { href: "/hq/holidays", label: "休日管理" },
           { href: "/hq/leave", label: "有給台帳" },
           { href: "/admin/clinics", label: "店舗マスタ" },
           { href: "/admin/holidays", label: "会社カレンダー" },

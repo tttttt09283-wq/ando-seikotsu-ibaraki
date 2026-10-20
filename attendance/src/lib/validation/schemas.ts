@@ -480,6 +480,6 @@ export const holidayCreditPolicySchema = z.object({
   is_active: z.string().optional().transform((v) => v === "on"),
   min_worked_minutes: z.coerce.number().int().min(1).max(1440),
   half_day_max_minutes: z.coerce.number().int().min(0).max(1440),
-  expiration_rule: z.enum(["end_of_month", "days", "none"]),
+  expiration_rule: z.enum(["end_of_month", "one_month", "days", "none"]),
   expiration_days: z.coerce.number().int().min(1).max(730).optional().or(z.literal("").transform(() => undefined)),
 });

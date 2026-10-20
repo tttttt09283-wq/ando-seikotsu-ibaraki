@@ -12,6 +12,7 @@ import { changeExpiration, decideHolidayCredit, expireCredits, generateCandidate
 interface CreditRequestRow {
   request_id: string;
   staff_id: string;
+  credit_type: string;
   source_work_date: string;
   source_worked_minutes: number;
   credited_days: string;
@@ -40,16 +41,22 @@ interface Inconsistency {
   current_worked_minutes: number;
 }
 
+const CREDIT_TYPE_LABELS: Record<string, string> = {
+  company_holiday_work_leave: "振休（祝日勤務）",
+  compensatory_day_off: "代休（休日出勤）",
+  migration: "移行",
+};
+
 const ISSUE_LABELS = {
   no_work: "勤務実績がなくなった",
-  not_holiday: "対象祝日ではなくなった",
+  not_holiday: "対象の祝日・休日出勤ではなくなった",
   not_eligible: "付与対象外になった",
   attendance_changed: "付与後に勤怠が修正された",
   days_changed: "付与日数が変わる修正（1日⇔0.5日）",
 } as const;
 
 /**
- * 振休（祝日勤務）。祝日に勤務して当日休めなかった分を院長が報告し、本部が承認すると1日付与（期限は原則その月末）。
+ * 振休（祝日勤務）・代休（休日出勤）。当日休めなかった分を院長が報告し、本部が承認すると付与（振休の期限は原則その月末、代休は1か月）。
  * 付与対象はスタッフ別の設定で判定し、勤務制度名では判定しない。
  */
 export default async function HolidayCreditsPage({ searchParams }: { searchParams: Promise<{ clinic?: string; month?: string }> }) {
@@ -108,8 +115,8 @@ export default async function HolidayCreditsPage({ searchParams }: { searchParam
   return (
     <>
       <PageHeader
-        title="振休（祝日勤務）"
-        description="祝日の振休は原則当日に使用します。祝日に勤務して当日休めなかった場合、院長が理由を付けて本部に報告し、本部の承認で付与されます（4時間以下の半日勤務は0.5日、それ以外は1日。期限は原則その月末）。"
+        title="振休・代休"
+        description="祝日の振休は原則当日に使用します。祝日に勤務して当日休めなかった場合、院長が理由を付けて本部に報告し、本部の承認で付与されます（期限は原則その月末）。休日出勤（法定休日・法定外休日の勤務）の代休も同じ流れで、期限は原則1か月です（「給与変換」の日は対象外）。4時間以下の半日勤務は0.5日、それ以外は1日。"
       />
       <div className="mb-6 flex flex-wrap items-center gap-4">
         <form method="get" className="flex items-center gap-2">
@@ -125,7 +132,7 @@ export default async function HolidayCreditsPage({ searchParams }: { searchParam
             表示
           </button>
         </form>
-        <ActionForm action={generateCandidates} submitLabel="祝日勤務の候補を確認" tone="secondary" className="flex items-center gap-3">
+        <ActionForm action={generateCandidates} submitLabel="祝日・休日出勤の候補を確認" tone="secondary" className="flex items-center gap-3">
           <input type="hidden" name="clinic_id" value={clinicId} />
           <input type="hidden" name="month" value={month} />
         </ActionForm>
@@ -134,7 +141,7 @@ export default async function HolidayCreditsPage({ searchParams }: { searchParam
       <div className="space-y-6">
         {inconsistencies.length > 0 && (
           <Card title={`付与と勤怠の不整合（${inconsistencies.length}件）`} className="border-rose-300">
-            <Table head={["スタッフ", "祝日", "内容", "現在の実労働", ""]}>
+            <Table head={["スタッフ", "勤務日", "内容", "現在の実労働", ""]}>
               {inconsistencies.map((i) => (
                 <tr key={i.request_id}>
                   <Td>{name(i.staff_id)}</Td>
@@ -155,11 +162,14 @@ export default async function HolidayCreditsPage({ searchParams }: { searchParam
           {candidates.length === 0 ? (
             <EmptyState>候補はありません。祝日の勤怠を院長確認すると、付与対象スタッフの候補が表示されます</EmptyState>
           ) : (
-            <Table head={["スタッフ", "祝日", "実労働", "付与日数", "報告（当日休めなかった理由）", ""]}>
+            <Table head={["スタッフ", "勤務日", "実労働", "付与日数", "報告（当日休めなかった理由）", ""]}>
               {candidates.map((r) => (
                 <tr key={r.request_id} className="align-top">
                   <Td>{name(r.staff_id)}</Td>
-                  <Td>{r.source_work_date}</Td>
+                  <Td>
+                    {r.source_work_date}
+                    <div className="text-xs text-slate-500">{CREDIT_TYPE_LABELS[r.credit_type] ?? ""}</div>
+                  </Td>
                   <Td>{hm(r.source_worked_minutes)}</Td>
                   <Td>{Number(r.credited_days)}日</Td>
                   <Td>{decision(r, "submit", "本部に報告", "例：予約が多く当日休めなかった")}</Td>
@@ -174,11 +184,14 @@ export default async function HolidayCreditsPage({ searchParams }: { searchParam
           {pending.length === 0 ? (
             <EmptyState>承認待ちはありません</EmptyState>
           ) : (
-            <Table head={["スタッフ", "祝日", "実労働", "付与日数", "院長の報告", ""]}>
+            <Table head={["スタッフ", "勤務日", "実労働", "付与日数", "院長の報告", ""]}>
               {pending.map((r) => (
                 <tr key={r.request_id} className="align-top">
                   <Td>{name(r.staff_id)}</Td>
-                  <Td>{r.source_work_date}</Td>
+                  <Td>
+                    {r.source_work_date}
+                    <div className="text-xs text-slate-500">{CREDIT_TYPE_LABELS[r.credit_type] ?? ""}</div>
+                  </Td>
                   <Td>{hm(r.source_worked_minutes)}</Td>
                   <Td>{Number(r.credited_days)}日</Td>
                   <Td className="whitespace-normal">{r.report_reason}</Td>
@@ -198,11 +211,11 @@ export default async function HolidayCreditsPage({ searchParams }: { searchParam
           )}
         </Card>
 
-        <Card title="振休の残り（付与ごと）">
+        <Card title="振休・代休の残り（付与ごと）">
           {active.length === 0 ? (
             <EmptyState>使用できる振休はありません</EmptyState>
           ) : (
-            <Table head={["スタッフ", "祝日", "残り", "期限", hq ? "期限の変更（本部）" : ""]}>
+            <Table head={["スタッフ", "勤務日", "残り", "期限", hq ? "期限の変更（本部）" : ""]}>
               {active.map((g) => (
                 <tr key={g.holiday_credit_id} className="align-top">
                   <Td>{name(g.staff_id)}</Td>
@@ -233,7 +246,7 @@ export default async function HolidayCreditsPage({ searchParams }: { searchParam
           <Card title={`期限切れ（失効候補 ${expiring.length}件）`}>
             {hq ? (
               <ActionForm action={expireCredits} submitLabel="選択した振休を失効させる" tone="danger" confirmMessage="選択した振休を失効として記録します。よろしいですか？">
-                <Table head={["", "スタッフ", "祝日", "残り", "期限"]}>
+                <Table head={["", "スタッフ", "勤務日", "残り", "期限"]}>
                   {expiring.map((g) => (
                     <tr key={g.holiday_credit_id}>
                       <Td>
@@ -257,11 +270,14 @@ export default async function HolidayCreditsPage({ searchParams }: { searchParam
           {history.length === 0 ? (
             <EmptyState>処理済みはありません</EmptyState>
           ) : (
-            <Table head={["スタッフ", "祝日", "状態", "理由・報告"]}>
+            <Table head={["スタッフ", "勤務日", "状態", "理由・報告"]}>
               {history.map((r) => (
                 <tr key={r.request_id}>
                   <Td>{name(r.staff_id)}</Td>
-                  <Td>{r.source_work_date}</Td>
+                  <Td>
+                    {r.source_work_date}
+                    <div className="text-xs text-slate-500">{CREDIT_TYPE_LABELS[r.credit_type] ?? ""}</div>
+                  </Td>
                   <Td>
                     <Badge tone={r.status === "approved" ? "green" : r.status === "rejected" ? "red" : "gray"}>
                       {r.status === "approved" ? "付与済み" : r.status === "rejected" ? "付与しない" : "取消"}

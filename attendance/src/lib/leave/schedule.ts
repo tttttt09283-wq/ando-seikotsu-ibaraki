@@ -1,6 +1,7 @@
 /**
  * 年次有給休暇の付与予定（労働基準法39条）。
  * - 入社6か月後に10日、以後1年ごとに 11・12・14・16・18・20日（6年6か月以降は毎年20日）
+ * - 基準日方式（毎年同じ月日に付与）にも対応
  * - 週所定労働日数4日以下かつ週30時間未満は比例付与
  * - 出勤率8割以上が条件。出勤率の判定は本部が確認して付与を確定する（ここでは予定日と日数のみ）
  */
@@ -48,9 +49,24 @@ export function statutoryDays(index: number, c: WorkingConditions): { days: numb
   return { days: STANDARD_DAYS[i], type: "statutory" };
 }
 
-/** n 回目の付与日（入社日 + 6か月 + n年） */
-export function grantDateOf(hireDate: string, index: number): string {
+/**
+ * 付与の方式。
+ * - 入社日基準：入社6か月後、以後1年ごと
+ * - 基準日方式：最初の付与日（入社6か月後以前）から毎年同じ月日。日数は法定どおり回数に応じて増える（前倒し付与）
+ */
+export type GrantBasis = { kind: "hire_date" } | { kind: "base_date"; firstBaseDate: string };
+
+export const HIRE_DATE_BASIS: GrantBasis = { kind: "hire_date" };
+
+/** n 回目の付与日 */
+export function grantDateOf(hireDate: string, index: number, basis: GrantBasis = HIRE_DATE_BASIS): string {
+  if (basis.kind === "base_date") return addMonthsToDate(basis.firstBaseDate, index * 12);
   return addMonthsToDate(hireDate, 6 + index * 12);
+}
+
+/** DB の staff_leave_settings の行から付与方式を作る */
+export function basisFromSettings(row: { grant_basis: string; first_base_date: string | null } | null | undefined): GrantBasis {
+  return row?.grant_basis === "base_date" && row.first_base_date ? { kind: "base_date", firstBaseDate: row.first_base_date } : HIRE_DATE_BASIS;
 }
 
 /**
@@ -63,13 +79,14 @@ export function nextPlannedGrant(
   grantedDates: string[],
   asOf: string,
   lookaheadDays = 30,
+  basis: GrantBasis = HIRE_DATE_BASIS,
 ): PlannedGrant | null {
   const limit = new Date(`${asOf}T00:00:00Z`);
   limit.setUTCDate(limit.getUTCDate() + lookaheadDays);
   const limitStr = limit.toISOString().slice(0, 10);
   const granted = new Set(grantedDates);
   for (let index = 0; index < 60; index++) {
-    const grantDate = grantDateOf(hireDate, index);
+    const grantDate = grantDateOf(hireDate, index, basis);
     if (grantDate > limitStr) return null;
     if (!granted.has(grantDate)) return { grantDate, index, ...statutoryDays(index, conditions) };
   }

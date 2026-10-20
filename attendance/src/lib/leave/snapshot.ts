@@ -1,5 +1,5 @@
 import { normalizeHeaderText, parseDaysCell, type Cell, type ImportIssue } from "./import";
-import { addMonthsToDate, grantDateOf, statutoryDays, type WorkingConditions } from "./schedule";
+import { addMonthsToDate, grantDateOf, HIRE_DATE_BASIS, statutoryDays, type GrantBasis, type WorkingConditions } from "./schedule";
 
 /**
  * 「月末時点の有給残数」形式の取込（例：月ごとのシートに 氏名・出勤日数・有休・有給残 … が並ぶ出勤簿・残業代計算表）。
@@ -111,7 +111,7 @@ const dayBefore = (date: string) => {
 };
 
 /**
- * 付与日が分からない残数を、入社日から推定した法定の付与に振り分ける。
+ * 付与日が分からない残数を、入社日（基準日方式の場合は基準日）から推定した法定の付与に振り分ける。
  * 残数は「直近の付与」から優先して埋め、超える分を「その前の付与」（まだ有効なもの）に割り当てる。
  * 例：入社 2024-04-01、2026-06-30 時点の残 18日 → 2025-10-01付与 11日 ＋ 2024-10-01付与 7日（2026-09-30 失効）
  */
@@ -120,11 +120,12 @@ export function planSnapshotGrants(
   conditions: WorkingConditions,
   asOf: string,
   remaining: number,
+  basis: GrantBasis = HIRE_DATE_BASIS,
 ): { grants: PlannedMigrationGrant[]; warning: string | null } {
   if (remaining <= 0) return { grants: [], warning: null };
   const scheduled: { date: string; days: number }[] = [];
   for (let i = 0; i < 60; i++) {
-    const date = grantDateOf(hireDate, i);
+    const date = grantDateOf(hireDate, i, basis);
     if (date > asOf) break;
     scheduled.push({ date, days: statutoryDays(i, conditions).days });
   }

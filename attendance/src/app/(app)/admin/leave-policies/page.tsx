@@ -18,7 +18,7 @@ interface CreditPolicy {
   credited_days: string;
   min_worked_minutes: number;
   half_day_max_minutes: number;
-  expiration_rule: "end_of_month" | "days" | "none";
+  expiration_rule: "end_of_month" | "one_month" | "days" | "none";
   expiration_days: number | null;
   is_active: boolean;
   wage_note: string | null;
@@ -30,7 +30,7 @@ export default async function LeavePoliciesPage() {
   const supabase = await createSupabaseServer();
   const [{ data: leaveData }, { data: creditData }] = await Promise.all([
     supabase.from("leave_policies").select("*").order("leave_type"),
-    supabase.from("holiday_credit_policies").select("*").order("credit_type", { ascending: false }),
+    supabase.from("holiday_credit_policies").select("*").neq("credit_type", "migration").order("credit_type", { ascending: false }),
   ]);
   const leavePolicies = (leaveData ?? []) as LeavePolicy[];
   const creditPolicies = (creditData ?? []) as CreditPolicy[];
@@ -85,8 +85,9 @@ export default async function LeavePoliciesPage() {
                 </Field>
                 <Field label="期限">
                   <Select name="expiration_rule" defaultValue={p.expiration_rule}>
-                    <option value="end_of_month">祝日の月末</option>
-                    <option value="days">祝日から○日</option>
+                    <option value="end_of_month">勤務日の月末</option>
+                    <option value="one_month">勤務日から1か月</option>
+                    <option value="days">勤務日から○日</option>
                     <option value="none">期限なし</option>
                   </Select>
                 </Field>

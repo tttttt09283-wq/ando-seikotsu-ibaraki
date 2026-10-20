@@ -18,6 +18,7 @@ import {
 } from "@/lib/leave/snapshot";
 import { isActiveOn, staffName, type ContractRow, type StaffRow } from "@/lib/data/types";
 import { isValidDateString, todayJst } from "@/lib/time/jst";
+import { basisFromSettings } from "@/lib/leave/schedule";
 
 type Action = "create" | "adjust" | "unchanged" | "unknown_staff";
 
@@ -125,11 +126,13 @@ export async function previewLeaveImport(formData: FormData): Promise<PreviewRes
     : (parseSheetMonthEnd(sheetName) ?? parseSheetMonthEnd(table.slice(0, 3).flat().join("")) ?? todayJst());
   const { rows, issues } = parseSnapshotTable(table);
 
-  const [{ data: staffData }, { data: contractData }, { data: grantData }] = await Promise.all([
+  const [{ data: staffData }, { data: contractData }, { data: grantData }, { data: settingData }] = await Promise.all([
     supabase.from("staff_profiles").select("staff_id, staff_code, family_name, given_name, hire_date, status"),
     supabase.from("employment_contracts").select("*"),
     supabase.from("leave_grants").select("*"),
+    supabase.from("staff_leave_settings").select("staff_id, grant_basis, first_base_date"),
   ]);
+  const settings = (settingData ?? []) as { staff_id: string; grant_basis: string; first_base_date: string | null }[];
   const staffByKey = new Map<string, StaffRow[]>();
   for (const s of (staffData ?? []) as StaffRow[]) {
     const key = nameKey(`${s.family_name}${s.given_name}`);
@@ -156,6 +159,7 @@ export async function previewLeaveImport(formData: FormData): Promise<PreviewRes
       { weeklyDays: Number(contract?.weekly_scheduled_days ?? 5), weeklyMinutes: contract?.weekly_scheduled_minutes ?? 2400 },
       asOf,
       r.remaining_days - current,
+      basisFromSettings(settings.find((x) => x.staff_id === staff.staff_id)),
     );
     return { ...common, action: "create", plan, note: warning };
   });

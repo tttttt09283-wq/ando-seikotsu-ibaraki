@@ -4,7 +4,7 @@ import { createSupabaseServer } from "@/lib/supabase/server";
 import { ActionForm } from "@/components/ActionForm";
 import { Badge, Card, EmptyState, PageHeader, Select, Table, Td } from "@/components/ui";
 import { isActiveOn, staffName, type AssignmentRow, type ClinicRow, type ContractRow, type StaffRow } from "@/lib/data/types";
-import { nextPlannedGrant } from "@/lib/leave/schedule";
+import { basisFromSettings, nextPlannedGrant } from "@/lib/leave/schedule";
 import { todayJst } from "@/lib/time/jst";
 import { expirePaidLeave, grantPaidLeave } from "./actions";
 
@@ -31,7 +31,7 @@ const TYPE_LABEL = { statutory: "法定", proportional: "比例" } as const;
 
 /**
  * 有給台帳（本部）：全院のスタッフの残数、付与予定、年5日取得義務、期限切れの失効処理。
- * 付与予定は入社日と勤務条件から計算する。出勤率8割の確認は本部が行ってから「付与」する。
+ * 付与予定は入社日（基準日方式のスタッフは基準日）と勤務条件から計算する。出勤率8割の確認は本部が行ってから「付与」する。
  */
 export default async function PaidLeaveLedgerPage({ searchParams }: { searchParams: Promise<{ clinic?: string }> }) {
   await requireHq();
@@ -39,7 +39,7 @@ export default async function PaidLeaveLedgerPage({ searchParams }: { searchPara
   const supabase = await createSupabaseServer();
   const today = todayJst();
 
-  const [{ data: staffData }, { data: assignmentData }, { data: clinicData }, { data: grantData }, { data: contractData }, { data: obligationData }, { data: pendingData }] =
+  const [{ data: staffData }, { data: assignmentData }, { data: clinicData }, { data: grantData }, { data: contractData }, { data: obligationData }, { data: pendingData }, { data: settingData }] =
     await Promise.all([
       supabase.from("staff_profiles").select("*").neq("status", "retired").order("staff_code"),
       supabase.from("staff_clinic_assignments").select("*").eq("assignment_type", "primary"),
@@ -48,7 +48,9 @@ export default async function PaidLeaveLedgerPage({ searchParams }: { searchPara
       supabase.from("employment_contracts").select("*"),
       supabase.rpc("annual_leave_obligations", { p_as_of: today }),
       supabase.from("leave_requests").select("staff_id, days_requested").eq("leave_type", "paid").in("status", ["pending", "manager_approved"]),
+      supabase.from("staff_leave_settings").select("staff_id, grant_basis, first_base_date"),
     ]);
+  const settings = (settingData ?? []) as { staff_id: string; grant_basis: string; first_base_date: string | null }[];
   const clinics = (clinicData ?? []) as Pick<ClinicRow, "clinic_id" | "name">[];
   const clinicName = new Map(clinics.map((c) => [c.clinic_id, c.name]));
   const assignments = (assignmentData ?? []) as AssignmentRow[];
@@ -70,6 +72,8 @@ export default async function PaidLeaveLedgerPage({ searchParams }: { searchPara
         { weeklyDays: Number(contract?.weekly_scheduled_days ?? 5), weeklyMinutes: contract?.weekly_scheduled_minutes ?? 2400 },
         mine.map((g) => g.grant_date),
         today,
+        30,
+        basisFromSettings(settings.find((x) => x.staff_id === s.staff_id)),
       );
       return {
         staff: s,
@@ -89,7 +93,7 @@ export default async function PaidLeaveLedgerPage({ searchParams }: { searchPara
     <>
       <PageHeader
         title="有給台帳"
-        description="残数は付与・使用・失効・調整の台帳から計算しています。付与予定は入社日と勤務条件（週の日数・時間）から計算し、出勤率8割の確認後に付与してください。"
+        description="残数は付与・使用・失効・調整の台帳から計算しています。付与予定は入社日（基準日方式のスタッフは基準日）と勤務条件（週の日数・時間）から計算し、出勤率8割の確認後に付与してください。"
         actions={
           <div className="flex gap-4">
             <Link href="/hq/leave/import" className="rounded-md bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">
