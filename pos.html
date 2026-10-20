@@ -124,6 +124,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 .jifee-item{display:flex;align-items:center;gap:6px;padding:7px 10px;background:#f0fdf4;border-radius:8px;margin-bottom:5px;}
 .jifee-item span{font-size:12px;font-weight:700;color:#1e3a5f;flex:1;}
 .jifee-item input{width:80px;padding:4px 6px;border:1.5px solid #ddd;border-radius:6px;font-size:13px;text-align:right;}
+.jifee-item .staff-sel,.staff-sel{padding:4px 4px;border:1.5px solid #c7d2fe;border-radius:6px;font-size:12px;font-weight:700;color:#3730a3;background:#eef2ff;}
 .jifee-item button{background:#fef2f2;color:#ef4444;border:none;border-radius:5px;padding:3px 7px;cursor:pointer;font-size:11px;}
 .summary-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #f5f5f5;font-size:13px;}
 .summary-row:last-child{border-bottom:none;}
@@ -618,6 +619,18 @@ function addPayment(method){if(state.payments.find(p=>p.method===method)) return
 function removePayment(i){state.payments.splice(i,1);render();}
 function updatePaymentAmount(i,val){state.payments[i].amount=parseInt(val)||0;renderSummary();}
 function addJifee(label,amount){state.jifeeItems.push({label,amount});render();}
+// ===== 会計の担当（項目ごと） =====
+// 例：保険施術は奥田、鍼は田中。未選択の項目は予約の担当（booking.staff_id）として扱う
+function itemStaffId(item){ return (item&&item.staff_id)||booking.staff_id||null; }
+function insuranceStaffId(){ return state.insuranceStaffId||booking.staff_id||null; }
+function staffSelectHtml(val,onchange,label){
+  return `<select class="staff-sel" aria-label="${label||"担当"}" onchange="${onchange}">${STAFF_LIST.map(s=>`<option value="${s.id}" ${s.id===val?"selected":""}>${s.name}</option>`).join("")}${val&&!STAFF[val]?`<option value="${val}" selected>ID${val}</option>`:""}</select>`;
+}
+function setJifeeStaff(i,v){ state.jifeeItems[i].staff_id=parseInt(v)||null; renderSummary(); }
+function setInsuranceStaff(v){ state.insuranceStaffId=parseInt(v)||null; renderSummary(); }
+// 保存用：自費項目（担当つき）
+function jifeeItemsForSave(){ return state.jifeeItems.map(i=>({label:i.label,amount:parseInt(i.amount)||0,staff_id:itemStaffId(i)})); }
+function insuranceStaffForSave(){ return (parseInt(state.insuranceAmount)||0)>0?insuranceStaffId():null; }
 // プレオープン期間中の「無料体験会」ワンタップ確定：保険負担・自費項目をすべてクリアし、
 // 0円の項目だけをレシートに残す（金額入力や支払方法の追加はそのまま行える）
 function applyPreOpenFreeTrial(){
@@ -641,8 +654,8 @@ function renderSummaryHtml(){
   const ins=parseInt(state.insuranceAmount)||0;
   const total=calcTotal();const paid=calcPaid();const remaining=calcRemaining();const change=calcChange();
   return`
-    ${ins>0?`<div class="summary-row"><span style="color:#666;">保険窓口負担</span><span style="font-weight:700;">${fmt(ins)}</span></div>`:""}
-    ${state.jifeeItems.map(i=>`<div class="summary-row"><span style="color:#666;">${i.label}</span><span style="font-weight:700;">${fmt(i.amount)}</span></div>`).join("")}
+    ${ins>0?`<div class="summary-row"><span style="color:#666;">保険窓口負担<small style="margin-left:6px;color:#4338ca;font-weight:700;">担当 ${STAFF[insuranceStaffId()]||"-"}</small></span><span style="font-weight:700;">${fmt(ins)}</span></div>`:""}
+    ${state.jifeeItems.map(i=>`<div class="summary-row"><span style="color:#666;">${i.label}<small style="margin-left:6px;color:#4338ca;font-weight:700;">担当 ${STAFF[itemStaffId(i)]||"-"}</small></span><span style="font-weight:700;">${fmt(i.amount)}</span></div>`).join("")}
     <div class="summary-total"><span>合　計</span><span>${fmt(total)}</span></div>
     ${paid>0?`
       <div style="margin-top:8px;padding-top:8px;border-top:1px dashed #e5e7eb;">
@@ -1252,7 +1265,7 @@ async function loadExistingPayments(bookingId){
 function restorePaidState(pay){
   state.insuranceAmount=parseInt(pay.insurance_amount)||0;
   if(Array.isArray(pay.jifee_items)&&pay.jifee_items.length>0){
-    state.jifeeItems=pay.jifee_items.map(i=>({label:i.label,amount:parseInt(i.amount)||0}));
+    state.jifeeItems=pay.jifee_items.map(i=>({label:i.label,amount:parseInt(i.amount)||0,staff_id:i.staff_id||null}));
   }else if((pay.jifee_amount||0)>0){
     state.jifeeItems=[{label:pay.memo||"自費",amount:parseInt(pay.jifee_amount)||0}];
   }else{
@@ -1260,6 +1273,7 @@ function restorePaidState(pay){
   }
   state.payments=parsePaymentMethods(pay.payment_method);
   state.insuranceType=pay.insurance_type||null;
+  state.insuranceStaffId=pay.insurance_staff_id||null;
   state.alreadyPaid=pay;
   state.done=true;
 }
@@ -1425,7 +1439,10 @@ function currentStaffName(){
 }
 function paySnapshot(p){
   return {insurance_amount:p.insurance_amount||0,jifee_amount:p.jifee_amount||0,total_amount:p.total_amount||0,
-    payment_method:p.payment_method||"",jifee_items:p.jifee_items||[],insurance_type:p.insurance_type||null,memo:p.memo||null};
+    payment_method:p.payment_method||"",
+    jifee_items:(p.jifee_items||[]).map(i=>({label:i.label,amount:parseInt(i.amount)||0,staff_id:i.staff_id||p.staff_id||booking.staff_id||null})),
+    insurance_type:p.insurance_type||null,memo:p.memo||null,
+    insurance_staff_id:(parseInt(p.insurance_amount)||0)>0?(p.insurance_staff_id||p.staff_id||booking.staff_id||null):null};
 }
 async function saveFix(){
   const before=state.fixing;
@@ -1437,9 +1454,10 @@ async function saveFix(){
     jifee_amount:state.jifeeItems.reduce((s,i)=>s+(parseInt(i.amount)||0),0),
     total_amount:total,
     payment_method:state.payments.map(p=>`${p.method}:${fmt(p.amount)}`).join("・"),
-    jifee_items:state.jifeeItems.map(i=>({label:i.label,amount:parseInt(i.amount)||0})),
+    jifee_items:jifeeItemsForSave(),
     insurance_type:state.insuranceType||null,
     memo:state.jifeeItems.map(i=>i.label).join("・")||null,
+    insurance_staff_id:insuranceStaffForSave(),
   };
   const b=paySnapshot(before);
   if(JSON.stringify(b)===JSON.stringify(after)){ alert("変更がありません"); return; }
@@ -1495,8 +1513,9 @@ async function save(){
       payment_date:booking.date,insurance_amount:parseInt(state.insuranceAmount)||0,jifee_amount:jifeeTotal,
       total_amount:total,payment_method:methodStr,staff_id:booking.staff_id,
       memo:state.jifeeItems.map(i=>i.label).join("・")||null,
-      // 日計表（巻き爪・自賠の件数／売上）を自動集計するため、項目ごとの金額も保存しておく
-      jifee_items:state.jifeeItems.map(i=>({label:i.label,amount:parseInt(i.amount)||0})),
+      // 日計表（巻き爪・自賠の件数／売上）を自動集計するため、項目ごとの金額も保存しておく（担当も項目ごとに）
+      jifee_items:jifeeItemsForSave(),
+      insurance_staff_id:insuranceStaffForSave(),
       insurance_type:state.insuranceType||null,
       is_training:!!booking.is_training,
     });
@@ -1655,7 +1674,8 @@ function render(){
           </div>
           `:``}
           <div class="card">
-            <div class="card-header blue">🏥 保険窓口負担</div>
+            <div class="card-header blue" style="justify-content:space-between;">🏥 保険窓口負担
+              <label style="display:flex;align-items:center;gap:4px;font-size:11px;">担当 ${staffSelectHtml(insuranceStaffId(),"setInsuranceStaff(this.value)","保険施術の担当")}</label></div>
             <div class="card-body">
               <div class="ins-tab-row">
                 ${[{value:"手技療法",label:"保険診療"},{value:"鍼灸併用",label:"鍼灸併用"},{value:"鍼灸のみ",label:"鍼灸のみ"}].map(t=>`<button class="ins-tab-btn${state.insuranceType===t.value?" sel":""}" onclick="selectInsuranceType('${t.value}')">${t.label}</button>`).join("")}
@@ -1743,6 +1763,7 @@ function render(){
               ${state.jifeeItems.map((item,i)=>`
                 <div class="jifee-item">
                   <span>${item.label}</span>
+                  ${staffSelectHtml(itemStaffId(item),`setJifeeStaff(${i},this.value)`,item.label+"の担当")}
                   <input type="number" value="${item.amount}" onchange="updateJifee(${i},this.value)"/>
                   <button onclick="removeJifee(${i})">✕</button>
                 </div>
