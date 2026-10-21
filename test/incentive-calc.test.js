@@ -91,3 +91,19 @@ test("visibility by role", () => {
   assert.equal(filterModelForViewer(model, staff).people.length, 1);
   assert.equal(resolveViewer(model, { name: "知らない人", role: "staff" }), null);
 });
+
+test("visible range per level: staff own only, 院長 own clinic, BM area, 社長/GM all", async () => {
+  const { filterModelForViewer: f } = await import("../lib/incentive-calc.js");
+  const staff = f(model, resolveViewer(model, { name: "佐藤 花子", role: "staff" }));
+  assert.equal(staff.clinics.length, 0);
+  assert.equal(staff.canSeeLabor, false);
+  assert.deepEqual(staff.people.map((p) => p.name), ["佐藤 花子"]);
+  const mgr = f(model, resolveViewer(model, { name: "高橋", role: "staff" }));
+  assert.deepEqual(mgr.clinics.map((c) => c.name), ["A"]);
+  assert.equal(mgr.canSeeLabor, true);
+  assert.equal(mgr.canSeeSalary, false);
+  assert.ok(mgr.people.every((p) => p.clinics.includes("A")));
+  const gm = f(model, resolveViewer(model, { name: "伊藤 三郎", role: "staff" }));
+  assert.equal(gm.canSeeSalary, true);
+  assert.ok(gm.company);
+});
