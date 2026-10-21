@@ -82,6 +82,16 @@ input.pay{width:120px;margin:0 6px 0 0;padding:5px 8px;font-size:12px;display:in
 .reqtag{display:inline-block;font-size:10px;font-weight:800;background:#fee2e2;color:#991b1b;border-radius:6px;padding:1px 6px;margin-left:6px;}
 .sticky-total{position:sticky;bottom:0;background:white;border-top:2px solid #e2e8f0;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
 textarea{width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:inherit;min-height:70px;}
+.ie-card{border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-bottom:10px;background:#fcfdff;}
+.ie-card input,.ie-card select,.ie-card textarea{margin-bottom:8px;}
+.ie-card select{width:100%;padding:9px 10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:inherit;background:white;}
+.ie-head{display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;}
+.ie-head .chip{padding:4px 10px;}
+.ie-head .chip:disabled{opacity:.4;cursor:default;}
+.ie-grid2{display:grid;grid-template-columns:1fr 90px;gap:8px;}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;}
+.ie-check{display:flex;align-items:center;gap:6px;font-size:12px;color:#475569;font-weight:700;}
+.ie-check input{width:auto;margin:0;}
 ul.notes{padding-left:18px;font-size:12px;color:#64748b;line-height:1.7;}
 </style>
 </head>
@@ -468,6 +478,7 @@ function renderEvaluation() {
   if (!evalMonth) { const t = new Date(); evalMonth = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`; }
   if (!evalData) { if (!evalLoading) setTimeout(() => loadEval(), 0); return `<div class="center">評価を読み込み中...</div>`; }
   if (evalData.error) return `<div class="card"><div class="card-b"><div class="err">${esc(evalData.error)}</div><button class="btn btn-blue" onclick="evalData=null;render()">もう一度読み込む</button></div></div>`;
+  if (itemEditor) return renderItemEditor();
   if (evalSelected) return renderEvalDetail();
 
   let html = `<div class="monthnav"><button class="chip" onclick="changeEvalMonth(-1)">‹ 前月</button><div class="m">${monthLabel(evalMonth)}</div><button class="chip" onclick="changeEvalMonth(1)">次月 ›</button></div>`;
@@ -481,7 +492,7 @@ function renderEvaluation() {
   const toDo = people.filter((p) => p.canEdit && !p.evaluated).length;
   const rows = people.map((p) => {
     const t = p.result;
-    const status = p.evaluated ? `<b class="${rankCls(t.rank)}">${t.total ?? "-"}点 ${t.rank || ""}</b>${t.complete ? "" : `<div class="small">${t.filled}/${t.count}項目</div>`}` : `<span class="small">${p.canEdit ? "未評価" : "-"}</span>`;
+    const status = p.evaluated ? `<b class="${rankCls(p.savedRank)}">${p.savedTotal ?? "-"}点 ${p.savedRank || ""}</b>${t.complete ? "" : `<div class="small">${t.filled}/${t.count}項目</div>`}` : `<span class="small">${p.canEdit ? "未評価" : "-"}</span>`;
     const pcScore = p.scores.pc;
     return `<tr class="evrow" onclick="openEval('${esc(p.key)}')"><td class="l"><b>${esc(p.name)}</b><div class="small">${esc(p.grade)} ${esc(p.clinics.join("・"))} ・ 評価者 ${esc(p.superior)}</div></td>
       <td>${status}</td>
@@ -489,6 +500,7 @@ function renderEvaluation() {
       <td>${pcScore ? `${pcScore}/5` : "-"}${t.requiredMissed && t.requiredMissed.length ? '<div class="small ng">必須未達</div>' : ""}${t.basicIssues && t.basicIssues.length ? '<div class="small ng">基本に課題</div>' : ""}</td>
       <td>${p.canEdit ? `<button class="btn btn-save">${p.evaluated ? "修正" : "評価する"}</button>` : `<button class="btn btn-save" style="background:#64748b;">見る</button>`}</td></tr>`;
   }).join("");
+  if (evalData.canEditItems && !evalData.setupNeeded) html += `<div style="margin-bottom:14px;text-align:right;"><button class="chip" onclick="openItemEditor('共通')">⚙️ 評価項目の設定（クラス別に追加・削除・編集）</button></div>`;
   html += `<div class="card"><div class="card-h"><span>${monthLabel(evalMonth)} の評価</span>${toDo ? `<span class="small ng">あなたの未評価 ${toDo}名</span>` : ""}</div><div class="card-b">
     ${people.length ? `<div class="scroll"><table><tr><th class="l">氏名</th><th>今月</th><th>半期平均</th><th>PC・基本</th><th></th></tr>${rows}</table></div>` : '<div class="muted">表示できる評価対象者がいません。</div>'}
     <div class="small" style="margin-top:8px;">評価は毎月、直属の上司が付けます（スタッフ→院長、院長→BM、BM→GM）。100点満点で S90以上・A80以上・B65以上・C50以上・D50未満。半期平均が台帳の査定の点数になります。</div>
@@ -575,6 +587,142 @@ async function saveEval() {
   try {
     const json = await evalFetch("POST", { action: "save", month: evalMonth, personKey: p.key, values: evalDraft.values, scores: evalDraft.scores, comment: evalDraft.comment });
     if (json) { evalData = json; evalSelected = null; evalDraft = null; }
+  } catch (e) {
+    alert(e.message);
+  }
+  render();
+}
+
+// ===== 評価項目の設定（管理者・GM） =====
+let itemEditor = null; // { grade, draft: [項目], dirty, saved }
+
+function openItemEditor(grade) {
+  if (itemEditor && itemEditor.dirty && grade !== itemEditor.grade && !confirm("保存していない変更があります。破棄してクラスを切り替えますか？")) return;
+  itemEditor = { grade, draft: JSON.parse(JSON.stringify(evalData.items[grade] || [])), dirty: false, saved: false };
+  render();
+  window.scrollTo(0, 0);
+}
+
+function closeItemEditor() {
+  if (itemEditor && itemEditor.dirty && !confirm("保存していない変更があります。破棄して戻りますか？")) return;
+  itemEditor = null;
+  render();
+}
+
+function itemField(i, field, value) {
+  const it = itemEditor.draft[i];
+  it[field] = field === "points" ? value : field === "required" ? !!value : value;
+  itemEditor.dirty = true;
+  itemEditor.saved = false;
+  if (field === "kind") { if (value === "数値" && !it.direction) it.direction = "以上"; keepScroll(render); }
+  else refreshItemTotal();
+}
+
+function itemMove(i, d) {
+  const j = i + d, list = itemEditor.draft;
+  if (j < 0 || j >= list.length) return;
+  [list[i], list[j]] = [list[j], list[i]];
+  itemEditor.dirty = true;
+  keepScroll(render);
+}
+
+function itemDelete(i) {
+  const it = itemEditor.draft[i];
+  if (!confirm(`「${it.label || "（名前なし）"}」を削除しますか？\n（保存するまでは元に戻せます。過去の評価の点数は変わりません）`)) return;
+  itemEditor.draft.splice(i, 1);
+  itemEditor.dirty = true;
+  keepScroll(render);
+}
+
+function itemAdd() {
+  const common = itemEditor.grade === "共通";
+  itemEditor.draft.push({ kind: common ? "基本" : "行動", id: "", label: "", points: 5, target: null, unit: "", direction: "", auto: "", required: false, note: "" });
+  itemEditor.dirty = true;
+  render();
+  const inputs = document.querySelectorAll(".ie-label");
+  if (inputs.length) { inputs[inputs.length - 1].focus(); inputs[inputs.length - 1].scrollIntoView({ block: "center" }); }
+}
+
+function keepScroll(fn) { const y = window.scrollY; fn(); window.scrollTo(0, y); }
+
+function itemTotals() {
+  const sumOf = (list) => list.reduce((a, it) => a + (Number(it.points) || 0), 0);
+  const own = sumOf(itemEditor.draft);
+  const common = itemEditor.grade === "共通" ? 0 : sumOf(evalData.items["共通"] || []);
+  return { own, common, total: own + common };
+}
+
+function totalsHtml() {
+  const t = itemTotals();
+  if (itemEditor.grade === "共通") {
+    return `<span class="small">共通の基本</span> <b style="font-size:20px;">${t.own}点</b> <span class="small">（全クラスの配点に加わります）</span>`;
+  }
+  const ok = t.total === 100;
+  return `<span class="small">このクラス ${t.own}点 ＋ 共通の基本 ${t.common}点 ＝</span> <b style="font-size:20px;" class="${ok ? "ok" : "warn"}">${t.total}点</b>${ok ? "" : ' <span class="small warn">（100点でなくても100点満点に換算されます）</span>'}`;
+}
+
+function refreshItemTotal() {
+  const el = document.getElementById("itemTotal");
+  if (el) el.innerHTML = totalsHtml();
+}
+
+function renderItemEditor() {
+  const g = itemEditor.grade;
+  const labels = evalData.gradeLabels || {};
+  const common = g === "共通";
+  const chips = Object.entries(labels).map(([k, v]) => `<button class="chip ${k === g ? "sel" : ""}" onclick="openItemEditor('${esc(k)}')">${esc(v)}</button>`).join("");
+  const autoOpts = (cur) => `<option value="">手入力</option>` + Object.entries(evalData.autoOptions || {}).map(([k, v]) => `<option value="${esc(k)}" ${cur === k ? "selected" : ""}>自動：${esc(v)}</option>`).join("");
+  const cards = itemEditor.draft.map((it, i) => {
+    const kindSel = common
+      ? `<span class="badge b-run" style="margin:0;">基本</span>`
+      : `<select onchange="itemField(${i},'kind',this.value)" style="width:auto;">${["行動", "数値"].map((k) => `<option ${it.kind === k ? "selected" : ""}>${k}</option>`).join("")}</select>`;
+    const numFields = it.kind === "数値" ? `
+      <div class="ie-grid">
+        <div><label>目標値</label><input inputmode="decimal" value="${esc(it.target ?? "")}" oninput="itemField(${i},'target',this.value)" placeholder="例 70"/></div>
+        <div><label>単位</label><input value="${esc(it.unit)}" oninput="itemField(${i},'unit',this.value)" placeholder="% / 円 / 名 / 件"/></div>
+        <div><label>目標の向き</label><select onchange="itemField(${i},'direction',this.value)"><option value="以上" ${it.direction !== "以下" ? "selected" : ""}>以上が良い</option><option value="以下" ${it.direction === "以下" ? "selected" : ""}>以下が良い</option></select></div>
+        <div><label>実績の入れ方</label><select onchange="itemField(${i},'auto',this.value)">${autoOpts(it.auto)}</select></div>
+      </div>` : `
+      <label class="ie-check"><input type="checkbox" ${it.required ? "checked" : ""} onchange="itemField(${i},'required',this.checked)"/> 必須にする（3未満で警告）</label>`;
+    return `<div class="ie-card">
+      <div class="ie-head"><span class="small">No.${i + 1}</span>${kindSel}<span style="flex:1"></span>
+        <button class="chip" onclick="itemMove(${i},-1)" ${i === 0 ? "disabled" : ""}>↑</button><button class="chip" onclick="itemMove(${i},1)" ${i === itemEditor.draft.length - 1 ? "disabled" : ""}>↓</button><button class="chip" style="color:#b91c1c;" onclick="itemDelete(${i})">🗑 削除</button></div>
+      <div class="ie-grid2">
+        <div><label>項目</label><input class="ie-label" value="${esc(it.label)}" oninput="itemField(${i},'label',this.value)" placeholder="例：報連相"/></div>
+        <div><label>配点</label><input inputmode="numeric" value="${esc(it.points)}" oninput="itemField(${i},'points',this.value)"/></div>
+      </div>
+      <label>内容（評価のポイント・採点基準）</label>
+      <textarea oninput="itemField(${i},'note',this.value)" placeholder="（未入力）評価者が迷わないよう、何ができていれば高い点かを書いてください">${esc(it.note)}</textarea>
+      ${numFields}
+    </div>`;
+  }).join("");
+
+  return `<div class="monthnav"><button class="chip" onclick="closeItemEditor()">‹ 評価一覧に戻る</button><div class="m" style="text-align:left;">⚙️ 評価項目の設定</div></div>
+  <div class="chip-row" style="margin-bottom:14px;">${chips}</div>
+  ${itemEditor.saved ? '<div class="banner ok" style="margin:0 0 14px;">✅ 保存しました。次の評価から新しい項目が使われます（保存済みの過去の点数は変わりません）。</div>' : ""}
+  <div class="card"><div class="card-h"><span>${esc(labels[g] || g)} の評価項目（${itemEditor.draft.length}項目）</span></div><div class="card-b">
+    <div class="small" style="margin-bottom:10px;">${common
+      ? "ここの項目は全クラス共通で、どのクラスの評価にも表示されます。"
+      : "「行動」は上司が5段階で採点、「数値」は目標値に対する実績で自動採点します（実績は手入力、または売上シートから自動）。"}</div>
+    ${cards || '<div class="muted">項目がありません。下のボタンから追加してください。</div>'}
+    <button class="btn btn-blue" style="background:white;color:#1e3a5f;border:1.5px dashed #94a3b8;margin-top:6px;" onclick="itemAdd()">＋ 項目を追加</button>
+  </div>
+  <div class="sticky-total"><div id="itemTotal">${totalsHtml()}</div><button class="btn btn-blue" style="width:auto;padding:10px 24px;" onclick="saveItems()">保存する</button></div></div>`;
+}
+
+async function saveItems() {
+  const items = itemEditor.draft;
+  const empty = items.findIndex((it) => !String(it.label || "").trim());
+  if (empty >= 0) return alert(`${empty + 1}番目の「項目」が空です`);
+  if (!confirm(`「${evalData.gradeLabels[itemEditor.grade]}」の評価項目を保存します。よろしいですか？`)) return;
+  const grade = itemEditor.grade;
+  root.innerHTML = `<div class="center">保存中...</div>`;
+  try {
+    const json = await evalFetch("POST", { action: "saveItems", month: evalMonth, grade, items });
+    if (json) {
+      evalData = json;
+      itemEditor = { grade, draft: JSON.parse(JSON.stringify(json.items[grade] || [])), dirty: false, saved: true };
+    }
   } catch (e) {
     alert(e.message);
   }

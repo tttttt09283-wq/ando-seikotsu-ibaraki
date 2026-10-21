@@ -4,6 +4,7 @@
 //   GET  ?month=2027-01            … その月の評価（見てよい人だけ）と、同じ半期の点数推移
 //   POST { action: "save", month, personKey, values, scores, comment } … 直属の上司（または管理者・GM）が保存
 //   POST { action: "setup" }       … 管理者のみ。台帳に「評価項目」「評価記録」シートを作る
+//   POST { action: "saveItems", grade, items } … 管理者・GM。そのクラスの評価項目を追加・削除・編集する
 //
 // 評価項目は台帳の「評価項目」シートを直接編集すれば変更できる（配点・目標値・採点基準など）。
 
@@ -12,7 +13,7 @@ import { resolveViewer, filterModelForViewer } from "../lib/incentive-calc.js";
 import { CAREER_SHEET_ID, loadModel, authenticate, viewerNotFound } from "../lib/incentive-data.js";
 import {
   ITEM_SHEET, RECORD_SHEET, RECORD_HEADER, DEFAULT_ITEMS, itemSheetRows, parseItemSheet, parseRecords,
-  scoreMonth, itemsFor, parseMonthKey, monthKeyOf, halfMonthKeys, autoValues, superiorOf, canEvaluate, buildRecordRows,
+  scoreMonth, itemsFor, validateItems, GRADE_LABELS, AUTO_OPTIONS, parseMonthKey, monthKeyOf, halfMonthKeys, autoValues, superiorOf, canEvaluate, buildRecordRows,
 } from "../lib/evaluation.js";
 import { normName } from "../lib/incentive-calc.js";
 
@@ -22,18 +23,22 @@ async function loadSheets() {
   const titles = await getSheetTitles(CAREER_SHEET_ID);
   const hasItems = titles.includes(ITEM_SHEET), hasRecords = titles.includes(RECORD_SHEET);
   const ranges = [];
-  if (hasItems) ranges.push(`'${ITEM_SHEET}'!A1:K300`);
+  if (hasItems) ranges.push(`'${ITEM_SHEET}'!A1:K500`);
   if (hasRecords) ranges.push(`'${RECORD_SHEET}'!A1:M20000`);
   const got = ranges.length ? await batchGet(CAREER_SHEET_ID, ranges) : [];
   const itemRows = hasItems ? got.shift() : null;
   const recordRows = hasRecords ? got.shift() : null;
   return {
+    itemRowCount: itemRows ? itemRows.length : 0,
     setupNeeded: !hasItems || !hasRecords,
     hasItems, hasRecords,
     items: parseItemSheet(itemRows) || DEFAULT_ITEMS,
     records: parseRecords(recordRows),
   };
 }
+
+// 保存済みの月は保存時の合計点を使う（あとで評価項目を変えても過去の点数は変わらない）
+const storedOr = (d) => (d.rec && d.rec.storedTotal !== null && d.rec.storedTotal !== undefined ? d.rec.storedTotal : d.result.total);
 
 // 自動項目は最新のシートの値を優先し、無ければ保存時の値を使う
 function mergedValues(items, rec, auto) {
@@ -59,7 +64,7 @@ function buildPayload({ model, viewer, isAdmin, sheets, monthKey }) {
     const trend = half.map((key) => {
       const d = key === monthKey ? cur : monthData(key);
       const pc = items.find((it) => it.id === "pc");
-      return { month: key, evaluated: !!d.rec, total: d.rec ? d.result.total : null, rank: d.rec ? d.result.rank : null,
+      return { month: key, evaluated: !!d.rec, total: d.rec ? storedOr(d) : null, rank: d.rec ? d.rec.storedRank ?? d.result.rank : null,
         numbers: d.rec ? d.result.numbers.earned : null, behaviors: d.rec ? d.result.behaviors.earned : null,
         pc: d.rec && pc ? d.scores.pc ?? null : null };
     });
@@ -73,12 +78,16 @@ function buildPayload({ model, viewer, isAdmin, sheets, monthKey }) {
       evaluated: !!cur.rec, evaluator: cur.rec ? cur.rec.evaluator : "", updatedAt: cur.rec ? cur.rec.updatedAt : "",
       comment: cur.rec ? cur.rec.comment : "",
       values: cur.values, scores: cur.scores, auto: cur.auto, result: cur.result,
+      savedTotal: cur.rec ? storedOr(cur) : null, savedRank: cur.rec ? cur.rec.storedRank ?? cur.result.rank : null,
       trend, halfAvg, halfMonthsEvaluated: done.length,
     };
   });
   // 自分 → 評価する人 → その他 の順
   people.sort((a, b) => (b.key === viewer.personKey) - (a.key === viewer.personKey) || b.canEdit - a.canEdit);
-  return { month: monthKey, halfMonths: half, items: sheets.items, people, setupNeeded: sheets.setupNeeded, viewer, isAdmin };
+  return {
+    month: monthKey, halfMonths: half, items: sheets.items, people, setupNeeded: sheets.setupNeeded, viewer, isAdmin,
+    canEditItems: isAdmin || viewer.grade === "G6", gradeLabels: GRADE_LABELS, autoOptions: AUTO_OPTIONS,
+  };
 }
 
 async function setup() {
@@ -92,6 +101,20 @@ async function setup() {
   }
   if (missing.includes(RECORD_SHEET)) data.push({ range: `'${RECORD_SHEET}'!A1:M1`, values: [RECORD_HEADER] });
   if (data.length) await batchUpdate(CAREER_SHEET_ID, data);
+}
+
+// 1クラス分の項目を差し替えて「評価項目」シートを書き直す（減った行は空欄で上書き）
+async function saveItems(body) {
+  const grade = String(body.grade || "");
+  const list = validateItems(grade, body.items);
+  const sheets = await loadSheets();
+  if (sheets.setupNeeded) throw new Error("先に「評価シートを準備」を押してください");
+  const items = { ...sheets.items, [grade]: list };
+  const ordered = Object.fromEntries(Object.keys(GRADE_LABELS).filter((g) => items[g]).map((g) => [g, items[g]]));
+  for (const g of Object.keys(items)) if (!ordered[g]) ordered[g] = items[g]; // 一覧に無い等級の行も残す
+  const rows = itemSheetRows(ordered);
+  while (rows.length < sheets.itemRowCount) rows.push(Array(rows[0].length).fill(""));
+  await batchUpdate(CAREER_SHEET_ID, [{ range: `'${ITEM_SHEET}'!A1:K${rows.length}`, values: rows }]);
 }
 
 async function save({ model, viewer, isAdmin, staff, body }) {
@@ -159,6 +182,9 @@ export default async function handler(req, res) {
       if (body.action === "setup") {
         if (!isAdmin) { res.status(403).json({ error: "評価シートの準備は管理者のみ可能です" }); return; }
         await setup();
+      } else if (body.action === "saveItems") {
+        if (!(isAdmin || viewer.grade === "G6")) { res.status(403).json({ error: "評価項目の編集は管理者・GMのみ可能です" }); return; }
+        await saveItems(body);
       } else if (body.action === "save") {
         await save({ model, viewer, isAdmin, staff, body });
       } else {

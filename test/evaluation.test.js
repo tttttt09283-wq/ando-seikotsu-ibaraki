@@ -90,3 +90,28 @@ test("direct superior: staff→院長, 院長→BM, BM→GM; no 院長 → BM", 
   assert.equal(canEvaluate(model, { personKey: "s1", grade: "G2" }, false, p("s1")), false);
   assert.equal(canEvaluate(model, { personKey: "mgr", grade: "G4" }, false, p("s2")), false);
 });
+
+test("validateItems: cleans input, keeps ids unique, requires target for 数値, 共通 is always 基本", async () => {
+  const { validateItems } = await import("../lib/evaluation.js");
+  const list = validateItems("G2", [
+    { kind: "行動", id: "a", label: " 報連相 ", points: "5", note: "内容" },
+    { kind: "数値", id: "a", label: "成約率", points: 10, target: "60%", unit: "%", direction: "以上", auto: "bogus" },
+  ]);
+  assert.equal(list[0].label, "報連相");
+  assert.equal(list[0].points, 5);
+  assert.notEqual(list[1].id, "a"); // 重複IDは振り直し
+  assert.equal(list[1].target, 60);
+  assert.equal(list[1].auto, "");
+  assert.throws(() => validateItems("G2", [{ kind: "数値", label: "x", points: 5 }]), /目標値/);
+  assert.throws(() => validateItems("G2", [{ kind: "行動", label: "", points: 5 }]), /空/);
+  assert.throws(() => validateItems("G9", []), /クラス/);
+  assert.equal(validateItems("共通", [{ kind: "数値", label: "挨拶", points: 3 }])[0].kind, "基本");
+});
+
+test("records keep the total saved at the time", () => {
+  const person = { name: "山田 太郎", key: "山田太郎", grade: "G2", clinics: ["A"] };
+  const items = itemsFor(DEFAULT_ITEMS, "G2");
+  const { appends, result } = buildRecordRows({ monthKey: "2027-01", person, items, values: {}, scores: { pc: 5 }, comment: "", evaluator: "上司", now: "t", existing: null });
+  const rec = parseRecords([RECORD_HEADER, ...appends]).get("2027-01|山田太郎");
+  assert.equal(rec.storedTotal, result.total);
+});
