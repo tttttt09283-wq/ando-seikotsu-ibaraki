@@ -13,7 +13,7 @@
 // 評価項目は台帳の「評価項目」シートを直接編集すれば変更できる（配点・目標値・採点基準など）。
 
 import { batchGet, batchUpdate, getSheetTitles, addSheets, appendRows } from "../lib/google-sheets.js";
-import { resolveViewer, filterModelForViewer } from "../lib/incentive-calc.js";
+import { resolveViewer, filterModelForViewer, canSeeLabor } from "../lib/incentive-calc.js";
 import { CAREER_SHEET_ID, loadModel, loadNewPatients, authenticate, viewerNotFound } from "../lib/incentive-data.js";
 import {
   ITEM_SHEET, RECORD_SHEET, RECORD_HEADER, DEFAULT_ITEMS, COMMON_GRADE,
@@ -45,6 +45,22 @@ async function loadSheets() {
     legacyItems: hasItems && !(parseItemSheet(itemRows) || {})[COMMON_GRADE],
     records: parseRecords(recordRows),
   };
+}
+
+// 人件費率は社長・GMだけに見せる。それ以外の人には値を送らず、点数（配点×達成度）だけ送る
+const LABOR_AUTOS = ["clinic_labor", "block_labor", "company_labor"];
+function maskLabor(items, cur, allowed) {
+  const values = { ...cur.values }, auto = { ...cur.auto }, hidden = {};
+  if (!allowed) {
+    for (const k of LABOR_AUTOS) delete auto[k];
+    items.forEach((it, i) => {
+      if (it.kind === "数値" && LABOR_AUTOS.includes(it.auto)) {
+        delete values[it.id];
+        hidden[it.id] = cur.result.lines[i].points; // null＝まだ数字が無い
+      }
+    });
+  }
+  return { values, auto, hidden, scores: cur.scores };
 }
 
 // 保存済みの月は保存時の合計点を使う（あとで評価項目を変えても過去の点数は変わらない）
@@ -91,7 +107,7 @@ function buildPayload({ model, np, viewer, isAdmin, sheets, monthKey }) {
       canSetCandidate: canSetCandidate(model, viewer, isAdmin, person),
       evaluated: !!cur.rec, evaluator: cur.rec ? cur.rec.evaluator : "", updatedAt: cur.rec ? cur.rec.updatedAt : "",
       comment: cur.rec ? cur.rec.comment : "",
-      values: cur.values, scores: cur.scores, auto: cur.auto, result: cur.result,
+      ...maskLabor(items, cur, canSeeLabor(viewer)), result: cur.result,
       savedTotal: cur.rec ? storedOr(cur) : null, savedRank: cur.rec ? cur.rec.storedRank ?? cur.result.rank : null,
       trend, halfAvg, halfMonthsEvaluated: done.length,
     };

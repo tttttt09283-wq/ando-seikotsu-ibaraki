@@ -93,6 +93,14 @@ textarea{width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:8p
 .ie-check{display:flex;align-items:center;gap:6px;font-size:12px;color:#475569;font-weight:700;}
 .ie-check input{width:auto;margin:0;}
 .cand{display:inline-block;margin-left:6px;font-size:10px;font-weight:800;background:#fef3c7;color:#92400e;border-radius:6px;padding:1px 6px;vertical-align:middle;}
+.inc-group{border:1px solid #e2e8f0;border-radius:10px;margin-bottom:10px;background:#f8fafc;}
+.inc-group>summary{list-style:none;cursor:pointer;padding:10px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.inc-group>summary>span:first-of-type{flex:1;text-align:left;}
+.inc-group>summary b{font-size:14px;color:#1e3a5f;}
+.inc-group>summary::-webkit-details-marker{display:none;}
+.inc-group>summary::before{content:"▾";color:#64748b;margin-right:4px;}
+.inc-group:not([open])>summary::before{content:"▸";}
+.inc-group>.person{margin:0 10px 10px;background:white;}
 ul.notes{padding-left:18px;font-size:12px;color:#64748b;line-height:1.7;}
 </style>
 </head>
@@ -286,11 +294,11 @@ function clinicCard(half) {
     const actual = ms.reduce((a, m) => a + (m.actual || 0), 0);
     return `<tr><td class="l"><b>${esc(c.name)}</b><div class="small">${c.manager ? "院長 " + esc(c.manager) : ""}${c.bm ? " ・BM " + esc(c.bm) : ""}</div></td>${cells}
       <td class="${budget && actual >= budget ? "ok" : "ng"}"><b>${budget ? pct(actual / budget) : "-"}</b></td>
-      <td>${man(c.fixedLabor)}</td><td class="${c.laborRate > data.laborCapRate ? "ng" : "ok"}">${pct(c.laborRate)}</td></tr>`;
+      ${data.canSeeLabor ? `<td>${man(c.fixedLabor)}</td><td class="${c.laborRate > data.laborCapRate ? "ng" : "ok"}">${pct(c.laborRate)}</td>` : ""}</tr>`;
   }).join("");
   return `<div class="card"><div class="card-h">院別 売上予算の達成状況（${esc(half.label)}）</div><div class="card-b">
-    <div class="scroll"><table><tr><th class="l">院</th>${head}<th>累計達成率</th><th>固定人件費</th><th>人件費率<br><span class="small">（最新月）</span></th></tr>${rows}</table></div>
-    <div class="small" style="margin-top:8px;">緑＝予算達成、赤＝未達。固定人件費は台帳の各院査定シートの値（社保込）です。</div>
+    <div class="scroll"><table><tr><th class="l">院</th>${head}<th>累計達成率</th>${data.canSeeLabor ? '<th>固定人件費</th><th>人件費率<br><span class="small">（最新月）</span></th>' : ""}</tr>${rows}</table></div>
+    <div class="small" style="margin-top:8px;">緑＝予算達成、赤＝未達。${data.canSeeLabor ? "固定人件費は台帳の各院査定シートの値（社保込）です。" : ""}</div>
   </div></div>`;
 }
 
@@ -315,17 +323,45 @@ function incentiveBody(i) {
     </div><div class="amt">${amount}</div></div>`;
 }
 
+// インセンティブを院ごとに分けて表示（GM・BMは「全社・エリア」、院長は担当院、スタッフは所属院）
 function incentiveCard(half) {
-  const list = visiblePeople()
-    .map((p) => ({ p, incs: p.incentives.filter((i) => i.half === half.key || i.type === "gm") }))
-    .filter((x) => x.incs.length)
-    .sort((a, b) => gradeRankClient(a.p.grade) - gradeRankClient(b.p.grade));
-  const total = list.reduce((a, x) => a + x.incs.filter((i) => i.half === half.key).reduce((s, i) => s + (i.type === "manager" ? i.earned : i.projected), 0), 0);
-  const body = list.length ? list.map(({ p, incs }) => `<div class="person">
-      <div class="person-h"><div class="n">${esc(p.name)}</div><div class="small">${esc(p.grade)} ${esc(p.role)} ・ ${esc(p.clinics.join("・"))}</div></div>
-      ${incs.map(incentiveBody).join("")}
-    </div>`).join("") : `<div class="muted">対象のインセンティブはありません。</div>`;
-  return `<div class="card"><div class="card-h"><span>インセンティブ進捗（${esc(half.label)}）</span>${list.length > 1 ? `<span class="small">表示中の見込み合計 ${yen(total)}</span>` : ""}</div><div class="card-b">${body}</div></div>`;
+  const amountOf = (i) => (i.half === half.key ? (i.type === "manager" ? i.earned : i.projected) : 0);
+  const groups = new Map(); // key → Map(personKey → { p, incs })
+  const put = (key, p, i) => {
+    if (!groups.has(key)) groups.set(key, new Map());
+    const g = groups.get(key);
+    if (!g.has(p.key)) g.set(p.key, { p, incs: [] });
+    g.get(p.key).incs.push(i);
+  };
+  const people = [...data.people].sort((a, b) => gradeRankClient(a.grade) - gradeRankClient(b.grade));
+  for (const p of people) {
+    for (const i of p.incentives.filter((i) => i.half === half.key || i.type === "gm")) {
+      if (i.type === "gm" || i.type === "bm") {
+        if (!clinicFilter || i.type === "gm" || (i.clinics || []).includes(clinicFilter)) put("__area", p, i);
+      } else {
+        // 兼務の人は、見ている人の担当院のうち最初の院にまとめる
+        const clinic = i.type === "manager" ? i.clinic : p.clinics.find((c) => data.clinics.some((x) => x.name === c)) || p.clinics[0] || "__other";
+        if (!clinicFilter || clinic === clinicFilter) put(clinic, p, i);
+      }
+    }
+  }
+  const order = ["__area", ...data.clinics.map((c) => c.name), ...[...groups.keys()].filter((k) => k !== "__area" && !data.clinics.some((c) => c.name === k))];
+  const sections = order.filter((k) => groups.has(k)).map((k) => {
+    const entries = [...groups.get(k).values()];
+    const sub = entries.reduce((a, e) => a + e.incs.reduce((s, i) => s + amountOf(i), 0), 0);
+    const clinic = data.clinics.find((c) => c.name === k);
+    const title = k === "__area" ? "全社・エリア（GM・BM）" : k === "__other" ? "所属院なし" : `${k}院`;
+    const sub2 = clinic && clinic.manager ? `院長 ${esc(clinic.manager)}` : "";
+    return `<details class="inc-group" open><summary><span><b>${esc(title)}</b> <span class="small">${sub2} ${entries.length}名</span></span><span class="small">見込み ${yen(sub)}</span></summary>
+      ${entries.map(({ p, incs }) => `<div class="person">
+        <div class="person-h"><div class="n">${esc(p.name)}</div><div class="small">${esc(p.grade)} ${esc(p.role)} ・ ${esc(p.clinics.join("・"))}</div></div>
+        ${incs.map(incentiveBody).join("")}
+      </div>`).join("")}
+    </details>`;
+  });
+  const total = [...groups.values()].reduce((a, g) => a + [...g.values()].reduce((b, e) => b + e.incs.reduce((s, i) => s + amountOf(i), 0), 0), 0);
+  return `<div class="card"><div class="card-h"><span>インセンティブ進捗（${esc(half.label)}）</span>${sections.length ? `<span class="small">表示中の見込み合計 ${yen(total)}</span>` : ""}</div><div class="card-b">${sections.join("") || '<div class="muted">対象のインセンティブはありません。</div>'}
+    ${sections.length > 1 ? '<div class="small" style="margin-top:4px;">院の見出しを押すと開閉できます。上の院のボタンで1院だけに絞り込めます。</div>' : ""}</div></div>`;
 }
 
 function salesCard() {
@@ -349,9 +385,9 @@ function evaluationCard() {
   if (!evs.length) return "";
   const rows = evs.map((e) => `<tr><td class="l">${esc(e.clinic)}</td><td class="l"><b>${esc(e.name)}</b></td><td class="l">${esc(e.grade)}</td><td>${e.score ?? "-"}</td>
     <td class="l"><b class="${e.rank === "S" || e.rank === "A" ? "ok" : e.rank === "D" ? "ng" : e.rank === "C" ? "warn" : ""}">${esc(e.rank ?? "-")}</b></td>
-    <td class="l">${esc(e.salaryDecision ?? "")}</td><td>${yen(e.raise)}</td><td>${yen(e.newSalary)}</td><td class="l">${esc(e.positionDecision ?? "")}</td><td>${yen(e.bonus)}</td><td class="l">${esc(e.approval ?? "")}</td></tr>`).join("");
+    <td class="l">${esc(e.salaryDecision ?? "")}</td>${data.canSeeLabor ? `<td>${yen(e.raise)}</td><td>${yen(e.newSalary)}</td>` : ""}<td class="l">${esc(e.positionDecision ?? "")}</td>${data.canSeeLabor ? `<td>${yen(e.bonus)}</td>` : ""}<td class="l">${esc(e.approval ?? "")}</td></tr>`).join("");
   return `<div class="card"><div class="card-h">半期査定の結果（キャリア制度台帳より）</div><div class="card-b">
-    <div class="scroll"><table><tr><th class="l">院</th><th class="l">氏名</th><th class="l">等級</th><th>評価点</th><th class="l">ランク</th><th class="l">給与判定</th><th>改定額</th><th>改定後固定支給</th><th class="l">役職判定</th><th>賞与想定</th><th class="l">決裁</th></tr>${rows}</table></div>
+    <div class="scroll"><table><tr><th class="l">院</th><th class="l">氏名</th><th class="l">等級</th><th>評価点</th><th class="l">ランク</th><th class="l">給与判定</th>${data.canSeeLabor ? "<th>改定額</th><th>改定後固定支給</th>" : ""}<th class="l">役職判定</th>${data.canSeeLabor ? "<th>賞与想定</th>" : ""}<th class="l">決裁</th></tr>${rows}</table></div>
     <div class="small" style="margin-top:8px;">評価点の入力・修正はキャリア制度台帳（スプレッドシート）で行ってください。</div>
   </div></div>`;
 }
@@ -466,6 +502,11 @@ function clientScore(items, p, draft) {
   for (const it of items) {
     let v = null;
     if (it.kind === "数値") {
+      if (p.hidden && it.id in p.hidden) { // 人件費率（値は非表示・点数だけ）
+        pts[it.id] = p.hidden[it.id];
+        if (pts[it.id] !== null) { earned += pts[it.id]; filled++; num += pts[it.id]; }
+        continue;
+      }
       const val = it.auto && p.auto[it.auto] !== undefined ? p.auto[it.auto] : draft.values[it.id];
       const n = val === "" || val === undefined || val === null ? null : Number(String(val).replace(/[,%円¥\s]/g, ""));
       if (n !== null && isFinite(n) && it.target) {
@@ -543,9 +584,12 @@ function renderEvalDetail() {
   const scaled = (v) => v === null || v === undefined ? "-" : (Math.round(v / totalPts * 1000) / 10);
 
   const numItems = items.filter((it) => it.kind === "数値").map((it) => {
-    const isAuto = it.auto && p.auto[it.auto] !== undefined;
+    const isHidden = p.hidden && it.id in p.hidden;
+    const isAuto = isHidden || (it.auto && p.auto[it.auto] !== undefined);
     const target = it.target !== null && it.target !== undefined ? `目標 ${fmtVal(it.target, it.unit)} ${it.direction}` : "";
-    const input = isAuto
+    const input = isHidden
+      ? `<span class="small">非表示（社長・GMのみ）</span>`
+      : isAuto
       ? `<b>${fmtVal(p.auto[it.auto], it.unit)}</b>`
       : ro ? `<b>${fmtVal(evalDraft.values[it.id], it.unit)}</b>`
       : `<input class="num" inputmode="decimal" value="${esc(evalDraft.values[it.id] ?? "")}" placeholder="${esc(it.unit)}" oninput="evalDraft.values['${esc(it.id)}']=this.value;evalDirty=true;refreshEvalTotal()"/>`;
