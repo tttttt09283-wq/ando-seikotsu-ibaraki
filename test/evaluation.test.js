@@ -2,13 +2,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  DEFAULT_ITEMS, itemSheetRows, parseItemSheet, numberPoints, scoreMonth, parseRecords, buildRecordRows,
+  DEFAULT_ITEMS, EVALUATED_GRADES, itemsFor, itemSheetRows, parseItemSheet, numberPoints, scoreMonth, parseRecords, buildRecordRows,
   RECORD_HEADER, halfMonthKeys, parseMonthKey, superiorOf, canEvaluate,
 } from "../lib/evaluation.js";
 
-test("every grade's default items total 100 points, PC is required from G4 up", () => {
-  for (const [grade, items] of Object.entries(DEFAULT_ITEMS)) {
+test("every grade's items (incl. common basics) total 100 points, PC is required from G4 up", () => {
+  for (const grade of EVALUATED_GRADES) {
+    const items = itemsFor(DEFAULT_ITEMS, grade);
     assert.equal(items.reduce((a, i) => a + i.points, 0), 100, grade);
+    assert.equal(items.filter((i) => i.kind === "基本").reduce((a, i) => a + i.points, 0), 15, grade);
     const pc = items.find((i) => i.id === "pc");
     assert.ok(pc, `${grade} has PC item`);
     assert.equal(pc.required, ["G4", "G5", "G6"].includes(grade), grade);
@@ -30,13 +32,15 @@ test("number points: 以上 is capped ratio, 以下 drops to 0 at target+10", ()
 });
 
 test("scoreMonth: behavior = points x score/5, rank only when complete, required flag", () => {
-  const items = DEFAULT_ITEMS.G4;
+  const items = itemsFor(DEFAULT_ITEMS, "G4");
   const values = { clinic_budget: 100, clinic_labor: 40, new_close: 70, new_sales: 200000, next_rate: 75 };
-  const scores = { pl: 5, shift: 5, claim: 5, develop: 5, pc: 2 };
+  const scores = { pl: 5, shift: 5, claim: 5, develop: 5, pc: 2,
+    basic_greeting: 5, basic_appearance: 5, basic_punctual: 2, basic_hourensou: 5, basic_rules: 5 };
   const r = scoreMonth(items, values, scores);
-  assert.equal(r.total, 94); // PC 配点10 × 2/5 = 4点（6点減）
+  assert.equal(r.total, 92.2); // PC 配点10 × 2/5（-6）、時間厳守 配点3 × 2/5（-1.8）
   assert.equal(r.rank, "S");
   assert.deepEqual(r.requiredMissed, ["PC業務（必須）"]);
+  assert.deepEqual(r.basicIssues, ["時間厳守・無遅刻無欠勤"]);
   const partial = scoreMonth(items, values, {});
   assert.equal(partial.rank, null);
   assert.equal(partial.complete, false);
@@ -44,7 +48,7 @@ test("scoreMonth: behavior = points x score/5, rank only when complete, required
 
 test("records: new rows are appended, existing rows are updated in place", () => {
   const person = { name: "山田 太郎", key: "山田太郎", grade: "G2", clinics: ["A"] };
-  const items = DEFAULT_ITEMS.G2;
+  const items = itemsFor(DEFAULT_ITEMS, "G2");
   const first = buildRecordRows({ monthKey: "2027-01", person, items, values: { next_rate: 75 }, scores: { pc: 4 }, comment: "ok", evaluator: "上司", now: "t", existing: null });
   assert.equal(first.updates.length, 0);
   assert.equal(first.appends.length, items.length + 2);

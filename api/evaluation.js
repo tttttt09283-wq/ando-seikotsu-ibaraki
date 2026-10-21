@@ -12,7 +12,7 @@ import { resolveViewer, filterModelForViewer } from "../lib/incentive-calc.js";
 import { CAREER_SHEET_ID, loadModel, authenticate, viewerNotFound } from "../lib/incentive-data.js";
 import {
   ITEM_SHEET, RECORD_SHEET, RECORD_HEADER, DEFAULT_ITEMS, itemSheetRows, parseItemSheet, parseRecords,
-  scoreMonth, parseMonthKey, monthKeyOf, halfMonthKeys, autoValues, superiorOf, canEvaluate, buildRecordRows,
+  scoreMonth, itemsFor, parseMonthKey, monthKeyOf, halfMonthKeys, autoValues, superiorOf, canEvaluate, buildRecordRows,
 } from "../lib/evaluation.js";
 import { normName } from "../lib/incentive-calc.js";
 
@@ -43,11 +43,11 @@ function mergedValues(items, rec, auto) {
 }
 
 function buildPayload({ model, viewer, isAdmin, sheets, monthKey }) {
-  const visible = filterModelForViewer(model, viewer).people.filter((p) => sheets.items[p.grade]);
+  const visible = filterModelForViewer(model, viewer).people.filter((p) => itemsFor(sheets.items, p.grade));
   const half = halfMonthKeys(monthKey);
   const people = visible.map((vp) => {
     const person = model.people.find((p) => p.key === vp.key);
-    const items = sheets.items[person.grade];
+    const items = itemsFor(sheets.items, person.grade);
     const monthData = (key) => {
       const rec = sheets.records.get(`${key}|${person.key}`) || null;
       const auto = autoValues(model, person, key);
@@ -67,7 +67,7 @@ function buildPayload({ model, viewer, isAdmin, sheets, monthKey }) {
     const halfAvg = done.length ? Math.round((done.reduce((a, t) => a + t.total, 0) / done.length) * 10) / 10 : null;
     const sup = superiorOf(model, person);
     return {
-      key: person.key, name: person.name, grade: person.grade, role: person.role, clinics: person.clinics,
+      key: person.key, name: person.name, grade: person.grade, role: person.role, clinics: person.clinics, items,
       superior: sup ? sup.name : "管理者",
       canEdit: canEvaluate(model, viewer, isAdmin, person),
       evaluated: !!cur.rec, evaluator: cur.rec ? cur.rec.evaluator : "", updatedAt: cur.rec ? cur.rec.updatedAt : "",
@@ -101,7 +101,7 @@ async function save({ model, viewer, isAdmin, staff, body }) {
   if (!person) throw new Error("評価する人が見つかりません");
   const sheets = await loadSheets();
   if (sheets.setupNeeded) throw new Error("先に管理者が「評価シートを準備」を押してください");
-  const items = sheets.items[person.grade];
+  const items = itemsFor(sheets.items, person.grade);
   if (!items) throw new Error(`${person.grade || "等級なし"} の評価項目がありません`);
   if (!canEvaluate(model, viewer, isAdmin, person)) throw new Error("この人を評価できるのは直属の上司です");
 
