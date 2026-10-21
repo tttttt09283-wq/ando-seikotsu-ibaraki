@@ -47,7 +47,7 @@ async function loadSheets() {
   };
 }
 
-// 人件費率は社長・GMだけに見せる。それ以外の人には値を送らず、点数（配点×達成度）だけ送る
+// 人件費率は社長・GM・BM・院長に見せる。スタッフには値を送らず、点数（配点×達成度）だけ送る
 const LABOR_AUTOS = ["clinic_labor", "block_labor", "company_labor"];
 function maskLabor(items, cur, allowed) {
   const values = { ...cur.values }, auto = { ...cur.auto }, hidden = {};

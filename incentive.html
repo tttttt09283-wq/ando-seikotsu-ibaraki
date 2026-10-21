@@ -385,9 +385,9 @@ function evaluationCard() {
   if (!evs.length) return "";
   const rows = evs.map((e) => `<tr><td class="l">${esc(e.clinic)}</td><td class="l"><b>${esc(e.name)}</b></td><td class="l">${esc(e.grade)}</td><td>${e.score ?? "-"}</td>
     <td class="l"><b class="${e.rank === "S" || e.rank === "A" ? "ok" : e.rank === "D" ? "ng" : e.rank === "C" ? "warn" : ""}">${esc(e.rank ?? "-")}</b></td>
-    <td class="l">${esc(e.salaryDecision ?? "")}</td>${data.canSeeLabor ? `<td>${yen(e.raise)}</td><td>${yen(e.newSalary)}</td>` : ""}<td class="l">${esc(e.positionDecision ?? "")}</td>${data.canSeeLabor ? `<td>${yen(e.bonus)}</td>` : ""}<td class="l">${esc(e.approval ?? "")}</td></tr>`).join("");
+    <td class="l">${esc(e.salaryDecision ?? "")}</td>${data.canSeeSalary ? `<td>${yen(e.raise)}</td><td>${yen(e.newSalary)}</td>` : ""}<td class="l">${esc(e.positionDecision ?? "")}</td>${data.canSeeSalary ? `<td>${yen(e.bonus)}</td>` : ""}<td class="l">${esc(e.approval ?? "")}</td></tr>`).join("");
   return `<div class="card"><div class="card-h">半期査定の結果（キャリア制度台帳より）</div><div class="card-b">
-    <div class="scroll"><table><tr><th class="l">院</th><th class="l">氏名</th><th class="l">等級</th><th>評価点</th><th class="l">ランク</th><th class="l">給与判定</th>${data.canSeeLabor ? "<th>改定額</th><th>改定後固定支給</th>" : ""}<th class="l">役職判定</th>${data.canSeeLabor ? "<th>賞与想定</th>" : ""}<th class="l">決裁</th></tr>${rows}</table></div>
+    <div class="scroll"><table><tr><th class="l">院</th><th class="l">氏名</th><th class="l">等級</th><th>評価点</th><th class="l">ランク</th><th class="l">給与判定</th>${data.canSeeSalary ? "<th>改定額</th><th>改定後固定支給</th>" : ""}<th class="l">役職判定</th>${data.canSeeSalary ? "<th>賞与想定</th>" : ""}<th class="l">決裁</th></tr>${rows}</table></div>
     <div class="small" style="margin-top:8px;">評価点の入力・修正はキャリア制度台帳（スプレッドシート）で行ってください。</div>
   </div></div>`;
 }
@@ -588,7 +588,7 @@ function renderEvalDetail() {
     const isAuto = isHidden || (it.auto && p.auto[it.auto] !== undefined);
     const target = it.target !== null && it.target !== undefined ? `目標 ${fmtVal(it.target, it.unit)} ${it.direction}` : "";
     const input = isHidden
-      ? `<span class="small">非表示（社長・GMのみ）</span>`
+      ? `<span class="small">非表示</span>`
       : isAuto
       ? `<b>${fmtVal(p.auto[it.auto], it.unit)}</b>`
       : ro ? `<b>${fmtVal(evalDraft.values[it.id], it.unit)}</b>`
