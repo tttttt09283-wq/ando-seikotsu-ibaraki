@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>インセンティブ・人件費管理 - あんど整骨院</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#eef2f7;color:#1e293b;}
+.topbar{position:sticky;top:0;z-index:10;background:linear-gradient(135deg,#1e3a5f,#2d6a9f);color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.topbar h1{font-size:16px;font-weight:800;}
+.topbar .sub{font-size:11px;opacity:.8;}
+.topbar-actions{display:flex;gap:8px;}
+.btn{padding:8px 14px;border-radius:8px;border:none;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;}
+.btn-white{background:white;color:#1e3a5f;}
+.btn-outline{background:rgba(255,255,255,.15);color:white;border:1.5px solid rgba(255,255,255,.4);}
+.btn-blue{background:#1e3a5f;color:white;width:100%;padding:12px;}
+.wrap{max-width:960px;margin:0 auto;padding:16px;}
+.card{background:white;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:14px;overflow:hidden;}
+.card-h{padding:10px 16px;font-size:13px;font-weight:800;color:#1e3a5f;background:#f8fafc;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
+.card-b{padding:14px 16px;}
+.scroll{overflow-x:auto;}
+label{display:block;font-size:11px;font-weight:700;color:#64748b;margin-bottom:4px;}
+input{width:100%;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:14px;font-family:inherit;background:white;margin-bottom:12px;}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th,td{border:1px solid #e2e8f0;padding:6px 8px;text-align:right;white-space:nowrap;}
+th{background:#f8fafc;font-weight:700;color:#64748b;font-size:11px;}
+td.l,th.l{text-align:left;}
+.chip-row{display:flex;gap:6px;flex-wrap:wrap;}
+.chip{padding:6px 14px;border-radius:20px;border:1.5px solid #e2e8f0;background:white;color:#374151;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;}
+.chip.sel{background:#1e3a5f;color:white;border-color:#1e3a5f;}
+.small{font-size:11px;color:#94a3b8;}
+.muted{color:#64748b;}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;}
+.kpi{background:#f8fafc;border-radius:10px;padding:10px 12px;}
+.kpi .k{font-size:11px;color:#64748b;font-weight:700;}
+.kpi .v{font-size:18px;font-weight:800;margin-top:2px;}
+.kpi .s{font-size:11px;color:#94a3b8;margin-top:2px;}
+.ok{color:#047857;} .ng{color:#b91c1c;} .warn{color:#b45309;}
+.bg-ok{background:#ecfdf5;} .bg-ng{background:#fef2f2;}
+.banner{border-radius:10px;padding:10px 12px;font-size:13px;font-weight:700;margin-top:12px;line-height:1.6;}
+.banner.ok{background:#ecfdf5;border:1px solid #a7f3d0;}
+.banner.ng{background:#fef2f2;border:1px solid #fecaca;}
+.person{border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-bottom:10px;}
+.person-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;}
+.person-h .n{font-weight:800;font-size:14px;}
+.inc{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 0;border-top:1px dashed #e2e8f0;margin-top:8px;flex-wrap:wrap;}
+.inc .t{font-size:12px;font-weight:700;}
+.inc .d{font-size:11px;color:#64748b;margin-top:2px;}
+.inc .amt{font-size:16px;font-weight:800;text-align:right;margin-left:auto;}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:800;margin-left:6px;vertical-align:middle;}
+.b-ok{background:#d1fae5;color:#065f46;} .b-ng{background:#fee2e2;color:#991b1b;} .b-run{background:#e0e7ff;color:#3730a3;} .b-wait{background:#f1f5f9;color:#64748b;}
+.bar{height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;margin-top:6px;position:relative;}
+.bar>i{display:block;height:100%;background:#2d6a9f;}
+.bar.ok>i{background:#059669;}
+.dots{display:flex;gap:4px;margin-top:6px;}
+.dot{width:26px;height:20px;border-radius:5px;font-size:10px;display:flex;align-items:center;justify-content:center;font-weight:700;background:#f1f5f9;color:#94a3b8;}
+.dot.y{background:#d1fae5;color:#065f46;} .dot.n{background:#fee2e2;color:#991b1b;}
+.login{max-width:360px;margin:60px auto;}
+.err{color:#b91c1c;font-size:12px;margin-bottom:10px;white-space:pre-wrap;}
+.center{text-align:center;padding:60px 20px;color:#9ca3af;}
+ul.notes{padding-left:18px;font-size:12px;color:#64748b;line-height:1.7;}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div>
+    <h1>💰 インセンティブ・人件費42%管理</h1>
+    <div class="sub" id="subLabel">読み込み中...</div>
+  </div>
+  <div class="topbar-actions" id="topActions"></div>
+</div>
+<div class="wrap" id="root"><div class="center">読み込み中...</div></div>
+
+<script>
+const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
+const LOGIN_ID_DOMAIN = "ando.jp";
+
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
+});
+
+const TYPE_LABEL = { gm: "GMインセンティブ（年間・決算）", bm: "BMインセンティブ", manager: "院長インセンティブ", staff: "スタッフインセンティブ" };
+const SCOPE_LABEL = { all: "全院", block: "担当ブロック", clinic: "自院", self: "自分のみ" };
+
+let data = null;
+let halfKey = null;
+let clinicFilter = ""; // 複数院を見られる人向けの絞り込み（空＝すべて）
+
+const root = document.getElementById("root");
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const yen = (v) => (v === null || v === undefined || !isFinite(v)) ? "-" : (v < 0 ? "-¥" : "¥") + Math.abs(Math.round(v)).toLocaleString("ja-JP");
+const man = (v) => (v === null || v === undefined || !isFinite(v)) ? "-" : (Math.round(v / 1000) / 10).toLocaleString("ja-JP") + "万";
+const pct = (v) => (v === null || v === undefined || !isFinite(v)) ? "-" : (v * 100).toFixed(1) + "%";
+
+function statusBadge(s) {
+  const cls = s === "確定" || s === "達成ペース" ? "b-ok" : s === "未達確定" || s === "未達ペース" ? "b-ng" : s === "集計中" ? "b-run" : "b-wait";
+  return `<span class="badge ${cls}">${esc(s)}</span>`;
+}
+
+// ===== ログイン =====
+function renderLogin(msg) {
+  document.getElementById("subLabel").textContent = "ログインしてください";
+  document.getElementById("topActions").innerHTML = "";
+  root.innerHTML = `
+    <div class="card login"><div class="card-b">
+      <div style="font-weight:800;margin-bottom:12px;">スタッフログイン</div>
+      ${msg ? `<div class="err">${esc(msg)}</div>` : ""}
+      <label>ログインID</label><input id="lid" autocomplete="username"/>
+      <label>パスワード</label><input id="lpw" type="password" autocomplete="current-password"/>
+      <button class="btn btn-blue" id="lbtn">ログイン</button>
+      <div class="small" style="margin-top:10px;">予約管理と同じID・パスワードでログインできます</div>
+    </div></div>`;
+  const go = async () => {
+    const id = document.getElementById("lid").value.trim().toLowerCase();
+    const pw = document.getElementById("lpw").value;
+    if (!id || !pw) return renderLogin("IDとパスワードを入力してください");
+    document.getElementById("lbtn").disabled = true;
+    const email = id.includes("@") ? id : id + "@" + LOGIN_ID_DOMAIN;
+    const { error } = await supabaseClient.auth.signInWithPassword({ email, password: pw });
+    if (error) return renderLogin("IDまたはパスワードが違います");
+    load();
+  };
+  document.getElementById("lbtn").onclick = go;
+  document.getElementById("lpw").onkeydown = (e) => { if (e.key === "Enter") go(); };
+}
+
+async function load(refresh) {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (!session) return renderLogin();
+  root.innerHTML = `<div class="center">スプレッドシートを読み込み中...</div>`;
+  try {
+    const res = await fetch(`/api/incentive${refresh ? "?refresh=1" : ""}`, { headers: { Authorization: `Bearer ${session.access_token}` } });
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 401) return renderLogin(body.error);
+    if (!res.ok) throw new Error(body.error || `読み込みに失敗しました（HTTP ${res.status}）`);
+    data = body;
+    if (!halfKey) {
+      const cur = data.halves.find((h) => h.elapsed.length && !h.complete) || [...data.halves].reverse().find((h) => h.elapsed.length) || data.halves[0];
+      halfKey = cur.key;
+    }
+    render();
+  } catch (e) {
+    root.innerHTML = `<div class="card"><div class="card-b"><div class="err">${esc(e.message)}</div><button class="btn btn-blue" onclick="load()">もう一度読み込む</button></div></div>`;
+  }
+}
+
+async function logout() {
+  await supabaseClient.auth.signOut();
+  data = null; halfKey = null;
+  renderLogin();
+}
+
+// ===== 画面 =====
+function render() {
+  const v = data.viewer;
+  document.getElementById("subLabel").textContent =
+    `${data.fiscalYear}年度 ・ ${data.latestMonth ? data.latestMonth + "月分まで反映" : "実績なし"} ・ ${v.name}さん（${SCOPE_LABEL[v.scope]}）`;
+  document.getElementById("topActions").innerHTML =
+    (data.isAdmin ? `<button class="btn btn-outline" onclick="load(true)">↻ 最新に更新</button>` : "") +
+    `<button class="btn btn-outline" onclick="logout()">ログアウト</button>`;
+
+  const half = data.halves.find((h) => h.key === halfKey);
+  let html = `<div class="chip-row" style="margin-bottom:14px;">${data.halves.map((h) =>
+    `<button class="chip ${h.key === halfKey ? "sel" : ""}" onclick="halfKey='${h.key}';render()">${esc(h.label)}</button>`).join("")}</div>`;
+
+  if (data.clinics.length > 1) {
+    html += `<div class="chip-row" style="margin-bottom:14px;"><button class="chip ${clinicFilter ? "" : "sel"}" onclick="clinicFilter='';render()">すべての院</button>${data.clinics.map((c) =>
+      `<button class="chip ${clinicFilter === c.name ? "sel" : ""}" onclick="clinicFilter='${esc(c.name)}';render()">${esc(c.name)}</button>`).join("")}</div>`;
+  }
+  if (data.company && !clinicFilter) html += companyCard(data.company.find((c) => c.key === halfKey));
+  if (data.clinics.length) html += clinicCard(half);
+  html += incentiveCard(half);
+  html += salesCard();
+  html += evaluationCard();
+  if (data.notes && data.notes.length) html += `<div class="card"><div class="card-h">データについての注意</div><div class="card-b"><ul class="notes">${data.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></div></div>`;
+  html += rulesCard();
+  root.innerHTML = html;
+}
+
+// 院の絞り込みに合う人・院だけ
+const visiblePeople = () => clinicFilter ? data.people.filter((p) => p.clinics.includes(clinicFilter)) : data.people;
+const visibleClinics = () => clinicFilter ? data.clinics.filter((c) => c.name === clinicFilter) : data.clinics;
+
+function companyCard(c) {
+  if (!c || !c.monthsElapsed) return `<div class="card"><div class="card-h">全社 人件費42%枠</div><div class="card-b muted">この期間の実績はまだありません。</div></div>`;
+  const within = c.payableRatio === null || c.payableRatio >= 1;
+  const banner = c.incentivePaid === 0
+    ? `<div class="banner ${c.roomProjected >= 0 ? "ok" : "ng"}">現時点で支給見込みのインセンティブはありません。42%枠の残り（見込み）：${yen(c.roomProjected)}</div>`
+    : within
+      ? `<div class="banner ok">✅ インセンティブ見込み ${yen(c.incentiveCost)}（社保込）は、42%枠の残り（見込み）${yen(c.roomProjected)} に収まっています。</div>`
+      : `<div class="banner ng">⚠️ 42%枠を超えます。インセンティブ見込み ${yen(c.incentiveCost)}（社保込）に対して、枠の残り（見込み）は ${yen(c.roomProjected)}。<br>42%以内に収めるには、支給額を <b>${pct(c.payableRatio)}</b> に圧縮する必要があります（不足 ${yen(c.incentiveCost - Math.max(0, c.roomProjected))}）。</div>`;
+  const rows = c.months.map((m) => `<tr><td class="l">${m.month}月</td><td>${yen(m.sales)}</td><td>${yen(m.labor)}${m.laborEstimated ? ' <span class="small">推定</span>' : ""}</td><td class="${m.rate > data.laborCapRate ? "ng" : "ok"}">${pct(m.rate)}</td><td>${yen(m.sales * data.laborCapRate - m.labor)}</td></tr>`).join("");
+  return `<div class="card"><div class="card-h">全社 人件費42%枠（${esc(c.label)}・${c.monthsElapsed}ヶ月経過）</div><div class="card-b">
+    <div class="kpis">
+      <div class="kpi"><div class="k">売上</div><div class="v">${man(c.sales)}</div></div>
+      <div class="kpi"><div class="k">人件費（社保込）</div><div class="v">${man(c.labor)}</div></div>
+      <div class="kpi"><div class="k">人件費率</div><div class="v ${c.laborRate > data.laborCapRate ? "ng" : "ok"}">${pct(c.laborRate)}</div><div class="s">上限 ${pct(data.laborCapRate)}</div></div>
+      <div class="kpi"><div class="k">42%枠の残り（半期見込み）</div><div class="v ${c.roomProjected >= 0 ? "ok" : "ng"}">${man(c.roomProjected)}</div><div class="s">経過分 ${man(c.room)}</div></div>
+      <div class="kpi"><div class="k">インセンティブ見込み</div><div class="v">${man(c.incentivePaid)}</div><div class="s">社保込 ${man(c.incentiveCost)}</div></div>
+      <div class="kpi"><div class="k">インセンティブ込み人件費率</div><div class="v ${c.laborRateWithIncentive > data.laborCapRate ? "ng" : "ok"}">${pct(c.laborRateWithIncentive)}</div></div>
+    </div>
+    ${banner}
+    <div class="scroll" style="margin-top:12px;"><table><tr><th class="l">月</th><th>売上</th><th>人件費（社保込）</th><th>人件費率</th><th>42%枠の残り</th></tr>${rows}</table></div>
+  </div></div>`;
+}
+
+function clinicCard(half) {
+  const head = half.months.map((m) => `<th>${m}月</th>`).join("");
+  const rows = visibleClinics().map((c) => {
+    const ms = c.months.filter((m) => half.months.includes(m.month));
+    const cells = ms.map((m) => {
+      if (m.actual === null || m.actual === undefined) return `<td class="small">予算 ${man(m.budget)}</td>`;
+      const ok = m.budget && m.actual >= m.budget;
+      return `<td class="${ok ? "bg-ok" : "bg-ng"}"><b>${man(m.actual)}</b><div class="small">${pct(m.rate)}</div></td>`;
+    }).join("");
+    const budget = ms.reduce((a, m) => a + (m.actual !== null && m.actual !== undefined ? m.budget || 0 : 0), 0);
+    const actual = ms.reduce((a, m) => a + (m.actual || 0), 0);
+    return `<tr><td class="l"><b>${esc(c.name)}</b><div class="small">${c.manager ? "院長 " + esc(c.manager) : ""}${c.bm ? " ・BM " + esc(c.bm) : ""}</div></td>${cells}
+      <td class="${budget && actual >= budget ? "ok" : "ng"}"><b>${budget ? pct(actual / budget) : "-"}</b></td>
+      <td>${man(c.fixedLabor)}</td><td class="${c.laborRate > data.laborCapRate ? "ng" : "ok"}">${pct(c.laborRate)}</td></tr>`;
+  }).join("");
+  return `<div class="card"><div class="card-h">院別 売上予算の達成状況（${esc(half.label)}）</div><div class="card-b">
+    <div class="scroll"><table><tr><th class="l">院</th>${head}<th>累計達成率</th><th>固定人件費</th><th>人件費率<br><span class="small">（最新月）</span></th></tr>${rows}</table></div>
+    <div class="small" style="margin-top:8px;">緑＝予算達成、赤＝未達。固定人件費は台帳の各院査定シートの値（社保込）です。</div>
+  </div></div>`;
+}
+
+function incentiveBody(i) {
+  let extra = "";
+  if (i.type === "manager") {
+    extra = `<div class="dots">${i.monthly.map((m) => `<div class="dot ${m.actual === null ? "" : m.achieved ? "y" : "n"}" title="${m.month}月">${m.month}月</div>`).join("")}</div>`;
+  } else if (i.type === "staff" && i.avg !== null) {
+    const r = Math.min(1, i.avg / data.rules.staff.threshold);
+    extra = `<div class="bar ${r >= 1 ? "ok" : ""}"><i style="width:${(r * 100).toFixed(0)}%"></i></div>`;
+  } else if ((i.type === "bm" || i.type === "gm") && i.rate !== null) {
+    extra = `<div class="bar ${i.rate >= 1 ? "ok" : ""}"><i style="width:${Math.min(100, i.rate * 100).toFixed(0)}%"></i></div><div class="d">累計達成率 ${pct(i.rate)}</div>`;
+  }
+  const amount = i.type === "manager"
+    ? `${yen(i.earned)}<div class="small">最大 ${yen(i.max)}</div>`
+    : `${yen(i.projected)}<div class="small">${i.status === "確定" ? "確定" : "見込み"}（満額 ${yen(i.max)}）</div>`;
+  return `<div class="inc"><div style="flex:1;min-width:200px;">
+      <div class="t">${TYPE_LABEL[i.type]}${statusBadge(i.status)}</div>
+      <div class="d">${esc(i.detail)}</div>
+      ${i.profitCondition ? `<div class="d warn">営業利益：${esc(i.profitCondition)}</div>` : ""}
+      ${extra}
+    </div><div class="amt">${amount}</div></div>`;
+}
+
+function incentiveCard(half) {
+  const list = visiblePeople()
+    .map((p) => ({ p, incs: p.incentives.filter((i) => i.half === half.key || i.type === "gm") }))
+    .filter((x) => x.incs.length)
+    .sort((a, b) => (a.p.key === data.viewer.personKey ? -1 : b.p.key === data.viewer.personKey ? 1 : 0));
+  const total = list.reduce((a, x) => a + x.incs.filter((i) => i.half === half.key).reduce((s, i) => s + (i.type === "manager" ? i.earned : i.projected), 0), 0);
+  const body = list.length ? list.map(({ p, incs }) => `<div class="person">
+      <div class="person-h"><div class="n">${esc(p.name)}</div><div class="small">${esc(p.grade)} ${esc(p.role)} ・ ${esc(p.clinics.join("・"))}</div></div>
+      ${incs.map(incentiveBody).join("")}
+    </div>`).join("") : `<div class="muted">対象のインセンティブはありません。</div>`;
+  return `<div class="card"><div class="card-h"><span>インセンティブ進捗（${esc(half.label)}）</span>${list.length > 1 ? `<span class="small">表示中の見込み合計 ${yen(total)}</span>` : ""}</div><div class="card-b">${body}</div></div>`;
+}
+
+function salesCard() {
+  const people = visiblePeople().filter((p) => p.hasSalesData && p.monthlySales.length)
+    .sort((a, b) => (a.key === data.viewer.personKey ? -1 : b.key === data.viewer.personKey ? 1 : 0));
+  if (!people.length) return "";
+  const months = people[0].monthlySales.map((m) => m.month);
+  const rows = people.map((p) => {
+    const cells = p.monthlySales.map((m) => `<td class="${m.total >= 1000000 ? "ok" : m.total < 650000 ? "muted" : ""}">${man(m.total)}</td>`).join("");
+    const ladder = p.ladder.items.map((x) => `<div class="${x.kind === "demotion" ? (x.warn ? "ng" : "muted") : x.ok ? "ok" : "muted"}">${x.ok && x.kind === "promotion" ? "★ " : ""}${esc(x.label)}：${esc(x.value)}</div>`).join("");
+    return `<tr><td class="l"><b>${esc(p.name)}</b><div class="small">${esc(p.grade)} ${esc(p.clinics.join("・"))}</div></td>${cells}<td class="l" style="white-space:normal;min-width:220px;font-size:11px;">${ladder || '<span class="small">-</span>'}</td></tr>`;
+  }).join("");
+  return `<div class="card"><div class="card-h">個人売上（窓口＋保険請求）と昇格・降格チェック</div><div class="card-b">
+    <div class="scroll"><table><tr><th class="l">氏名</th>${months.map((m) => `<th>${m}月</th>`).join("")}<th class="l">キャリアラダー（売上要件）</th></tr>${rows}</table></div>
+    <div class="small" style="margin-top:8px;">緑＝100万円以上、灰＝65万円未満。昇格には売上以外の要件（技術・行動）もあります。</div>
+  </div></div>`;
+}
+
+function evaluationCard() {
+  const evs = visiblePeople().flatMap((p) => p.evaluations || []).filter((e) => !clinicFilter || e.clinic === clinicFilter);
+  if (!evs.length) return "";
+  const rows = evs.map((e) => `<tr><td class="l">${esc(e.clinic)}</td><td class="l"><b>${esc(e.name)}</b></td><td class="l">${esc(e.grade)}</td><td>${e.score ?? "-"}</td>
+    <td class="l"><b class="${e.rank === "S" || e.rank === "A" ? "ok" : e.rank === "D" ? "ng" : e.rank === "C" ? "warn" : ""}">${esc(e.rank ?? "-")}</b></td>
+    <td class="l">${esc(e.salaryDecision ?? "")}</td><td>${yen(e.raise)}</td><td>${yen(e.newSalary)}</td><td class="l">${esc(e.positionDecision ?? "")}</td><td>${yen(e.bonus)}</td><td class="l">${esc(e.approval ?? "")}</td></tr>`).join("");
+  return `<div class="card"><div class="card-h">半期査定の結果（キャリア制度台帳より）</div><div class="card-b">
+    <div class="scroll"><table><tr><th class="l">院</th><th class="l">氏名</th><th class="l">等級</th><th>評価点</th><th class="l">ランク</th><th class="l">給与判定</th><th>改定額</th><th>改定後固定支給</th><th class="l">役職判定</th><th>賞与想定</th><th class="l">決裁</th></tr>${rows}</table></div>
+    <div class="small" style="margin-top:8px;">評価点の入力・修正はキャリア制度台帳（スプレッドシート）で行ってください。</div>
+  </div></div>`;
+}
+
+function rulesCard() {
+  const r = data.rules;
+  return `<div class="card"><div class="card-h">2026年 インセンティブ規定</div><div class="card-b"><div class="scroll"><table>
+    <tr><th class="l">対象</th><th>年間最大</th><th class="l">達成条件</th></tr>
+    <tr><td class="l">${esc(r.gm.label)}</td><td>${yen(r.gm.annual)}</td><td class="l">${esc(r.gm.condition)}</td></tr>
+    <tr><td class="l">${esc(r.bm.label)}</td><td>${yen(r.bm.perHalf * 2)}</td><td class="l">${esc(r.bm.condition)}</td></tr>
+    <tr><td class="l">${esc(r.manager.label)}</td><td>${yen(r.manager.perMonth * 12)}</td><td class="l">${esc(r.manager.condition)}</td></tr>
+    <tr><td class="l">${esc(r.staff.label)}</td><td>${yen(r.staff.perHalf * 2)}</td><td class="l">${esc(r.staff.condition)}</td></tr>
+  </table></div>
+  <div class="small" style="margin-top:8px;">インセンティブ（業績賞与・決算賞与）は支給時期が違っても、社保込みで人件費42%の枠内に収めます。</div></div></div>`;
+}
+
+load();
+</script>
+</body>
+</html>
