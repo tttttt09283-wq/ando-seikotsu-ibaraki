@@ -101,6 +101,14 @@ textarea{width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:8p
 .inc-group>summary::before{content:"▾";color:#64748b;margin-right:4px;}
 .inc-group:not([open])>summary::before{content:"▸";}
 .inc-group>.person{margin:0 10px 10px;background:white;}
+select.pick{width:100%;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:14px;font-family:inherit;background:white;margin-bottom:12px;}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;letter-spacing:1px;}
+@media print{
+  body{background:white;}
+  .topbar,.tabs,.no-print{display:none!important;}
+  .wrap{max-width:100%;padding:0;}
+  .card{box-shadow:none;border:1px solid #999;break-inside:avoid;}
+}
 ul.notes{padding-left:18px;font-size:12px;color:#64748b;line-height:1.7;}
 </style>
 </head>
@@ -143,38 +151,100 @@ function statusBadge(s) {
 }
 
 // ===== ログイン =====
+// ===== ログイン =====
+// 院ID＋院PASS → 名前を選んで個人PASS（スタッフ・院長・BM）／メールアドレス（社長・GM）
+const PIN_KEY = "ando_pin_token";
+const ssGet = (k) => { try { return sessionStorage.getItem(k); } catch (e) { return null; } };
+const ssSet = (k, v) => { try { v === null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch (e) {} };
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+let loginMode = "clinic";  // clinic（院ID） / email（社長・GM）
+let clinicStep = null;     // 院IDが通ったあと { clinic, staff, clinicToken }
+
+async function authHeader() {
+  const pin = ssGet(PIN_KEY);
+  if (pin) return `Pin ${pin}`;
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  return session ? `Bearer ${session.access_token}` : null;
+}
+
+async function postJson(url, body) {
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `エラー（HTTP ${res.status}）`);
+  return json;
+}
+
 function renderLogin(msg) {
+  ssSet(PIN_KEY, null);
   document.getElementById("subLabel").textContent = "ログインしてください";
   document.getElementById("topActions").innerHTML = "";
-  root.innerHTML = `
-    <div class="card login"><div class="card-b">
-      <div style="font-weight:800;margin-bottom:12px;">スタッフログイン</div>
-      ${msg ? `<div class="err">${esc(msg)}</div>` : ""}
-      <label>ログインID</label><input id="lid" autocomplete="username"/>
+  const tabs = `<div class="tabs" style="margin-bottom:12px;"><button class="tab ${loginMode === "clinic" ? "sel" : ""}" onclick="loginMode='clinic';clinicStep=null;renderLogin()">院のIDでログイン</button><button class="tab ${loginMode === "email" ? "sel" : ""}" onclick="loginMode='email';renderLogin()">社長・GM</button></div>`;
+  const err = msg ? `<div class="err">${esc(msg)}</div>` : "";
+  let form;
+  if (loginMode === "email") {
+    form = `<label>ログインID（メールアドレス）</label><input id="lid" autocomplete="username"/>
       <label>パスワード</label><input id="lpw" type="password" autocomplete="current-password"/>
       <button class="btn btn-blue" id="lbtn">ログイン</button>
-      <div class="small" style="margin-top:10px;">予約管理と同じID・パスワードでログインできます</div>
-    </div></div>`;
+      <div class="small" style="margin-top:10px;">予約管理と同じID・パスワードでログインできます</div>`;
+  } else if (!clinicStep) {
+    form = `<label>院ID</label><input id="cid" autocomplete="username" autocapitalize="off" value="${esc(lsGet("ando_clinic_id") || "")}" placeholder="例：ibaraki"/>
+      <label>院PASS（数字4桁）</label><input id="cpw" type="password" inputmode="numeric" maxlength="4" autocomplete="off"/>
+      <button class="btn btn-blue" id="lbtn">次へ</button>
+      <div class="small" style="margin-top:10px;">院ID・院PASSは院長に確認してください</div>`;
+  } else {
+    form = `<div style="font-weight:800;margin-bottom:8px;">${esc(clinicStep.clinic)}院</div>
+      <label>名前</label><select id="pname" class="pick">${clinicStep.staff.map((p) => `<option value="${esc(p.key)}">${esc(p.name)}</option>`).join("")}</select>
+      <label>個人PASS（数字4桁）</label><input id="ppw" type="password" inputmode="numeric" maxlength="4" autocomplete="off"/>
+      <button class="btn btn-blue" id="lbtn">ログイン</button>
+      <div style="margin-top:10px;"><button class="chip" onclick="clinicStep=null;renderLogin()">‹ 院IDからやり直す</button></div>`;
+  }
+  root.innerHTML = `<div class="card login"><div class="card-b">${tabs}${err}${form}</div></div>`;
+  const btn = document.getElementById("lbtn");
   const go = async () => {
-    const id = document.getElementById("lid").value.trim().toLowerCase();
-    const pw = document.getElementById("lpw").value;
-    if (!id || !pw) return renderLogin("IDとパスワードを入力してください");
-    document.getElementById("lbtn").disabled = true;
-    const email = id.includes("@") ? id : id + "@" + LOGIN_ID_DOMAIN;
-    const { error } = await supabaseClient.auth.signInWithPassword({ email, password: pw });
-    if (error) return renderLogin("IDまたはパスワードが違います");
-    load();
+    btn.disabled = true;
+    try {
+      if (loginMode === "email") {
+        const id = document.getElementById("lid").value.trim().toLowerCase();
+        const pw = document.getElementById("lpw").value;
+        if (!id || !pw) return renderLogin("IDとパスワードを入力してください");
+        const email = id.includes("@") ? id : id + "@" + LOGIN_ID_DOMAIN;
+        const { error } = await supabaseClient.auth.signInWithPassword({ email, password: pw });
+        if (error) return renderLogin("IDまたはパスワードが違います");
+        return load();
+      }
+      if (!clinicStep) {
+        const id = document.getElementById("cid").value.trim().toLowerCase();
+        const pass = document.getElementById("cpw").value.trim();
+        if (!id || !/^\d{4}$/.test(pass)) return renderLogin("院IDと、院PASS（数字4桁）を入力してください");
+        const json = await postJson("/api/pin-login", { action: "clinic", id, pass });
+        lsSet("ando_clinic_id", id);
+        clinicStep = json;
+        if (!json.staff.length) { clinicStep = null; return renderLogin("この院でログインできるスタッフがまだ登録されていません。社長・GMに連絡してください"); }
+        return renderLogin();
+      }
+      const pin = document.getElementById("ppw").value.trim();
+      if (!/^\d{4}$/.test(pin)) return renderLogin("個人PASS（数字4桁）を入力してください");
+      const json = await postJson("/api/pin-login", { action: "person", clinicToken: clinicStep.clinicToken, personKey: document.getElementById("pname").value, pin });
+      await supabaseClient.auth.signOut().catch(() => {});
+      ssSet(PIN_KEY, json.token);
+      clinicStep = null;
+      return load();
+    } catch (e) {
+      if (/やり直/.test(e.message)) clinicStep = null;
+      return renderLogin(e.message);
+    }
   };
-  document.getElementById("lbtn").onclick = go;
-  document.getElementById("lpw").onkeydown = (e) => { if (e.key === "Enter") go(); };
+  btn.onclick = go;
+  root.querySelectorAll("input").forEach((el) => { el.onkeydown = (e) => { if (e.key === "Enter") go(); }; });
 }
 
 async function load(refresh) {
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  if (!session) return renderLogin();
+  const auth = await authHeader();
+  if (!auth) return renderLogin();
   root.innerHTML = `<div class="center">スプレッドシートを読み込み中...</div>`;
   try {
-    const res = await fetch(`/api/incentive${refresh ? "?refresh=1" : ""}`, { headers: { Authorization: `Bearer ${session.access_token}` } });
+    const res = await fetch(`/api/incentive${refresh ? "?refresh=1" : ""}`, { headers: { Authorization: auth } });
     const body = await res.json().catch(() => ({}));
     if (res.status === 401) return renderLogin(body.error);
     if (!res.ok) throw new Error(body.error || `読み込みに失敗しました（HTTP ${res.status}）`);
@@ -193,13 +263,13 @@ async function savePayroll(month) {
   const raw = document.getElementById("pay" + month).value.replace(/[,，¥円\s]/g, "");
   if (!raw || !/^\d+$/.test(raw)) return alert("支給合計額を数字で入力してください");
   if (!confirm(`${month}月の支給合計額を ${yen(Number(raw))} で保存します。よろしいですか？`)) return;
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  if (!session) return renderLogin();
+  const auth = await authHeader();
+  if (!auth) return renderLogin();
   root.innerHTML = `<div class="center">保存中...</div>`;
   try {
     const res = await fetch("/api/incentive", {
       method: "POST",
-      headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+      headers: { Authorization: auth, "Content-Type": "application/json" },
       body: JSON.stringify({ month, amount: Number(raw) }),
     });
     const body = await res.json().catch(() => ({}));
@@ -213,8 +283,9 @@ async function savePayroll(month) {
 }
 
 async function logout() {
-  await supabaseClient.auth.signOut();
-  data = null; halfKey = null;
+  ssSet(PIN_KEY, null);
+  await supabaseClient.auth.signOut().catch(() => {});
+  data = null; halfKey = null; evalData = null; evalSelected = null; loginsData = null; view = "incentive";
   renderLogin();
 }
 
@@ -224,12 +295,16 @@ function render() {
   document.getElementById("subLabel").textContent =
     `${data.fiscalYear}年度 ・ ${data.latestMonth ? data.latestMonth + "月分まで反映" : "実績なし"} ・ ${v.name}さん（${SCOPE_LABEL[v.scope]}）`;
   document.getElementById("topActions").innerHTML =
-    `<button class="btn btn-outline" onclick="${view === "evaluation" ? "loadEval(true)" : "load(true)"}">↻ 最新に更新</button>` +
+    `<button class="btn btn-outline" onclick="${view === "evaluation" ? "loadEval(true)" : view === "logins" ? "loginsData=null;render()" : "load(true)"}">↻ 最新に更新</button>` +
     `<button class="btn btn-outline" onclick="logout()">ログアウト</button>`;
 
-  const tabs = `<div class="tabs"><button class="tab ${view === "incentive" ? "sel" : ""}" onclick="view='incentive';render()">💰 インセンティブ</button><button class="tab ${view === "evaluation" ? "sel" : ""}" onclick="view='evaluation';render()">📝 月次評価</button></div>`;
+  const tabs = `<div class="tabs"><button class="tab ${view === "incentive" ? "sel" : ""}" onclick="view='incentive';render()">💰 インセンティブ</button><button class="tab ${view === "evaluation" ? "sel" : ""}" onclick="view='evaluation';render()">📝 月次評価</button>${data.canManageLogins ? `<button class="tab ${view === "logins" ? "sel" : ""}" onclick="view='logins';render()">🔑 ログイン設定</button>` : ""}</div>`;
   if (view === "evaluation") {
     root.innerHTML = tabs + renderEvaluation();
+    return;
+  }
+  if (view === "logins") {
+    root.innerHTML = tabs + renderLogins();
     return;
   }
   const half = data.halves.find((h) => h.key === halfKey);
@@ -419,12 +494,12 @@ function monthLabel(key) { const [y, m] = key.split("-"); return `${y}年${Numbe
 function shiftMonth(key, d) { const [y, m] = key.split("-").map(Number); const t = new Date(y, m - 1 + d, 1); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`; }
 
 async function evalFetch(method, body, refresh) {
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  if (!session) { renderLogin(); return null; }
+  const auth = await authHeader();
+  if (!auth) { renderLogin(); return null; }
   const url = method === "GET" ? `/api/evaluation?month=${encodeURIComponent(evalMonth || "")}${refresh ? "&refresh=1" : ""}` : "/api/evaluation";
   const res = await fetch(url, {
     method,
-    headers: { Authorization: `Bearer ${session.access_token}`, ...(body ? { "Content-Type": "application/json" } : {}) },
+    headers: { Authorization: auth, ...(body ? { "Content-Type": "application/json" } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
   const json = await res.json().catch(() => ({}));
@@ -852,6 +927,71 @@ async function saveCandidate(key) {
     const json = await evalFetch("POST", { action: "setCandidate", month: evalMonth, personKey: key, candidate, memo });
     if (json) { evalData = json; keepScroll(render); }
   } catch (e) { alert(e.message); }
+}
+
+// ===== ログイン設定（社長・GM） =====
+let loginsData = null;
+let loginsLoading = false;
+
+async function loginsFetch(method, body) {
+  const auth = await authHeader();
+  if (!auth) { renderLogin(); return null; }
+  const res = await fetch("/api/pin-login", {
+    method,
+    headers: { Authorization: auth, ...(body ? { "Content-Type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `読み込みに失敗しました（HTTP ${res.status}）`);
+  return json;
+}
+
+async function loadLogins(body) {
+  if (loginsLoading) return;
+  loginsLoading = true;
+  try {
+    loginsData = await loginsFetch(body ? "POST" : "GET", body);
+  } catch (e) {
+    if (body) alert(e.message); else loginsData = { error: e.message };
+  } finally {
+    loginsLoading = false;
+  }
+  render();
+}
+
+function reissuePin(kind, target, label) {
+  if (!confirm(`${label} のPASSを再発行します。\n古いPASSは使えなくなり、${kind === "個人" ? "その人" : "この院の院PASSで入る人"}はログインし直しになります。よろしいですか？`)) return;
+  root.innerHTML = `<div class="center">再発行中...</div>`;
+  loadLogins(kind === "院" ? { action: "reissue", kind, clinic: target } : { action: "reissue", kind, personKey: target });
+}
+
+function generatePins() {
+  if (!confirm("まだPASSが無い院・スタッフに、数字4桁のPASSをランダムで作成します。よろしいですか？")) return;
+  root.innerHTML = `<div class="center">作成中...</div>`;
+  loadLogins({ action: "generate" });
+}
+
+function renderLogins() {
+  if (!loginsData) { if (!loginsLoading) setTimeout(() => loadLogins(), 0); return `<div class="center">読み込み中...</div>`; }
+  if (loginsData.error) return `<div class="card"><div class="card-b"><div class="err">${esc(loginsData.error)}</div><button class="btn btn-blue" onclick="loginsData=null;render()">もう一度読み込む</button></div></div>`;
+  const d = loginsData;
+  let html = `<div class="card no-print"><div class="card-b" style="font-size:13px;line-height:1.8;">
+    スタッフ・院長・BMは「院のIDでログイン」から、<b>院ID → 院PASS → 自分の名前 → 個人PASS</b> の順で入ります。見られる範囲は等級で自動で決まります（スタッフ＝自分だけ／院長＝自院／BM＝管轄エリア）。<br>
+    社長・GMは今までどおりメールアドレスでログインします。PASSを${d.maxFails}回まちがえると${d.lockMinutes}分ロックされ、「再発行」で解除できます。<br>
+    <b>個人PASSは本人だけに伝えてください。</b>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+      ${d.missing ? `<button class="btn btn-blue" style="width:auto;" onclick="generatePins()">まだ無いPASSをまとめて作成（${d.missing}件）</button>` : '<span class="small ok">全員分のPASSが作成済みです</span>'}
+      <button class="btn btn-save" onclick="window.print()">🖨 印刷</button>
+    </div></div></div>`;
+  html += d.clinics.map((c) => `<div class="card login-card"><div class="card-h"><span>${esc(c.name)}院</span>
+      <span>院ID <b class="mono">${esc(c.clinicId)}</b> ・ 院PASS <b class="mono">${c.pass ? esc(c.pass) : "未作成"}</b>${c.locked ? ' <span class="badge b-ng">ロック中</span>' : ""}
+      ${c.pass ? `<button class="chip no-print" onclick="reissuePin('院','${esc(c.name)}','${esc(c.name)}院')">再発行</button>` : ""}</span></div>
+    <div class="card-b"><div class="scroll"><table><tr><th class="l">名前</th><th class="l">等級</th><th>個人PASS</th><th class="no-print"></th></tr>
+    ${c.staff.map((p) => `<tr><td class="l"><b>${esc(p.name)}</b></td><td class="l">${esc(p.grade || "-")} ${esc(p.role || "")}</td>
+      <td><b class="mono">${p.pin ? esc(p.pin) : '<span class="small">未作成</span>'}</b>${p.locked ? ' <span class="badge b-ng">ロック中</span>' : ""}</td>
+      <td class="no-print">${p.pin ? `<button class="chip" onclick="reissuePin('個人','${esc(p.key)}','${esc(p.name)}')">再発行</button>` : ""}</td></tr>`).join("") || '<tr><td colspan="4" class="l muted">スタッフがいません</td></tr>'}
+    </table></div></div></div>`).join("");
+  return html;
 }
 
 load();

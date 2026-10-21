@@ -162,3 +162,27 @@ test("class order and 院長候補 permissions", async () => {
   assert.equal(canSetCandidate(model, { personKey: "gm", grade: "G6" }, false, p("mgr")), false); // 院長以上は対象外
   assert.equal(canSetCandidate(model, { personKey: "gm", grade: "G6" }, false, p("s2")), true);
 });
+
+test("PIN login helpers: random pins avoid easy ones, tokens verify and expire, lockout after 5 misses", async () => {
+  process.env.PIN_SESSION_SECRET = "test-secret";
+  const { randomPin, issueToken, verifyToken, pinStamp, samePin, afterAttempt, isLocked, parseLoginSheet, LOGIN_HEADER, MAX_FAILS } = await import("../lib/pin-auth.js");
+  for (let i = 0; i < 300; i++) {
+    const p = randomPin();
+    assert.match(p, /^\d{4}$/);
+    assert.ok(!["0000", "1111", "1234", "4321", "9876"].includes(p));
+  }
+  const t = issueToken({ t: "person", k: "山田太郎", h: pinStamp("0123") });
+  assert.equal(verifyToken(t).k, "山田太郎");
+  assert.equal(verifyToken(t.slice(0, -2) + "xx"), null); // 改ざん
+  assert.equal(verifyToken(issueToken({ t: "x" }, -1)), null); // 期限切れ
+  assert.notEqual(pinStamp("0123"), pinStamp("0124"));
+  assert.ok(samePin("0123", "0123") && samePin(123, "0123") && !samePin("0123", "0124") && !samePin("", ""));
+  let e = { fails: 0, lockedUntil: 0 };
+  for (let i = 0; i < MAX_FAILS; i++) e = afterAttempt(e, false, 1000);
+  assert.ok(isLocked(e, 2000));
+  assert.ok(!isLocked(afterAttempt(e, true), 2000));
+  const sheet = parseLoginSheet([LOGIN_HEADER, ["院", "茨木", "IBARAKI", "", "0456", 0, "", ""], ["個人", "茨木", "", "山田 太郎", 789, 2, "", ""]]);
+  assert.equal(sheet.clinics.get("茨木").clinicId, "ibaraki");
+  assert.equal(sheet.people.get("山田太郎").pin, "0789");
+  assert.equal(sheet.people.get("山田太郎").fails, 2);
+});

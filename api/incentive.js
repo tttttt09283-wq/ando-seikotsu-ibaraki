@@ -68,5 +68,10 @@ export default async function handler(req, res) {
 
   const viewer = resolveViewer(model, staff);
   if (!viewer) return viewerNotFound(res, staff);
-  res.status(200).json({ ...filterModelForViewer(model, viewer), isAdmin: staff.role === "admin" });
+  res.status(200).json({
+    ...filterModelForViewer(model, viewer),
+    isAdmin: staff.role === "admin",
+    // 院ID・PASSの管理は社長・GM（メールアドレスでログインしたとき）だけ
+    canManageLogins: !staff.viaPin && (staff.role === "admin" || viewer.grade === "G6"),
+  });
 }
