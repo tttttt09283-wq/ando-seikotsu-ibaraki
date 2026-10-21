@@ -62,6 +62,26 @@ input.pay{width:120px;margin:0 6px 0 0;padding:5px 8px;font-size:12px;display:in
 .btn-save{padding:5px 10px;font-size:12px;background:#1e3a5f;color:white;}
 .err{color:#b91c1c;font-size:12px;margin-bottom:10px;white-space:pre-wrap;}
 .center{text-align:center;padding:60px 20px;color:#9ca3af;}
+.tabs{display:flex;gap:6px;margin-bottom:14px;border-bottom:2px solid #dbe3ee;}
+.tab{flex:1;padding:10px 8px;border:none;background:none;font-family:inherit;font-size:14px;font-weight:800;color:#64748b;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;}
+.tab.sel{color:#1e3a5f;border-bottom-color:#1e3a5f;}
+.monthnav{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+.monthnav .m{font-size:16px;font-weight:800;min-width:120px;text-align:center;}
+.evrow{cursor:pointer;} .evrow:hover td{background:#f8fafc;}
+.item{display:flex;gap:10px;align-items:center;padding:9px 0;border-top:1px dashed #e2e8f0;flex-wrap:wrap;}
+.item .lbl{flex:1;min-width:180px;}
+.item .lbl b{font-size:13px;} .item .lbl .d{font-size:11px;color:#64748b;margin-top:2px;}
+.item .pts{width:52px;text-align:right;font-weight:800;font-size:13px;}
+.item .ctrl{display:flex;align-items:center;gap:8px;margin-left:auto;}
+.item input.num{width:130px;margin:0;padding:7px 9px;font-size:13px;}
+.score-btns{display:flex;gap:4px;}
+.score-btns button{width:34px;height:32px;border-radius:7px;border:1.5px solid #cbd5e1;background:white;font-weight:800;font-family:inherit;cursor:pointer;color:#475569;}
+.score-btns button.sel{background:#1e3a5f;border-color:#1e3a5f;color:white;}
+.score-btns button:disabled{cursor:default;opacity:.7;}
+.autotag{display:inline-block;font-size:10px;font-weight:800;background:#e0e7ff;color:#3730a3;border-radius:6px;padding:1px 6px;margin-left:6px;}
+.reqtag{display:inline-block;font-size:10px;font-weight:800;background:#fee2e2;color:#991b1b;border-radius:6px;padding:1px 6px;margin-left:6px;}
+.sticky-total{position:sticky;bottom:0;background:white;border-top:2px solid #e2e8f0;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
+textarea{width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:inherit;min-height:70px;}
 ul.notes{padding-left:18px;font-size:12px;color:#64748b;line-height:1.7;}
 </style>
 </head>
@@ -90,6 +110,7 @@ const SCOPE_LABEL = { all: "全院", block: "担当ブロック", clinic: "自�
 let data = null;
 let halfKey = null;
 let clinicFilter = ""; // 複数院を見られる人向けの絞り込み（空＝すべて）
+let view = "incentive"; // incentive（インセンティブ） / evaluation（月次評価）
 
 const root = document.getElementById("root");
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -184,11 +205,16 @@ function render() {
   document.getElementById("subLabel").textContent =
     `${data.fiscalYear}年度 ・ ${data.latestMonth ? data.latestMonth + "月分まで反映" : "実績なし"} ・ ${v.name}さん（${SCOPE_LABEL[v.scope]}）`;
   document.getElementById("topActions").innerHTML =
-    `<button class="btn btn-outline" onclick="load(true)">↻ 最新に更新</button>` +
+    `<button class="btn btn-outline" onclick="${view === "evaluation" ? "loadEval(true)" : "load(true)"}">↻ 最新に更新</button>` +
     `<button class="btn btn-outline" onclick="logout()">ログアウト</button>`;
 
+  const tabs = `<div class="tabs"><button class="tab ${view === "incentive" ? "sel" : ""}" onclick="view='incentive';render()">💰 インセンティブ</button><button class="tab ${view === "evaluation" ? "sel" : ""}" onclick="view='evaluation';render()">📝 月次評価</button></div>`;
+  if (view === "evaluation") {
+    root.innerHTML = tabs + renderEvaluation();
+    return;
+  }
   const half = data.halves.find((h) => h.key === halfKey);
-  let html = `<div class="chip-row" style="margin-bottom:14px;">${data.halves.map((h) =>
+  let html = tabs + `<div class="chip-row" style="margin-bottom:14px;">${data.halves.map((h) =>
     `<button class="chip ${h.key === halfKey ? "sel" : ""}" onclick="halfKey='${h.key}';render()">${esc(h.label)}</button>`).join("")}</div>`;
 
   if (data.clinics.length > 1) {
@@ -329,6 +355,225 @@ function rulesCard() {
     <tr><td class="l">${esc(r.staff.label)}</td><td>${yen(r.staff.perHalf * 2)}</td><td class="l">${esc(r.staff.condition)}</td></tr>
   </table></div>
   <div class="small" style="margin-top:8px;">インセンティブ（業績賞与・決算賞与）は支給時期が違っても、社保込みで人件費42%の枠内に収めます。</div></div></div>`;
+}
+
+// ===== 月次評価 =====
+let evalData = null;
+let evalMonth = null;     // "2027-01"
+let evalSelected = null;  // 開いている人のkey
+let evalDraft = null;     // { values, scores, comment }
+let evalLoading = false;
+
+const EVAL_START = "2027-01"; // 本運用の開始月
+
+function monthLabel(key) { const [y, m] = key.split("-"); return `${y}年${Number(m)}月`; }
+function shiftMonth(key, d) { const [y, m] = key.split("-").map(Number); const t = new Date(y, m - 1 + d, 1); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`; }
+
+async function evalFetch(method, body, refresh) {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (!session) { renderLogin(); return null; }
+  const url = method === "GET" ? `/api/evaluation?month=${encodeURIComponent(evalMonth || "")}${refresh ? "&refresh=1" : ""}` : "/api/evaluation";
+  const res = await fetch(url, {
+    method,
+    headers: { Authorization: `Bearer ${session.access_token}`, ...(body ? { "Content-Type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (res.status === 401) { renderLogin(json.error); return null; }
+  if (!res.ok) throw new Error(json.error || `読み込みに失敗しました（HTTP ${res.status}）`);
+  return json;
+}
+
+async function loadEval(refresh) {
+  if (evalLoading) return;
+  evalLoading = true;
+  if (view === "evaluation") root.innerHTML = `<div class="center">評価を読み込み中...</div>`;
+  try {
+    const json = await evalFetch("GET", null, refresh);
+    if (!json) return;
+    evalData = json;
+    evalMonth = json.month;
+    if (evalSelected && !json.people.some((p) => p.key === evalSelected)) evalSelected = null;
+    if (evalSelected) openEval(evalSelected, true);
+  } catch (e) {
+    evalData = { error: e.message };
+  } finally {
+    evalLoading = false;
+  }
+  render();
+}
+
+function changeEvalMonth(d) {
+  evalMonth = shiftMonth(evalMonth, d);
+  evalData = null;
+  render();
+}
+
+async function setupEvalSheets() {
+  if (!confirm("キャリア制度台帳に「評価項目」「評価記録」シートを作成します。よろしいですか？")) return;
+  root.innerHTML = `<div class="center">シートを作成中...</div>`;
+  try {
+    evalData = await evalFetch("POST", { action: "setup", month: evalMonth });
+  } catch (e) { alert(e.message); }
+  render();
+}
+
+function openEval(key, keepDraft) {
+  const p = evalData.people.find((x) => x.key === key);
+  if (!p) return;
+  evalSelected = key;
+  if (!keepDraft || !evalDraft) {
+    const items = evalData.items[p.grade] || [];
+    const values = {};
+    for (const it of items) if (it.kind === "数値" && !(it.auto && p.auto[it.auto] !== undefined) && p.values[it.id] !== undefined) values[it.id] = p.values[it.id];
+    evalDraft = { values, scores: { ...p.scores }, comment: p.comment || "" };
+  }
+  render();
+  window.scrollTo(0, 0);
+}
+
+function closeEval() { evalSelected = null; evalDraft = null; render(); }
+
+// サーバーと同じ採点（画面上ですぐ点数を出すため）
+function clientScore(items, p, draft) {
+  const total = items.reduce((a, it) => a + it.points, 0) || 100;
+  let earned = 0, filled = 0, num = 0, beh = 0;
+  const pts = {};
+  for (const it of items) {
+    let v = null;
+    if (it.kind === "数値") {
+      const val = it.auto && p.auto[it.auto] !== undefined ? p.auto[it.auto] : draft.values[it.id];
+      const n = val === "" || val === undefined || val === null ? null : Number(String(val).replace(/[,%円¥\s]/g, ""));
+      if (n !== null && isFinite(n) && it.target) {
+        v = it.direction === "以下" ? (n <= it.target ? it.points : it.points * Math.max(0, 1 - (n - it.target) / 10)) : it.points * Math.max(0, Math.min(1, n / it.target));
+      }
+    } else if (draft.scores[it.id]) v = it.points * draft.scores[it.id] / 5;
+    pts[it.id] = v;
+    if (v !== null) { earned += v; filled++; if (it.kind === "数値") num += v; else beh += v; }
+  }
+  const t = filled ? Math.round(earned / total * 1000) / 10 : null;
+  const complete = filled === items.length;
+  const rank = !complete || t === null ? null : t >= 90 ? "S" : t >= 80 ? "A" : t >= 65 ? "B" : t >= 50 ? "C" : "D";
+  return { pts, total: t, rank, complete, filled, count: items.length, num: Math.round(num / total * 1000) / 10, beh: Math.round(beh / total * 1000) / 10 };
+}
+
+function fmtVal(v, unit) {
+  if (v === null || v === undefined || v === "") return "-";
+  if (unit === "円") return yen(Number(v));
+  return `${Number(v).toLocaleString("ja-JP")}${unit}`;
+}
+const rankCls = (r) => r === "S" || r === "A" ? "ok" : r === "D" ? "ng" : r === "C" ? "warn" : "";
+
+function renderEvaluation() {
+  if (!evalMonth) { const t = new Date(); evalMonth = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`; }
+  if (!evalData) { if (!evalLoading) setTimeout(() => loadEval(), 0); return `<div class="center">評価を読み込み中...</div>`; }
+  if (evalData.error) return `<div class="card"><div class="card-b"><div class="err">${esc(evalData.error)}</div><button class="btn btn-blue" onclick="evalData=null;render()">もう一度読み込む</button></div></div>`;
+  if (evalSelected) return renderEvalDetail();
+
+  let html = `<div class="monthnav"><button class="chip" onclick="changeEvalMonth(-1)">‹ 前月</button><div class="m">${monthLabel(evalMonth)}</div><button class="chip" onclick="changeEvalMonth(1)">次月 ›</button></div>`;
+  if (evalMonth < EVAL_START) html += `<div class="banner ok" style="margin:0 0 14px;">🧪 本運用は ${monthLabel(EVAL_START)} からです。それまでの月は試しに入力して使い方を確認できます。</div>`;
+  if (evalData.setupNeeded) {
+    html += evalData.isAdmin
+      ? `<div class="card"><div class="card-b"><b>評価を始めるには、台帳に評価用のシートを作成してください。</b><div class="small" style="margin:6px 0 12px;">「評価項目」（等級別の項目・配点・目標値。シート上で自由に編集できます）と「評価記録」（毎月の評価結果）の2つを作成します。</div><button class="btn btn-blue" onclick="setupEvalSheets()">評価シートを準備</button></div></div>`
+      : `<div class="card"><div class="card-b muted">管理者が評価シートを準備するまでお待ちください。</div></div>`;
+  }
+  const people = evalData.people;
+  const toDo = people.filter((p) => p.canEdit && !p.evaluated).length;
+  const rows = people.map((p) => {
+    const t = p.result;
+    const status = p.evaluated ? `<b class="${rankCls(t.rank)}">${t.total ?? "-"}点 ${t.rank || ""}</b>${t.complete ? "" : `<div class="small">${t.filled}/${t.count}項目</div>`}` : `<span class="small">${p.canEdit ? "未評価" : "-"}</span>`;
+    const pcScore = p.scores.pc;
+    return `<tr class="evrow" onclick="openEval('${esc(p.key)}')"><td class="l"><b>${esc(p.name)}</b><div class="small">${esc(p.grade)} ${esc(p.clinics.join("・"))} ・ 評価者 ${esc(p.superior)}</div></td>
+      <td>${status}</td>
+      <td>${p.halfAvg !== null ? `<b class="${rankCls(rankOfClient(p.halfAvg))}">${p.halfAvg}点</b><div class="small">${p.halfMonthsEvaluated}ヶ月分</div>` : "-"}</td>
+      <td>${pcScore ? `${pcScore}/5` : "-"}${t.requiredMissed && t.requiredMissed.length ? '<div class="small ng">必須未達</div>' : ""}</td>
+      <td>${p.canEdit ? `<button class="btn btn-save">${p.evaluated ? "修正" : "評価する"}</button>` : `<button class="btn btn-save" style="background:#64748b;">見る</button>`}</td></tr>`;
+  }).join("");
+  html += `<div class="card"><div class="card-h"><span>${monthLabel(evalMonth)} の評価</span>${toDo ? `<span class="small ng">あなたの未評価 ${toDo}名</span>` : ""}</div><div class="card-b">
+    ${people.length ? `<div class="scroll"><table><tr><th class="l">氏名</th><th>今月</th><th>半期平均</th><th>PCスキル</th><th></th></tr>${rows}</table></div>` : '<div class="muted">表示できる評価対象者がいません。</div>'}
+    <div class="small" style="margin-top:8px;">評価は毎月、直属の上司が付けます（スタッフ→院長、院長→BM、BM→GM）。100点満点で S90以上・A80以上・B65以上・C50以上・D50未満。半期平均が台帳の査定の点数になります。</div>
+  </div></div>`;
+  return html;
+}
+const rankOfClient = (t) => t >= 90 ? "S" : t >= 80 ? "A" : t >= 65 ? "B" : t >= 50 ? "C" : "D";
+
+function renderEvalDetail() {
+  const p = evalData.people.find((x) => x.key === evalSelected);
+  const items = evalData.items[p.grade] || [];
+  const ro = !p.canEdit || evalData.setupNeeded;
+  const sc = clientScore(items, p, evalDraft);
+  const totalPts = items.reduce((a, it) => a + it.points, 0) || 100;
+  const scaled = (v) => v === null || v === undefined ? "-" : (Math.round(v / totalPts * 1000) / 10);
+
+  const numItems = items.filter((it) => it.kind === "数値").map((it) => {
+    const isAuto = it.auto && p.auto[it.auto] !== undefined;
+    const target = it.target !== null && it.target !== undefined ? `目標 ${fmtVal(it.target, it.unit)} ${it.direction}` : "";
+    const input = isAuto
+      ? `<b>${fmtVal(p.auto[it.auto], it.unit)}</b>`
+      : ro ? `<b>${fmtVal(evalDraft.values[it.id], it.unit)}</b>`
+      : `<input class="num" inputmode="decimal" value="${esc(evalDraft.values[it.id] ?? "")}" placeholder="${esc(it.unit)}" oninput="evalDraft.values['${esc(it.id)}']=this.value;refreshEvalTotal()"/>`;
+    return `<div class="item"><div class="lbl"><b>${esc(it.label)}</b>${isAuto ? '<span class="autotag">自動</span>' : ""}<div class="d">${esc(target)}（配点${it.points}）</div></div><div class="ctrl">${input}<div class="pts" id="pts_${esc(it.id)}">${scaled(sc.pts[it.id])}</div></div></div>`;
+  }).join("");
+  const behItems = items.filter((it) => it.kind === "行動").map((it) => {
+    const cur = evalDraft.scores[it.id] || 0;
+    const btns = [1, 2, 3, 4, 5].map((n) => `<button class="${cur === n ? "sel" : ""}" ${ro ? "disabled" : ""} onclick="setEvalScore('${esc(it.id)}',${n})">${n}</button>`).join("");
+    return `<div class="item"><div class="lbl"><b>${esc(it.label)}</b>${it.required ? '<span class="reqtag">必須</span>' : ""}<div class="d">${esc(it.note)}（配点${it.points}）</div></div><div class="ctrl"><div class="score-btns">${btns}</div><div class="pts">${scaled(sc.pts[it.id])}</div></div></div>`;
+  }).join("");
+
+  const trend = p.trend.map((t) => `<td class="${t.month === evalMonth ? "bg-ok" : ""}">${t.evaluated ? `<b class="${rankCls(t.rank)}">${t.total ?? "-"}</b><div class="small">${t.rank || ""}${t.pc ? ` ・PC${t.pc}` : ""}</div>` : '<span class="small">-</span>'}</td>`).join("");
+  const reqMissed = items.filter((it) => it.required && evalDraft.scores[it.id] && evalDraft.scores[it.id] < 3);
+
+  return `<div class="monthnav"><button class="chip" onclick="closeEval()">‹ 一覧に戻る</button><div class="m">${monthLabel(evalMonth)}</div></div>
+  <div class="card"><div class="card-h"><span>${esc(p.name)}（${esc(p.grade)} ${esc(p.role)} ・ ${esc(p.clinics.join("・"))}）</span><span class="small">評価者：${esc(p.superior)}${p.evaluated ? ` ・ 最終更新 ${esc(p.updatedAt)}（${esc(p.evaluator)}）` : ""}</span></div><div class="card-b">
+    <div class="small" style="margin-bottom:6px;">半期の推移（100点満点）${p.halfAvg !== null ? ` ・ 半期平均 <b class="${rankCls(rankOfClient(p.halfAvg))}">${p.halfAvg}点 ${rankOfClient(p.halfAvg)}</b>` : ""}</div>
+    <div class="scroll"><table><tr>${p.trend.map((t) => `<th>${Number(t.month.split("-")[1])}月</th>`).join("")}</tr><tr>${trend}</tr></table></div>
+  </div></div>
+  <div class="card"><div class="card-h"><span>数値の評価</span><span class="small" id="numSum">${sc.num}点</span></div><div class="card-b">${numItems || '<div class="muted">項目なし</div>'}
+    <div class="small" style="margin-top:8px;">「自動」は進捗売上実績・台帳から自動で入ります。目標「以上」は達成率に応じて、「以下」は目標以下で満点（目標を10ポイント超えると0点）。</div></div></div>
+  <div class="card"><div class="card-h"><span>行動の評価（5段階）</span><span class="small">${sc.beh}点</span></div><div class="card-b">${behItems || '<div class="muted">項目なし</div>'}
+    <div class="small" style="margin-top:8px;">5＝期待を大きく上回る　4＝上回る　3＝できている　2＝あと一歩　1＝できていない</div>
+    ${reqMissed.length ? `<div class="banner ng">⚠️ 必須項目（${reqMissed.map((it) => esc(it.label)).join("・")}）が3未満です。院長以上はPC業務が必須のため、改善指導の対象になります。</div>` : ""}</div></div>
+  <div class="card"><div class="card-h">評価者コメント</div><div class="card-b">${ro ? `<div style="white-space:pre-wrap;font-size:13px;">${esc(evalDraft.comment) || '<span class="muted">なし</span>'}</div>` : `<textarea oninput="evalDraft.comment=this.value" placeholder="良かった点・次月の課題など">${esc(evalDraft.comment)}</textarea>`}</div>
+    <div class="sticky-total"><div id="evalTotal">${totalHtml(sc)}</div>${ro ? "" : `<button class="btn btn-blue" style="width:auto;padding:10px 24px;" onclick="saveEval()">保存する</button>`}</div></div>`;
+}
+
+function totalHtml(sc) {
+  return `<span class="small">合計</span> <b style="font-size:22px;" class="${rankCls(sc.rank)}">${sc.total ?? "-"}点</b> <b class="${rankCls(sc.rank)}">${sc.rank || ""}</b> <span class="small">（${sc.filled}/${sc.count}項目入力）</span>`;
+}
+
+function refreshEvalTotal() {
+  const p = evalData.people.find((x) => x.key === evalSelected);
+  const items = evalData.items[p.grade] || [];
+  const sc = clientScore(items, p, evalDraft);
+  const totalPts = items.reduce((a, it) => a + it.points, 0) || 100;
+  for (const it of items) {
+    const el = document.getElementById("pts_" + it.id);
+    if (el) el.textContent = sc.pts[it.id] === null ? "-" : Math.round(sc.pts[it.id] / totalPts * 1000) / 10;
+  }
+  document.getElementById("evalTotal").innerHTML = totalHtml(sc);
+  document.getElementById("numSum").textContent = sc.num + "点";
+}
+
+function setEvalScore(id, n) {
+  evalDraft.scores[id] = evalDraft.scores[id] === n ? undefined : n;
+  const y = window.scrollY;
+  render();
+  window.scrollTo(0, y);
+}
+
+async function saveEval() {
+  const p = evalData.people.find((x) => x.key === evalSelected);
+  const items = evalData.items[p.grade] || [];
+  const sc = clientScore(items, p, evalDraft);
+  if (!sc.complete && !confirm(`まだ ${sc.count - sc.filled} 項目が未入力です。このまま保存しますか？`)) return;
+  root.innerHTML = `<div class="center">保存中...</div>`;
+  try {
+    const json = await evalFetch("POST", { action: "save", month: evalMonth, personKey: p.key, values: evalDraft.values, scores: evalDraft.scores, comment: evalDraft.comment });
+    if (json) { evalData = json; evalSelected = null; evalDraft = null; }
+  } catch (e) {
+    alert(e.message);
+  }
+  render();
 }
 
 load();

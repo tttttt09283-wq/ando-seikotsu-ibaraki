@@ -1,0 +1,88 @@
+// node --test test/*.test.js で実行（架空のデータ）
+import test from "node:test";
+import assert from "node:assert/strict";
+import {
+  DEFAULT_ITEMS, itemSheetRows, parseItemSheet, numberPoints, scoreMonth, parseRecords, buildRecordRows,
+  RECORD_HEADER, halfMonthKeys, parseMonthKey, superiorOf, canEvaluate,
+} from "../lib/evaluation.js";
+
+test("every grade's default items total 100 points, PC is required from G4 up", () => {
+  for (const [grade, items] of Object.entries(DEFAULT_ITEMS)) {
+    assert.equal(items.reduce((a, i) => a + i.points, 0), 100, grade);
+    const pc = items.find((i) => i.id === "pc");
+    assert.ok(pc, `${grade} has PC item`);
+    assert.equal(pc.required, ["G4", "G5", "G6"].includes(grade), grade);
+  }
+});
+
+test("item sheet round-trips", () => {
+  assert.deepEqual(parseItemSheet(itemSheetRows()), DEFAULT_ITEMS);
+});
+
+test("number points: 以上 is capped ratio, 以下 drops to 0 at target+10", () => {
+  const up = { points: 10, target: 100, direction: "以上" };
+  assert.equal(numberPoints(up, 50), 5);
+  assert.equal(numberPoints(up, 150), 10);
+  const down = { points: 20, target: 42, direction: "以下" };
+  assert.equal(numberPoints(down, 40), 20);
+  assert.equal(numberPoints(down, 47), 10);
+  assert.equal(numberPoints(down, 60), 0);
+});
+
+test("scoreMonth: behavior = points x score/5, rank only when complete, required flag", () => {
+  const items = DEFAULT_ITEMS.G4;
+  const values = { clinic_budget: 100, clinic_labor: 40, new_close: 70, new_sales: 200000, next_rate: 75 };
+  const scores = { pl: 5, shift: 5, claim: 5, develop: 5, pc: 2 };
+  const r = scoreMonth(items, values, scores);
+  assert.equal(r.total, 94); // PC 配点10 × 2/5 = 4点（6点減）
+  assert.equal(r.rank, "S");
+  assert.deepEqual(r.requiredMissed, ["PC業務（必須）"]);
+  const partial = scoreMonth(items, values, {});
+  assert.equal(partial.rank, null);
+  assert.equal(partial.complete, false);
+});
+
+test("records: new rows are appended, existing rows are updated in place", () => {
+  const person = { name: "山田 太郎", key: "山田太郎", grade: "G2", clinics: ["A"] };
+  const items = DEFAULT_ITEMS.G2;
+  const first = buildRecordRows({ monthKey: "2027-01", person, items, values: { next_rate: 75 }, scores: { pc: 4 }, comment: "ok", evaluator: "上司", now: "t", existing: null });
+  assert.equal(first.updates.length, 0);
+  assert.equal(first.appends.length, items.length + 2);
+  const sheet = [RECORD_HEADER, ...first.appends];
+  const map = parseRecords(sheet);
+  const rec = map.get("2027-01|山田太郎");
+  assert.equal(rec.values.next_rate, 75);
+  assert.equal(rec.scores.pc, 4);
+  assert.equal(rec.comment, "ok");
+  const second = buildRecordRows({ monthKey: "2027-01", person, items, values: {}, scores: { pc: 5 }, comment: "", evaluator: "上司", now: "t2", existing: rec });
+  assert.equal(second.appends.length, 0);
+  assert.equal(second.updates.length, items.length + 2);
+});
+
+test("month helpers", () => {
+  assert.deepEqual(parseMonthKey("2027-01"), { year: 2027, month: 1, fiscalYear: 2026 });
+  assert.deepEqual(halfMonthKeys("2027-03"), ["2027-01", "2027-02", "2027-03", "2027-04", "2027-05", "2027-06"]);
+  assert.equal(parseMonthKey("2027-13"), null);
+});
+
+test("direct superior: staff→院長, 院長→BM, BM→GM; no 院長 → BM", () => {
+  const model = {
+    people: [
+      { key: "gm", name: "GM", grade: "G6", clinics: ["A"] },
+      { key: "bm", name: "BM", grade: "G5", clinics: ["B"] },
+      { key: "mgr", name: "院長", grade: "G4", clinics: ["A"] },
+      { key: "s1", name: "スタッフA", grade: "G2", clinics: ["A"] },
+      { key: "s2", name: "スタッフB", grade: "G1", clinics: ["B"] },
+    ],
+    blocks: [{ bmName: "BM", clinics: ["A", "B"], personKey: "bm" }],
+  };
+  const p = (k) => model.people.find((x) => x.key === k);
+  assert.equal(superiorOf(model, p("s1")).key, "mgr");
+  assert.equal(superiorOf(model, p("s2")).key, "bm");
+  assert.equal(superiorOf(model, p("mgr")).key, "bm");
+  assert.equal(superiorOf(model, p("bm")).key, "gm");
+  assert.equal(superiorOf(model, p("gm")), null);
+  assert.equal(canEvaluate(model, { personKey: "mgr", grade: "G4" }, false, p("s1")), true);
+  assert.equal(canEvaluate(model, { personKey: "s1", grade: "G2" }, false, p("s1")), false);
+  assert.equal(canEvaluate(model, { personKey: "mgr", grade: "G4" }, false, p("s2")), false);
+});
