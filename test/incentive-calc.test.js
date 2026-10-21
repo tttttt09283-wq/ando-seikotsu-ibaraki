@@ -19,7 +19,7 @@ const personalRows = [
   ["", "佐藤 花子", "予算"], ["", "", "実績", 500000, 600000, 600000], ["", "", "人数"], ["", "", "請求金額", 0, 0, 0],
   ["", "", "合計", 500000, 600000, 600000, 0, 0, 0],
 ];
-const bmFormulaRows = [["BM名", "項目", "7月"], ["鈴木", "予算", "='院'!C3+'院'!C5"]];
+const bmFormulaRows = [["BM名", "項目", "7月"], ["鈴木", "予算", "='院'!C3+'院'!C5"], ["伊藤", "予算", "='院'!C5"]];
 const policyRows = [["店舗名", "体制", "月間売上実績", "実績固定人件費"], ["A院", "4名", 0, 300000], ["B院", "3名", 0, 300000]];
 const payrollRows = [["月", "会社売上", "支給合計額"], ["7月", 2000000, 500000]];
 const evaluationRows = [
@@ -28,6 +28,7 @@ const evaluationRows = [
   ["A院", "高橋 次郎", "G4", "院長", 80, "A"],
   ["A院", "山田 太郎", "G2", "一般スタッフ", 75, "B"],
   ["B院", "佐藤 花子", "G3", "副院長 / チーフ（★新設）", 40, "D"],
+  ["B院", "伊藤 三郎", "G6", "GM（ゼネラルマネージャー）", 90, "S"],
 ];
 const model = buildModel({ clinicRows, personalRows, bmFormulaRows, policyRows, payrollRows, evaluationRows }, new Date("2026-10-01"));
 const person = (n) => model.people.find((p) => p.name === n);
@@ -60,6 +61,10 @@ test("bm block from formula refs", () => {
   assert.equal(inc.projected, 0); // 累計 560万 / 予算 600万
 });
 
+test("GM gets only the GM incentive even when listed as BM", () => {
+  assert.deepEqual([...new Set(person("伊藤 三郎").incentives.map((i) => i.type))], ["gm"]);
+});
+
 test("ladder: G3 demotion streak", () => {
   const item = person("佐藤 花子").ladder.items[0];
   assert.equal(item.kind, "demotion");
@@ -79,6 +84,7 @@ test("visibility by role", () => {
   const mgr = resolveViewer(model, { name: "高橋", role: "staff" });
   assert.equal(mgr.scope, "clinic");
   const seen = filterModelForViewer(model, mgr);
+  assert.equal(resolveViewer(model, { name: "伊藤 三郎", role: "staff" }).scope, "all");
   assert.equal(seen.company, null);
   assert.deepEqual(seen.people.map((p) => p.name).sort(), ["山田 太郎", "高橋 次郎"].sort()); // BMは見えない
   const staff = resolveViewer(model, { name: "佐藤 花子", role: "staff" });

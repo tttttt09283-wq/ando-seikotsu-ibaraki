@@ -10,15 +10,16 @@
 //   GOOGLE_SERVICE_ACCOUNT_EMAIL / GOOGLE_PRIVATE_KEY（lib/google-sheets.js 参照）
 //   SALES_SHEET_ID / CAREER_SHEET_ID（任意。未設定なら下の既定のシートを読む）
 
-import { batchGet } from "../lib/google-sheets.js";
-import { buildModel, resolveViewer, filterModelForViewer } from "../lib/incentive-calc.js";
+import { batchGet, batchUpdate } from "../lib/google-sheets.js";
+import { buildModel, resolveViewer, filterModelForViewer, parseMonth } from "../lib/incentive-calc.js";
 
 const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
 const SALES_SHEET_ID = process.env.SALES_SHEET_ID || "1jLAM3pns-OG7GITplXUrbvY4QP8S9wuGrXcYqxrX6n4";
 const CAREER_SHEET_ID = process.env.CAREER_SHEET_ID || "14z1jqBVBgVYFyCFYHU6hMoJvwfJZRalP8WQfJtiMKzQ";
 
-// スプレッドシートの読み込みは数秒かかるので、5分間は同じ結果を使い回す
-const CACHE_MS = 5 * 60 * 1000;
+// シートの読み込みは数秒かかるので、1分間は同じ結果を使い回す（「最新に更新」で即読み直し）
+const CACHE_MS = 60 * 1000;
+const PAYROLL_SHEET = "月次推移ダッシュボード";
 let cache = null; // { at, model }
 
 async function loadModel(force) {
@@ -51,9 +52,28 @@ async function getCallerStaff(callerToken, serviceKey) {
   return Array.isArray(rows) && rows.length ? rows[0] : null;
 }
 
+// 管理者が入力した月の支給合計額（社保抜き）を台帳の「月次推移ダッシュボード」に書き込む。
+// 会社売上（B列）も「院」シートの実績合計で更新し、人件費率の数式がそのまま使えるようにする。
+async function savePayroll(body) {
+  const month = Number(body && body.month);
+  const amount = Number(body && body.amount);
+  if (!(month >= 1 && month <= 12)) throw new Error("月が正しくありません");
+  if (!Number.isFinite(amount) || amount < 0) throw new Error("支給合計額を数字で入力してください");
+  const [labels] = await batchGet(CAREER_SHEET_ID, [`'${PAYROLL_SHEET}'!A1:A14`]);
+  const idx = labels.findIndex((r) => parseMonth(r && r[0]) === month);
+  if (idx < 0) throw new Error(`「${PAYROLL_SHEET}」シートに${month}月の行が見つかりません`);
+  const model = await loadModel(true);
+  const sales = model.clinics.reduce((a, c) => a + (c.months.find((m) => m.month === month)?.actual || 0), 0);
+  const row = idx + 1;
+  const data = [{ range: `'${PAYROLL_SHEET}'!C${row}`, values: [[Math.round(amount)]] }];
+  if (sales > 0) data.push({ range: `'${PAYROLL_SHEET}'!B${row}`, values: [[Math.round(sales)]] });
+  await batchUpdate(CAREER_SHEET_ID, data);
+  cache = null;
+}
+
 export default async function handler(req, res) {
-  if (req.method !== "GET") {
-    res.status(405).json({ error: "GETのみ対応しています" });
+  if (req.method !== "GET" && req.method !== "POST") {
+    res.status(405).json({ error: "GET・POSTのみ対応しています" });
     return;
   }
   res.setHeader("Cache-Control", "no-store");
@@ -82,10 +102,22 @@ export default async function handler(req, res) {
     return;
   }
 
+  if (req.method === "POST") {
+    if (staff.role !== "admin") {
+      res.status(403).json({ error: "人件費の入力は管理者のみ可能です" });
+      return;
+    }
+    try {
+      await savePayroll(req.body);
+    } catch (e) {
+      res.status(400).json({ error: e.message || String(e) });
+      return;
+    }
+  }
+
   let model;
   try {
-    // 「最新に更新」ボタンは管理者だけ（シートの読み込み回数を抑えるため）
-    model = await loadModel(req.query && req.query.refresh === "1" && staff.role === "admin");
+    model = await loadModel(req.query && req.query.refresh === "1");
   } catch (e) {
     res.status(500).json({ error: e.message || String(e) });
     return;

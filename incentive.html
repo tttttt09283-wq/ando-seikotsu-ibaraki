@@ -58,6 +58,8 @@ td.l,th.l{text-align:left;}
 .dot{width:26px;height:20px;border-radius:5px;font-size:10px;display:flex;align-items:center;justify-content:center;font-weight:700;background:#f1f5f9;color:#94a3b8;}
 .dot.y{background:#d1fae5;color:#065f46;} .dot.n{background:#fee2e2;color:#991b1b;}
 .login{max-width:360px;margin:60px auto;}
+input.pay{width:120px;margin:0 6px 0 0;padding:5px 8px;font-size:12px;display:inline-block;}
+.btn-save{padding:5px 10px;font-size:12px;background:#1e3a5f;color:white;}
 .err{color:#b91c1c;font-size:12px;margin-bottom:10px;white-space:pre-wrap;}
 .center{text-align:center;padding:60px 20px;color:#9ca3af;}
 ul.notes{padding-left:18px;font-size:12px;color:#64748b;line-height:1.7;}
@@ -147,6 +149,29 @@ async function load(refresh) {
   }
 }
 
+async function savePayroll(month) {
+  const raw = document.getElementById("pay" + month).value.replace(/[,，¥円\s]/g, "");
+  if (!raw || !/^\d+$/.test(raw)) return alert("支給合計額を数字で入力してください");
+  if (!confirm(`${month}月の支給合計額を ${yen(Number(raw))} で保存します。よろしいですか？`)) return;
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (!session) return renderLogin();
+  root.innerHTML = `<div class="center">保存中...</div>`;
+  try {
+    const res = await fetch("/api/incentive", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ month, amount: Number(raw) }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `保存に失敗しました（HTTP ${res.status}）`);
+    data = body;
+    render();
+  } catch (e) {
+    alert(e.message);
+    load();
+  }
+}
+
 async function logout() {
   await supabaseClient.auth.signOut();
   data = null; halfKey = null;
@@ -159,7 +184,7 @@ function render() {
   document.getElementById("subLabel").textContent =
     `${data.fiscalYear}年度 ・ ${data.latestMonth ? data.latestMonth + "月分まで反映" : "実績なし"} ・ ${v.name}さん（${SCOPE_LABEL[v.scope]}）`;
   document.getElementById("topActions").innerHTML =
-    (data.isAdmin ? `<button class="btn btn-outline" onclick="load(true)">↻ 最新に更新</button>` : "") +
+    `<button class="btn btn-outline" onclick="load(true)">↻ 最新に更新</button>` +
     `<button class="btn btn-outline" onclick="logout()">ログアウト</button>`;
 
   const half = data.halves.find((h) => h.key === halfKey);
@@ -192,7 +217,10 @@ function companyCard(c) {
     : within
       ? `<div class="banner ok">✅ インセンティブ見込み ${yen(c.incentiveCost)}（社保込）は、42%枠の残り（見込み）${yen(c.roomProjected)} に収まっています。</div>`
       : `<div class="banner ng">⚠️ 42%枠を超えます。インセンティブ見込み ${yen(c.incentiveCost)}（社保込）に対して、枠の残り（見込み）は ${yen(c.roomProjected)}。<br>42%以内に収めるには、支給額を <b>${pct(c.payableRatio)}</b> に圧縮する必要があります（不足 ${yen(c.incentiveCost - Math.max(0, c.roomProjected))}）。</div>`;
-  const rows = c.months.map((m) => `<tr><td class="l">${m.month}月</td><td>${yen(m.sales)}</td><td>${yen(m.labor)}${m.laborEstimated ? ' <span class="small">推定</span>' : ""}</td><td class="${m.rate > data.laborCapRate ? "ng" : "ok"}">${pct(m.rate)}</td><td>${yen(m.sales * data.laborCapRate - m.labor)}</td></tr>`).join("");
+  const payrollCell = (m) => data.isAdmin
+    ? `<td><input class="pay" id="pay${m.month}" inputmode="numeric" placeholder="例 9800000" value="${m.paid ?? ""}"/><button class="btn btn-save" onclick="savePayroll(${m.month})">保存</button></td>`
+    : "";
+  const rows = c.months.map((m) => `<tr><td class="l">${m.month}月</td><td>${yen(m.sales)}</td><td>${yen(m.labor)}${m.laborEstimated ? ' <span class="small warn">推定</span>' : ""}</td><td class="${m.rate > data.laborCapRate ? "ng" : "ok"}">${pct(m.rate)}</td><td>${yen(m.sales * data.laborCapRate - m.labor)}</td>${payrollCell(m)}</tr>`).join("");
   return `<div class="card"><div class="card-h">全社 人件費42%枠（${esc(c.label)}・${c.monthsElapsed}ヶ月経過）</div><div class="card-b">
     <div class="kpis">
       <div class="kpi"><div class="k">売上</div><div class="v">${man(c.sales)}</div></div>
@@ -203,7 +231,8 @@ function companyCard(c) {
       <div class="kpi"><div class="k">インセンティブ込み人件費率</div><div class="v ${c.laborRateWithIncentive > data.laborCapRate ? "ng" : "ok"}">${pct(c.laborRateWithIncentive)}</div></div>
     </div>
     ${banner}
-    <div class="scroll" style="margin-top:12px;"><table><tr><th class="l">月</th><th>売上</th><th>人件費（社保込）</th><th>人件費率</th><th>42%枠の残り</th></tr>${rows}</table></div>
+    <div class="scroll" style="margin-top:12px;"><table><tr><th class="l">月</th><th>売上</th><th>人件費（社保込）</th><th>人件費率</th><th>42%枠の残り</th>${data.isAdmin ? "<th>人件費を入力<br><span class=\"small\">支給合計額（社保抜き）</span></th>" : ""}</tr>${rows}</table></div>
+    ${data.isAdmin ? '<div class="small" style="margin-top:8px;">保存するとキャリア制度台帳の「月次推移ダッシュボード」に書き込まれます（会社売上も院シートの実績合計で更新）。「推定」の月は未入力です。</div>' : ""}
   </div></div>`;
 }
 
