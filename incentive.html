@@ -92,6 +92,7 @@ textarea{width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:8p
 .ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;}
 .ie-check{display:flex;align-items:center;gap:6px;font-size:12px;color:#475569;font-weight:700;}
 .ie-check input{width:auto;margin:0;}
+.cand{display:inline-block;margin-left:6px;font-size:10px;font-weight:800;background:#fef3c7;color:#92400e;border-radius:6px;padding:1px 6px;vertical-align:middle;}
 ul.notes{padding-left:18px;font-size:12px;color:#64748b;line-height:1.7;}
 </style>
 </head>
@@ -318,7 +319,7 @@ function incentiveCard(half) {
   const list = visiblePeople()
     .map((p) => ({ p, incs: p.incentives.filter((i) => i.half === half.key || i.type === "gm") }))
     .filter((x) => x.incs.length)
-    .sort((a, b) => (a.p.key === data.viewer.personKey ? -1 : b.p.key === data.viewer.personKey ? 1 : 0));
+    .sort((a, b) => gradeRankClient(a.p.grade) - gradeRankClient(b.p.grade));
   const total = list.reduce((a, x) => a + x.incs.filter((i) => i.half === half.key).reduce((s, i) => s + (i.type === "manager" ? i.earned : i.projected), 0), 0);
   const body = list.length ? list.map(({ p, incs }) => `<div class="person">
       <div class="person-h"><div class="n">${esc(p.name)}</div><div class="small">${esc(p.grade)} ${esc(p.role)} ・ ${esc(p.clinics.join("・"))}</div></div>
@@ -329,7 +330,7 @@ function incentiveCard(half) {
 
 function salesCard() {
   const people = visiblePeople().filter((p) => p.hasSalesData && p.monthlySales.length)
-    .sort((a, b) => (a.key === data.viewer.personKey ? -1 : b.key === data.viewer.personKey ? 1 : 0));
+    .sort((a, b) => gradeRankClient(a.grade) - gradeRankClient(b.grade));
   if (!people.length) return "";
   const months = people[0].monthlySales.map((m) => m.month);
   const rows = people.map((p) => {
@@ -344,7 +345,7 @@ function salesCard() {
 }
 
 function evaluationCard() {
-  const evs = visiblePeople().flatMap((p) => p.evaluations || []).filter((e) => !clinicFilter || e.clinic === clinicFilter);
+  const evs = [...visiblePeople()].sort((a, b) => gradeRankClient(a.grade) - gradeRankClient(b.grade)).flatMap((p) => p.evaluations || []).filter((e) => !clinicFilter || e.clinic === clinicFilter);
   if (!evs.length) return "";
   const rows = evs.map((e) => `<tr><td class="l">${esc(e.clinic)}</td><td class="l"><b>${esc(e.name)}</b></td><td class="l">${esc(e.grade)}</td><td>${e.score ?? "-"}</td>
     <td class="l"><b class="${e.rank === "S" || e.rank === "A" ? "ok" : e.rank === "D" ? "ng" : e.rank === "C" ? "warn" : ""}">${esc(e.rank ?? "-")}</b></td>
@@ -373,6 +374,8 @@ let evalMonth = null;     // "2027-01"
 let evalSelected = null;  // 開いている人のkey
 let evalDraft = null;     // { values, scores, comment }
 let evalLoading = false;
+let evalDirty = false;    // 個人の評価画面で未保存の入力があるか
+let evalCandidateOnly = false; // 一覧を院長候補だけに絞る
 
 const EVAL_START = "2027-01"; // 本運用の開始月
 
@@ -413,8 +416,15 @@ async function loadEval(refresh) {
   render();
 }
 
-function changeEvalMonth(d) {
-  evalMonth = shiftMonth(evalMonth, d);
+function changeEvalMonth(d) { jumpEvalMonth(shiftMonth(evalMonth, d)); }
+
+// 月を切り替える。個人の評価画面を開いていれば、その人のまま別の月を表示する
+function jumpEvalMonth(key) {
+  if (key === evalMonth) return;
+  if (evalSelected && evalDirty && !confirm("保存していない入力があります。破棄して月を切り替えますか？")) return;
+  evalMonth = key;
+  evalDraft = null;
+  evalDirty = false;
   evalData = null;
   render();
 }
@@ -437,12 +447,16 @@ function openEval(key, keepDraft) {
     const values = {};
     for (const it of items) if (it.kind === "数値" && !(it.auto && p.auto[it.auto] !== undefined) && p.values[it.id] !== undefined) values[it.id] = p.values[it.id];
     evalDraft = { values, scores: { ...p.scores }, comment: p.comment || "" };
+    evalDirty = false;
   }
   render();
   window.scrollTo(0, 0);
 }
 
-function closeEval() { evalSelected = null; evalDraft = null; render(); }
+function closeEval() {
+  if (evalDirty && !confirm("保存していない入力があります。破棄して一覧に戻りますか？")) return;
+  evalSelected = null; evalDraft = null; evalDirty = false; render();
+}
 
 // サーバーと同じ採点（画面上ですぐ点数を出すため）
 function clientScore(items, p, draft) {
@@ -494,13 +508,17 @@ function renderEvaluation() {
   if (evalData.newPatientError && (evalData.isAdmin || evalData.canEditItems)) {
     html += `<div class="banner ng" style="margin:0 0 14px;">⚠️ ${esc(evalData.newPatientError)}<div class="small">共有されるまでは、新患対応数・初回成約率・初回売上は自動で入りません。</div></div>`;
   }
-  const people = evalData.people;
+  const candidates = evalData.people.filter((p) => p.candidate);
+  if (candidates.length || evalData.people.some((p) => p.canSetCandidate)) {
+    html += `<div class="chip-row" style="margin-bottom:14px;"><button class="chip ${evalCandidateOnly ? "" : "sel"}" onclick="evalCandidateOnly=false;render()">全員</button><button class="chip ${evalCandidateOnly ? "sel" : ""}" onclick="evalCandidateOnly=true;render()">⭐ 院長候補のみ（${candidates.length}名）</button></div>`;
+  }
+  const people = evalCandidateOnly ? candidates : evalData.people;
   const toDo = people.filter((p) => p.canEdit && !p.evaluated).length;
   const rows = people.map((p) => {
     const t = p.result;
     const status = p.evaluated ? `<b class="${rankCls(p.savedRank)}">${p.savedTotal ?? "-"}点 ${p.savedRank || ""}</b>${t.complete ? "" : `<div class="small">${t.filled}/${t.count}項目</div>`}` : `<span class="small">${p.canEdit ? "未評価" : "-"}</span>`;
     const pcScore = p.scores.pc;
-    return `<tr class="evrow" onclick="openEval('${esc(p.key)}')"><td class="l"><b>${esc(p.name)}</b><div class="small">${esc(p.grade)} ${esc(p.clinics.join("・"))} ・ 評価者 ${esc(p.superior)}</div></td>
+    return `<tr class="evrow" onclick="openEval('${esc(p.key)}')"><td class="l"><b>${esc(p.name)}</b>${p.candidate ? '<span class="cand">⭐院長候補</span>' : ""}<div class="small">${esc(p.grade)} ${esc(p.clinics.join("・"))} ・ 評価者 ${esc(p.superior)}</div></td>
       <td>${status}</td>
       <td>${p.halfAvg !== null ? `<b class="${rankCls(rankOfClient(p.halfAvg))}">${p.halfAvg}点</b><div class="small">${p.halfMonthsEvaluated}ヶ月分</div>` : "-"}</td>
       <td>${pcScore ? `${pcScore}/5` : "-"}${t.requiredMissed && t.requiredMissed.length ? '<div class="small ng">必須未達</div>' : ""}${t.basicIssues && t.basicIssues.length ? '<div class="small ng">基本に課題</div>' : ""}</td>
@@ -530,7 +548,7 @@ function renderEvalDetail() {
     const input = isAuto
       ? `<b>${fmtVal(p.auto[it.auto], it.unit)}</b>`
       : ro ? `<b>${fmtVal(evalDraft.values[it.id], it.unit)}</b>`
-      : `<input class="num" inputmode="decimal" value="${esc(evalDraft.values[it.id] ?? "")}" placeholder="${esc(it.unit)}" oninput="evalDraft.values['${esc(it.id)}']=this.value;refreshEvalTotal()"/>`;
+      : `<input class="num" inputmode="decimal" value="${esc(evalDraft.values[it.id] ?? "")}" placeholder="${esc(it.unit)}" oninput="evalDraft.values['${esc(it.id)}']=this.value;evalDirty=true;refreshEvalTotal()"/>`;
     return `<div class="item"><div class="lbl"><b>${esc(it.label)}</b>${isAuto ? '<span class="autotag">自動</span>' : ""}<div class="d">${esc(target)}（配点${it.points}）</div></div><div class="ctrl">${input}<div class="pts" id="pts_${esc(it.id)}">${scaled(sc.pts[it.id])}</div></div></div>`;
   }).join("");
   const scaleItems = (kind) => items.filter((it) => it.kind === kind).map((it) => {
@@ -542,14 +560,15 @@ function renderEvalDetail() {
   const behItems = scaleItems("行動");
   const basicItems = scaleItems("基本");
   const basicIssues = items.filter((it) => it.kind === "基本" && evalDraft.scores[it.id] && evalDraft.scores[it.id] <= 2);
-  const trend = p.trend.map((t) => `<td class="${t.month === evalMonth ? "bg-ok" : ""}">${t.evaluated ? `<b class="${rankCls(t.rank)}">${t.total ?? "-"}</b><div class="small">${t.rank || ""}${t.pc ? ` ・PC${t.pc}` : ""}</div>` : '<span class="small">-</span>'}</td>`).join("");
+  const trend = p.trend.map((t) => `<td class="${t.month === evalMonth ? "bg-ok" : ""}" style="cursor:pointer;" onclick="jumpEvalMonth('${t.month}')" title="${monthLabel(t.month)}を開く">${t.evaluated ? `<b class="${rankCls(t.rank)}">${t.total ?? "-"}</b><div class="small">${t.rank || ""}${t.pc ? ` ・PC${t.pc}` : ""}</div>` : '<span class="small">-</span>'}</td>`).join("");
   const reqMissed = items.filter((it) => it.required && evalDraft.scores[it.id] && evalDraft.scores[it.id] < 3);
 
-  return `<div class="monthnav"><button class="chip" onclick="closeEval()">‹ 一覧に戻る</button><div class="m">${monthLabel(evalMonth)}</div></div>
+  return `<div class="monthnav" style="flex-wrap:wrap;"><button class="chip" onclick="closeEval()">‹ 一覧</button><span style="flex:1"></span><button class="chip" onclick="changeEvalMonth(-1)">‹ 前月</button><div class="m" style="min-width:100px;">${monthLabel(evalMonth)}</div><button class="chip" onclick="changeEvalMonth(1)">次月 ›</button></div>
   <div class="card"><div class="card-h"><span>${esc(p.name)}（${esc(p.grade)} ${esc(p.role)} ・ ${esc(p.clinics.join("・"))}）</span><span class="small">評価者：${esc(p.superior)}${p.evaluated ? ` ・ 最終更新 ${esc(p.updatedAt)}（${esc(p.evaluator)}）` : ""}</span></div><div class="card-b">
-    <div class="small" style="margin-bottom:6px;">半期の推移（100点満点）${p.halfAvg !== null ? ` ・ 半期平均 <b class="${rankCls(rankOfClient(p.halfAvg))}">${p.halfAvg}点 ${rankOfClient(p.halfAvg)}</b>` : ""}</div>
+    <div class="small" style="margin-bottom:6px;">半期の推移（100点満点・月を押すとその月を開きます）${p.halfAvg !== null ? ` ・ 半期平均 <b class="${rankCls(rankOfClient(p.halfAvg))}">${p.halfAvg}点 ${rankOfClient(p.halfAvg)}</b>` : ""}</div>
     <div class="scroll"><table><tr>${p.trend.map((t) => `<th>${Number(t.month.split("-")[1])}月</th>`).join("")}</tr><tr>${trend}</tr></table></div>
   </div></div>
+  ${candidateCard(p)}
   ${referenceCard(p)}
   <div class="card"><div class="card-h"><span>社会人としての基本（全員共通・5段階）</span><span class="small">${sc.bas}点</span></div><div class="card-b">${basicItems || '<div class="muted">項目なし</div>'}
     ${basicIssues.length ? `<div class="banner ng">⚠️ 社会人としての基本（${basicIssues.map((it) => esc(it.label)).join("・")}）が2以下です。等級に関係なく、まず改善が必要な項目です。</div>` : ""}</div></div>
@@ -558,7 +577,7 @@ function renderEvalDetail() {
   <div class="card"><div class="card-h"><span>行動の評価（5段階）</span><span class="small">${sc.beh}点</span></div><div class="card-b">${behItems || '<div class="muted">項目なし</div>'}
     <div class="small" style="margin-top:8px;">5＝期待を大きく上回る　4＝上回る　3＝できている　2＝あと一歩　1＝できていない</div>
     ${reqMissed.length ? `<div class="banner ng">⚠️ 必須項目（${reqMissed.map((it) => esc(it.label)).join("・")}）が3未満です。院長以上はPC業務が必須のため、改善指導の対象になります。</div>` : ""}</div></div>
-  <div class="card"><div class="card-h">評価者コメント</div><div class="card-b">${ro ? `<div style="white-space:pre-wrap;font-size:13px;">${esc(evalDraft.comment) || '<span class="muted">なし</span>'}</div>` : `<textarea oninput="evalDraft.comment=this.value" placeholder="良かった点・次月の課題など">${esc(evalDraft.comment)}</textarea>`}</div>
+  <div class="card"><div class="card-h">評価者コメント</div><div class="card-b">${ro ? `<div style="white-space:pre-wrap;font-size:13px;">${esc(evalDraft.comment) || '<span class="muted">なし</span>'}</div>` : `<textarea oninput="evalDraft.comment=this.value;evalDirty=true" placeholder="良かった点・次月の課題など">${esc(evalDraft.comment)}</textarea>`}</div>
     <div class="sticky-total"><div id="evalTotal">${totalHtml(sc)}</div>${ro ? "" : `<button class="btn btn-blue" style="width:auto;padding:10px 24px;" onclick="saveEval()">保存する</button>`}</div></div>`;
 }
 
@@ -581,6 +600,7 @@ function refreshEvalTotal() {
 
 function setEvalScore(id, n) {
   evalDraft.scores[id] = evalDraft.scores[id] === n ? undefined : n;
+  evalDirty = true;
   const y = window.scrollY;
   render();
   window.scrollTo(0, y);
@@ -594,7 +614,7 @@ async function saveEval() {
   root.innerHTML = `<div class="center">保存中...</div>`;
   try {
     const json = await evalFetch("POST", { action: "save", month: evalMonth, personKey: p.key, values: evalDraft.values, scores: evalDraft.scores, comment: evalDraft.comment });
-    if (json) { evalData = json; evalSelected = null; evalDraft = null; }
+    if (json) { evalData = json; evalSelected = null; evalDraft = null; evalDirty = false; }
   } catch (e) {
     alert(e.message);
   }
@@ -761,6 +781,33 @@ async function resetItems() {
     if (json) { evalData = json; itemEditor = null; }
   } catch (e) { alert(e.message); }
   render();
+}
+
+// クラスが高い順（GM → BM → 院長 → 副院長 → 一般 → 新人 → 短時間 → 受付 → その他）
+const GRADE_ORDER = ["G6", "G5", "G4", "G3", "G2", "G1", "-S", "-R", "-P"];
+function gradeRankClient(g) { const i = GRADE_ORDER.indexOf(g); return i < 0 ? GRADE_ORDER.length : i; }
+
+// ===== 院長候補 =====
+function candidateCard(p) {
+  if (!p.canSetCandidate && !p.candidate) return "";
+  if (!p.canSetCandidate) {
+    return `<div class="banner ok" style="margin:0 0 14px;">⭐ 院長候補${p.candidateMemo ? `：${esc(p.candidateMemo)}` : ""}</div>`;
+  }
+  return `<div class="card"><div class="card-b" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    <label class="ie-check" style="font-size:14px;margin:0;"><input type="checkbox" id="candChk" ${p.candidate ? "checked" : ""}/> ⭐ 院長候補にする</label>
+    <input id="candMemo" style="flex:1;min-width:180px;margin:0;" value="${esc(p.candidateMemo)}" placeholder="メモ（例：2027年度に田口山院の院長候補）"/>
+    <button class="btn btn-save" onclick="saveCandidate('${esc(p.key)}')">保存</button>
+    <div class="small" style="width:100%;">本人には表示されません。上司・BM・GM・管理者が見られます。</div>
+  </div></div>`;
+}
+
+async function saveCandidate(key) {
+  const candidate = document.getElementById("candChk").checked;
+  const memo = document.getElementById("candMemo").value;
+  try {
+    const json = await evalFetch("POST", { action: "setCandidate", month: evalMonth, personKey: key, candidate, memo });
+    if (json) { evalData = json; keepScroll(render); }
+  } catch (e) { alert(e.message); }
 }
 
 load();

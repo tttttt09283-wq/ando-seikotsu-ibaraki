@@ -6,6 +6,7 @@
 //   POST { action: "setup" }       … 管理者のみ。台帳に「評価項目」「評価記録」シートを作る
 //   POST { action: "saveItems", grade, items } … 管理者・GM。そのクラスの評価項目を追加・削除・編集する
 //   POST { action: "resetItems" }  … 管理者のみ。「評価項目」シートを初期値に戻す
+//   POST { action: "setCandidate", personKey, candidate, memo } … 上司・BM・GM・管理者。院長候補のチェック（「スタッフ設定」シート）
 //
 // 個人売上・対応人数・平均売上は「進捗売上実績」、新患対応数・初回成約率・初回売上は「あんど新規集客」から自動で入る。
 //
@@ -15,7 +16,8 @@ import { batchGet, batchUpdate, getSheetTitles, addSheets, appendRows } from "..
 import { resolveViewer, filterModelForViewer } from "../lib/incentive-calc.js";
 import { CAREER_SHEET_ID, loadModel, loadNewPatients, authenticate, viewerNotFound } from "../lib/incentive-data.js";
 import {
-  ITEM_SHEET, RECORD_SHEET, RECORD_HEADER, DEFAULT_ITEMS, COMMON_GRADE, itemSheetRows, parseItemSheet, parseRecords,
+  ITEM_SHEET, RECORD_SHEET, RECORD_HEADER, DEFAULT_ITEMS, COMMON_GRADE,
+  STAFF_SHEET, STAFF_HEADER, parseStaffSettings, canSetCandidate, gradeRank, itemSheetRows, parseItemSheet, parseRecords,
   scoreMonth, itemsFor, validateItems, GRADE_LABELS, AUTO_OPTIONS, parseMonthKey, monthKeyOf, halfMonthKeys, autoValues, superiorOf, canEvaluate, buildRecordRows,
 } from "../lib/evaluation.js";
 import { normName } from "../lib/incentive-calc.js";
@@ -24,14 +26,17 @@ const nowJst = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().replac
 
 async function loadSheets() {
   const titles = await getSheetTitles(CAREER_SHEET_ID);
-  const hasItems = titles.includes(ITEM_SHEET), hasRecords = titles.includes(RECORD_SHEET);
+  const hasItems = titles.includes(ITEM_SHEET), hasRecords = titles.includes(RECORD_SHEET), hasStaff = titles.includes(STAFF_SHEET);
   const ranges = [];
   if (hasItems) ranges.push(`'${ITEM_SHEET}'!A1:K500`);
   if (hasRecords) ranges.push(`'${RECORD_SHEET}'!A1:M20000`);
+  if (hasStaff) ranges.push(`'${STAFF_SHEET}'!A1:E1000`);
   const got = ranges.length ? await batchGet(CAREER_SHEET_ID, ranges) : [];
   const itemRows = hasItems ? got.shift() : null;
   const recordRows = hasRecords ? got.shift() : null;
+  const staffRows = hasStaff ? got.shift() : null;
   return {
+    hasStaff, staffSettings: parseStaffSettings(staffRows),
     itemRowCount: itemRows ? itemRows.length : 0,
     setupNeeded: !hasItems || !hasRecords,
     hasItems, hasRecords,
@@ -80,6 +85,10 @@ function buildPayload({ model, np, viewer, isAdmin, sheets, monthKey }) {
       key: person.key, name: person.name, grade: person.grade, role: person.role, clinics: person.clinics, items,
       superior: sup ? sup.name : "管理者",
       canEdit: canEvaluate(model, viewer, isAdmin, person),
+      // 院長候補は本人には見せない
+      candidate: person.key !== viewer.personKey && !!(sheets.staffSettings.get(person.key) || {}).candidate,
+      candidateMemo: person.key !== viewer.personKey ? (sheets.staffSettings.get(person.key) || {}).memo || "" : "",
+      canSetCandidate: canSetCandidate(model, viewer, isAdmin, person),
       evaluated: !!cur.rec, evaluator: cur.rec ? cur.rec.evaluator : "", updatedAt: cur.rec ? cur.rec.updatedAt : "",
       comment: cur.rec ? cur.rec.comment : "",
       values: cur.values, scores: cur.scores, auto: cur.auto, result: cur.result,
@@ -88,7 +97,8 @@ function buildPayload({ model, np, viewer, isAdmin, sheets, monthKey }) {
     };
   });
   // 自分 → 評価する人 → その他 の順
-  people.sort((a, b) => (b.key === viewer.personKey) - (a.key === viewer.personKey) || b.canEdit - a.canEdit);
+  // クラスが高い順 → 同じクラスは院・名前順
+  people.sort((a, b) => gradeRank(a.grade) - gradeRank(b.grade) || (a.clinics[0] || "").localeCompare(b.clinics[0] || "", "ja") || a.name.localeCompare(b.name, "ja"));
   return {
     month: monthKey, halfMonths: half, items: sheets.items, people, setupNeeded: sheets.setupNeeded, viewer, isAdmin,
     canEditItems: isAdmin || viewer.grade === "G6", gradeLabels: GRADE_LABELS, autoOptions: AUTO_OPTIONS,
@@ -96,6 +106,21 @@ function buildPayload({ model, np, viewer, isAdmin, sheets, monthKey }) {
     newPatientError: np && np.error ? np.error : null,
     newPatientUnmatched: isAdmin && np ? np.unmatched : [],
   };
+}
+
+async function setCandidate({ model, viewer, isAdmin, staff, body }) {
+  const person = model.people.find((p) => p.key === normName(body.personKey));
+  if (!person) throw new Error("スタッフが見つかりません");
+  if (!canSetCandidate(model, viewer, isAdmin, person)) throw new Error("院長候補を設定できるのは、上司・BM・GM・管理者です（院長より下のクラスのみ）");
+  const sheets = await loadSheets();
+  if (!sheets.hasStaff) {
+    await addSheets(CAREER_SHEET_ID, [STAFF_SHEET]);
+    await batchUpdate(CAREER_SHEET_ID, [{ range: `'${STAFF_SHEET}'!A1:E1`, values: [STAFF_HEADER] }]);
+  }
+  const row = [person.name, body.candidate ? "○" : "", String(body.memo || "").slice(0, 300), viewer.name || staff.name || "管理者", nowJst()];
+  const existing = sheets.staffSettings.get(person.key);
+  if (existing) await batchUpdate(CAREER_SHEET_ID, [{ range: `'${STAFF_SHEET}'!A${existing.row}:E${existing.row}`, values: [row] }]);
+  else await appendRows(CAREER_SHEET_ID, `'${STAFF_SHEET}'!A:E`, [row]);
 }
 
 async function setup() {
@@ -199,6 +224,8 @@ export default async function handler(req, res) {
       if (body.action === "setup") {
         if (!isAdmin) { res.status(403).json({ error: "評価シートの準備は管理者のみ可能です" }); return; }
         await setup();
+      } else if (body.action === "setCandidate") {
+        await setCandidate({ model, viewer, isAdmin, staff, body });
       } else if (body.action === "resetItems") {
         if (!isAdmin) { res.status(403).json({ error: "初期値に戻すのは管理者のみ可能です" }); return; }
         await resetItems();

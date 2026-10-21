@@ -138,3 +138,27 @@ test("new-patient sheet: columns by header, nail cases excluded, surname matchin
   assert.equal(np.byClinic.get("A")["2026-10"].count, 3);
   assert.deepEqual(np.unmatched, ["応援"]);
 });
+
+test("class order and 院長候補 permissions", async () => {
+  const { gradeRank, parseStaffSettings, canSetCandidate, STAFF_HEADER } = await import("../lib/evaluation.js");
+  assert.deepEqual(["G1", "-R", "G6", "G3", "G4", "", "G5", "G2"].sort((a, b) => gradeRank(a) - gradeRank(b)), ["G6", "G5", "G4", "G3", "G2", "G1", "-R", ""]);
+  const map = parseStaffSettings([STAFF_HEADER, ["山田 太郎", "○", "来期候補", "院長", "t"], ["佐藤 花子", "", "", "", ""]]);
+  assert.equal(map.get("山田太郎").candidate, true);
+  assert.equal(map.get("山田太郎").memo, "来期候補");
+  assert.equal(map.get("佐藤花子").candidate, false);
+  const model = {
+    people: [
+      { key: "gm", name: "GM", grade: "G6", clinics: ["A"] },
+      { key: "mgr", name: "院長", grade: "G4", clinics: ["A"] },
+      { key: "s1", name: "スタッフ", grade: "G3", clinics: ["A"] },
+      { key: "s2", name: "別院", grade: "G2", clinics: ["B"] },
+    ],
+    blocks: [],
+  };
+  const p = (k) => model.people.find((x) => x.key === k);
+  assert.equal(canSetCandidate(model, { personKey: "mgr", grade: "G4" }, false, p("s1")), true);  // 直属の上司
+  assert.equal(canSetCandidate(model, { personKey: "mgr", grade: "G4" }, false, p("s2")), false); // 別院の院長
+  assert.equal(canSetCandidate(model, { personKey: "s1", grade: "G3" }, false, p("s1")), false);  // 本人
+  assert.equal(canSetCandidate(model, { personKey: "gm", grade: "G6" }, false, p("mgr")), false); // 院長以上は対象外
+  assert.equal(canSetCandidate(model, { personKey: "gm", grade: "G6" }, false, p("s2")), true);
+});
