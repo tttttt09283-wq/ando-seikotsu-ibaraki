@@ -342,6 +342,13 @@ async function sbUpsert(t,d,conflictCol){
   const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}?on_conflict=${conflictCol}`,{method:"POST",headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=representation"},body:JSON.stringify(d)});
   return res.json();
 }
+async function sbDelete(t,id){
+  const token=await getAuthToken();
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}?id=eq.${id}`,{method:"DELETE",headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,Prefer:"return=representation"}});
+  const txt=await res.text(); let data=null; try{data=txt?JSON.parse(txt):null;}catch(e){}
+  if(!res.ok) throw new Error((data&&data.message)||`HTTP ${res.status}`);
+  return data;
+}
 async function sbPatch(t,id,d){
   const token=await getAuthToken();
   const res=await fetch(`${SUPABASE_URL}/rest/v1/${t}?id=eq.${id}`,{method:"PATCH",headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},body:JSON.stringify(d)});
@@ -1396,6 +1403,32 @@ async function submitRefund(){
   }catch(e){f.saving=false;f.msg="返金の記録に失敗しました："+e.message;}
   render();
 }
+// ===== 会計の取り消し（間違えて会計した場合） =====
+// 別の日の予約で会計してしまった等は、返金ではなく会計そのものを取り消す。
+// 返金にすると「会計は予約の日・返金は今日」に記録され、両方の日の売上がずれるため。取り消した内容は payment_corrections に残す
+async function voidPayment(){
+  const pay=state.alreadyPaid; if(!pay) return;
+  if((state.payRefunds||[]).length>0){ alert("この会計にはすでに返金が記録されているため、取り消しできません。"); return; }
+  const reason=prompt(`${booking.patient_name}様　${fmtMD(pay.payment_date)}の会計 ${fmt(pay.total_amount)} を取り消します。\n`+
+    `売上からも消え、この予約は「未会計」に戻ります（返金の記録は作りません）。\n\n取り消す理由を入力してください（例：10/20の来院分を、10/23の予約で会計してしまった）`,"");
+  if(reason===null) return;
+  if(String(reason).trim().length<3){ alert("理由を入力してください"); return; }
+  state.saving=true; render();
+  try{
+    let usages=[]; try{ usages=await sbGet("pass_usages",`?booking_id=eq.${booking.id}`); }catch(e){}
+    try{
+      await sbPost("payment_corrections",{payment_id:pay.id,booking_id:booking.id,before_data:paySnapshot(pay),after_data:{voided:true},reason:"会計の取り消し："+String(reason).trim(),staff_name:currentStaffName()});
+    }catch(e){ console.error("取り消し履歴の保存に失敗しました",e); }
+    const del=await sbDelete("payments",pay.id);
+    if(!Array.isArray(del)||del.length===0) throw new Error("取り消しできませんでした（権限がない可能性があります）");
+    const cash=/現金/.test(pay.payment_method||"");
+    if(cash) openCashDrawer();
+    alert(`会計（${fmt(pay.total_amount)}）を取り消しました。`+(cash?"\n現金をお返しください。":"")+
+      (Array.isArray(usages)&&usages.length>0?"\n\n※この予約で回数券・フリーパスを使っていました。残り回数は自動では戻らないため、管理画面の回数券管理で確認してください。":"")+
+      (Array.isArray(pay.jifee_items)&&pay.jifee_items.some(i=>/(\d+)回券|フリーパス|FP/.test(i.label||""))?"\n\n※回数券・フリーパスの購入が含まれていました。管理画面の回数券管理で登録を確認してください。":""));
+    location.reload();
+  }catch(e){ state.saving=false; alert("取り消しに失敗しました："+e.message); render(); }
+}
 function renderRefundSection(){
   const pay=state.alreadyPaid; if(!pay) return "";
   const refs=state.payRefunds||[];
@@ -1403,7 +1436,8 @@ function renderRefundSection(){
   const f=state.refundForm;
   if(!f){
     if(refundRemain()<=0) return done;
-    return done+`<button onclick="openRefund()" style="width:100%;margin-bottom:8px;padding:11px;border-radius:10px;border:1.5px solid #dc2626;background:white;color:#dc2626;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;">↩️ この会計を返金する</button>`;
+    const voidBtn=refs.length===0?`<button onclick="voidPayment()" style="width:100%;margin-bottom:8px;padding:10px;border-radius:10px;border:1.5px solid #94a3b8;background:white;color:#475569;font-size:12.5px;font-weight:800;cursor:pointer;font-family:inherit;">🗑 間違えて会計した（この会計を取り消す）</button>`:"";
+    return done+voidBtn+`<button onclick="openRefund()" style="width:100%;margin-bottom:8px;padding:11px;border-radius:10px;border:1.5px solid #dc2626;background:white;color:#dc2626;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;">↩️ この会計を返金する</button>`;
   }
   const inp="padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:14px;font-family:inherit;box-sizing:border-box;";
   return done+`<div style="border:2px solid #fecaca;border-radius:12px;padding:12px;margin-bottom:10px;background:white;text-align:left;">
@@ -1415,6 +1449,7 @@ function renderRefundSection(){
     </div>
     <div style="font-size:12px;font-weight:700;margin-bottom:4px;">理由（分類）<span style="color:#dc2626;"> 必須</span></div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">${REFUND_REASONS.map((r,i)=>`<button onclick="setRefundField('cat',REFUND_REASONS[${i}],true)" style="padding:6px 10px;border-radius:16px;border:1.5px solid ${f.cat===r?"#dc2626":"#e2e8f0"};background:${f.cat===r?"#fee2e2":"white"};color:${f.cat===r?"#dc2626":"#374151"};font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;">${r}</button>`).join("")}</div>
+    ${f.cat==="会計ミス（二重請求・金額誤り）"&&(state.payRefunds||[]).length===0?`<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:12px;color:#92400e;line-height:1.6;">💡 <b>日にち・予約を間違えて会計した</b>場合は、返金ではなく「<b>🗑 間違えて会計した（この会計を取り消す）</b>」を使ってください。返金だと、会計した日と返金した日の売上が両方ずれます。<br><button onclick="closeRefund();voidPayment()" style="margin-top:6px;padding:6px 12px;border-radius:8px;border:1.5px solid #92400e;background:white;color:#92400e;font-weight:800;cursor:pointer;font-family:inherit;">この会計を取り消す</button></div>`:""}
     <div style="font-size:12px;font-weight:700;margin-bottom:4px;">理由の詳細<span style="color:#dc2626;"> 必須</span>（何が起きたか／誰が判断したか）</div>
     <textarea rows="2" oninput="setRefundField('detail',this.value)" placeholder="例：二重に会計していたため1回分を返金（院長確認）" style="${inp}width:100%;resize:vertical;margin-bottom:8px;">${escH(f.detail)}</textarea>
     <label style="font-size:12px;font-weight:700;">確認・承認した人（任意）<br><input value="${escH(f.approver)}" oninput="setRefundField('approver',this.value)" placeholder="例：岩永" style="${inp}width:100%;"></label>
@@ -1500,6 +1535,15 @@ async function save(){
   const total=calcTotal();const paid=calcPaid();
   if(state.payments.length===0){alert("支払方法を追加してください");return;}
   if(paid<total&&!confirm(`支払合計(${fmt(paid)})が請求額(${fmt(total)})より少ないですが確定しますか？`)) return;
+  // 今日ではない日の予約を会計しようとしていないか（10/20に来院した方の会計を、10/23の次回予約から確定してしまう等の間違い防止）。
+  // 会計はその予約の日の売上になるため、日付を間違えると売上・日計表がずれる
+  if(booking.date&&booking.date!==todayStr()){
+    const future=booking.date>todayStr();
+    if(!confirm(`⚠️ この予約は【${fmtMD(booking.date)}】の${future?"これからの":"過去の"}予約です（今日は${fmtMD(todayStr())}）。\n\n`+
+      `会計は ${fmtMD(booking.date)} の売上として記録されます。\n`+
+      (future?`今日来院された分の会計なら「キャンセル」を押して、カレンダーで今日の予約から会計してください。\n\n`:`\n`)+
+      `${fmtMD(booking.date)} の予約の会計で間違いなければ「OK」を押してください。`)) return;
+  }
   // 別のタブや端末ですでに会計されていないか、確定直前にもう一度確認する（二重会計の防止）
   if(!EXTRA_PAYMENT_MODE){
     try{
