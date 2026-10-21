@@ -683,7 +683,8 @@ function App(){
     return bs<se && ss<be;
   }
   // 半日出勤の時間帯（分）。管理画面のシフト表で設定した「平日／土日・祝」の午前・午後の時間（未設定なら平日 午前10:00〜14:00・午後16:00〜20:00、土日・祝 午前9:00〜13:30・午後13:30〜18:00）。その日の営業時間の内側に収める
-  function halfDayWindow(d,half){
+  // times：シフト表で「その日だけ」変えた時間 ["開始","終了"]（あればこちらを使う）
+  function halfDayWindow(d,half,times){
     var ds=fmtDate(d), clo=getClosureForDate(ds), dh=getDayHours(d.getDay());
     var open, close, override=!!(clo&&clo.is_closed===false&&clo.open_time&&clo.close_time);
     if(override){ open=toMin(clo.open_time); close=toMin(clo.close_time); }
@@ -691,7 +692,7 @@ function App(){
     else { var we0=d.getDay()===0||d.getDay()===6; open=toMin(we0?"09:00":"10:00"); close=toMin(we0?"18:00":"20:00"); }
     var kind=(d.getDay()===0||d.getDay()===6||override)?"weekend":"weekday";
     var DEF={weekday:{am:["10:00","14:00"],pm:["16:00","20:00"]},weekend:{am:["09:00","13:30"],pm:["13:30","18:00"]}};
-    var ht=shiftDays.halfTimes, r=(ht&&ht[kind]&&Array.isArray(ht[kind][half])&&ht[kind][half].length===2)?ht[kind][half]:DEF[kind][half];
+    var ht=shiftDays.halfTimes, r=(Array.isArray(times)&&times.length===2&&times[0]<times[1])?times:(ht&&ht[kind]&&Array.isArray(ht[kind][half])&&ht[kind][half].length===2)?ht[kind][half]:DEF[kind][half];
     return {start:Math.max(toMin(r[0]),open),end:Math.min(toMin(r[1]),close)};
   }
   // 指定したスタッフが指定日に出勤しているか（staff_weekly_shiftsに設定が無いスタッフはフェイルセーフで出勤扱い）
@@ -707,7 +708,7 @@ function App(){
       if(!ms.is_working) return false;
       // 半日出勤（午前のみ／午後のみ）：その時間帯に施術時間がおさまる枠だけ受け付ける
       if(ms.half&&t){
-        var w=halfDayWindow(d,ms.half);
+        var w=halfDayWindow(d,ms.half,ms.times);
         var tm0=toMin(t);
         return tm0>=w.start && tm0+(durationMinutes||20)<=w.end;
       }

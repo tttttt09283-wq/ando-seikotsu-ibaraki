@@ -520,7 +520,7 @@ const sb = {
 // ===== 全端末で共有する設定（月次シフト・休暇残・売上目標） =====
 // 以前はブラウザ（localStorage）にだけ保存していたため、端末ごとに設定し直す必要があった。
 // サーバー（app_settings）を正として、localStorage はその写し（すぐ読めるようにするための控え）として使う。
-const SHARED_SETTING_PREFIXES=["shifts_","holiday_balance","ando_sales_target_"];
+const SHARED_SETTING_PREFIXES=["shifts_","shifthalf_","holiday_balance","ando_sales_target_"];
 // ===== 半日出勤（シフト表の「午前出勤」＝午後休み／「午後出勤」＝午前休み） =====
 // 午前・午後の時間帯は、設定「shift_half_times」（平日／土日・祝それぞれ）。未設定なら HALF_SHIFT_DEFAULT_TIMES
 const HALF_SHIFT={"午前出勤":"am","午後出勤":"pm"};
@@ -550,11 +550,69 @@ function halfShiftDayKind(dateStr){
   const clo=HALF_SHIFT_CLOSURES.find(c=>c.date===dateStr&&c.is_closed===false&&c.open_time);
   return (dow===0||dow===6||clo)?"weekend":"weekday";
 }
-// 半日出勤のときに働く時間帯 {start,end}（その日の営業時間の内側に収める）。半日でなければ null
-function halfShiftWindow(val,dateStr){
+// ===== 半日出勤の時間を「その日だけ」変える =====
+// シフト表で午前出勤・午後出勤のマスに時間を入れると、app_settings「shifthalf_YYYY-MM」に {"スタッフID_日付":["開始","終了"]} で保存する。
+// 入っていない日は、上の「平日／土日・祝」の標準の時間帯を使う
+function readHalfCustom(month){
+  try{ const v=JSON.parse(localStorage.getItem("shifthalf_"+month)||"{}"); return v&&typeof v==="object"?v:{}; }catch(e){ return {}; }
+}
+function validHalfRange(r){ return Array.isArray(r)&&r.length===2&&/^\d{2}:\d{2}$/.test(r[0])&&/^\d{2}:\d{2}$/.test(r[1])&&r[0]<r[1]; }
+function halfCustomOf(staffId,dateStr){
+  if(staffId==null||!dateStr) return null;
+  const r=readHalfCustom(dateStr.slice(0,7))[staffId+"_"+dateStr];
+  return validHalfRange(r)?r:null;
+}
+// その日の標準の時間帯（「その日だけ」の変更を入れる前）
+function halfStandardRange(val,dateStr){
   const h=HALF_SHIFT[val]; if(!h) return null;
-  const r=readHalfShiftTimes()[halfShiftDayKind(dateStr)][h], oc=dayOpenClose(dateStr);
+  return readHalfShiftTimes()[halfShiftDayKind(dateStr)][h];
+}
+// 半日出勤のときに働く時間帯 {start,end}（その日の営業時間の内側に収める）。半日でなければ null。
+// staffId を渡すと、その日だけの時間（シフト表で入れたもの）があればそちらを使う
+function halfShiftWindow(val,dateStr,staffId){
+  const h=HALF_SHIFT[val]; if(!h) return null;
+  const r=halfCustomOf(staffId,dateStr)||halfStandardRange(val,dateStr), oc=dayOpenClose(dateStr);
   return {start:_mhm(Math.max(_hm(r[0]),_hm(oc.open))),end:_mhm(Math.min(_hm(r[1]),_hm(oc.close)))};
+}
+// 時間の選択肢（9:00〜20:00、10分刻み）
+const HALF_TIME_OPTIONS=(()=>{ const a=[]; for(let t=9*60;t<=20*60;t+=10) a.push(_mhm(t)); return a; })();
+// 「10:00〜13:30」→「10-13:30」（シフト表のマスに入る短い表記）
+function shortRange(r){ const f=t=>t.endsWith(":00")?String(Number(t.slice(0,2))):String(Number(t.slice(0,2)))+":"+t.slice(3); return f(r[0])+"-"+f(r[1]); }
+// シフト表の1マスの編集（種類を選ぶ。午前出勤・午後出勤なら、その日だけの時間も選べる）
+function ShiftCellEditor({val,types,color,dateStr,custom,onPick,onCustom,onClose}){
+  const isHalf=!!HALF_SHIFT[val];
+  const std=isHalf?halfStandardRange(val,dateStr):null;
+  const cur=custom||std;
+  const sel={fontSize:12,padding:"3px 4px",borderRadius:5,border:"1.5px solid #cbd5e1",fontFamily:"inherit",background:"white"};
+  function setPart(i,v){ const next=[...cur]; next[i]=v; if(next[0]<next[1]) onCustom(next[0]===std[0]&&next[1]===std[1]?null:next); }
+  // シフト表は横スクロールの枠の中にあるので、枠で切れないよう画面に固定して出す（マスの位置に合わせる）
+  const W=isHalf?190:100;
+  const anchor=React.useRef(null);
+  const [pos,setPos]=React.useState(null);
+  React.useLayoutEffect(()=>{
+    if(!anchor.current) return;
+    const r=anchor.current.getBoundingClientRect();
+    setPos({left:Math.max(8,Math.min(r.left+r.width/2-W/2,window.innerWidth-W-8)),top:Math.max(8,Math.min(r.top,window.innerHeight-(isHalf?190:110)))});
+  },[isHalf]);
+  return(<>
+    <span ref={anchor} style={{position:"absolute",inset:0,pointerEvents:"none"}}/>
+    <div onClick={onClose} style={{position:"fixed",inset:0,zIndex:299}}/>
+    {pos&&<div onClick={e=>e.stopPropagation()} style={{position:"fixed",left:pos.left,top:pos.top,zIndex:300,background:"white",border:`2px solid ${color}`,borderRadius:8,padding:8,boxShadow:"0 8px 24px rgba(0,0,0,.18)",width:W,textAlign:"left"}}>
+      <select autoFocus value={val} onChange={e=>onPick(e.target.value)} style={{...sel,width:"100%",fontWeight:700}} aria-label="シフトの種類">
+        {types.map(t=><option key={t} value={t}>{t}</option>)}
+      </select>
+      {isHalf&&<div style={{marginTop:6}}>
+        <div style={{fontSize:10.5,fontWeight:800,color:"#475569",marginBottom:3}}>この日の時間{custom?<span style={{color:"#d97706"}}>（変更あり）</span>:<span style={{color:"#94a3b8"}}>（標準）</span>}</div>
+        <div style={{display:"flex",alignItems:"center",gap:3}}>
+          <select value={cur[0]} onChange={e=>setPart(0,e.target.value)} style={sel} aria-label="開始時間">{HALF_TIME_OPTIONS.filter(t=>t<cur[1]).map(t=><option key={t} value={t}>{t}</option>)}</select>
+          <span style={{fontSize:11}}>〜</span>
+          <select value={cur[1]} onChange={e=>setPart(1,e.target.value)} style={sel} aria-label="終了時間">{HALF_TIME_OPTIONS.filter(t=>t>cur[0]).map(t=><option key={t} value={t}>{t}</option>)}</select>
+        </div>
+        {custom&&<button type="button" onClick={()=>onCustom(null)} style={{marginTop:5,fontSize:10.5,border:"none",background:"none",color:"#2563eb",cursor:"pointer",padding:0,fontFamily:"inherit"}}>標準（{std[0]}〜{std[1]}）に戻す</button>}
+      </div>}
+      <button type="button" onClick={onClose} style={{marginTop:6,width:"100%",padding:"4px",fontSize:11.5,fontWeight:800,border:"none",borderRadius:5,background:color,color:"white",cursor:"pointer",fontFamily:"inherit"}}>OK</button>
+    </div>}
+  </>);
 }
 // シフト表の値を取り出す（無ければ null）
 function monthShiftValue(staffId,dateStr){
@@ -562,7 +620,7 @@ function monthShiftValue(staffId,dateStr){
 }
 // 時間（time〜time+dur）が半日出勤の時間帯に入っているか（半日でなければ true）
 function withinHalfShift(staffId,dateStr,time,dur){
-  const w=halfShiftWindow(monthShiftValue(staffId,dateStr),dateStr); if(!w||!time) return true;
+  const w=halfShiftWindow(monthShiftValue(staffId,dateStr),dateStr,staffId); if(!w||!time) return true;
   const st=_hm(time); return st>=_hm(w.start)&&st+(dur||20)<=_hm(w.end);
 }
 function isSharedSettingKey(k){ return SHARED_SETTING_PREFIXES.some(p=>String(k).startsWith(p)); }
@@ -7277,6 +7335,7 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
   const todayStr=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
   const [selMonth,setSelMonth]=React.useState(todayStr.slice(0,7));
   const [monthShifts,setMonthShifts]=React.useState({});
+  const [monthHalfCustom,setMonthHalfCustom]=React.useState({}); // 半日出勤の「その日だけ」の時間 {"スタッフID_日付":["開始","終了"]}
   const [monthHolidays,setMonthHolidays]=React.useState({});
   const [editingCell,setEditingCell]=React.useState(null);
   const SHIFT_TYPES=["出勤","午前出勤","午後出勤","休み","有休","振替","祝振替"];
@@ -7293,6 +7352,7 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
       const s=localStorage.getItem(`shifts_${selMonth}`);
       if(s) setMonthShifts(JSON.parse(s));
       else setMonthShifts({});
+      setMonthHalfCustom(readHalfCustom(selMonth));
       const h=localStorage.getItem("holiday_balance");
       if(h) setMonthHolidays(JSON.parse(h));
       else{const init={};STAFF_ACCOUNTS.forEach(s=>{init[s.id]={有休残:10,振替残:0,祝振替残:0};});setMonthHolidays(init);}
@@ -7302,6 +7362,7 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
   function saveMonthShifts(){
     try{
       sharedSettings.set(`shifts_${selMonth}`,JSON.stringify(monthShifts));
+      sharedSettings.set(`shifthalf_${selMonth}`,JSON.stringify(monthHalfCustom));
       sharedSettings.set("holiday_balance",JSON.stringify(monthHolidays));
       showToast("保存しました");
     }catch{showToast("エラー");}
@@ -7320,7 +7381,8 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
     if(val==="祝振替") newH[staffId].祝振替残=Math.max(0,(newH[staffId].祝振替残||0)-1);
     setMonthHolidays(newH);
     setMonthShifts(prev=>({...prev,[key]:val}));
-    setEditingCell(null);
+    // 半日出勤なら、その日の時間も選べるよう開いたままにする。半日でなくなったら「その日だけの時間」は消す
+    if(!HALF_SHIFT[val]){ setMonthHalfCustom(prev=>{ if(!prev[key]) return prev; const n={...prev}; delete n[key]; return n; }); setEditingCell(null); }
   }
 
   // 月の日付生成
@@ -7513,21 +7575,17 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
                             const color=SHIFT_COLORS[val];
                             const isEditing=editingCell===key;
                             return(
-                              <td key={date} style={{padding:2,textAlign:"center",borderBottom:"1px solid #f1f5f9",borderRight:"1px solid #f1f5f9",
-                                background:day===0?"#fff8f8":day===6?"#faf8ff":"white"}}>
-                                {isEditing?(
-                                  <select autoFocus value={val}
-                                    onChange={e=>setShiftCell(s.id,date,e.target.value)}
-                                    onBlur={()=>setEditingCell(null)}
-                                    style={{width:52,fontSize:10,padding:"2px",borderRadius:4,border:`1.5px solid ${color}`,fontFamily:"inherit",background:"white",cursor:"pointer"}}>
-                                    {SHIFT_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
-                                  </select>
-                                ):(
-                                  <div onClick={()=>setEditingCell(key)}
-                                    style={{width:28,height:26,borderRadius:6,background:color,color:"white",fontSize:10,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",margin:"auto",boxShadow:`0 1px 3px ${color}66`}}>
-                                    {SHIFT_ABBR[val]}
-                                  </div>
-                                )}
+                              <td key={date} data-shift-cell={key} style={{padding:2,textAlign:"center",borderBottom:"1px solid #f1f5f9",borderRight:"1px solid #f1f5f9",
+                                background:day===0?"#fff8f8":day===6?"#faf8ff":"white",position:"relative"}}>
+                                <div onClick={()=>setEditingCell(key)}
+                                  style={{width:28,height:26,borderRadius:6,background:color,color:"white",fontSize:10,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",margin:"auto",boxShadow:`0 1px 3px ${color}66`}}>
+                                  {SHIFT_ABBR[val]}
+                                </div>
+                                {HALF_SHIFT[val]&&validHalfRange(monthHalfCustom[key])&&<div style={{fontSize:8,fontWeight:800,color:"#b45309",whiteSpace:"nowrap",marginTop:1}}>{shortRange(monthHalfCustom[key])}</div>}
+                                {isEditing&&<ShiftCellEditor val={val} types={SHIFT_TYPES} color={color} dateStr={date} custom={validHalfRange(monthHalfCustom[key])?monthHalfCustom[key]:null}
+                                  onPick={v=>setShiftCell(s.id,date,v)}
+                                  onCustom={r=>setMonthHalfCustom(prev=>{ const n={...prev}; if(r) n[key]=r; else delete n[key]; return n; })}
+                                  onClose={()=>setEditingCell(null)}/>}
                               </td>
                             );
                           })}
@@ -8517,7 +8575,7 @@ function HalfShiftSplitSetting(){
   </div>);
   return(
     <div style={{fontSize:12,color:"#475569",background:"#f0f9ff",border:"1px solid #bae6fd",borderRadius:8,padding:"8px 10px",marginBottom:10,display:"grid",gap:6}}>
-      <div><b style={{color:"#0369a1"}}>🌓 半日出勤の時間帯</b>　「午前出勤」の人は午前の時間だけ、「午後出勤」の人は午後の時間だけ予約が入ります。</div>
+      <div><b style={{color:"#0369a1"}}>🌓 半日出勤の時間帯</b>　「午前出勤」の人は午前の時間だけ、「午後出勤」の人は午後の時間だけ予約が入ります。<br/><span style={{color:"#b45309"}}>日によって時間が違うときは、シフト表のマスをクリックして「その日だけ」の時間を選べます。</span></div>
       {row("weekday","平日")}
       {row("weekend","土日・祝")}
     </div>
@@ -8528,6 +8586,7 @@ function ShiftPanel({currentUser}){
   const today=new Date();
   const [selMonth,setSelMonth]=React.useState(`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}`);
   const [shifts,setShifts]=React.useState({});
+  const [halfCustom,setHalfCustom]=React.useState({}); // 半日出勤の「その日だけ」の時間 {"スタッフID_日付":["開始","終了"]}
   const [holidays,setHolidays]=React.useState({});
   const [toast,setToast]=React.useState("");
   const [editHoliday,setEditHoliday]=React.useState(null);
@@ -8555,6 +8614,7 @@ function ShiftPanel({currentUser}){
       const s=localStorage.getItem(`shifts_${selMonth}`);
       if(s) setShifts(JSON.parse(s));
       else setShifts({});
+      setHalfCustom(readHalfCustom(selMonth));
       const h=localStorage.getItem("holiday_balance");
       if(h) setHolidays(JSON.parse(h));
       else{const init={};STAFF_ACCOUNTS.forEach(s=>{init[s.id]={有休残:10,振替残:0,祝振替残:0};});setHolidays(init);}
@@ -8564,6 +8624,7 @@ function ShiftPanel({currentUser}){
   function save(){
     try{
       sharedSettings.set(`shifts_${selMonth}`,JSON.stringify(shifts));
+      sharedSettings.set(`shifthalf_${selMonth}`,JSON.stringify(halfCustom));
       sharedSettings.set("holiday_balance",JSON.stringify(holidays));
       setToast("保存しました");setTimeout(()=>setToast(""),2000);
     }catch{setToast("エラー");}
@@ -8585,7 +8646,8 @@ function ShiftPanel({currentUser}){
     if(val==="祝振替") newH[staffId].祝振替残=Math.max(0,(newH[staffId].祝振替残||0)-1);
     setHolidays(newH);
     setShifts(prev=>({...prev,[key]:val}));
-    setEditingCell(null);
+    // 半日出勤なら、その日の時間も選べるよう開いたままにする。半日でなくなったら「その日だけの時間」は消す
+    if(!HALF_SHIFT[val]){ setHalfCustom(prev=>{ if(!prev[key]) return prev; const n={...prev}; delete n[key]; return n; }); setEditingCell(null); }
   }
 
   // 一括設定適用
@@ -8778,22 +8840,18 @@ function ShiftPanel({currentUser}){
                       const color=SHIFT_COLORS[val];
                       const isEditing=editingCell===key;
                       return(
-                        <td key={date} style={{padding:2,textAlign:"center",borderBottom:"1px solid #f1f5f9",borderRight:"1px solid #f1f5f9",
+                        <td key={date} data-shift-cell={key} style={{padding:2,textAlign:"center",borderBottom:"1px solid #f1f5f9",borderRight:"1px solid #f1f5f9",
                           background:day===0?"#fff8f8":day===6?"#faf8ff":"white",position:"relative"}}>
-                          {isEditing?(
-                            <select autoFocus value={val}
-                              onChange={e=>{setShiftCell(s.id,date,e.target.value);}}
-                              onBlur={()=>setEditingCell(null)}
-                              style={{width:52,fontSize:10,padding:"2px",borderRadius:4,border:`1.5px solid ${color}`,fontFamily:"inherit",background:"white",cursor:"pointer"}}>
-                              {SHIFT_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
-                            </select>
-                          ):(
-                            <div onClick={()=>setEditingCell(key)}
-                              style={{width:28,height:28,borderRadius:5,background:color,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto",fontSize:9,color:"white",fontWeight:700,boxShadow:`0 1px 3px ${color}66`,cursor:"pointer"}}
-                              title="クリックでプルダウン変更">
-                              {SHIFT_ABBR[val]}
-                            </div>
-                          )}
+                          <div onClick={()=>setEditingCell(key)}
+                            style={{width:28,height:28,borderRadius:5,background:color,display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto",fontSize:9,color:"white",fontWeight:700,boxShadow:`0 1px 3px ${color}66`,cursor:"pointer"}}
+                            title="クリックで変更（午前・午後出勤は時間も変えられます）">
+                            {SHIFT_ABBR[val]}
+                          </div>
+                          {HALF_SHIFT[val]&&validHalfRange(halfCustom[key])&&<div style={{fontSize:8,fontWeight:800,color:"#b45309",whiteSpace:"nowrap",marginTop:1}}>{shortRange(halfCustom[key])}</div>}
+                          {isEditing&&<ShiftCellEditor val={val} types={SHIFT_TYPES} color={color} dateStr={date} custom={validHalfRange(halfCustom[key])?halfCustom[key]:null}
+                            onPick={v=>setShiftCell(s.id,date,v)}
+                            onCustom={r=>setHalfCustom(prev=>{ const n={...prev}; if(r) n[key]=r; else delete n[key]; return n; })}
+                            onClose={()=>setEditingCell(null)}/>}
                         </td>
                       );
                     })}
@@ -8813,7 +8871,7 @@ function ShiftPanel({currentUser}){
           </table>
         </div>
         <div style={{padding:"10px 16px",fontSize:11,color:"#94a3b8",borderTop:"1px solid #f1f5f9"}}>
-          ※ セルをクリックするとプルダウンで変更できます。「保存する」で確定してください。
+          ※ セルをクリックすると変更できます。「午前出勤」「午後出勤」は、その日だけ時間も変えられます（変えた日はマスの下に時間が出ます）。「保存する」で確定してください。
         </div>
       </div>
     </div>
@@ -13181,7 +13239,7 @@ function Dashboard({user,onLogout}){
       const hc=closures.find(x=>x.date===dStr&&x.is_closed===false&&x.open_time&&/祝日|振替休日|国民の休日/.test(x.memo||""));
       if(hc) return{start:String(hc.open_time).slice(0,5),end:String(hc.close_time||"18:00").slice(0,5)};
     }
-    const hw=halfShiftWindow(monthShiftValue(staffId,dStr),dStr);
+    const hw=halfShiftWindow(monthShiftValue(staffId,dStr),dStr,staffId);
     if(hw) return hw; // 半日出勤（午前のみ／午後のみ）
     const dow=dateObj.getDay();
     const ws=weeklyShifts.find(w=>w.staff_id===staffId&&w.day_of_week===dow);
