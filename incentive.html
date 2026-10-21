@@ -488,6 +488,12 @@ function renderEvaluation() {
       ? `<div class="card"><div class="card-b"><b>評価を始めるには、台帳に評価用のシートを作成してください。</b><div class="small" style="margin:6px 0 12px;">「評価項目」（等級別の項目・配点・目標値。シート上で自由に編集できます）と「評価記録」（毎月の評価結果）の2つを作成します。</div><button class="btn btn-blue" onclick="setupEvalSheets()">評価シートを準備</button></div></div>`
       : `<div class="card"><div class="card-b muted">管理者が評価シートを準備するまでお待ちください。</div></div>`;
   }
+  if (evalData.isAdmin && evalData.legacyItems && !evalData.setupNeeded) {
+    html += `<div class="banner ng" style="margin:0 0 14px;">⚠️ 評価項目シートが古い版です（「社会人としての基本」や新患の自動取得が入っていません）。<br><button class="btn btn-save" style="margin-top:8px;" onclick="resetItems()">評価項目を初期値に戻す</button>${evalData.hasRecords ? '<div class="small">保存済みの評価の点数は変わりません。</div>' : ""}</div>`;
+  }
+  if (evalData.newPatientError && (evalData.isAdmin || evalData.canEditItems)) {
+    html += `<div class="banner ng" style="margin:0 0 14px;">⚠️ ${esc(evalData.newPatientError)}<div class="small">共有されるまでは、新患対応数・初回成約率・初回売上は自動で入りません。</div></div>`;
+  }
   const people = evalData.people;
   const toDo = people.filter((p) => p.canEdit && !p.evaluated).length;
   const rows = people.map((p) => {
@@ -503,6 +509,7 @@ function renderEvaluation() {
   if (evalData.canEditItems && !evalData.setupNeeded) html += `<div style="margin-bottom:14px;text-align:right;"><button class="chip" onclick="openItemEditor('共通')">⚙️ 評価項目の設定（クラス別に追加・削除・編集）</button></div>`;
   html += `<div class="card"><div class="card-h"><span>${monthLabel(evalMonth)} の評価</span>${toDo ? `<span class="small ng">あなたの未評価 ${toDo}名</span>` : ""}</div><div class="card-b">
     ${people.length ? `<div class="scroll"><table><tr><th class="l">氏名</th><th>今月</th><th>半期平均</th><th>PC・基本</th><th></th></tr>${rows}</table></div>` : '<div class="muted">表示できる評価対象者がいません。</div>'}
+    ${evalData.newPatientUnmatched && evalData.newPatientUnmatched.length ? `<div class="small warn" style="margin-top:8px;">新規集客シートの「初回施術担当者」でスタッフと結びつかなかった名前：${evalData.newPatientUnmatched.map(esc).join("、")}（台帳の評価シートに載っていない人は対象外です）</div>` : ""}
     <div class="small" style="margin-top:8px;">評価は毎月、直属の上司が付けます（スタッフ→院長、院長→BM、BM→GM）。100点満点で S90以上・A80以上・B65以上・C50以上・D50未満。半期平均が台帳の査定の点数になります。</div>
   </div></div>`;
   return html;
@@ -543,6 +550,7 @@ function renderEvalDetail() {
     <div class="small" style="margin-bottom:6px;">半期の推移（100点満点）${p.halfAvg !== null ? ` ・ 半期平均 <b class="${rankCls(rankOfClient(p.halfAvg))}">${p.halfAvg}点 ${rankOfClient(p.halfAvg)}</b>` : ""}</div>
     <div class="scroll"><table><tr>${p.trend.map((t) => `<th>${Number(t.month.split("-")[1])}月</th>`).join("")}</tr><tr>${trend}</tr></table></div>
   </div></div>
+  ${referenceCard(p)}
   <div class="card"><div class="card-h"><span>社会人としての基本（全員共通・5段階）</span><span class="small">${sc.bas}点</span></div><div class="card-b">${basicItems || '<div class="muted">項目なし</div>'}
     ${basicIssues.length ? `<div class="banner ng">⚠️ 社会人としての基本（${basicIssues.map((it) => esc(it.label)).join("・")}）が2以下です。等級に関係なく、まず改善が必要な項目です。</div>` : ""}</div></div>
   <div class="card"><div class="card-h"><span>数値の評価</span><span class="small" id="numSum">${sc.num}点</span></div><div class="card-b">${numItems || '<div class="muted">項目なし</div>'}
@@ -707,6 +715,7 @@ function renderItemEditor() {
     ${cards || '<div class="muted">項目がありません。下のボタンから追加してください。</div>'}
     <button class="btn btn-blue" style="background:white;color:#1e3a5f;border:1.5px dashed #94a3b8;margin-top:6px;" onclick="itemAdd()">＋ 項目を追加</button>
   </div>
+  ${evalData.isAdmin ? `<div style="padding:0 16px 12px;"><button class="chip" onclick="resetItems()">↺ 全クラスの評価項目を初期値に戻す</button></div>` : ""}
   <div class="sticky-total"><div id="itemTotal">${totalsHtml()}</div><button class="btn btn-blue" style="width:auto;padding:10px 24px;" onclick="saveItems()">保存する</button></div></div>`;
 }
 
@@ -726,6 +735,31 @@ async function saveItems() {
   } catch (e) {
     alert(e.message);
   }
+  render();
+}
+
+// 今月の実績（シートから自動で取得した数字。配点に入っていない数字も参考に表示）
+function referenceCard(p) {
+  const a = p.auto || {};
+  const cells = [
+    ["個人売上", a.personal_sales, "円"], ["対応人数", a.personal_visits, "人"], ["平均売上", a.personal_avg, "円"],
+    ["新患対応数", a.new_count, "名"], ["初回成約率", a.new_close, "%"], ["初回売上", a.new_sales, "円"],
+    ["初回単価", a.new_first_avg, "円"], ["新患の通院率", a.new_continue, "%"],
+  ].filter(([, v]) => v !== undefined && v !== null);
+  if (!cells.length) return "";
+  return `<div class="card"><div class="card-h"><span>${monthLabel(evalMonth)}の実績（シートから自動）</span></div><div class="card-b">
+    <div class="kpis">${cells.map(([k, v, u]) => `<div class="kpi"><div class="k">${k}</div><div class="v" style="font-size:16px;">${fmtVal(v, u)}</div></div>`).join("")}</div>
+    <div class="small" style="margin-top:8px;">売上・対応人数・平均売上は「進捗売上実績」、新患の数字は「あんど新規集客」（初回施術担当者・巻き爪除く）から集計しています。</div>
+  </div></div>`;
+}
+
+async function resetItems() {
+  if (!confirm("評価項目シートを初期値（社会人としての基本・新患の自動取得を含む最新版）に戻します。\nシートで直した項目は元に戻ります。よろしいですか？")) return;
+  root.innerHTML = `<div class="center">評価項目を初期値に戻しています...</div>`;
+  try {
+    const json = await evalFetch("POST", { action: "resetItems", month: evalMonth });
+    if (json) { evalData = json; itemEditor = null; }
+  } catch (e) { alert(e.message); }
   render();
 }
 

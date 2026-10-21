@@ -5,14 +5,17 @@
 //   POST { action: "save", month, personKey, values, scores, comment } … 直属の上司（または管理者・GM）が保存
 //   POST { action: "setup" }       … 管理者のみ。台帳に「評価項目」「評価記録」シートを作る
 //   POST { action: "saveItems", grade, items } … 管理者・GM。そのクラスの評価項目を追加・削除・編集する
+//   POST { action: "resetItems" }  … 管理者のみ。「評価項目」シートを初期値に戻す
+//
+// 個人売上・対応人数・平均売上は「進捗売上実績」、新患対応数・初回成約率・初回売上は「あんど新規集客」から自動で入る。
 //
 // 評価項目は台帳の「評価項目」シートを直接編集すれば変更できる（配点・目標値・採点基準など）。
 
 import { batchGet, batchUpdate, getSheetTitles, addSheets, appendRows } from "../lib/google-sheets.js";
 import { resolveViewer, filterModelForViewer } from "../lib/incentive-calc.js";
-import { CAREER_SHEET_ID, loadModel, authenticate, viewerNotFound } from "../lib/incentive-data.js";
+import { CAREER_SHEET_ID, loadModel, loadNewPatients, authenticate, viewerNotFound } from "../lib/incentive-data.js";
 import {
-  ITEM_SHEET, RECORD_SHEET, RECORD_HEADER, DEFAULT_ITEMS, itemSheetRows, parseItemSheet, parseRecords,
+  ITEM_SHEET, RECORD_SHEET, RECORD_HEADER, DEFAULT_ITEMS, COMMON_GRADE, itemSheetRows, parseItemSheet, parseRecords,
   scoreMonth, itemsFor, validateItems, GRADE_LABELS, AUTO_OPTIONS, parseMonthKey, monthKeyOf, halfMonthKeys, autoValues, superiorOf, canEvaluate, buildRecordRows,
 } from "../lib/evaluation.js";
 import { normName } from "../lib/incentive-calc.js";
@@ -33,6 +36,8 @@ async function loadSheets() {
     setupNeeded: !hasItems || !hasRecords,
     hasItems, hasRecords,
     items: parseItemSheet(itemRows) || DEFAULT_ITEMS,
+    // 「社会人としての基本（共通）」が無い＝初期の版で作ったシート
+    legacyItems: hasItems && !(parseItemSheet(itemRows) || {})[COMMON_GRADE],
     records: parseRecords(recordRows),
   };
 }
@@ -47,7 +52,7 @@ function mergedValues(items, rec, auto) {
   return values;
 }
 
-function buildPayload({ model, viewer, isAdmin, sheets, monthKey }) {
+function buildPayload({ model, np, viewer, isAdmin, sheets, monthKey }) {
   const visible = filterModelForViewer(model, viewer).people.filter((p) => itemsFor(sheets.items, p.grade));
   const half = halfMonthKeys(monthKey);
   const people = visible.map((vp) => {
@@ -55,7 +60,7 @@ function buildPayload({ model, viewer, isAdmin, sheets, monthKey }) {
     const items = itemsFor(sheets.items, person.grade);
     const monthData = (key) => {
       const rec = sheets.records.get(`${key}|${person.key}`) || null;
-      const auto = autoValues(model, person, key);
+      const auto = autoValues(model, person, key, np);
       const values = mergedValues(items, rec, auto);
       const scores = rec ? rec.scores : {};
       return { rec, auto, values, scores, result: scoreMonth(items, values, scores) };
@@ -87,6 +92,9 @@ function buildPayload({ model, viewer, isAdmin, sheets, monthKey }) {
   return {
     month: monthKey, halfMonths: half, items: sheets.items, people, setupNeeded: sheets.setupNeeded, viewer, isAdmin,
     canEditItems: isAdmin || viewer.grade === "G6", gradeLabels: GRADE_LABELS, autoOptions: AUTO_OPTIONS,
+    legacyItems: sheets.legacyItems, hasRecords: sheets.records.size > 0,
+    newPatientError: np && np.error ? np.error : null,
+    newPatientUnmatched: isAdmin && np ? np.unmatched : [],
   };
 }
 
@@ -117,7 +125,15 @@ async function saveItems(body) {
   await batchUpdate(CAREER_SHEET_ID, [{ range: `'${ITEM_SHEET}'!A1:K${rows.length}`, values: rows }]);
 }
 
-async function save({ model, viewer, isAdmin, staff, body }) {
+async function resetItems() {
+  const sheets = await loadSheets();
+  if (sheets.setupNeeded) throw new Error("先に「評価シートを準備」を押してください");
+  const rows = itemSheetRows();
+  while (rows.length < sheets.itemRowCount) rows.push(Array(rows[0].length).fill(""));
+  await batchUpdate(CAREER_SHEET_ID, [{ range: `'${ITEM_SHEET}'!A1:K${rows.length}`, values: rows }]);
+}
+
+async function save({ model, np, viewer, isAdmin, staff, body }) {
   const monthKey = String(body.month || "");
   if (!parseMonthKey(monthKey)) throw new Error("対象月が正しくありません");
   const person = model.people.find((p) => p.key === normName(body.personKey));
@@ -128,7 +144,7 @@ async function save({ model, viewer, isAdmin, staff, body }) {
   if (!items) throw new Error(`${person.grade || "等級なし"} の評価項目がありません`);
   if (!canEvaluate(model, viewer, isAdmin, person)) throw new Error("この人を評価できるのは直属の上司です");
 
-  const auto = autoValues(model, person, monthKey);
+  const auto = autoValues(model, person, monthKey, np);
   const values = {}, scores = {};
   for (const it of items) {
     if (it.kind === "数値") {
@@ -163,9 +179,10 @@ export default async function handler(req, res) {
   if (!staff) return;
   const isAdmin = staff.role === "admin";
 
-  let model;
+  let model, np;
   try {
     model = await loadModel(req.query && req.query.refresh === "1");
+    np = await loadNewPatients(model, req.query && req.query.refresh === "1");
   } catch (e) {
     res.status(500).json({ error: e.message || String(e) });
     return;
@@ -182,18 +199,21 @@ export default async function handler(req, res) {
       if (body.action === "setup") {
         if (!isAdmin) { res.status(403).json({ error: "評価シートの準備は管理者のみ可能です" }); return; }
         await setup();
+      } else if (body.action === "resetItems") {
+        if (!isAdmin) { res.status(403).json({ error: "初期値に戻すのは管理者のみ可能です" }); return; }
+        await resetItems();
       } else if (body.action === "saveItems") {
         if (!(isAdmin || viewer.grade === "G6")) { res.status(403).json({ error: "評価項目の編集は管理者・GMのみ可能です" }); return; }
         await saveItems(body);
       } else if (body.action === "save") {
-        await save({ model, viewer, isAdmin, staff, body });
+        await save({ model, np, viewer, isAdmin, staff, body });
       } else {
         res.status(400).json({ error: "action が正しくありません" });
         return;
       }
     }
     const sheets = await loadSheets();
-    res.status(200).json(buildPayload({ model, viewer, isAdmin, sheets, monthKey }));
+    res.status(200).json(buildPayload({ model, np, viewer, isAdmin, sheets, monthKey }));
   } catch (e) {
     res.status(req.method === "POST" ? 400 : 500).json({ error: e.message || String(e) });
   }

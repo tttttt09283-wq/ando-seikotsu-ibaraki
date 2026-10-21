@@ -33,7 +33,7 @@ test("number points: 以上 is capped ratio, 以下 drops to 0 at target+10", ()
 
 test("scoreMonth: behavior = points x score/5, rank only when complete, required flag", () => {
   const items = itemsFor(DEFAULT_ITEMS, "G4");
-  const values = { clinic_budget: 100, clinic_labor: 40, new_close: 70, new_sales: 200000, next_rate: 75 };
+  const values = { clinic_budget: 100, clinic_labor: 40, new_count: 10, new_close: 70, new_sales: 200000, next_rate: 75 };
   const scores = { pl: 5, shift: 5, claim: 5, develop: 5, pc: 2,
     basic_greeting: 5, basic_appearance: 5, basic_punctual: 2, basic_hourensou: 5, basic_rules: 5 };
   const r = scoreMonth(items, values, scores);
@@ -114,4 +114,27 @@ test("records keep the total saved at the time", () => {
   const { appends, result } = buildRecordRows({ monthKey: "2027-01", person, items, values: {}, scores: { pc: 5 }, comment: "", evaluator: "上司", now: "t", existing: null });
   const rec = parseRecords([RECORD_HEADER, ...appends]).get("2027-01|山田太郎");
   assert.equal(rec.storedTotal, result.total);
+});
+
+test("new-patient sheet: columns by header, nail cases excluded, surname matching, metrics", async () => {
+  const { parseNewPatients, newPatientMetrics, parseSheetDate } = await import("../lib/new-patients.js");
+  const people = [{ key: "山田太郎", name: "山田 太郎" }, { key: "佐藤花子", name: "佐藤 花子" }];
+  const sheets = {
+    "A院": [
+      [],
+      ["来院日（必須）", "問い合わせ経路", "成約金額（必須）", "症状（必須）", "初回施術担当者", "初回窓口金額", "自費加入", "通院"],
+      [46296, "電話", 50000, "腰痛", "山田　太郎", 3000, "○", "○"],   // 2026-10-01（シリアル値）
+      ["2026/10/15", "電話", "", "肩", "山田", 2000, "", "◯"],
+      ["2026/10/20", "電話", "", "巻き爪", "山田", 1000, "", ""],      // 爪は除外
+      ["2026/09/30", "電話", "", "膝", "佐藤", 4000, "", ""],
+      ["2026/10/02", "電話", "", "膝", "応援", 4000, "", ""],
+    ],
+  };
+  assert.deepEqual(parseSheetDate(46296), { year: 2026, month: 10 });
+  const np = parseNewPatients(sheets, people);
+  const m = newPatientMetrics(np.byPerson.get("山田太郎")["2026-10"]);
+  assert.deepEqual(m, { new_count: 2, new_close: 50, new_sales: 55000, new_first_avg: 2500, new_continue: 100 });
+  assert.equal(np.byPerson.get("佐藤花子")["2026-09"].count, 1);
+  assert.equal(np.byClinic.get("A")["2026-10"].count, 3);
+  assert.deepEqual(np.unmatched, ["応援"]);
 });
