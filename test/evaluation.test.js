@@ -33,7 +33,7 @@ test("number points: 以上 is capped ratio, 以下 drops to 0 at target+10", ()
 
 test("scoreMonth: behavior = points x score/5, rank only when complete, required flag", () => {
   const items = itemsFor(DEFAULT_ITEMS, "G4");
-  const values = { clinic_budget: 100, clinic_labor: 40, new_count: 10, new_close: 70, new_sales: 200000, next_rate: 75 };
+  const values = { clinic_budget: 100, clinic_labor: 40, new_count: 10, new_close: 70, new_sales: 200000, clinic_continue_rate: 75 };
   const scores = { pl: 5, shift: 5, claim: 5, develop: 5, pc: 2,
     basic_greeting: 5, basic_appearance: 5, basic_punctual: 2, basic_hourensou: 5, basic_rules: 5 };
   const r = scoreMonth(items, values, scores);
@@ -49,13 +49,13 @@ test("scoreMonth: behavior = points x score/5, rank only when complete, required
 test("records: new rows are appended, existing rows are updated in place", () => {
   const person = { name: "山田 太郎", key: "山田太郎", grade: "G2", clinics: ["A"] };
   const items = itemsFor(DEFAULT_ITEMS, "G2");
-  const first = buildRecordRows({ monthKey: "2027-01", person, items, values: { next_rate: 75 }, scores: { pc: 4 }, comment: "ok", evaluator: "上司", now: "t", existing: null });
+  const first = buildRecordRows({ monthKey: "2027-01", person, items, values: { continue_rate: 75 }, scores: { pc: 4 }, comment: "ok", evaluator: "上司", now: "t", existing: null });
   assert.equal(first.updates.length, 0);
   assert.equal(first.appends.length, items.length + 2);
   const sheet = [RECORD_HEADER, ...first.appends];
   const map = parseRecords(sheet);
   const rec = map.get("2027-01|山田太郎");
-  assert.equal(rec.values.next_rate, 75);
+  assert.equal(rec.values.continue_rate, 75);
   assert.equal(rec.scores.pc, 4);
   assert.equal(rec.comment, "ok");
   const second = buildRecordRows({ monthKey: "2027-01", person, items, values: {}, scores: { pc: 5 }, comment: "", evaluator: "上司", now: "t2", existing: rec });

@@ -744,7 +744,7 @@ function referenceCard(p) {
   const cells = [
     ["個人売上", a.personal_sales, "円"], ["対応人数", a.personal_visits, "人"], ["平均売上", a.personal_avg, "円"],
     ["新患対応数", a.new_count, "名"], ["初回成約率", a.new_close, "%"], ["初回売上", a.new_sales, "円"],
-    ["初回単価", a.new_first_avg, "円"], ["新患の通院率", a.new_continue, "%"],
+    ["継続率（初回の通院率）", a.new_continue, "%"], ["初回単価", a.new_first_avg, "円"],
   ].filter(([, v]) => v !== undefined && v !== null);
   if (!cells.length) return "";
   return `<div class="card"><div class="card-h"><span>${monthLabel(evalMonth)}の実績（シートから自動）</span></div><div class="card-b">
