@@ -94,12 +94,12 @@ function buildPayload({ model, np, viewer, isAdmin, sheets, monthKey }) {
   const deptsOf = (key) => membership.get(key) || [];
   const visible = filterModelForViewer(model, viewer).people.filter((p) => itemsFor(sheets.items, p.grade));
   const half = halfMonthKeys(monthKey);
-  // 全社イベントの加点を、保存済みの月次評価の合計点に足す（100点まで）
+  // 全社イベントの加点を、保存済みの月次評価の合計点に足す（上限なし）
   const bonus = eventBonusMap(model.events || []);
   const records = new Map([...sheets.records].map(([k, rec]) => {
     const b = bonus.get(k) || 0;
     if (!b || rec.storedTotal == null) return [k, rec];
-    const t = Math.min(100, Math.round((rec.storedTotal + b) * 10) / 10);
+    const t = Math.round((rec.storedTotal + b) * 10) / 10;
     return [k, { ...rec, baseTotal: rec.storedTotal, storedTotal: t, storedRank: rec.storedRank ? rankOf(t) : null }]; // 全項目入力済みの月だけランクを付ける
   }));
   const people = visible.map((vp) => {

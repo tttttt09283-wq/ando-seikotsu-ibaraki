@@ -269,3 +269,17 @@ test("events: parse rows, bonus per person-month, rewards added to incentives an
   assert.equal(Math.round(model.company[0].incentiveCost), Math.round(151000 * 1.15));
   assert.equal(people[0].incentives.filter((i) => i.type === "event").length, 2);
 });
+
+test("total = class score (100) + department points, not scaled back to 100", async () => {
+  const { scoreMonth, itemsFor, deptMembership } = await import("../lib/evaluation.js");
+  const items = itemsFor(DEFAULT_ITEMS, "G2", ["集客"]);
+  const scores = {}, values = {};
+  for (const it of items) { if (it.kind === "数値") values[it.id] = (it.target || 1) * 2; else scores[it.id] = 5; }
+  const r = scoreMonth(items, values, scores);
+  assert.equal(r.classScore, 100);
+  assert.equal(r.depts.max, 10);
+  assert.equal(r.total, 110);
+  assert.equal(r.rank, "S");
+  const plain = scoreMonth(itemsFor(DEFAULT_ITEMS, "G2", []), values, scores);
+  assert.equal(plain.total, 100);
+});
