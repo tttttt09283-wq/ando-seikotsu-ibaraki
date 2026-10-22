@@ -35,7 +35,7 @@ async function loadSheets() {
   const ranges = [];
   if (hasItems) ranges.push(`'${ITEM_SHEET}'!A1:K500`);
   if (hasRecords) ranges.push(`'${RECORD_SHEET}'!A1:M20000`);
-  if (hasStaff) ranges.push(`'${STAFF_SHEET}'!A1:E1000`);
+  if (hasStaff) ranges.push(`'${STAFF_SHEET}'!A1:F1000`);
   const hasLadder = titles.includes(LADDER_SHEET);
   if (hasLadder) ranges.push(`'${LADDER_SHEET}'!A1:L40`);
   const got = ranges.length ? await batchGet(CAREER_SHEET_ID, ranges) : [];
@@ -238,7 +238,8 @@ async function setCandidate({ model, viewer, isAdmin, staff, body }) {
   const sheets = await loadSheets();
   if (!sheets.hasStaff) {
     await addSheets(CAREER_SHEET_ID, [STAFF_SHEET]);
-    await batchUpdate(CAREER_SHEET_ID, [{ range: `'${STAFF_SHEET}'!A1:E1`, values: [STAFF_HEADER] }]);
+    // 部門列（F）は担当者を保存したときに作る（先に作ると「部門の担当者なし」と読まれてしまうため）
+    await batchUpdate(CAREER_SHEET_ID, [{ range: `'${STAFF_SHEET}'!A1:E1`, values: [STAFF_HEADER.slice(0, 5)] }]);
   }
   const row = [person.name, body.candidate ? "○" : "", String(body.memo || "").slice(0, 300), viewer.name || staff.name || "管理者", nowJst()];
   const existing = sheets.staffSettings.get(person.key);
