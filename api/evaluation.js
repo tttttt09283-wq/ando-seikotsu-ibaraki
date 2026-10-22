@@ -16,7 +16,7 @@
 // 評価項目は台帳の「評価項目」シートを直接編集すれば変更できる（配点・目標値・採点基準など）。
 
 import { batchGet, batchUpdate, getSheetTitles, addSheets, appendRows } from "../lib/google-sheets.js";
-import { resolveViewer, filterModelForViewer, canSeeLabor } from "../lib/incentive-calc.js";
+import { resolveViewer, filterModelForViewer, canSeeLabor, clinicsAt, evalGradeAt, evalAsAt } from "../lib/incentive-calc.js";
 import { CAREER_SHEET_ID, loadModel, invalidateModel, loadNewPatients, authenticate, viewerNotFound } from "../lib/incentive-data.js";
 import { EVENT_SHEET, EVENT_HEADER, MAX_EVENT_BONUS, eventBonusMap, groupEvents, normDate } from "../lib/events.js";
 import {
@@ -108,31 +108,39 @@ function buildPayload({ model, np, viewer, isAdmin, sheets, monthKey }) {
   }));
   const people = visible.map((vp) => {
     const person = model.people.find((p) => p.key === vp.key);
-    const items = itemsFor(sheets.items, person.grade, deptsOf(person.key), sheets.dist);
+    // 異動・院長候補などは月ごとに反映（その月の所属院・評価クラスで評価する）
+    const at = (key) => ({ ...person, clinics: clinicsAt(person, key), grade: evalGradeAt(person, key) });
+    const pm = at(monthKey);
+    const items = itemsFor(sheets.items, pm.grade, deptsOf(person.key), sheets.dist);
     const monthData = (key) => {
       const rec = records.get(`${key}|${person.key}`) || null;
-      const auto = autoValues(model, person, key, np);
-      const values = mergedValues(items, rec, auto);
+      const pk = at(key);
+      const its = key === monthKey ? items : itemsFor(sheets.items, pk.grade, deptsOf(person.key), sheets.dist) || items;
+      const auto = autoValues(model, pk, key, np);
+      const values = mergedValues(its, rec, auto);
       const scores = rec ? rec.scores : {};
-      return { rec, auto, values, scores, result: scoreMonth(items, values, scores) };
+      return { rec, auto, values, scores, items: its, result: scoreMonth(its, values, scores) };
     };
     const cur = monthData(monthKey);
     const trend = half.map((key) => {
       const d = key === monthKey ? cur : monthData(key);
-      const pc = items.find((it) => it.id === "pc");
+      const pc = d.items.find((it) => it.id === "pc");
       return { month: key, evaluated: !!d.rec, total: d.rec ? storedOr(d) : null, rank: d.rec ? d.rec.storedRank ?? d.result.rank : null,
         numbers: d.rec ? d.result.numbers.earned : null, behaviors: d.rec ? d.result.behaviors.earned : null,
         pc: d.rec && pc ? d.scores.pc ?? null : null };
     });
     const done = trend.filter((t) => t.evaluated && t.total !== null);
     const halfAvg = done.length ? Math.round((done.reduce((a, t) => a + t.total, 0) / done.length) * 10) / 10 : null;
-    const sup = superiorOf(model, person);
+    const sup = superiorOf(model, pm);
+    const self = person.key === viewer.personKey;
+    const ea = evalAsAt(person, monthKey);
     return {
-      key: person.key, name: person.name, grade: person.grade, role: person.role, clinics: person.clinics, items, depts: deptsOf(person.key),
+      key: person.key, name: person.name, grade: person.grade, role: person.role, clinics: pm.clinics, items, depts: deptsOf(person.key),
+      evalGrade: pm.grade, evalAsLabel: ea ? (self ? `${GRADE_LABELS[ea.grade] || ea.grade}の項目で評価` : ea.label) : "",
       superior: sup ? sup.name : "管理者",
-      canEdit: canEvaluate(model, viewer, isAdmin, person),
+      canEdit: canEvaluate(model, viewer, isAdmin, pm),
       // 院長候補は本人には見せない
-      candidate: person.key !== viewer.personKey && !!(sheets.staffSettings.get(person.key) || {}).candidate,
+      candidate: !self && (!!(sheets.staffSettings.get(person.key) || {}).candidate || !!(ea && ea.candidate)),
       candidateMemo: person.key !== viewer.personKey ? (sheets.staffSettings.get(person.key) || {}).memo || "" : "",
       canSetCandidate: canSetCandidate(model, viewer, isAdmin, person),
       // 昇格・降格の判定と理由（人件費の数字は見られる人にだけ）
@@ -322,11 +330,12 @@ async function save({ model, np, viewer, isAdmin, staff, body }) {
   if (!person) throw new Error("評価する人が見つかりません");
   const sheets = await loadSheets();
   if (sheets.setupNeeded) throw new Error("先に管理者が「評価シートを準備」を押してください");
-  const items = itemsFor(sheets.items, person.grade, deptMembership(model, sheets.staffSettings, sheets.items).get(person.key) || [], sheets.dist);
-  if (!items) throw new Error(`${person.grade || "等級なし"} の評価項目がありません`);
-  if (!canEvaluate(model, viewer, isAdmin, person)) throw new Error("この人を評価できるのは直属の上司です");
+  const pm = { ...person, clinics: clinicsAt(person, monthKey), grade: evalGradeAt(person, monthKey) };
+  const items = itemsFor(sheets.items, pm.grade, deptMembership(model, sheets.staffSettings, sheets.items).get(person.key) || [], sheets.dist);
+  if (!items) throw new Error(`${pm.grade || "等級なし"} の評価項目がありません`);
+  if (!canEvaluate(model, viewer, isAdmin, pm)) throw new Error("この人を評価できるのは直属の上司です");
 
-  const auto = autoValues(model, person, monthKey, np);
+  const auto = autoValues(model, pm, monthKey, np);
   const values = {}, scores = {};
   for (const it of items) {
     if (it.kind === "数値") {
@@ -346,7 +355,7 @@ async function save({ model, np, viewer, isAdmin, staff, body }) {
   }
   const existing = sheets.records.get(`${monthKey}|${person.key}`) || null;
   const evaluator = viewer.name || staff.name || "管理者";
-  const { updates, appends } = buildRecordRows({ monthKey, person, items, values, scores, comment: String(body.comment || "").slice(0, 1000), evaluator, now: nowJst(), existing });
+  const { updates, appends } = buildRecordRows({ monthKey, person: pm, items, values, scores, comment: String(body.comment || "").slice(0, 1000), evaluator, now: nowJst(), existing });
   if (updates.length) await batchUpdate(CAREER_SHEET_ID, updates.map((u) => ({ range: `'${RECORD_SHEET}'!A${u.row}:M${u.row}`, values: [u.values] })));
   if (appends.length) await appendRows(CAREER_SHEET_ID, `'${RECORD_SHEET}'!A:M`, appends);
 }

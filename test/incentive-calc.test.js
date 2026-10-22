@@ -1,7 +1,7 @@
 // node --test test/  で実行（実データではなく架空のデータ）
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildModel, resolveViewer, filterModelForViewer, canonClinic } from "../lib/incentive-calc.js";
+import { buildModel, resolveViewer, filterModelForViewer, canonClinic, clinicsAt, evalGradeAt, evalAsAt } from "../lib/incentive-calc.js";
 
 const clinicRows = [
   [],
@@ -106,4 +106,14 @@ test("visible range per level: staff own only, 院長 own clinic, BM area, 社�
   const gm = f(model, resolveViewer(model, { name: "伊藤 三郎", role: "staff" }));
   assert.equal(gm.canSeeSalary, true);
   assert.ok(gm.company);
+});
+
+test("10月からの異動・院長候補が月ごとに反映される", () => {
+  const p = { clinics: ["香里園"], grade: "G3", clinicHistory: [{ clinics: ["大和田", "香里園"] }, { clinics: ["香里園"], from: "2026-10" }],
+    evalAs: [{ grade: "G4", from: "2026-10", candidate: true }] };
+  assert.deepEqual(clinicsAt(p, "2026-09"), ["大和田", "香里園"]);
+  assert.deepEqual(clinicsAt(p, "2026-10"), ["香里園"]);
+  assert.equal(evalGradeAt(p, "2026-09"), "G3");
+  assert.equal(evalGradeAt(p, "2026-11"), "G4");
+  assert.equal(evalAsAt(p, "2026-09"), null);
 });
