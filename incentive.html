@@ -109,6 +109,21 @@ select.pick{width:100%;padding:10px 12px;border:1.5px solid #e2e8f0;border-radiu
   .wrap{max-width:100%;padding:0;}
   .card{box-shadow:none;border:1px solid #999;break-inside:avoid;}
 }
+.lv{display:inline-block;margin-left:6px;font-size:10px;font-weight:800;border-radius:6px;padding:1px 7px;vertical-align:middle;}
+.lv-up{background:#d1fae5;color:#065f46;} .lv-keep{background:#f1f5f9;color:#64748b;} .lv-warn{background:#fef3c7;color:#92400e;} .lv-down{background:#fee2e2;color:#991b1b;}
+.card.career.lv-border-down{border:2px solid #fca5a5;} .card.career.lv-border-warn{border:2px solid #fcd34d;} .card.career.lv-border-up{border:2px solid #6ee7b7;}
+ul.reasons{list-style:none;padding:0;margin:0;font-size:13px;line-height:1.6;}
+ul.reasons li{padding:6px 10px;border-radius:8px;margin-bottom:6px;font-weight:700;}
+.rs-ng{background:#fef2f2;color:#b91c1c;border-left:4px solid #ef4444;} .rs-warn{background:#fffbeb;color:#92400e;border-left:4px solid #f59e0b;}
+.rs-ok{background:#ecfdf5;color:#065f46;border-left:4px solid #10b981;} .rs-muted{background:#f8fafc;color:#475569;border-left:4px solid #cbd5e1;}
+table.checks td{font-size:12px;}
+.st{display:inline-block;font-size:11px;font-weight:800;border-radius:6px;padding:2px 7px;white-space:nowrap;}
+.st-ok{background:#d1fae5;color:#065f46;} .st-ng{background:#fee2e2;color:#b91c1c;} .st-hit{background:#dc2626;color:white;} .st-warn{background:#fef3c7;color:#92400e;}
+.st-unk{background:#f1f5f9;color:#94a3b8;} .st-man{background:#e0e7ff;color:#3730a3;}
+tr.st-hit-row td{background:#fef2f2;} tr.st-ng-row td:first-child{color:#b91c1c;font-weight:700;} tr.st-warn-row td{background:#fffbeb;}
+.item.neg{background:#fef2f2;border-radius:8px;padding-left:8px;padding-right:8px;} .item.neg .pts{color:#dc2626;}
+.item.weak{background:#fffbeb;border-radius:8px;padding-left:8px;padding-right:8px;} .item.weak .pts{color:#b45309;}
+.score-btns button.sel.low{background:#dc2626;border-color:#dc2626;}
 ul.notes{padding-left:18px;font-size:12px;color:#64748b;line-height:1.7;}
 </style>
 </head>
@@ -634,7 +649,7 @@ function renderEvaluation() {
     const t = p.result;
     const status = p.evaluated ? `<b class="${rankCls(p.savedRank)}">${p.savedTotal ?? "-"}点 ${p.savedRank || ""}</b>${t.complete ? "" : `<div class="small">${t.filled}/${t.count}項目</div>`}` : `<span class="small">${p.canEdit ? "未評価" : "-"}</span>`;
     const pcScore = p.scores.pc;
-    return `<tr class="evrow" onclick="openEval('${esc(p.key)}')"><td class="l"><b>${esc(p.name)}</b>${p.candidate ? '<span class="cand">⭐院長候補</span>' : ""}<div class="small">${esc(p.grade)} ${esc(p.clinics.join("・"))} ・ 評価者 ${esc(p.superior)}</div></td>
+    return `<tr class="evrow" onclick="openEval('${esc(p.key)}')"><td class="l"><b>${esc(p.name)}</b>${p.candidate ? '<span class="cand">⭐院長候補</span>' : ""}${levelChip(p.career)}<div class="small">${esc(p.grade)} ${esc(p.clinics.join("・"))} ・ 評価者 ${esc(p.superior)}</div></td>
       <td>${status}</td>
       <td>${p.halfAvg !== null ? `<b class="${rankCls(rankOfClient(p.halfAvg))}">${p.halfAvg}点</b><div class="small">${p.halfMonthsEvaluated}ヶ月分</div>` : "-"}</td>
       <td>${pcScore ? `${pcScore}/5` : "-"}${t.requiredMissed && t.requiredMissed.length ? '<div class="small ng">必須未達</div>' : ""}${t.basicIssues && t.basicIssues.length ? '<div class="small ng">基本に課題</div>' : ""}</td>
@@ -668,12 +683,12 @@ function renderEvalDetail() {
       ? `<b>${fmtVal(p.auto[it.auto], it.unit)}</b>`
       : ro ? `<b>${fmtVal(evalDraft.values[it.id], it.unit)}</b>`
       : `<input class="num" inputmode="decimal" value="${esc(evalDraft.values[it.id] ?? "")}" placeholder="${esc(it.unit)}" oninput="evalDraft.values['${esc(it.id)}']=this.value;evalDirty=true;refreshEvalTotal()"/>`;
-    return `<div class="item"><div class="lbl"><b>${esc(it.label)}</b>${isAuto ? '<span class="autotag">自動</span>' : ""}<div class="d">${esc(target)}（配点${it.points}）</div></div><div class="ctrl">${input}<div class="pts" id="pts_${esc(it.id)}">${scaled(sc.pts[it.id])}</div></div></div>`;
+    return `<div class="item ${negClass(it, sc.pts[it.id])}" id="item_${esc(it.id)}"><div class="lbl"><b>${esc(it.label)}</b>${isAuto ? '<span class="autotag">自動</span>' : ""}<div class="d">${esc(target)}（配点${it.points}）</div></div><div class="ctrl">${input}<div class="pts" id="pts_${esc(it.id)}">${scaled(sc.pts[it.id])}</div></div></div>`;
   }).join("");
   const scaleItems = (kind) => items.filter((it) => it.kind === kind).map((it) => {
     const cur = evalDraft.scores[it.id] || 0;
-    const btns = [1, 2, 3, 4, 5].map((n) => `<button class="${cur === n ? "sel" : ""}" ${ro ? "disabled" : ""} onclick="setEvalScore('${esc(it.id)}',${n})">${n}</button>`).join("");
-    return `<div class="item"><div class="lbl"><b>${esc(it.label)}</b>${it.required ? '<span class="reqtag">必須</span>' : ""}<div class="d">${esc(it.note)}（配点${it.points}）</div></div><div class="ctrl"><div class="score-btns">${btns}</div><div class="pts">${scaled(sc.pts[it.id])}</div></div></div>`;
+    const btns = [1, 2, 3, 4, 5].map((n) => `<button class="${cur === n ? "sel" : ""}${cur === n && n <= 2 ? " low" : ""}" ${ro ? "disabled" : ""} onclick="setEvalScore('${esc(it.id)}',${n})">${n}</button>`).join("");
+    return `<div class="item ${negClass(it, sc.pts[it.id])}"><div class="lbl"><b>${esc(it.label)}</b>${it.required ? '<span class="reqtag">必須</span>' : ""}<div class="d">${esc(it.note)}（配点${it.points}）</div></div><div class="ctrl"><div class="score-btns">${btns}</div><div class="pts">${scaled(sc.pts[it.id])}</div></div></div>`;
   }).join("");
 
   const behItems = scaleItems("行動");
@@ -687,6 +702,7 @@ function renderEvalDetail() {
     <div class="small" style="margin-bottom:6px;">半期の推移（100点満点・月を押すとその月を開きます）${p.halfAvg !== null ? ` ・ 半期平均 <b class="${rankCls(rankOfClient(p.halfAvg))}">${p.halfAvg}点 ${rankOfClient(p.halfAvg)}</b>` : ""}</div>
     <div class="scroll"><table><tr>${p.trend.map((t) => `<th>${Number(t.month.split("-")[1])}月</th>`).join("")}</tr><tr>${trend}</tr></table></div>
   </div></div>
+  ${careerCard(p)}
   ${candidateCard(p)}
   ${referenceCard(p)}
   <div class="card"><div class="card-h"><span>社会人としての基本（全員共通・5段階）</span><span class="small">${sc.bas}点</span></div><div class="card-b">${basicItems || '<div class="muted">項目なし</div>'}
@@ -712,6 +728,8 @@ function refreshEvalTotal() {
   for (const it of items) {
     const el = document.getElementById("pts_" + it.id);
     if (el) el.textContent = sc.pts[it.id] === null ? "-" : Math.round(sc.pts[it.id] / totalPts * 1000) / 10;
+    const row = document.getElementById("item_" + it.id);
+    if (row) { row.classList.remove("neg", "weak"); const c = negClass(it, sc.pts[it.id]); if (c) row.classList.add(c); }
   }
   document.getElementById("evalTotal").innerHTML = totalHtml(sc);
   document.getElementById("numSum").textContent = sc.num + "点";
@@ -992,6 +1010,48 @@ function renderLogins() {
       <td class="no-print">${p.pin ? `<button class="chip" onclick="reissuePin('個人','${esc(p.key)}','${esc(p.name)}')">再発行</button>` : ""}</td></tr>`).join("") || '<tr><td colspan="4" class="l muted">スタッフがいません</td></tr>'}
     </table></div></div></div>`).join("");
   return html;
+}
+
+// ===== 昇格・降格の判定 =====
+const LEVEL_LABEL = { up: "昇格候補", keep: "現状維持", warn: "改善指導", down: "降格対象" };
+function levelChip(c) {
+  if (!c) return "";
+  return `<span class="lv lv-${c.level}">${c.level === "up" ? "▲" : c.level === "down" ? "▼" : c.level === "warn" ? "！" : "－"} ${esc(LEVEL_LABEL[c.level])}</span>`;
+}
+
+const STATUS = {
+  ok: ["st-ok", "✓ 達成"], ng: ["st-ng", "✕ 未達"], hit: ["st-hit", "▼ 該当"], warn: ["st-warn", "！ 注意"],
+  unknown: ["st-unk", "－ データなし"], manual: ["st-man", "上司が確認"],
+};
+function checkRows(list, isDemotion) {
+  return list.map((c) => {
+    const [cls, label0] = STATUS[c.status] || STATUS.unknown;
+    const label = isDemotion && c.status === "ok" ? "✓ 問題なし" : label0;
+    return `<tr class="${cls}-row"><td class="l" style="white-space:normal;">${esc(c.label)}</td><td class="l" style="white-space:normal;">${esc(c.detail || "")}</td><td><span class="st ${cls}">${label}</span></td></tr>`;
+  }).join("");
+}
+
+function careerCard(p) {
+  const c = p.career;
+  if (!c) return "";
+  const reasons = c.reasons.map((r) => `<li class="rs-${r.tone}">${esc(r.text)}</li>`).join("");
+  return `<div class="card career lv-border-${c.level}"><div class="card-h"><span>昇格・降格の判定（${esc(c.grade)}）</span>${levelChip(c)}</div><div class="card-b">
+    <ul class="reasons">${reasons}</ul>
+    ${c.promotion.length ? `<div class="small" style="margin:10px 0 4px;font-weight:800;color:#1e3a5f;">▲ ${esc(c.to)}（${esc(c.toRole)}）への昇格条件</div>
+      <div class="scroll"><table class="checks"><tr><th class="l">条件</th><th class="l">いまの数字</th><th>判定</th></tr>${checkRows(c.promotion)}</table></div>` : ""}
+    ${c.demotion.length ? `<div class="small" style="margin:12px 0 4px;font-weight:800;color:#991b1b;">▼ 降格・改善指導の条件（${esc(c.grade)}）</div>
+      <div class="scroll"><table class="checks"><tr><th class="l">条件</th><th class="l">いまの数字</th><th>判定</th></tr>${checkRows(c.demotion, true)}</table></div>` : ""}
+    <div class="small" style="margin-top:8px;">条件の文言は台帳「キャリアラダー＆昇降格規定」、数字は進捗売上実績・あんど新規集客・月次評価から自動で判定しています。最終判断は半期査定で行います。</div>
+  </div></div>`;
+}
+
+// 点数が配点の6割未満（行動・基本は2以下）を赤、8割未満を黄色に
+function negClass(it, pts) {
+  if (pts === null || pts === undefined || !it.points) return "";
+  const r = Math.round((pts / it.points) * 100) / 100; // 2.4/3 などの小数誤差を丸める
+  if (r < 0.6) return "neg";
+  if (r < 0.8) return "weak";
+  return "";
 }
 
 load();

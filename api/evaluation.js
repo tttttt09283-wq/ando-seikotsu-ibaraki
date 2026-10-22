@@ -21,6 +21,7 @@ import {
   scoreMonth, itemsFor, validateItems, GRADE_LABELS, AUTO_OPTIONS, parseMonthKey, monthKeyOf, halfMonthKeys, autoValues, superiorOf, canEvaluate, buildRecordRows,
 } from "../lib/evaluation.js";
 import { normName } from "../lib/incentive-calc.js";
+import { LADDER_SHEET, parseLadder, judgeCareer, maskSensitive } from "../lib/career-judgement.js";
 
 const nowJst = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().replace("T", " ").slice(0, 16);
 
@@ -31,12 +32,15 @@ async function loadSheets() {
   if (hasItems) ranges.push(`'${ITEM_SHEET}'!A1:K500`);
   if (hasRecords) ranges.push(`'${RECORD_SHEET}'!A1:M20000`);
   if (hasStaff) ranges.push(`'${STAFF_SHEET}'!A1:E1000`);
+  const hasLadder = titles.includes(LADDER_SHEET);
+  if (hasLadder) ranges.push(`'${LADDER_SHEET}'!A1:L40`);
   const got = ranges.length ? await batchGet(CAREER_SHEET_ID, ranges) : [];
   const itemRows = hasItems ? got.shift() : null;
   const recordRows = hasRecords ? got.shift() : null;
   const staffRows = hasStaff ? got.shift() : null;
+  const ladderRows = hasLadder ? got.shift() : null;
   return {
-    hasStaff, staffSettings: parseStaffSettings(staffRows),
+    hasStaff, staffSettings: parseStaffSettings(staffRows), ladder: parseLadder(ladderRows),
     itemRowCount: itemRows ? itemRows.length : 0,
     setupNeeded: !hasItems || !hasRecords,
     hasItems, hasRecords,
@@ -105,6 +109,8 @@ function buildPayload({ model, np, viewer, isAdmin, sheets, monthKey }) {
       candidate: person.key !== viewer.personKey && !!(sheets.staffSettings.get(person.key) || {}).candidate,
       candidateMemo: person.key !== viewer.personKey ? (sheets.staffSettings.get(person.key) || {}).memo || "" : "",
       canSetCandidate: canSetCandidate(model, viewer, isAdmin, person),
+      // 昇格・降格の判定と理由（人件費の数字は見られる人にだけ）
+      career: maskSensitive(judgeCareer(person, { model, np, records: sheets.records, monthKey, halfKeys: half, ladder: sheets.ladder }), canSeeLabor(viewer)),
       evaluated: !!cur.rec, evaluator: cur.rec ? cur.rec.evaluator : "", updatedAt: cur.rec ? cur.rec.updatedAt : "",
       comment: cur.rec ? cur.rec.comment : "",
       ...maskLabor(items, cur, canSeeLabor(viewer)), result: cur.result,

@@ -186,3 +186,43 @@ test("PIN login helpers: random pins avoid easy ones, tokens verify and expire, 
   assert.equal(sheet.people.get("山田太郎").pin, "0789");
   assert.equal(sheet.people.get("山田太郎").fails, 2);
 });
+
+test("career judgement: reasons for promotion and demotion, unknown months are not treated as 0%", async () => {
+  const { judgeCareer, parseLadder, maskSensitive } = await import("../lib/career-judgement.js");
+  const ladder = parseLadder([
+    ["等級", "役職 / クラス", "固定", "基本給", "", "", "", "", "昇格要件（数値KPI）", "昇格要件（技術・スキル）", "昇格要件（行動・育成）", "降格・役職解任トリガー（客観基準）"],
+    ["G3", "副院長", "", "", "", "", "", "", "個人売上100万円以上を3ヶ月連続達成", "自費フルメニュー", "代行業務", "個人売上65万円未満が3ヶ月連続"],
+    ["G2", "一般", "", "", "", "", "", "", "個人売上70万円", "手技", "報連相", "次回予約率60%未満の継続"],
+    [],
+    ["G6", "GM", 400000, 450000],  // 下の給与レンジ表は読まない
+  ]);
+  assert.equal(ladder.G3.skill, "自費フルメニュー");
+  assert.ok(ladder.G6.kpi.includes("営業利益")); // 既定の文言のまま
+  const model = { fiscalYear: 2026, latestMonth: 9, clinics: [], blocks: [] };
+  const sales = (a, b, c) => [{ month: 7, total: a }, { month: 8, total: b }, { month: 9, total: c }];
+  const ctx = (np) => ({ model, np, records: new Map(), monthKey: "2026-09", halfKeys: ["2026-07", "2026-08", "2026-09"], ladder });
+  const npMap = (stats) => ({ byPerson: new Map([["p", stats]]), byClinic: new Map() });
+
+  // G3 が65万未満3ヶ月連続 → 降格対象
+  const down = judgeCareer({ key: "p", grade: "G3", clinics: ["A"], monthlySales: sales(600000, 640000, 500000) }, ctx(null));
+  assert.equal(down.level, "down");
+  assert.match(down.reasons[0].text, /65万円未満が3ヶ月連続/);
+
+  // G2 で売上100万×3・成約率と初回売上も達成 → 数値条件はそろう（評価なしなので昇格候補にはならない）
+  const s = { count: 5, closed: 4, firstPay: 100000, contract: 100000, continued: 4, closeBase: 5, contBase: 5 };
+  const g2 = judgeCareer({ key: "p", grade: "G2", clinics: ["A"], monthlySales: sales(1100000, 1200000, 1050000) }, ctx(npMap({ "2026-09": s })));
+  assert.equal(g2.promotion.find((c) => c.label.includes("3ヶ月連続")).status, "ok");
+  assert.equal(g2.promotion.find((c) => c.label.includes("半期の評価")).status, "unknown");
+  assert.equal(g2.level, "keep");
+
+  // 通院を記入していない月（contBase 0）は継続率 0% として数えない
+  const blank = { count: 6, closed: 0, firstPay: 30000, contract: 0, continued: 0, closeBase: 0, contBase: 0 };
+  const g2b = judgeCareer({ key: "p", grade: "G2", clinics: ["A"], monthlySales: sales(700000, 700000, 700000) }, ctx(npMap({ "2026-07": blank, "2026-08": blank, "2026-09": blank })));
+  assert.equal(g2b.demotion[0].status, "unknown");
+  assert.notEqual(g2b.level, "down");
+
+  // 人件費の数字は伏せられる
+  const masked = maskSensitive({ promotion: [{ label: "人件費率", status: "ng", detail: "45%", sensitive: true }], demotion: [], reasons: [{ tone: "ng", text: "【降格】人件費率：45%", sensitive: true }] }, false);
+  assert.ok(!masked.promotion[0].detail.includes("45"));
+  assert.ok(!masked.reasons[0].text.includes("45"));
+});
