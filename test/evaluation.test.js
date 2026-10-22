@@ -270,18 +270,16 @@ test("events: parse rows, bonus per person-month, rewards added to incentives an
   assert.equal(people[0].incentives.filter((i) => i.type === "event").length, 2);
 });
 
-test("total = class score (100) + department points, not scaled back to 100", async () => {
-  const { scoreMonth, itemsFor, deptMembership } = await import("../lib/evaluation.js");
+test("evaluation rate = earned points / max points (department items included, no 100-point cap on totals)", async () => {
+  const { scoreMonth, itemsFor } = await import("../lib/evaluation.js");
   const items = itemsFor(DEFAULT_ITEMS, "G2", ["集客"]);
   const scores = {}, values = {};
-  for (const it of items) { if (it.kind === "数値") values[it.id] = (it.target || 1) * 2; else scores[it.id] = 5; }
+  for (const it of items) { if (it.kind === "数値") values[it.id] = (it.target || 1) * 2; else scores[it.id] = it.dept ? 1 : 5; }
   const r = scoreMonth(items, values, scores);
-  assert.equal(r.classScore, 100);
-  assert.equal(r.depts.max, 10);
-  assert.equal(r.total, 110);
+  assert.equal(r.max, 110);           // クラス100（45+40+15）＋部門10
+  assert.equal(r.earned, 102);        // 部門は1/5（10点中2点）
+  assert.equal(r.total, 92.7);        // 102 ÷ 110
   assert.equal(r.rank, "S");
-  const plain = scoreMonth(itemsFor(DEFAULT_ITEMS, "G2", []), values, scores);
-  assert.equal(plain.total, 100);
 });
 
 test("distribution: % split equally by item count, stricter required line for higher classes, validation", async () => {
@@ -293,7 +291,8 @@ test("distribution: % split equally by item count, stricter required line for hi
   assert.equal(items.filter((it) => it.dept).reduce((a, it) => a + it.points, 0), 20);
   assert.equal(items[0].requiredMin, 4);
   assert.ok(DEFAULT_DIST.grades.G6.line > DEFAULT_DIST.grades.G1.line);
-  assert.throws(() => validateDist("クラス", { num: 50, beh: 40, basic: 20, line: 3 }), /100/);
+  assert.equal(validateDist("クラス", { num: 50, beh: 40, basic: 20, line: 3 }).num, 50); // 合計100でなくてよい
+  assert.throws(() => validateDist("クラス", { num: 0, beh: 0, basic: 0, line: 3 }), /どれか/);
   assert.equal(validateDist("部門", { points: 15 }).points, 15);
   // 必須ラインより低いと必須未達
   const pc = items.find((it) => it.id === "pc");

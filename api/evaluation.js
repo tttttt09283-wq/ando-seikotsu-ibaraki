@@ -1,5 +1,5 @@
 // Vercel Serverless Function: /api/evaluation
-// 等級別の月次評価（数値＋行動・100点満点）を読み書きする。
+// 等級別の月次評価（獲得点÷満点の評価率）を読み書きする。
 //
 //   GET  ?month=2027-01            … その月の評価（見てよい人だけ）と、同じ半期の点数推移
 //   POST { action: "save", month, personKey, values, scores, comment } … 直属の上司（または管理者・GM）が保存

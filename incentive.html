@@ -604,7 +604,7 @@ function closeEval() {
 
 // サーバーと同じ採点（画面上ですぐ点数を出すため）
 function clientScore(items, p, draft) {
-  const total = items.filter((it) => !it.dept).reduce((a, it) => a + it.points, 0) || 100; // クラスの点（100点満点に換算）
+  const max = items.reduce((a, it) => a + it.points, 0); // 満点（クラス・共通・部門すべて）
   let earned = 0, filled = 0, num = 0, beh = 0, bas = 0;
   const pts = {};
   for (const it of items) {
@@ -624,11 +624,11 @@ function clientScore(items, p, draft) {
     pts[it.id] = v;
     if (v !== null) { earned += v; filled++; if (it.dept) {} else if (it.kind === "数値") num += v; else if (it.kind === "基本") bas += v; else beh += v; }
   }
-  const deptEarned = items.filter((it) => it.dept).reduce((a, it) => a + (pts[it.id] || 0), 0);
-  const t = filled ? Math.round(((earned - deptEarned) / total * 100 + deptEarned) * 10) / 10 : null; // クラスの点＋部門の点
+  const r1 = (v) => Math.round(v * 10) / 10;
+  const t = filled && max ? r1((earned / max) * 100) : null; // 評価率（％）＝獲得点÷満点
   const complete = filled === items.length;
   const rank = !complete || t === null ? null : t >= 90 ? "S" : t >= 80 ? "A" : t >= 65 ? "B" : t >= 50 ? "C" : "D";
-  return { pts, total: t, rank, complete, filled, count: items.length, num: Math.round(num / total * 1000) / 10, beh: Math.round(beh / total * 1000) / 10, bas: Math.round(bas / total * 1000) / 10 };
+  return { pts, total: t, rank, complete, filled, count: items.length, earned: r1(earned), max: r1(max), num: r1(num), beh: r1(beh), bas: r1(bas) };
 }
 
 function fmtVal(v, unit) {
@@ -667,11 +667,11 @@ function renderEvaluation() {
   const toDo = people.filter((p) => p.canEdit && !p.evaluated).length;
   const rows = people.map((p) => {
     const t = p.result;
-    const status = p.evaluated ? `<b class="${rankCls(p.savedRank)}">${p.savedTotal ?? "-"}点 ${p.savedRank || ""}</b>${t.complete ? "" : `<div class="small">${t.filled}/${t.count}項目</div>`}` : `<span class="small">${p.canEdit ? "未評価" : "-"}</span>`;
+    const status = p.evaluated ? `<b class="${rankCls(p.savedRank)}">${p.savedTotal ?? "-"}% ${p.savedRank || ""}</b>${t.complete ? "" : `<div class="small">${t.filled}/${t.count}項目</div>`}` : `<span class="small">${p.canEdit ? "未評価" : "-"}</span>`;
     const pcScore = p.scores.pc;
     return `<tr class="evrow" onclick="openEval('${esc(p.key)}')"><td class="l"><b>${esc(p.name)}</b>${p.candidate ? '<span class="cand">⭐院長候補</span>' : ""}${levelChip(p.career)}<div class="small">${esc(p.grade)} ${esc(p.clinics.join("・"))} ・ 評価者 ${esc(p.superior)}</div></td>
       <td>${status}</td>
-      <td>${p.halfAvg !== null ? `<b class="${rankCls(rankOfClient(p.halfAvg))}">${p.halfAvg}点</b><div class="small">${p.halfMonthsEvaluated}ヶ月分</div>` : "-"}</td>
+      <td>${p.halfAvg !== null ? `<b class="${rankCls(rankOfClient(p.halfAvg))}">${p.halfAvg}%</b><div class="small">${p.halfMonthsEvaluated}ヶ月分</div>` : "-"}</td>
       <td>${pcScore ? `${pcScore}/5` : "-"}${t.requiredMissed && t.requiredMissed.length ? '<div class="small ng">必須未達</div>' : ""}${t.basicIssues && t.basicIssues.length ? '<div class="small ng">基本に課題</div>' : ""}</td>
       <td>${p.canEdit ? `<button class="btn btn-save">${p.evaluated ? "修正" : "評価する"}</button>` : `<button class="btn btn-save" style="background:#64748b;">見る</button>`}</td></tr>`;
   }).join("");
@@ -679,7 +679,7 @@ function renderEvaluation() {
   html += `<div class="card"><div class="card-h"><span>${monthLabel(evalMonth)} の評価</span>${toDo ? `<span class="small ng">あなたの未評価 ${toDo}名</span>` : ""}</div><div class="card-b">
     ${people.length ? `<div class="scroll"><table><tr><th class="l">氏名</th><th>今月</th><th>半期平均</th><th>PC・基本</th><th></th></tr>${rows}</table></div>` : '<div class="muted">表示できる評価対象者がいません。</div>'}
     ${evalData.newPatientUnmatched && evalData.newPatientUnmatched.length ? `<div class="small warn" style="margin-top:8px;">新規集客シートの「初回施術担当者」でスタッフと結びつかなかった名前：${evalData.newPatientUnmatched.map(esc).join("、")}（台帳の評価シートに載っていない人は対象外です）</div>` : ""}
-    <div class="small" style="margin-top:8px;">評価は毎月、直属の上司が付けます（スタッフ→院長、院長→BM、BM→GM）。合計＝クラスの点（100点満点）＋部門の点＋イベント加点。S90以上・A80以上・B65以上・C50以上・D50未満。半期平均が台帳の査定の点数になります。</div>
+    <div class="small" style="margin-top:8px;">評価は毎月、直属の上司が付けます（スタッフ→院長、院長→BM、BM→GM）。評価率＝獲得点÷満点（部門の項目も含む）＋イベント加点。S90%以上・A80%以上・B65%以上・C50%以上・D50%未満。半期平均が台帳の査定の評価になります。</div>
   </div></div>`;
   return html;
 }
@@ -691,8 +691,9 @@ function renderEvalDetail() {
   const ro = !p.canEdit || evalData.setupNeeded;
   const sc = clientScore(items, p, evalDraft);
   const totalPts = items.filter((it) => !it.dept).reduce((a, it) => a + it.points, 0) || 100;
-  const scaled = (v) => v === null || v === undefined ? "-" : (Math.round(v / totalPts * 1000) / 10); // クラスの項目：100点満点に換算
-  const raw = (v) => v === null || v === undefined ? "-" : Math.round(v * 10) / 10; // 部門の項目：配点そのまま
+  const scaled = (v) => v === null || v === undefined ? "-" : Math.round(v * 10) / 10; // 獲得点（配点そのまま）
+  const raw = (v) => v === null || v === undefined ? "-" : Math.round(v * 10) / 10;
+  const secMax = (kind) => raw(items.filter((it) => !it.dept && it.kind === kind).reduce((a, it) => a + it.points, 0));
 
   const numItem = (it) => {
     const isHidden = p.hidden && it.id in p.hidden;
@@ -704,13 +705,13 @@ function renderEvalDetail() {
       ? `<b>${fmtVal(p.auto[it.auto], it.unit)}</b>`
       : ro ? `<b>${fmtVal(evalDraft.values[it.id], it.unit)}</b>`
       : `<input class="num" inputmode="decimal" value="${esc(evalDraft.values[it.id] ?? "")}" placeholder="${esc(it.unit)}" oninput="evalDraft.values['${esc(it.id)}']=this.value;evalDirty=true;refreshEvalTotal()"/>`;
-    return `<div class="item ${negClass(it, sc.pts[it.id])}" id="item_${esc(it.id)}"><div class="lbl"><b>${esc(it.label)}</b>${isAuto ? '<span class="autotag">自動</span>' : ""}<div class="d">${esc(target)}（配点${Math.round(it.points * 10) / 10}）</div></div><div class="ctrl">${input}<div class="pts" id="pts_${esc(it.id)}">${it.dept ? raw(sc.pts[it.id]) : scaled(sc.pts[it.id])}</div></div></div>`;
+    return `<div class="item ${negClass(it, sc.pts[it.id])}" id="item_${esc(it.id)}"><div class="lbl"><b>${esc(it.label)}</b>${isAuto ? '<span class="autotag">自動</span>' : ""}<div class="d">${esc(target)}（配点${Math.round(it.points * 10) / 10}）</div></div><div class="ctrl">${input}<div class="pts" id="pts_${esc(it.id)}">${scaled(sc.pts[it.id])}</div></div></div>`;
   };
   const numItems = items.filter((it) => it.kind === "数値" && !it.dept).map(numItem).join("");
   const scaleItem = (it) => {
     const cur = evalDraft.scores[it.id] || 0;
     const btns = [1, 2, 3, 4, 5].map((n) => `<button class="${cur === n ? "sel" : ""}${cur === n && n <= 2 ? " low" : ""}" ${ro ? "disabled" : ""} onclick="setEvalScore('${esc(it.id)}',${n})">${n}</button>`).join("");
-    return `<div class="item ${negClass(it, sc.pts[it.id])}"><div class="lbl"><b>${esc(it.label)}</b>${it.required ? `<span class="reqtag">必須 ${it.requiredMin || 3}以上</span>` : ""}<div class="d">${esc(it.note)}（配点${Math.round(it.points * 10) / 10}）</div></div><div class="ctrl"><div class="score-btns">${btns}</div><div class="pts">${it.dept ? raw(sc.pts[it.id]) : scaled(sc.pts[it.id])}</div></div></div>`;
+    return `<div class="item ${negClass(it, sc.pts[it.id])}"><div class="lbl"><b>${esc(it.label)}</b>${it.required ? `<span class="reqtag">必須 ${it.requiredMin || 3}以上</span>` : ""}<div class="d">${esc(it.note)}（配点${Math.round(it.points * 10) / 10}）</div></div><div class="ctrl"><div class="score-btns">${btns}</div><div class="pts">${scaled(sc.pts[it.id])}</div></div></div>`;
   };
   const scaleItems = (kind) => items.filter((it) => it.kind === kind && !it.dept).map(scaleItem).join("");
   // 部門の評価（担当している部門ごと）
@@ -721,25 +722,25 @@ function renderEvalDetail() {
   const behItems = scaleItems("行動");
   const basicItems = scaleItems("基本");
   const basicIssues = items.filter((it) => it.kind === "基本" && evalDraft.scores[it.id] && evalDraft.scores[it.id] <= 2);
-  const trend = p.trend.map((t) => `<td class="${t.month === evalMonth ? "bg-ok" : ""}" style="cursor:pointer;" onclick="jumpEvalMonth('${t.month}')" title="${monthLabel(t.month)}を開く">${t.evaluated ? `<b class="${rankCls(t.rank)}">${t.total ?? "-"}</b><div class="small">${t.rank || ""}${t.pc ? ` ・PC${t.pc}` : ""}</div>` : '<span class="small">-</span>'}</td>`).join("");
+  const trend = p.trend.map((t) => `<td class="${t.month === evalMonth ? "bg-ok" : ""}" style="cursor:pointer;" onclick="jumpEvalMonth('${t.month}')" title="${monthLabel(t.month)}を開く">${t.evaluated ? `<b class="${rankCls(t.rank)}">${t.total ?? "-"}%</b><div class="small">${t.rank || ""}${t.pc ? ` ・PC${t.pc}` : ""}</div>` : '<span class="small">-</span>'}</td>`).join("");
   const reqMissed = items.filter((it) => it.required && it.kind !== "数値" && evalDraft.scores[it.id] && evalDraft.scores[it.id] < (it.requiredMin || 3));
 
   return `<div class="monthnav" style="flex-wrap:wrap;"><button class="chip" onclick="closeEval()">‹ 一覧</button><span style="flex:1"></span><button class="chip" onclick="changeEvalMonth(-1)">‹ 前月</button><div class="m" style="min-width:100px;">${monthLabel(evalMonth)}</div><button class="chip" onclick="changeEvalMonth(1)">次月 ›</button></div>
   <div class="card"><div class="card-h"><span>${esc(p.name)}（${esc(p.grade)} ${esc(p.role)} ・ ${esc(p.clinics.join("・"))}）</span><span class="small">評価者：${esc(p.superior)}${p.evaluated ? ` ・ 最終更新 ${esc(p.updatedAt)}（${esc(p.evaluator)}）` : ""}</span></div><div class="card-b">
-    <div class="small" style="margin-bottom:6px;">半期の推移（合計点・月を押すとその月を開きます）${p.halfAvg !== null ? ` ・ 半期平均 <b class="${rankCls(rankOfClient(p.halfAvg))}">${p.halfAvg}点 ${rankOfClient(p.halfAvg)}</b>` : ""}</div>
+    <div class="small" style="margin-bottom:6px;">半期の推移（評価率・月を押すとその月を開きます）${p.halfAvg !== null ? ` ・ 半期平均 <b class="${rankCls(rankOfClient(p.halfAvg))}">${p.halfAvg}% ${rankOfClient(p.halfAvg)}</b>` : ""}</div>
     <div class="scroll"><table><tr>${p.trend.map((t) => `<th>${Number(t.month.split("-")[1])}月</th>`).join("")}</tr><tr>${trend}</tr></table></div>
   </div></div>
   ${careerCard(p)}
   ${candidateCard(p)}
   ${referenceCard(p)}
-  <div class="card"><div class="card-h"><span>社会人としての基本（全員共通・5段階）</span><span class="small">${sc.bas}点</span></div><div class="card-b">${basicItems || '<div class="muted">項目なし</div>'}
+  <div class="card"><div class="card-h"><span>社会人としての基本（全員共通・5段階）</span><span class="small">${sc.bas}点／${secMax("基本")}点</span></div><div class="card-b">${basicItems || '<div class="muted">項目なし</div>'}
     ${basicIssues.length ? `<div class="banner ng">⚠️ 社会人としての基本（${basicIssues.map((it) => esc(it.label)).join("・")}）が2以下です。等級に関係なく、まず改善が必要な項目です。</div>` : ""}</div></div>
-  <div class="card"><div class="card-h"><span>数値の評価</span><span class="small" id="numSum">${sc.num}点</span></div><div class="card-b">${numItems || '<div class="muted">項目なし</div>'}
+  <div class="card"><div class="card-h"><span>数値の評価</span><span class="small" id="numSum">${sc.num}点／${secMax("数値")}点</span></div><div class="card-b">${numItems || '<div class="muted">項目なし</div>'}
     <div class="small" style="margin-top:8px;">「自動」は進捗売上実績・台帳から自動で入ります。目標「以上」は達成率に応じて、「以下」は目標以下で満点（目標を10ポイント超えると0点）。</div></div></div>
-  ${depts.length ? `<div class="card"><div class="card-h"><span>部門の評価（${depts.map(esc).join("・")}）</span><span class="small">${raw(deptPts)}点</span></div><div class="card-b">${deptHtml}
-    <div class="small" style="margin-top:8px;">担当している部門の項目です。部門の点はクラスの点（100点）にそのまま足します。</div></div></div>` : ""}
+  ${depts.length ? `<div class="card"><div class="card-h"><span>部門の評価（${depts.map(esc).join("・")}）</span><span class="small">${raw(deptPts)}点／${raw(items.filter((it) => it.dept).reduce((a, it) => a + it.points, 0))}点</span></div><div class="card-b">${deptHtml}
+    <div class="small" style="margin-top:8px;">担当している部門の項目です。部門の点も満点・獲得点に入れて評価率を出します。</div></div></div>` : ""}
   ${eventCardForPerson(p)}
-  <div class="card"><div class="card-h"><span>行動の評価（5段階）</span><span class="small">${sc.beh}点</span></div><div class="card-b">${behItems || '<div class="muted">項目なし</div>'}
+  <div class="card"><div class="card-h"><span>行動の評価（5段階）</span><span class="small">${sc.beh}点／${secMax("行動")}点</span></div><div class="card-b">${behItems || '<div class="muted">項目なし</div>'}
     <div class="small" style="margin-top:8px;">5＝期待を大きく上回る　4＝上回る　3＝できている　2＝あと一歩　1＝できていない</div>
     ${reqMissed.length ? `<div class="banner ng">⚠️ 必須項目（${reqMissed.map((it) => esc(it.label)).join("・")}）が必須ライン（${reqMissed[0].requiredMin || 3}以上）に届いていません。改善指導の対象になります。</div>` : ""}</div></div>
   <div class="card"><div class="card-h">評価者コメント</div><div class="card-b">${ro ? `<div style="white-space:pre-wrap;font-size:13px;">${esc(evalDraft.comment) || '<span class="muted">なし</span>'}</div>` : `<textarea oninput="evalDraft.comment=this.value;evalDirty=true" placeholder="良かった点・次月の課題など">${esc(evalDraft.comment)}</textarea>`}</div>
@@ -751,18 +752,17 @@ function totalHtml(sc) {
   const bonus = p ? p.eventBonus || 0 : 0;
   const final = sc.total === null ? null : Math.round((sc.total + bonus) * 10) / 10;
   const rank = sc.rank && final !== null ? rankOfClient(final) : sc.rank;
-  return `<span class="small">合計</span> <b style="font-size:22px;" class="${rankCls(rank)}">${final ?? "-"}点</b> <b class="${rankCls(rank)}">${rank || ""}</b>`
-    + (bonus ? ` <span class="small">（評価 ${sc.total ?? "-"}点 ＋ イベント加点 ${bonus}点）</span>` : "")
-    + ` <span class="small">（${sc.filled}/${sc.count}項目入力）</span>`;
+  return `<span class="small">評価率</span> <b style="font-size:22px;" class="${rankCls(rank)}">${final ?? "-"}%</b> <b class="${rankCls(rank)}">${rank || ""}</b>`
+    + ` <span class="small">（${sc.earned}点／${sc.max}点${bonus ? ` ＋ イベント加点 ${bonus}%` : ""}・${sc.filled}/${sc.count}項目入力）</span>`;
 }
 
 // その月のイベント（加点・報酬）
 function eventCardForPerson(p) {
   if (!p.events || !p.events.length) return "";
-  return `<div class="card"><div class="card-h"><span>🎉 全社イベント（${monthLabel(evalMonth)}）</span><span class="small ok">加点 +${p.eventBonus}点</span></div><div class="card-b">
+  return `<div class="card"><div class="card-h"><span>🎉 全社イベント（${monthLabel(evalMonth)}）</span><span class="small ok">加点 +${p.eventBonus}%</span></div><div class="card-b">
     <div class="scroll"><table><tr><th class="l">日付</th><th class="l">イベント</th><th class="l">結果</th><th>加点</th><th>報酬</th></tr>
-    ${p.events.map((e) => `<tr><td class="l">${esc(e.date.slice(5).replace("-", "/"))}</td><td class="l">${esc(e.name)}</td><td class="l">${esc(e.result)}</td><td class="ok">+${e.bonus}</td><td>${yen(e.reward)}</td></tr>`).join("")}</table></div>
-    <div class="small" style="margin-top:6px;">加点は月次評価の合計に足されます。報酬はインセンティブと同じく人件費に含めます。</div>
+    ${p.events.map((e) => `<tr><td class="l">${esc(e.date.slice(5).replace("-", "/"))}</td><td class="l">${esc(e.name)}</td><td class="l">${esc(e.result)}</td><td class="ok">+${e.bonus}%</td><td>${yen(e.reward)}</td></tr>`).join("")}</table></div>
+    <div class="small" style="margin-top:6px;">加点は月次の評価率に足されます（例：+5 → 評価率＋5%）。報酬はインセンティブと同じく人件費に含めます。</div>
   </div></div>`;
 }
 
@@ -773,12 +773,12 @@ function refreshEvalTotal() {
   const totalPts = items.filter((it) => !it.dept).reduce((a, it) => a + it.points, 0) || 100;
   for (const it of items) {
     const el = document.getElementById("pts_" + it.id);
-    if (el) el.textContent = sc.pts[it.id] === null ? "-" : it.dept ? Math.round(sc.pts[it.id] * 10) / 10 : Math.round(sc.pts[it.id] / totalPts * 1000) / 10;
+    if (el) el.textContent = sc.pts[it.id] === null ? "-" : Math.round(sc.pts[it.id] * 10) / 10;
     const row = document.getElementById("item_" + it.id);
     if (row) { row.classList.remove("neg", "weak"); const c = negClass(it, sc.pts[it.id]); if (c) row.classList.add(c); }
   }
   document.getElementById("evalTotal").innerHTML = totalHtml(sc);
-  document.getElementById("numSum").textContent = sc.num + "点";
+  document.getElementById("numSum").textContent = `${sc.num}点／${Math.round(items.filter((it) => !it.dept && it.kind === "数値").reduce((a, it) => a + it.points, 0) * 10) / 10}点`;
 }
 
 function setEvalScore(id, n) {
@@ -884,11 +884,10 @@ const fmtPts = (v) => (v === null || v === undefined ? "" : (Math.round(v * 10) 
 
 function totalsHtml() {
   const g = itemEditor.grade, d = itemEditor.dist;
-  if (g === "共通") return `<span class="small">社会人としての基本の配点は、各クラスの「基本％」をこの項目数（${itemEditor.draft.length}）で等分します。</span>`;
-  if (isDept(g)) return `<span class="small">この部門</span> <b style="font-size:20px;">${Number(d.points || 0)}点</b> <span class="small">を ${itemEditor.draft.length}項目で等分（担当者のクラスの点100点に足します）</span>`;
+  if (g === "共通") return `<span class="small">社会人としての基本の配点は、各クラスの「基本の点」をこの項目数（${itemEditor.draft.length}）で等分します。</span>`;
+  if (isDept(g)) return `<span class="small">この部門</span> <b style="font-size:20px;">${Number(d.points || 0)}点</b> <span class="small">を ${itemEditor.draft.length}項目で等分（担当者の満点・獲得点に加わります）</span>`;
   const sum = Number(d.num || 0) + Number(d.beh || 0) + Number(d.basic || 0);
-  const ok = Math.round(sum) === 100;
-  return `<span class="small">数値 ${Number(d.num || 0)}％ ＋ 行動 ${Number(d.beh || 0)}％ ＋ 基本 ${Number(d.basic || 0)}％ ＝</span> <b style="font-size:20px;" class="${ok ? "ok" : "ng"}">${sum}％</b>${ok ? "" : ' <span class="small ng">（100％にしてください）</span>'}`;
+  return `<span class="small">数値 ${Number(d.num || 0)}点 ＋ 行動 ${Number(d.beh || 0)}点 ＋ 基本 ${Number(d.basic || 0)}点 ＝ 満点</span> <b style="font-size:20px;">${sum}点</b> <span class="small">（担当部門があればその点も加わります。評価は獲得点÷満点の率）</span>`;
 }
 
 function refreshItemTotal() {
@@ -926,18 +925,18 @@ function renderItemEditor() {
   // 上の設定（クラス：％と必須ライン／部門：点数）
   let settings;
   if (common) {
-    settings = `<div class="small">各クラスの「基本％」：${Object.entries((evalData.dist || {}).grades || {}).map(([k, v]) => `${esc(labels[k] || k)} ${v.basic}％`).join("／")}（クラスを選ぶと変えられます）</div>`;
+    settings = `<div class="small">各クラスの「基本の点」：${Object.entries((evalData.dist || {}).grades || {}).map(([k, v]) => `${esc(labels[k] || k)} ${v.basic}点`).join("／")}（クラスを選ぶと変えられます）</div>`;
   } else if (dept) {
     settings = `<div class="dist-row"><label>部門の点数<input class="dist" inputmode="numeric" value="${esc(d.points)}" oninput="distField('points',this.value)"/>点</label>
-      <span class="small">担当者のクラスの点（100点）に足す点。項目数で等分します。</span></div>`;
+      <span class="small">担当者の満点に加わる点。項目数で等分します。</span></div>`;
   } else {
     settings = `<div class="dist-row">
-      <label>数値<input class="dist" inputmode="numeric" value="${esc(d.num)}" oninput="distField('num',this.value)"/>％</label>
-      <label>行動<input class="dist" inputmode="numeric" value="${esc(d.beh)}" oninput="distField('beh',this.value)"/>％</label>
-      <label>基本<input class="dist" inputmode="numeric" value="${esc(d.basic)}" oninput="distField('basic',this.value)"/>％</label>
+      <label>数値<input class="dist" inputmode="numeric" value="${esc(d.num)}" oninput="distField('num',this.value)"/>点</label>
+      <label>行動<input class="dist" inputmode="numeric" value="${esc(d.beh)}" oninput="distField('beh',this.value)"/>点</label>
+      <label>基本<input class="dist" inputmode="numeric" value="${esc(d.basic)}" oninput="distField('basic',this.value)"/>点</label>
       <label>必須ライン<select class="dist" onchange="distField('line',Number(this.value))">${[1, 2, 3, 4, 5].map((n) => `<option value="${n}" ${Number(d.line) === n ? "selected" : ""}>${n}以上</option>`).join("")}</select></label>
     </div>
-    <div class="small">配点は「数値％÷数値の項目数」「行動％÷行動の項目数」で自動で決まります。基本％は「社会人としての基本」の項目に等分します。
+    <div class="small">配点は「数値の点÷数値の項目数」「行動の点÷行動の項目数」で自動で決まります。基本の点は「社会人としての基本」の項目に等分します。合計は100点でなくて大丈夫です（評価は「獲得点÷満点」の率で出します）。
       必須にした行動の項目は、5段階で必須ライン未満だと「必須未達」になります（数値の必須は目標達成が必要）。必須ラインは上のクラスほど厳しく（初期値：GM・BM 4／院長・副院長・一般 3／新人・短時間・受付 2）。</div>`;
   }
 
@@ -993,7 +992,6 @@ async function saveItems() {
   root.innerHTML = `<div class="center">保存中...</div>`;
   try {
     const dist = grade === "共通" ? null : itemEditor.dist;
-    if (dist && !isDept(grade) && Math.round(Number(dist.num) + Number(dist.beh) + Number(dist.basic)) !== 100) { alert("数値％＋行動％＋基本％ を100にしてください"); render(); return; }
     const json = await evalFetch("POST", { action: "saveItems", month: evalMonth, grade, items, dist });
     if (json) {
       evalData = json;
@@ -1241,7 +1239,7 @@ function renderEventEditor() {
   if (eventEditor.mode === "list") {
     const groups = evalData.eventGroups || [];
     return back + `<div class="card"><div class="card-b" style="font-size:13px;line-height:1.7;">
-        全社イベントの結果を登録すると、<b>加点</b>はその月の月次評価の合計に足され、<b>報酬</b>はインセンティブと同じく人件費（社保込み）の42%枠に含まれます。
+        全社イベントの結果を登録すると、<b>加点</b>はその月の評価率に足され（+5 → +5%）、<b>報酬</b>はインセンティブと同じく人件費（社保込み）の42%枠に含まれます。
         <div style="margin-top:10px;"><button class="btn btn-blue" style="width:auto;" onclick="eventEditor={mode:'edit',draft:newEventDraft()};render()">＋ イベントを登録</button></div></div></div>`
       + (groups.length ? groups.map((g, i) => {
         const reward = g.entries.reduce((a, e) => a + e.reward, 0);
@@ -1263,7 +1261,7 @@ function renderEventEditor() {
     <div class="ie-grid2" style="grid-template-columns:1fr 160px;"><div><label>イベント名</label><input value="${esc(d.name)}" oninput="evField('name',this.value)" placeholder="例：全社技術コンテスト"/></div>
       <div><label>日付</label><input type="date" value="${esc(d.date)}" oninput="evField('date',this.value)"/></div></div>
     <label>メモ（任意）</label><input value="${esc(d.memo)}" oninput="evField('memo',this.value)" placeholder="例：優勝5万円・準優勝3万円"/>
-    <label>参加者（加点は0〜${evalData.maxEventBonus}点、報酬は円）</label>
+    <label>参加者（加点は評価率に足す％で0〜${evalData.maxEventBonus}、報酬は円）</label>
     <div class="scroll"><table><tr><th class="l">氏名</th><th class="l">結果</th><th>加点</th><th>報酬</th><th></th></tr>${rows || '<tr><td colspan="5" class="l muted">下から参加者を追加してください</td></tr>'}</table></div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center;">
       <select id="evPerson" class="pick" style="width:auto;margin:0;">${people.map((p) => `<option value="${esc(p.key)}">${esc(p.name)}（${esc(p.grade)}）</option>`).join("")}</select>
