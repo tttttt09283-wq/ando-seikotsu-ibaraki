@@ -40,7 +40,7 @@ td.l,th.l{text-align:left;}
 .kpi .s{font-size:11px;color:#94a3b8;margin-top:2px;}
 .ok{color:#047857;} .ng{color:#b91c1c;} .warn{color:#b45309;}
 .chg{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:800;white-space:nowrap;}
-.chg-up{background:#d1fae5;color:#047857;} .chg-down{background:#fee2e2;color:#b91c1c;} .chg-keep{background:#f1f5f9;color:#64748b;}
+.chg-up{background:#d1fae5;color:#047857;} .chg-down{background:#fee2e2;color:#b91c1c;} .chg-keep{background:#f1f5f9;color:#64748b;} .chg-demote{background:#b91c1c;color:white;}
 tr.row-up td{background:#f0fdf4;} tr.row-down td{background:#fef2f2;}
 .chg-sum{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-bottom:10px;font-size:13px;}
 .chg-total{margin-left:auto;font-size:12px;}
@@ -494,6 +494,8 @@ function salesCard() {
 }
 
 const CHANGE = { up: ["▲ 増", "chg-up"], down: ["▼ 減", "chg-down"], downReview: ["▼ 減給検討", "chg-down"], keep: ["― 据置", "chg-keep"] };
+// D判定（50点未満）は台帳の規定どおり「降格対象」
+const isDemotion = (e) => e.rank === "D" || /降格対象/.test(String(e.positionDecision ?? ""));
 const changeChip = (c) => (CHANGE[c] ? `<span class="chg ${CHANGE[c][1]}">${CHANGE[c][0]}</span>` : '<span class="small">-</span>');
 function evaluationCard() {
   const evs = [...visiblePeople()].sort((a, b) => gradeRankClient(a.grade) - gradeRankClient(b.grade)).flatMap((p) => p.evaluations || []).filter((e) => !clinicFilter || e.clinic === clinicFilter);
@@ -501,14 +503,14 @@ function evaluationCard() {
   const money = data.canSeeSalary;
   const diff = (e) => (e.newSalary != null && e.prevSalary != null ? e.newSalary - e.prevSalary : null);
   const diffCell = (e) => { const d = diff(e); return d == null ? "-" : `<b class="${d > 0 ? "ok" : d < 0 ? "ng" : "muted"}">${d > 0 ? "+" : ""}${yen(d)}</b>`; };
-  const rows = evs.map((e) => `<tr class="${e.change === "up" ? "row-up" : e.change === "down" || e.change === "downReview" ? "row-down" : ""}"><td class="l">${esc(e.clinic)}</td><td class="l"><b>${esc(e.name)}</b></td><td class="l">${esc(e.grade)}</td><td>${e.score ?? "-"}</td>
+  const rows = evs.map((e) => `<tr class="${e.change === "up" ? "row-up" : e.change === "down" || e.change === "downReview" ? "row-down" : ""}"><td class="l">${esc(e.clinic)}</td><td class="l"><b>${esc(e.name)}</b>${isDemotion(e) ? ' <span class="chg chg-demote">⚠ 降格対象</span>' : ""}</td><td class="l">${esc(e.grade)}</td><td>${e.score ?? "-"}</td>
     <td class="l"><b class="${e.rank === "S" || e.rank === "A" ? "ok" : e.rank === "D" ? "ng" : e.rank === "C" ? "warn" : ""}">${esc(e.rank ?? "-")}</b></td>
     <td class="l">${changeChip(e.change)}</td>${money ? `<td>${yen(e.prevSalary)}</td><td><b>${yen(e.newSalary)}</b></td><td>${diffCell(e)}</td>` : ""}<td class="l">${esc(e.salaryDecision ?? "")}</td><td class="l">${esc(e.positionDecision ?? "")}</td>${money ? `<td>${yen(e.bonus)}</td>` : ""}<td class="l">${esc(e.approval ?? "")}</td></tr>`).join("");
   // 兼務の人は院ごとに行があるので、人数・合計は1人1回で数える
   const uniq = [...new Map(evs.map((e) => [e.key, e])).values()];
   const count = (cs) => uniq.filter((e) => cs.includes(e.change)).length;
   const sum = (f) => uniq.reduce((a, e) => a + (f(e) || 0), 0);
-  const summary = `<div class="chg-sum">${changeChip("up")} <b>${count(["up"])}人</b>　<span class="chg chg-down">▼ 減・減給検討</span> <b>${count(["down", "downReview"])}人</b>　${changeChip("keep")} <b>${count(["keep"])}人</b>
+  const summary = `<div class="chg-sum">${changeChip("up")} <b>${count(["up"])}人</b>　<span class="chg chg-down">▼ 減・減給検討</span> <b>${count(["down", "downReview"])}人</b>　${changeChip("keep")} <b>${count(["keep"])}人</b>　<span class="chg chg-demote">⚠ 降格対象</span> <b>${uniq.filter(isDemotion).length}人</b>
     ${money ? `<span class="chg-total">月額合計 ${yen(sum((e) => e.prevSalary))} → <b>${yen(sum((e) => e.newSalary))}</b>（${(() => { const d = sum(diff); return `<b class="${d > 0 ? "ok" : d < 0 ? "ng" : ""}">${d > 0 ? "+" : ""}${yen(d)}</b>`; })()}）</span>` : ""}</div>`;
   return `<div class="card"><div class="card-h">半期査定の結果（キャリア制度台帳より）</div><div class="card-b">
     ${summary}
