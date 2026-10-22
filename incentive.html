@@ -247,7 +247,7 @@ function renderLogin(msg) {
   } else {
     form = `<div style="font-weight:800;margin-bottom:8px;">${esc(clinicStep.clinic)}院</div>
       <label>名前</label><select id="pname" class="pick">${clinicStep.staff.map((p) => `<option value="${esc(p.key)}">${esc(p.name)}</option>`).join("")}</select>
-      <label>個人PASS（自分の名字・漢字）</label><input id="ppw" type="password" autocomplete="off" placeholder="例：山田"/>
+      <label>個人PASS（自分の名字・漢字）</label><input id="ppw" type="text" lang="ja" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="例：山田（漢字で入力）"/>
       <button class="btn btn-blue" id="lbtn">ログイン</button>
       <div style="margin-top:10px;"><button class="chip" onclick="clinicStep=null;renderLogin()">‹ 院IDからやり直す</button></div>`;
   }
