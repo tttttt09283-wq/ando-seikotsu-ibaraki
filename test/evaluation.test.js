@@ -133,7 +133,7 @@ test("new-patient sheet: columns by header, nail cases excluded, surname matchin
   assert.deepEqual(parseSheetDate(46296), { year: 2026, month: 10 });
   const np = parseNewPatients(sheets, people);
   const m = newPatientMetrics(np.byPerson.get("山田太郎")["2026-10"]);
-  assert.deepEqual(m, { new_count: 2, new_close: 50, new_sales: 55000, new_first_avg: 2500, new_continue: 100 });
+  assert.deepEqual(m, { nail_count: 1, nail_sales: 1000, new_count: 2, new_close: 50, new_sales: 55000, new_first_avg: 2500, new_continue: 100 });
   assert.equal(np.byPerson.get("佐藤花子")["2026-09"].count, 1);
   assert.equal(np.byClinic.get("A")["2026-10"].count, 3);
   assert.deepEqual(np.unmatched, ["応援"]);
@@ -225,4 +225,47 @@ test("career judgement: reasons for promotion and demotion, unknown months are n
   const masked = maskSensitive({ promotion: [{ label: "人件費率", status: "ng", detail: "45%", sensitive: true }], demotion: [], reasons: [{ tone: "ng", text: "【降格】人件費率：45%", sensitive: true }] }, false);
   assert.ok(!masked.promotion[0].detail.includes("45"));
   assert.ok(!masked.reasons[0].text.includes("45"));
+});
+
+test("departments: default members by surname, items added with dept tag, sheet column overrides defaults", async () => {
+  const { deptMembership, itemsFor, departmentNames, validateItems, parseStaffSettings, STAFF_HEADER, DEPT_PREFIX } = await import("../lib/evaluation.js");
+  const model = { people: [
+    { key: "岩永拓己", name: "岩永 拓己", grade: "G6", clinics: ["茨木"] },
+    { key: "大皿悠梨乃", name: "大皿 悠梨乃", grade: "G4", clinics: ["茨木"] },
+    { key: "藤原俊介", name: "藤原 俊介", grade: "G5", clinics: ["交野"] },
+  ] };
+  assert.ok(departmentNames(DEFAULT_ITEMS).includes("巻き爪"));
+  const m = deptMembership(model, new Map(), DEFAULT_ITEMS);
+  assert.deepEqual(m.get("岩永拓己"), ["教育・業績UP"]);
+  assert.deepEqual(m.get("大皿悠梨乃"), ["集客", "巻き爪"]);
+  assert.deepEqual(m.get("藤原俊介"), ["商品開発", "ES（従業員満足）", "巻き爪"]);
+  const items = itemsFor(DEFAULT_ITEMS, "G4", m.get("大皿悠梨乃"));
+  assert.ok(items.some((it) => it.dept === "巻き爪" && it.auto === "nail_count"));
+  assert.ok(items.filter((it) => it.dept).every((it) => it.points > 0));
+  const sheet = parseStaffSettings([STAFF_HEADER, ["大皿 悠梨乃", "", "", "", "", "集客"]]);
+  assert.deepEqual(deptMembership(model, sheet, DEFAULT_ITEMS).get("大皿悠梨乃"), ["集客"]);
+  assert.equal(deptMembership(model, sheet, DEFAULT_ITEMS).get("岩永拓己"), undefined); // 部門列があればシートが優先
+  assert.equal(validateItems(DEPT_PREFIX + "広報", [{ kind: "行動", label: "SNS発信", points: 5 }])[0].kind, "行動");
+  assert.throws(() => validateItems("部門:", []), /クラス・部門/);
+});
+
+test("events: parse rows, bonus per person-month, rewards added to incentives and the 42% cost", async () => {
+  const { parseEvents, eventBonusMap, groupEvents, attachEventsToModel, EVENT_HEADER } = await import("../lib/events.js");
+  const people = [{ key: "山田太郎", name: "山田 太郎", clinics: ["A"], incentives: [] }];
+  const rows = [EVENT_HEADER,
+    ["2026/11/3", "技術コンテスト", "山田", "優勝", 5, 50000, "", "", ""],
+    ["2026-11-20", "清掃大会", "山田 太郎", "参加", 30, "1,000", "", "", ""],   // 加点は20まで
+    ["", "", "", "", "", "", "", "", ""]];
+  const ev = parseEvents(rows, people);
+  assert.equal(ev.length, 2);
+  assert.equal(ev[0].date, "2026-11-03");
+  assert.equal(ev[1].bonus, 20);
+  assert.equal(eventBonusMap(ev).get("2026-11|山田太郎"), 25);
+  assert.equal(groupEvents(ev)[0].name, "清掃大会");
+  const model = { fiscalYear: 2026, people, company: [{ key: "H1", incentivePaid: 100000, roomProjected: 1000000, sales: 1e7, labor: 4e6, monthsElapsed: 6 }, { key: "H2", incentivePaid: 0 }] };
+  attachEventsToModel(model, ev);
+  assert.equal(model.company[0].eventRewards, 51000);
+  assert.equal(model.company[0].incentivePaid, 151000);
+  assert.equal(Math.round(model.company[0].incentiveCost), Math.round(151000 * 1.15));
+  assert.equal(people[0].incentives.filter((i) => i.type === "event").length, 2);
 });

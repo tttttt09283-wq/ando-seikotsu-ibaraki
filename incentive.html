@@ -124,6 +124,9 @@ tr.st-hit-row td{background:#fef2f2;} tr.st-ng-row td:first-child{color:#b91c1c;
 .item.neg{background:#fef2f2;border-radius:8px;padding-left:8px;padding-right:8px;} .item.neg .pts{color:#dc2626;}
 .item.weak{background:#fffbeb;border-radius:8px;padding-left:8px;padding-right:8px;} .item.weak .pts{color:#b45309;}
 .score-btns button.sel.low{background:#dc2626;border-color:#dc2626;}
+.dept-h{font-size:12px;font-weight:800;color:#1e3a5f;background:#eef2ff;border-radius:6px;padding:4px 8px;margin:10px 0 2px;}
+.member-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:4px 12px;}
+.member-grid .ie-check{font-weight:600;padding:4px 0;}
 ul.notes{padding-left:18px;font-size:12px;color:#64748b;line-height:1.7;}
 </style>
 </head>
@@ -146,7 +149,7 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
   auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
 });
 
-const TYPE_LABEL = { gm: "GMインセンティブ（年間・決算）", bm: "BMインセンティブ", manager: "院長インセンティブ", staff: "スタッフインセンティブ" };
+const TYPE_LABEL = { gm: "GMインセンティブ（年間・決算）", bm: "BMインセンティブ", manager: "院長インセンティブ", staff: "スタッフインセンティブ", event: "全社イベント報酬" };
 const SCOPE_LABEL = { all: "全院", block: "担当ブロック", clinic: "自院", self: "自分のみ" };
 
 let data = null;
@@ -362,7 +365,7 @@ function companyCard(c) {
       <div class="kpi"><div class="k">人件費（社保込）</div><div class="v">${man(c.labor)}</div></div>
       <div class="kpi"><div class="k">人件費率</div><div class="v ${c.laborRate > data.laborCapRate ? "ng" : "ok"}">${pct(c.laborRate)}</div><div class="s">上限 ${pct(data.laborCapRate)}</div></div>
       <div class="kpi"><div class="k">42%枠の残り（半期見込み）</div><div class="v ${c.roomProjected >= 0 ? "ok" : "ng"}">${man(c.roomProjected)}</div><div class="s">経過分 ${man(c.room)}</div></div>
-      <div class="kpi"><div class="k">インセンティブ見込み</div><div class="v">${man(c.incentivePaid)}</div><div class="s">社保込 ${man(c.incentiveCost)}</div></div>
+      <div class="kpi"><div class="k">インセンティブ見込み</div><div class="v">${man(c.incentivePaid)}</div><div class="s">社保込 ${man(c.incentiveCost)}${c.eventRewards ? `<br>うちイベント報酬 ${man(c.eventRewards)}` : ""}</div></div>
       <div class="kpi"><div class="k">インセンティブ込み人件費率</div><div class="v ${c.laborRateWithIncentive > data.laborCapRate ? "ng" : "ok"}">${pct(c.laborRateWithIncentive)}</div></div>
     </div>
     ${banner}
@@ -604,7 +607,7 @@ function clientScore(items, p, draft) {
       }
     } else if (draft.scores[it.id]) v = it.points * draft.scores[it.id] / 5;
     pts[it.id] = v;
-    if (v !== null) { earned += v; filled++; if (it.kind === "数値") num += v; else if (it.kind === "基本") bas += v; else beh += v; }
+    if (v !== null) { earned += v; filled++; if (it.dept) {} else if (it.kind === "数値") num += v; else if (it.kind === "基本") bas += v; else beh += v; }
   }
   const t = filled ? Math.round(earned / total * 1000) / 10 : null;
   const complete = filled === items.length;
@@ -623,6 +626,7 @@ function renderEvaluation() {
   if (!evalMonth) { const t = new Date(); evalMonth = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`; }
   if (!evalData) { if (!evalLoading) setTimeout(() => loadEval(), 0); return `<div class="center">評価を読み込み中...</div>`; }
   if (evalData.error) return `<div class="card"><div class="card-b"><div class="err">${esc(evalData.error)}</div><button class="btn btn-blue" onclick="evalData=null;render()">もう一度読み込む</button></div></div>`;
+  if (eventEditor) return renderEventEditor();
   if (itemEditor) return renderItemEditor();
   if (evalSelected) return renderEvalDetail();
 
@@ -655,7 +659,7 @@ function renderEvaluation() {
       <td>${pcScore ? `${pcScore}/5` : "-"}${t.requiredMissed && t.requiredMissed.length ? '<div class="small ng">必須未達</div>' : ""}${t.basicIssues && t.basicIssues.length ? '<div class="small ng">基本に課題</div>' : ""}</td>
       <td>${p.canEdit ? `<button class="btn btn-save">${p.evaluated ? "修正" : "評価する"}</button>` : `<button class="btn btn-save" style="background:#64748b;">見る</button>`}</td></tr>`;
   }).join("");
-  if (evalData.canEditItems && !evalData.setupNeeded) html += `<div style="margin-bottom:14px;text-align:right;"><button class="chip" onclick="openItemEditor('共通')">⚙️ 評価項目の設定（クラス別に追加・削除・編集）</button></div>`;
+  if (evalData.canEditItems && !evalData.setupNeeded) html += `<div style="margin-bottom:14px;text-align:right;"><button class="chip" onclick="eventEditor={mode:'list'};render()">🎉 全社イベント</button> <button class="chip" onclick="openItemEditor('共通')">⚙️ 評価項目の設定（クラス・部門別に追加・削除・編集）</button></div>`;
   html += `<div class="card"><div class="card-h"><span>${monthLabel(evalMonth)} の評価</span>${toDo ? `<span class="small ng">あなたの未評価 ${toDo}名</span>` : ""}</div><div class="card-b">
     ${people.length ? `<div class="scroll"><table><tr><th class="l">氏名</th><th>今月</th><th>半期平均</th><th>PC・基本</th><th></th></tr>${rows}</table></div>` : '<div class="muted">表示できる評価対象者がいません。</div>'}
     ${evalData.newPatientUnmatched && evalData.newPatientUnmatched.length ? `<div class="small warn" style="margin-top:8px;">新規集客シートの「初回施術担当者」でスタッフと結びつかなかった名前：${evalData.newPatientUnmatched.map(esc).join("、")}（台帳の評価シートに載っていない人は対象外です）</div>` : ""}
@@ -673,7 +677,7 @@ function renderEvalDetail() {
   const totalPts = items.reduce((a, it) => a + it.points, 0) || 100;
   const scaled = (v) => v === null || v === undefined ? "-" : (Math.round(v / totalPts * 1000) / 10);
 
-  const numItems = items.filter((it) => it.kind === "数値").map((it) => {
+  const numItem = (it) => {
     const isHidden = p.hidden && it.id in p.hidden;
     const isAuto = isHidden || (it.auto && p.auto[it.auto] !== undefined);
     const target = it.target !== null && it.target !== undefined ? `目標 ${fmtVal(it.target, it.unit)} ${it.direction}` : "";
@@ -684,12 +688,18 @@ function renderEvalDetail() {
       : ro ? `<b>${fmtVal(evalDraft.values[it.id], it.unit)}</b>`
       : `<input class="num" inputmode="decimal" value="${esc(evalDraft.values[it.id] ?? "")}" placeholder="${esc(it.unit)}" oninput="evalDraft.values['${esc(it.id)}']=this.value;evalDirty=true;refreshEvalTotal()"/>`;
     return `<div class="item ${negClass(it, sc.pts[it.id])}" id="item_${esc(it.id)}"><div class="lbl"><b>${esc(it.label)}</b>${isAuto ? '<span class="autotag">自動</span>' : ""}<div class="d">${esc(target)}（配点${it.points}）</div></div><div class="ctrl">${input}<div class="pts" id="pts_${esc(it.id)}">${scaled(sc.pts[it.id])}</div></div></div>`;
-  }).join("");
-  const scaleItems = (kind) => items.filter((it) => it.kind === kind).map((it) => {
+  };
+  const numItems = items.filter((it) => it.kind === "数値" && !it.dept).map(numItem).join("");
+  const scaleItem = (it) => {
     const cur = evalDraft.scores[it.id] || 0;
     const btns = [1, 2, 3, 4, 5].map((n) => `<button class="${cur === n ? "sel" : ""}${cur === n && n <= 2 ? " low" : ""}" ${ro ? "disabled" : ""} onclick="setEvalScore('${esc(it.id)}',${n})">${n}</button>`).join("");
     return `<div class="item ${negClass(it, sc.pts[it.id])}"><div class="lbl"><b>${esc(it.label)}</b>${it.required ? '<span class="reqtag">必須</span>' : ""}<div class="d">${esc(it.note)}（配点${it.points}）</div></div><div class="ctrl"><div class="score-btns">${btns}</div><div class="pts">${scaled(sc.pts[it.id])}</div></div></div>`;
-  }).join("");
+  };
+  const scaleItems = (kind) => items.filter((it) => it.kind === kind && !it.dept).map(scaleItem).join("");
+  // 部門の評価（担当している部門ごと）
+  const depts = [...new Set(items.filter((it) => it.dept).map((it) => it.dept))];
+  const deptHtml = depts.map((d) => `<div class="dept-h">🏷 ${esc(d)}</div>` + items.filter((it) => it.dept === d).map((it) => (it.kind === "数値" ? numItem(it) : scaleItem(it))).join("")).join("");
+  const deptPts = items.filter((it) => it.dept).reduce((a, it) => a + (sc.pts[it.id] || 0), 0);
 
   const behItems = scaleItems("行動");
   const basicItems = scaleItems("基本");
@@ -709,6 +719,9 @@ function renderEvalDetail() {
     ${basicIssues.length ? `<div class="banner ng">⚠️ 社会人としての基本（${basicIssues.map((it) => esc(it.label)).join("・")}）が2以下です。等級に関係なく、まず改善が必要な項目です。</div>` : ""}</div></div>
   <div class="card"><div class="card-h"><span>数値の評価</span><span class="small" id="numSum">${sc.num}点</span></div><div class="card-b">${numItems || '<div class="muted">項目なし</div>'}
     <div class="small" style="margin-top:8px;">「自動」は進捗売上実績・台帳から自動で入ります。目標「以上」は達成率に応じて、「以下」は目標以下で満点（目標を10ポイント超えると0点）。</div></div></div>
+  ${depts.length ? `<div class="card"><div class="card-h"><span>部門の評価（${depts.map(esc).join("・")}）</span><span class="small">${scaled(deptPts)}点</span></div><div class="card-b">${deptHtml}
+    <div class="small" style="margin-top:8px;">担当している部門の項目です。合計は100点満点に換算されます。</div></div></div>` : ""}
+  ${eventCardForPerson(p)}
   <div class="card"><div class="card-h"><span>行動の評価（5段階）</span><span class="small">${sc.beh}点</span></div><div class="card-b">${behItems || '<div class="muted">項目なし</div>'}
     <div class="small" style="margin-top:8px;">5＝期待を大きく上回る　4＝上回る　3＝できている　2＝あと一歩　1＝できていない</div>
     ${reqMissed.length ? `<div class="banner ng">⚠️ 必須項目（${reqMissed.map((it) => esc(it.label)).join("・")}）が3未満です。院長以上はPC業務が必須のため、改善指導の対象になります。</div>` : ""}</div></div>
@@ -717,7 +730,23 @@ function renderEvalDetail() {
 }
 
 function totalHtml(sc) {
-  return `<span class="small">合計</span> <b style="font-size:22px;" class="${rankCls(sc.rank)}">${sc.total ?? "-"}点</b> <b class="${rankCls(sc.rank)}">${sc.rank || ""}</b> <span class="small">（${sc.filled}/${sc.count}項目入力）</span>`;
+  const p = evalData && evalData.people.find((x) => x.key === evalSelected);
+  const bonus = p ? p.eventBonus || 0 : 0;
+  const final = sc.total === null ? null : Math.min(100, Math.round((sc.total + bonus) * 10) / 10);
+  const rank = sc.rank && final !== null ? rankOfClient(final) : sc.rank;
+  return `<span class="small">合計</span> <b style="font-size:22px;" class="${rankCls(rank)}">${final ?? "-"}点</b> <b class="${rankCls(rank)}">${rank || ""}</b>`
+    + (bonus ? ` <span class="small">（評価 ${sc.total ?? "-"}点 ＋ イベント加点 ${bonus}点）</span>` : "")
+    + ` <span class="small">（${sc.filled}/${sc.count}項目入力）</span>`;
+}
+
+// その月のイベント（加点・報酬）
+function eventCardForPerson(p) {
+  if (!p.events || !p.events.length) return "";
+  return `<div class="card"><div class="card-h"><span>🎉 全社イベント（${monthLabel(evalMonth)}）</span><span class="small ok">加点 +${p.eventBonus}点</span></div><div class="card-b">
+    <div class="scroll"><table><tr><th class="l">日付</th><th class="l">イベント</th><th class="l">結果</th><th>加点</th><th>報酬</th></tr>
+    ${p.events.map((e) => `<tr><td class="l">${esc(e.date.slice(5).replace("-", "/"))}</td><td class="l">${esc(e.name)}</td><td class="l">${esc(e.result)}</td><td class="ok">+${e.bonus}</td><td>${yen(e.reward)}</td></tr>`).join("")}</table></div>
+    <div class="small" style="margin-top:6px;">加点は月次評価の合計に足されます（100点まで）。報酬はインセンティブと同じく人件費に含めます。</div>
+  </div></div>`;
 }
 
 function refreshEvalTotal() {
@@ -819,6 +848,9 @@ function itemTotals() {
 
 function totalsHtml() {
   const t = itemTotals();
+  if (isDept(itemEditor.grade)) {
+    return `<span class="small">この部門</span> <b style="font-size:20px;">${t.own}点</b> <span class="small">（担当者のクラスの点に加わり、100点満点に換算）</span>`;
+  }
   if (itemEditor.grade === "共通") {
     return `<span class="small">共通の基本</span> <b style="font-size:20px;">${t.own}点</b> <span class="small">（全クラスの配点に加わります）</span>`;
   }
@@ -836,6 +868,10 @@ function renderItemEditor() {
   const labels = evalData.gradeLabels || {};
   const common = g === "共通";
   const chips = Object.entries(labels).map(([k, v]) => `<button class="chip ${k === g ? "sel" : ""}" onclick="openItemEditor('${esc(k)}')">${esc(v)}</button>`).join("");
+  // 部門（担当者がいる人だけ評価に加わる）
+  const deptKeys = [...new Set([...(evalData.departments || []).map((d) => "部門:" + d.name), ...(isDept(g) ? [g] : [])])];
+  const deptChips = deptKeys.map((k) => `<button class="chip ${k === g ? "sel" : ""}" onclick="openItemEditor('${esc(k)}')">🏷 ${esc(k.slice(3))}</button>`).join("")
+    + `<button class="chip" onclick="addDepartment()">＋ 部門を追加</button>`;
   const autoOpts = (cur) => `<option value="">手入力</option>` + Object.entries(evalData.autoOptions || {}).map(([k, v]) => `<option value="${esc(k)}" ${cur === k ? "selected" : ""}>自動：${esc(v)}</option>`).join("");
   const cards = itemEditor.draft.map((it, i) => {
     const kindSel = common
@@ -863,11 +899,15 @@ function renderItemEditor() {
   }).join("");
 
   return `<div class="monthnav"><button class="chip" onclick="closeItemEditor()">‹ 評価一覧に戻る</button><div class="m" style="text-align:left;">⚙️ 評価項目の設定</div></div>
-  <div class="chip-row" style="margin-bottom:14px;">${chips}</div>
+  <div class="chip-row" style="margin-bottom:8px;">${chips}</div>
+  <div class="small" style="margin:0 0 4px;">部門</div>
+  <div class="chip-row" style="margin-bottom:14px;">${deptChips}</div>
+  ${isDept(g) ? deptMembersCard(g.slice(3)) : ""}
   ${itemEditor.saved ? '<div class="banner ok" style="margin:0 0 14px;">✅ 保存しました。次の評価から新しい項目が使われます（保存済みの過去の点数は変わりません）。</div>' : ""}
-  <div class="card"><div class="card-h"><span>${esc(labels[g] || g)} の評価項目（${itemEditor.draft.length}項目）</span></div><div class="card-b">
+  <div class="card"><div class="card-h"><span>${esc(labels[g] || (isDept(g) ? "部門：" + g.slice(3) : g))} の評価項目（${itemEditor.draft.length}項目）</span></div><div class="card-b">
     <div class="small" style="margin-bottom:10px;">${common
       ? "ここの項目は全クラス共通で、どのクラスの評価にも表示されます。"
+      : isDept(g) ? "この部門の担当者の評価に加わる項目です（担当者は上で設定）。部門の点を足した合計は100点満点に換算されます。"
       : "「行動」は上司が5段階で採点、「数値」は目標値に対する実績で自動採点します（実績は手入力、または売上シートから自動）。"}</div>
     ${cards || '<div class="muted">項目がありません。下のボタンから追加してください。</div>'}
     <button class="btn btn-blue" style="background:white;color:#1e3a5f;border:1.5px dashed #94a3b8;margin-top:6px;" onclick="itemAdd()">＋ 項目を追加</button>
@@ -880,7 +920,7 @@ async function saveItems() {
   const items = itemEditor.draft;
   const empty = items.findIndex((it) => !String(it.label || "").trim());
   if (empty >= 0) return alert(`${empty + 1}番目の「項目」が空です`);
-  if (!confirm(`「${evalData.gradeLabels[itemEditor.grade]}」の評価項目を保存します。よろしいですか？`)) return;
+  if (!confirm(`「${evalData.gradeLabels[itemEditor.grade] || itemEditor.grade.replace("部門:", "部門：")}」の評価項目を保存します。よろしいですか？`)) return;
   const grade = itemEditor.grade;
   root.innerHTML = `<div class="center">保存中...</div>`;
   try {
@@ -1052,6 +1092,130 @@ function negClass(it, pts) {
   if (r < 0.6) return "neg";
   if (r < 0.8) return "weak";
   return "";
+}
+
+// ===== 部門（評価項目の設定画面） =====
+const isDept = (g) => String(g || "").startsWith("部門:");
+
+function addDepartment() {
+  const name = (prompt("新しい部門の名前（例：広報）") || "").trim();
+  if (!name) return;
+  if ((evalData.departments || []).some((d) => d.name === name)) return alert("同じ名前の部門があります");
+  if (name.length > 20 || /[、,]/.test(name)) return alert("部門名は20文字以内で、「、」「,」は使えません");
+  openItemEditor("部門:" + name);
+  itemEditor.dirty = true;
+  render();
+}
+
+function deptMembersCard(dept) {
+  const d = (evalData.departments || []).find((x) => x.name === dept);
+  const members = new Set(d ? d.members : []);
+  const people = evalData.allPeople || [];
+  if (!d) return `<div class="banner ok" style="margin:0 0 14px;">新しい部門です。先に下で項目を作って「保存する」を押すと、担当者を選べるようになります。</div>`;
+  return `<div class="card"><div class="card-h"><span>👥 ${esc(dept)} の担当者（${members.size}名）</span><button class="btn btn-save" onclick="saveDeptMembers('${esc(dept)}')">担当者を保存</button></div><div class="card-b">
+    <div class="member-grid">${people.map((p) => `<label class="ie-check"><input type="checkbox" class="dm" value="${esc(p.key)}" ${members.has(p.key) ? "checked" : ""}/> ${esc(p.name)} <span class="small">${esc(p.grade)} ${esc((p.clinics || []).join("・"))}</span></label>`).join("")}</div>
+    <div class="small" style="margin-top:8px;">チェックした人の月次評価に、この部門の項目が加わります。台帳に載っていない人（例：育休中・新入社員）は、台帳の評価シートに追加すると選べるようになります。</div>
+  </div></div>`;
+}
+
+async function saveDeptMembers(dept) {
+  const memberKeys = [...document.querySelectorAll("input.dm:checked")].map((el) => el.value);
+  try {
+    const json = await evalFetch("POST", { action: "saveDeptMembers", month: evalMonth, dept, memberKeys });
+    if (json) { evalData = json; itemEditor.saved = true; keepScroll(render); }
+  } catch (e) { alert(e.message); }
+}
+
+// ===== 全社イベント（社長・GM） =====
+let eventEditor = null; // { mode: "list" } | { mode: "edit", draft, replace }
+
+function newEventDraft() {
+  const t = new Date();
+  return { date: `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`, name: "", memo: "", entries: [] };
+}
+
+function editEvent(i) {
+  const g = evalData.eventGroups[i];
+  eventEditor = { mode: "edit", replace: { date: g.date, name: g.name },
+    draft: { date: g.date, name: g.name, memo: g.memo || "", entries: g.entries.filter((e) => e.key).map((e) => ({ personKey: e.key, result: e.result, bonus: e.bonus, reward: e.reward })) } };
+  render(); window.scrollTo(0, 0);
+}
+
+async function deleteEvent(i) {
+  const g = evalData.eventGroups[i];
+  if (!confirm(`「${g.date} ${g.name}」を削除しますか？（加点・報酬も取り消されます）`)) return;
+  root.innerHTML = `<div class="center">削除中...</div>`;
+  try { const json = await evalFetch("POST", { action: "deleteEvent", month: evalMonth, date: g.date, name: g.name }); if (json) evalData = json; }
+  catch (e) { alert(e.message); }
+  render();
+}
+
+function evField(field, value) { eventEditor.draft[field] = value; }
+function evEntry(i, field, value) { eventEditor.draft.entries[i][field] = value; refreshEventTotal(); }
+function evAdd(keys) {
+  const have = new Set(eventEditor.draft.entries.map((e) => e.personKey));
+  for (const k of keys) if (!have.has(k)) eventEditor.draft.entries.push({ personKey: k, result: "", bonus: 0, reward: 0 });
+  keepScroll(render);
+}
+function evRemove(i) { eventEditor.draft.entries.splice(i, 1); keepScroll(render); }
+function eventTotals() {
+  const reward = eventEditor.draft.entries.reduce((a, e) => a + (Number(String(e.reward || 0).replace(/[,円¥]/g, "")) || 0), 0);
+  return { reward, cost: Math.round(reward * 1.15) };
+}
+function refreshEventTotal() { const el = document.getElementById("evTotal"); if (el) { const t = eventTotals(); el.textContent = `報酬合計 ${yen(t.reward)}（社保込み ${yen(t.cost)}）`; } }
+
+function renderEventEditor() {
+  const back = `<div class="monthnav"><button class="chip" onclick="${eventEditor.mode === "edit" ? "eventEditor={mode:'list'}" : "eventEditor=null"};render()">‹ ${eventEditor.mode === "edit" ? "イベント一覧" : "評価一覧"}に戻る</button><div class="m" style="text-align:left;">🎉 全社イベント</div></div>`;
+  const people = evalData.allPeople || [];
+  const nameOf = (k) => (people.find((p) => p.key === k) || {}).name || k;
+  if (eventEditor.mode === "list") {
+    const groups = evalData.eventGroups || [];
+    return back + `<div class="card"><div class="card-b" style="font-size:13px;line-height:1.7;">
+        全社イベントの結果を登録すると、<b>加点</b>はその月の月次評価に足され（100点まで）、<b>報酬</b>はインセンティブと同じく人件費（社保込み）の42%枠に含まれます。
+        <div style="margin-top:10px;"><button class="btn btn-blue" style="width:auto;" onclick="eventEditor={mode:'edit',draft:newEventDraft()};render()">＋ イベントを登録</button></div></div></div>`
+      + (groups.length ? groups.map((g, i) => {
+        const reward = g.entries.reduce((a, e) => a + e.reward, 0);
+        return `<div class="card"><div class="card-h"><span>${esc(g.date.replace(/-/g, "/"))}　${esc(g.name)}（${g.entries.length}名）</span>
+          <span><span class="small">報酬合計 ${yen(reward)}</span> <button class="chip" onclick="editEvent(${i})">編集</button> <button class="chip" style="color:#b91c1c;" onclick="deleteEvent(${i})">削除</button></span></div>
+          <div class="card-b">${g.memo ? `<div class="small" style="margin-bottom:6px;">${esc(g.memo)}</div>` : ""}<div class="scroll"><table><tr><th class="l">氏名</th><th class="l">結果</th><th>加点</th><th>報酬</th></tr>
+          ${g.entries.map((e) => `<tr><td class="l">${esc(e.name)}${e.key ? "" : ' <span class="small ng">（台帳に無い名前）</span>'}</td><td class="l">${esc(e.result)}</td><td class="ok">${e.bonus ? "+" + e.bonus : "-"}</td><td>${yen(e.reward)}</td></tr>`).join("")}</table></div></div></div>`;
+      }).join("") : '<div class="card"><div class="card-b muted">まだイベントが登録されていません。</div></div>');
+  }
+  const d = eventEditor.draft;
+  const clinics = [...new Set(people.flatMap((p) => p.clinics || []))];
+  const rows = d.entries.map((e, i) => `<tr><td class="l"><b>${esc(nameOf(e.personKey))}</b></td>
+    <td class="l"><input value="${esc(e.result)}" oninput="evEntry(${i},'result',this.value)" placeholder="例：優勝・参加" style="margin:0;min-width:120px;"/></td>
+    <td><input inputmode="numeric" value="${esc(e.bonus)}" oninput="evEntry(${i},'bonus',this.value)" style="margin:0;width:64px;"/></td>
+    <td><input inputmode="numeric" value="${esc(e.reward)}" oninput="evEntry(${i},'reward',this.value)" style="margin:0;width:100px;"/></td>
+    <td><button class="chip" onclick="evRemove(${i})">✕</button></td></tr>`).join("");
+  const t = eventTotals();
+  return back + `<div class="card"><div class="card-h">${eventEditor.replace ? "イベントを編集" : "イベントを登録"}</div><div class="card-b">
+    <div class="ie-grid2" style="grid-template-columns:1fr 160px;"><div><label>イベント名</label><input value="${esc(d.name)}" oninput="evField('name',this.value)" placeholder="例：全社技術コンテスト"/></div>
+      <div><label>日付</label><input type="date" value="${esc(d.date)}" oninput="evField('date',this.value)"/></div></div>
+    <label>メモ（任意）</label><input value="${esc(d.memo)}" oninput="evField('memo',this.value)" placeholder="例：優勝5万円・準優勝3万円"/>
+    <label>参加者（加点は0〜${evalData.maxEventBonus}点、報酬は円）</label>
+    <div class="scroll"><table><tr><th class="l">氏名</th><th class="l">結果</th><th>加点</th><th>報酬</th><th></th></tr>${rows || '<tr><td colspan="5" class="l muted">下から参加者を追加してください</td></tr>'}</table></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center;">
+      <select id="evPerson" class="pick" style="width:auto;margin:0;">${people.map((p) => `<option value="${esc(p.key)}">${esc(p.name)}（${esc(p.grade)}）</option>`).join("")}</select>
+      <button class="chip" onclick="evAdd([document.getElementById('evPerson').value])">＋ 追加</button>
+      <select id="evClinic" class="pick" style="width:auto;margin:0;">${clinics.map((c) => `<option>${esc(c)}</option>`).join("")}</select>
+      <button class="chip" onclick="evAdd((evalData.allPeople||[]).filter((p)=>(p.clinics||[]).includes(document.getElementById('evClinic').value)).map((p)=>p.key))">＋ この院の全員</button>
+      <button class="chip" onclick="evAdd((evalData.allPeople||[]).map((p)=>p.key))">＋ 全員</button>
+    </div>
+  </div>
+  <div class="sticky-total"><div id="evTotal" class="small">報酬合計 ${yen(t.reward)}（社保込み ${yen(t.cost)}）</div><button class="btn btn-blue" style="width:auto;padding:10px 24px;" onclick="saveEvent()">保存する</button></div></div>`;
+}
+
+async function saveEvent() {
+  const d = eventEditor.draft;
+  if (!d.name.trim()) return alert("イベント名を入れてください");
+  if (!d.entries.length) return alert("参加者を追加してください");
+  root.innerHTML = `<div class="center">保存中...</div>`;
+  try {
+    const json = await evalFetch("POST", { action: "saveEvent", month: evalMonth, ...d, replace: eventEditor.replace || null });
+    if (json) { evalData = json; eventEditor = { mode: "list" }; }
+  } catch (e) { alert(e.message); }
+  render();
 }
 
 load();
