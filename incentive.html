@@ -247,7 +247,7 @@ function renderLogin(msg) {
   } else {
     form = `<div style="font-weight:800;margin-bottom:8px;">${esc(clinicStep.clinic)}院</div>
       <label>名前</label><select id="pname" class="pick">${clinicStep.staff.map((p) => `<option value="${esc(p.key)}">${esc(p.name)}</option>`).join("")}</select>
-      <label>個人PASS（数字4桁）</label><input id="ppw" type="password" inputmode="numeric" maxlength="4" autocomplete="off"/>
+      <label>個人PASS（自分の名字・漢字）</label><input id="ppw" type="password" autocomplete="off" placeholder="例：山田"/>
       <button class="btn btn-blue" id="lbtn">ログイン</button>
       <div style="margin-top:10px;"><button class="chip" onclick="clinicStep=null;renderLogin()">‹ 院IDからやり直す</button></div>`;
   }
@@ -276,7 +276,7 @@ function renderLogin(msg) {
         return renderLogin();
       }
       const pin = document.getElementById("ppw").value.trim();
-      if (!/^\d{4}$/.test(pin)) return renderLogin("個人PASS（数字4桁）を入力してください");
+      if (!pin) return renderLogin("個人PASS（自分の名字）を入力してください");
       const json = await postJson("/api/pin-login", { action: "person", clinicToken: clinicStep.clinicToken, personKey: document.getElementById("pname").value, pin });
       await supabaseClient.auth.signOut().catch(() => {});
       ssSet(PIN_KEY, json.token);
@@ -1269,10 +1269,11 @@ function renderLogins() {
   if (!loginsData) { if (!loginsLoading) setTimeout(() => loadLogins(), 0); return `<div class="center">読み込み中...</div>`; }
   if (loginsData.error) return `<div class="card"><div class="card-b"><div class="err">${esc(loginsData.error)}</div><button class="btn btn-blue" onclick="loginsData=null;render()">もう一度読み込む</button></div></div>`;
   const d = loginsData;
+  const bySurname = d.personPassMode === "surname";
   let html = `<div class="card no-print"><div class="card-b" style="font-size:13px;line-height:1.8;">
     スタッフ・院長・BMは「院のIDでログイン」から、<b>院ID → 院PASS → 自分の名前 → 個人PASS</b> の順で入ります。見られる範囲は等級で自動で決まります（スタッフ＝自分だけ／院長＝自院／BM＝管轄エリア）。<br>
     社長・GMは今までどおりメールアドレスでログインします。PASSを${d.maxFails}回まちがえると${d.lockMinutes}分ロックされ、「再発行」で解除できます。<br>
-    <b>個人PASSは本人だけに伝えてください。</b>
+    ${bySurname ? "<b>個人PASSは当面、自分の名字（漢字）です。</b>院IDと院PASSは院の外に出さないでください。" : "<b>個人PASSは本人だけに伝えてください。</b>"}
     <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
       ${d.missing ? `<button class="btn btn-blue" style="width:auto;" onclick="generatePins()">まだ無いPASSをまとめて作成（${d.missing}件）</button>` : '<span class="small ok">全員分のPASSが作成済みです</span>'}
       <button class="btn btn-save" onclick="window.print()">🖨 印刷</button>
@@ -1280,10 +1281,10 @@ function renderLogins() {
   html += d.clinics.map((c) => `<div class="card login-card"><div class="card-h"><span>${esc(c.name)}院</span>
       <span>院ID <b class="mono">${esc(c.clinicId)}</b> ・ 院PASS <b class="mono">${c.pass ? esc(c.pass) : "未作成"}</b>${c.locked ? ' <span class="badge b-ng">ロック中</span>' : ""}
       ${c.pass ? `<button class="chip no-print" onclick="reissuePin('院','${esc(c.name)}','${esc(c.name)}院')">再発行</button>` : ""}</span></div>
-    <div class="card-b"><div class="scroll"><table><tr><th class="l">名前</th><th class="l">等級</th><th>個人PASS</th><th class="no-print"></th></tr>
+    <div class="card-b"><div class="scroll"><table><tr><th class="l">名前</th><th class="l">等級</th><th>個人PASS${bySurname ? "（名字）" : ""}</th><th class="no-print"></th></tr>
     ${c.staff.map((p) => `<tr><td class="l"><b>${esc(p.name)}</b></td><td class="l">${esc(p.grade || "-")} ${esc(p.role || "")}</td>
       <td><b class="mono">${p.pin ? esc(p.pin) : '<span class="small">未作成</span>'}</b>${p.locked ? ' <span class="badge b-ng">ロック中</span>' : ""}</td>
-      <td class="no-print">${p.pin ? `<button class="chip" onclick="reissuePin('個人','${esc(p.key)}','${esc(p.name)}')">再発行</button>` : ""}</td></tr>`).join("") || '<tr><td colspan="4" class="l muted">スタッフがいません</td></tr>'}
+      <td class="no-print">${bySurname ? (p.locked ? `<button class="chip" onclick="reissuePin('個人','${esc(p.key)}','${esc(p.name)}')">ロック解除</button>` : "") : p.pin ? `<button class="chip" onclick="reissuePin('個人','${esc(p.key)}','${esc(p.name)}')">再発行</button>` : ""}</td></tr>`).join("") || '<tr><td colspan="4" class="l muted">スタッフがいません</td></tr>'}
     </table></div></div></div>`).join("");
   return html;
 }

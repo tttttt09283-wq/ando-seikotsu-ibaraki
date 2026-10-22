@@ -2,7 +2,7 @@
 // 院ID・院PASS ＋ 個人PASS（数字4桁）でのログインと、その管理（社長・GMのみ）。
 //
 //   POST { action: "clinic", id, pass }                       … 院IDと院PASSを確認 → その院のスタッフ名一覧
-//   POST { action: "person", clinicToken, personKey, pin }    … 個人PASSを確認 → ログインのトークン
+//   POST { action: "person", clinicToken, personKey, pin }    … 個人PASS（当面は名字）を確認 → ログインのトークン
 //   GET                                                       … 社長・GM：院ID・PASS・個人PASSの一覧
 //   POST { action: "generate" }                               … 社長・GM：まだ無い院・人のPASSをまとめて作成
 //   POST { action: "reissue", kind: "院"|"個人", clinic, personKey } … 社長・GM：PASSを再発行（ロックも解除）
@@ -12,8 +12,9 @@ import { normName, resolveViewer } from "../lib/incentive-calc.js";
 import { CAREER_SHEET_ID, loadModel, loadLoginSheet, invalidateLoginSheet, authenticate } from "../lib/incentive-data.js";
 import {
   LOGIN_SHEET, LOGIN_HEADER, MAX_FAILS, LOCK_MINUTES, clinicIdOf, randomPin, loginRow, loginPeople,
-  isLocked, afterAttempt, issueToken, verifyToken, pinStamp, samePin,
+  isLocked, afterAttempt, issueToken, verifyToken, pinStamp, samePin, PERSON_PASS_MODE, surnameOf, sameSurname,
 } from "../lib/pin-auth.js";
+const BY_SURNAME = PERSON_PASS_MODE === "surname";
 
 const nowJst = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().replace("T", " ").slice(0, 16);
 
@@ -38,7 +39,7 @@ async function clinicLogin(body) {
 
   const model = await loadModel();
   const staff = loginPeople(model)
-    .filter((p) => p.clinics.includes(entry.clinic) && sheet.people.has(p.key))
+    .filter((p) => p.clinics.includes(entry.clinic) && (BY_SURNAME || sheet.people.has(p.key)))
     .map((p) => ({ key: p.key, name: p.name }));
   return { clinic: entry.clinic, staff, clinicToken: issueToken({ t: "clinic", c: entry.clinic }, 0.5) };
 }
@@ -52,13 +53,14 @@ async function personLogin(body) {
   const person = loginPeople(model).find((p) => p.key === key && p.clinics.includes(ct.c));
   const sheet = await loadLoginSheet(true);
   const entry = person && sheet.people.get(key);
-  if (!entry) throw Object.assign(new Error("名前またはPASSが違います"), { status: 401 });
-  if (isLocked(entry)) throw Object.assign(new Error(lockMessage(entry)), { status: 429 });
-  const ok = samePin(entry.pin, body.pin);
-  const next = afterAttempt(entry, ok);
-  if (next.fails !== entry.fails || next.lockedUntil !== entry.lockedUntil) await writeEntry(next);
-  if (!ok) throw Object.assign(new Error(isLocked(next) ? lockMessage(next) : "名前またはPASSが違います"), { status: 401 });
-  return { token: issueToken({ t: "person", k: key, h: pinStamp(entry.pin) }), name: person.name, clinic: ct.c };
+  // 名字でログインする間は、個人PASSの行が無い人も入れる（行があればロックの回数を記録する）
+  if (!person || (!entry && !BY_SURNAME)) throw Object.assign(new Error("名前またはPASSが違います"), { status: 401 });
+  if (entry && isLocked(entry)) throw Object.assign(new Error(lockMessage(entry)), { status: 429 });
+  const ok = BY_SURNAME ? sameSurname(person.name, body.pin) : samePin(entry.pin, body.pin);
+  const next = entry && afterAttempt(entry, ok);
+  if (next && (next.fails !== entry.fails || next.lockedUntil !== entry.lockedUntil)) await writeEntry(next);
+  if (!ok) throw Object.assign(new Error(next && isLocked(next) ? lockMessage(next) : "名前またはPASSが違います"), { status: 401 });
+  return { token: issueToken({ t: "person", k: key, n: person.name, h: entry ? pinStamp(entry.pin) : "" }), name: person.name, clinic: ct.c };
 }
 
 // ===== 管理（社長・GM） =====
@@ -88,12 +90,12 @@ async function listLogins(model) {
       name: c.name, clinicId: e ? e.clinicId : clinicIdOf(c.name, i), pass: e ? e.pin : null, locked: isLocked(e),
       staff: people.filter((p) => p.clinics.includes(c.name)).map((p) => {
         const pe = sheet.people.get(p.key);
-        return { key: p.key, name: p.name, grade: p.grade, role: p.role, pin: pe ? pe.pin : null, locked: isLocked(pe) };
+        return { key: p.key, name: p.name, grade: p.grade, role: p.role, pin: BY_SURNAME ? surnameOf(p.name) : pe ? pe.pin : null, locked: isLocked(pe) };
       }),
     };
   });
-  const missing = clinics.filter((c) => !c.pass).length + new Set(clinics.flatMap((c) => c.staff.filter((s) => !s.pin).map((s) => s.key))).size;
-  return { sheetExists: sheet.exists, clinics, missing, maxFails: MAX_FAILS, lockMinutes: LOCK_MINUTES };
+  const missing = clinics.filter((c) => !c.pass).length + (BY_SURNAME ? 0 : new Set(clinics.flatMap((c) => c.staff.filter((s) => !s.pin).map((s) => s.key))).size);
+  return { sheetExists: sheet.exists, clinics, missing, personPassMode: PERSON_PASS_MODE, maxFails: MAX_FAILS, lockMinutes: LOCK_MINUTES };
 }
 
 async function generate(model) {

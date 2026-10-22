@@ -131,3 +131,13 @@ test("改定前・改定後の給与と増減がわかる", () => {
   assert.equal(salaryChange(-5000, ""), "down");
   assert.equal(salaryChange(null, ""), null);
 });
+
+test("個人PASSは名字（フルネーム・空白の違いもOK）", async () => {
+  const { sameSurname, surnameOf } = await import("../lib/pin-auth.js");
+  assert.equal(surnameOf("定井 彪雅"), "定井");
+  assert.equal(surnameOf("広川　晏奈"), "広川");
+  assert.equal(sameSurname("定井 彪雅", "定井"), true);
+  assert.equal(sameSurname("定井 彪雅", " 定井彪雅 "), true);
+  assert.equal(sameSurname("定井 彪雅", "彪雅"), false);
+  assert.equal(sameSurname("定井 彪雅", ""), false);
+});
