@@ -211,6 +211,8 @@ const ssSet = (k, v) => { try { v === null ? sessionStorage.removeItem(k) : sess
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
 let loginMode = "clinic";  // clinic（院ID） / email（社長・GM）
+// 共有用URL（/incentive?id=ibaraki）なら院IDを入れておく
+const URL_CLINIC_ID = (() => { try { return (new URLSearchParams(location.search).get("id") || "").trim().toLowerCase().replace(/[^a-z0-9]/g, ""); } catch (e) { return ""; } })();
 let clinicStep = null;     // 院IDが通ったあと { clinic, staff, clinicToken }
 
 async function authHeader() {
@@ -240,7 +242,7 @@ function renderLogin(msg) {
       <button class="btn btn-blue" id="lbtn">ログイン</button>
       <div class="small" style="margin-top:10px;">予約管理と同じID・パスワードでログインできます</div>`;
   } else if (!clinicStep) {
-    form = `<label>院ID</label><input id="cid" autocomplete="username" autocapitalize="off" value="${esc(lsGet("ando_clinic_id") || "")}" placeholder="例：ibaraki"/>
+    form = `<label>院ID</label><input id="cid" autocomplete="username" autocapitalize="off" value="${esc(URL_CLINIC_ID || lsGet("ando_clinic_id") || "")}" placeholder="例：ibaraki"/>
       <label>院PASS（数字4桁）</label><input id="cpw" type="password" inputmode="numeric" maxlength="4" autocomplete="off"/>
       <button class="btn btn-blue" id="lbtn">次へ</button>
       <div class="small" style="margin-top:10px;">院ID・院PASSは院長に確認してください</div>`;
@@ -1265,6 +1267,12 @@ function generatePins() {
   loadLogins({ action: "generate" });
 }
 
+const shareUrl = (clinicId) => `${location.origin}/incentive?id=${encodeURIComponent(clinicId)}`;
+async function copyText(text, btn) {
+  try { await navigator.clipboard.writeText(text); btn.textContent = "コピーしました"; }
+  catch (e) { prompt("このURLをコピーしてください", text); }
+}
+
 function renderLogins() {
   if (!loginsData) { if (!loginsLoading) setTimeout(() => loadLogins(), 0); return `<div class="center">読み込み中...</div>`; }
   if (loginsData.error) return `<div class="card"><div class="card-b"><div class="err">${esc(loginsData.error)}</div><button class="btn btn-blue" onclick="loginsData=null;render()">もう一度読み込む</button></div></div>`;
@@ -1281,7 +1289,8 @@ function renderLogins() {
   html += d.clinics.map((c) => `<div class="card login-card"><div class="card-h"><span>${esc(c.name)}院</span>
       <span>院ID <b class="mono">${esc(c.clinicId)}</b> ・ 院PASS <b class="mono">${c.pass ? esc(c.pass) : "未作成"}</b>${c.locked ? ' <span class="badge b-ng">ロック中</span>' : ""}
       ${c.pass ? `<button class="chip no-print" onclick="reissuePin('院','${esc(c.name)}','${esc(c.name)}院')">再発行</button>` : ""}</span></div>
-    <div class="card-b"><div class="scroll"><table><tr><th class="l">名前</th><th class="l">等級</th><th>個人PASS${bySurname ? "（名字）" : ""}</th><th class="no-print"></th></tr>
+    <div class="card-b"><div class="small" style="margin-bottom:8px;word-break:break-all;">共有URL（院IDが入った状態で開きます） <b class="mono">${esc(shareUrl(c.clinicId))}</b> <button class="chip no-print" onclick="copyText('${esc(shareUrl(c.clinicId))}', this)">コピー</button></div>
+    <div class="scroll"><table><tr><th class="l">名前</th><th class="l">等級</th><th>個人PASS${bySurname ? "（名字）" : ""}</th><th class="no-print"></th></tr>
     ${c.staff.map((p) => `<tr><td class="l"><b>${esc(p.name)}</b></td><td class="l">${esc(p.grade || "-")} ${esc(p.role || "")}</td>
       <td><b class="mono">${p.pin ? esc(p.pin) : '<span class="small">未作成</span>'}</b>${p.locked ? ' <span class="badge b-ng">ロック中</span>' : ""}</td>
       <td class="no-print">${bySurname ? (p.locked ? `<button class="chip" onclick="reissuePin('個人','${esc(p.key)}','${esc(p.name)}')">ロック解除</button>` : "") : p.pin ? `<button class="chip" onclick="reissuePin('個人','${esc(p.key)}','${esc(p.name)}')">再発行</button>` : ""}</td></tr>`).join("") || '<tr><td colspan="4" class="l muted">スタッフがいません</td></tr>'}
