@@ -486,15 +486,38 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
   auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
 });
 
+// ===== ログイン切れの検知 =====
+// 共用アカウントを別の端末でログアウトしたときなどに、この端末のログインが切れることがある。
+// 切れたまま保存すると、サーバーに拒否されているのに「保存しました」と出てしまうため、
+// 書き込みの前にログインを確かめ、切れていたら保存せずに知らせる（画面に再ログインの案内を出す）。
+const LOGIN_EXPIRED_MESSAGE="ログインの有効期限が切れているため、保存できませんでした。もう一度ログインしてから保存してください。";
+function notifyLoginExpired(){ window.dispatchEvent(new Event("ando-login-expired")); }
+// 書き込みに使うトークン（ログインが切れていたら例外）
+async function writeToken(){
+  const {data:{session}}=await supabaseClient.auth.getSession();
+  if(!session){ notifyLoginExpired(); throw new Error(LOGIN_EXPIRED_MESSAGE); }
+  return session.access_token;
+}
+// サーバーの返事を確かめる（失敗なら例外。401はログイン切れ、403は権限なし）
+async function ensureOk(res,label="保存"){
+  if(res.ok) return res;
+  const body=await res.text().catch(()=>"");
+  if(res.status===401){ notifyLoginExpired(); throw new Error(LOGIN_EXPIRED_MESSAGE); }
+  if(res.status===403) throw new Error(`${label}する権限がありません（このアカウントがスタッフ登録と紐付いていない可能性があります。管理者に連絡してください）`);
+  throw new Error(`${label}に失敗しました（HTTP ${res.status}）${body?"\n"+body.slice(0,300):""}`);
+}
+
 const sb = {
   async query(table,method="GET",body=null,filters=""){
-    // ログイン中ならセッショントークンを、未ログインならanonキーを使う
+    // ログイン中ならセッショントークンを、未ログインならanonキーを使う（書き込みはログイン必須）
     const {data:{session}} = await supabaseClient.auth.getSession();
+    if(method!=="GET"&&!session){ notifyLoginExpired(); throw new Error(LOGIN_EXPIRED_MESSAGE); }
     const token = session ? session.access_token : SUPABASE_ANON_KEY;
     const res=await fetch(`${SUPABASE_URL}/rest/v1/${table}${filters}`,{
       method,headers:{"apikey":SUPABASE_ANON_KEY,"Authorization":`Bearer ${token}`,"Content-Type":"application/json","Prefer":"return=representation"},
       body:body?JSON.stringify(body):null,
     });
+    if(res.status===401&&method!=="GET") notifyLoginExpired();
     const text=await res.text();return text?JSON.parse(text):[];
   },
   select:(t,f="")=>sb.query(t,"GET",null,f),
@@ -509,7 +532,9 @@ const sb = {
     return data;
   },
   async logout(){
-    await supabaseClient.auth.signOut();
+    // scope:"local"＝この端末だけログアウト。既定（global）だと、同じアカウントでログイン中の他の端末も
+    // すべてログアウトされ、他の端末の保存が通らなくなる（共用アカウントで「保存したのに保存されない」原因）
+    await supabaseClient.auth.signOut({scope:"local"});
   },
   async getSession(){
     const {data:{session}}=await supabaseClient.auth.getSession();
@@ -659,22 +684,40 @@ const sharedSettings={
     clearTimeout(this.timers[key]);
     this.timers[key]=setTimeout(()=>this.push(key,v),800);
   },
-  async push(key,v,onlyIfMissing){
+  async push(key,v,onlyIfMissing,quiet){
     try{
       const {data:{session}}=await supabaseClient.auth.getSession();
-      if(!session) return;
+      if(!session){
+        // 以前はここで黙って終わっていたため、ログインが切れていると保存されないまま気づけなかった
+        if(!onlyIfMissing) notifyLoginExpired();
+        return false;
+      }
       const res=await fetch(`${SUPABASE_URL}/rest/v1/app_settings?on_conflict=key`,{
         method:"POST",
         headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${session.access_token}`,"Content-Type":"application/json",
           Prefer:onlyIfMissing?"resolution=ignore-duplicates":"resolution=merge-duplicates"},
         body:JSON.stringify({key,value:v,updated_at:new Date().toISOString()}),
       });
-      if(!res.ok) throw new Error("HTTP "+res.status);
+      await ensureOk(res);
       if(this.pending[key]===v) delete this.pending[key];
+      return true;
     }catch(e){
       console.error("設定の保存に失敗しました",key,e);
-      if(!onlyIfMissing) alert("設定をサーバーに保存できませんでした（この端末には保存済み）。通信状態を確認して、もう一度保存してください。");
+      if(!onlyIfMissing&&!quiet&&e.message!==LOGIN_EXPIRED_MESSAGE) alert("設定をサーバーに保存できませんでした（この端末には保存済み）。\n"+e.message);
+      return false;
     }
+  },
+  // まとめてすぐ保存し、全部サーバーに保存できたかを返す（保存ボタン用）
+  async saveNow(entries){
+    const items=Object.entries(entries).map(([key,val])=>{
+      const v=String(val==null?"":val);
+      try{ localStorage.setItem(key,v); }catch(e){}
+      this.pending[key]=v;
+      clearTimeout(this.timers[key]);
+      return [key,v];
+    });
+    const results=await Promise.all(items.map(([key,v])=>this.push(key,v,false,true)));
+    return results.every(Boolean);
   },
 };
 // 他の端末で変えた設定が届いたら再描画するためのフック
@@ -6072,12 +6115,12 @@ function SettingsPanel(){
   async function saveSettings(){
     setSaving(true);
     try{
-      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
-      await fetch(`${SUPABASE_URL}/rest/v1/store_settings`,{
+      const token=await writeToken();
+      await ensureOk(await fetch(`${SUPABASE_URL}/rest/v1/store_settings`,{
         method:"POST",
         headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates"},
         body:JSON.stringify({store_id:selStoreId,...settings,updated_at:new Date().toISOString()})
-      });
+      }));
       showToast("設定を保存しました");
     }catch(e){alert("保存に失敗しました："+e.message);}
     setSaving(false);
@@ -6386,25 +6429,25 @@ function BusinessHoursPanel(){
   async function saveHours(){
     setSaving(true);
     try{
-      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      const token=await writeToken();
       const updatedHours=[];
       for(const h of hours){
         const payload={store_id:selStoreId,day_of_week:h.day,is_open:h.is_open,open_time:h.open_time,close_time:h.close_time,break_times:h.break_times||[]};
         if(h.id){
           // 既存行がある場合は更新（重複行を作らない）
-          await fetch(`${SUPABASE_URL}/rest/v1/business_hours?id=eq.${h.id}`,{
+          await ensureOk(await fetch(`${SUPABASE_URL}/rest/v1/business_hours?id=eq.${h.id}`,{
             method:"PATCH",
             headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
             body:JSON.stringify(payload)
-          });
+          }));
           updatedHours.push(h);
         }else{
           // 行がまだ無い場合のみ新規作成
-          const res=await fetch(`${SUPABASE_URL}/rest/v1/business_hours`,{
+          const res=await ensureOk(await fetch(`${SUPABASE_URL}/rest/v1/business_hours`,{
             method:"POST",
             headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
             body:JSON.stringify(payload)
-          });
+          }));
           const created=await res.json().catch(()=>null);
           const newId=Array.isArray(created)&&created.length>0?created[0].id:null;
           updatedHours.push({...h,id:newId});
@@ -6926,7 +6969,7 @@ function AddStaffModal({onClose,onCreated,existingIds}){
       }
 
       // ② clinic_staffテーブルへ登録
-      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      const token=await writeToken();
       const insertRes=await fetch(`${SUPABASE_URL}/rest/v1/clinic_staff`,{
         method:"POST",
         headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
@@ -7085,7 +7128,7 @@ function StaffMenuPermissionsModal({staff,onClose}){
     setErr("");
     setSaving(true);
     try{
-      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      const token=await writeToken();
       const res=await fetch(`${SUPABASE_URL}/rest/v1/clinic_staff?id=eq.${staff.id}`,{
         method:"PATCH",
         headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
@@ -7261,12 +7304,13 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
     const isOff=val==="off";
     const storeId=(!isOff&&val!=="work")?parseInt(val):null;
     const newCell={is_working:!isOff,store_id:storeId};
+    const prevCell=gridShifts[key];
     setGridShifts(prev=>({...prev,[key]:newCell}));
     setSavingCell(key);
     try{
       const existing=weeklyDefaultFor(staffId,day);
-      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
-      await fetch(`${SUPABASE_URL}/rest/v1/staff_weekly_shifts?on_conflict=staff_id,day_of_week`,{
+      const token=await writeToken();
+      await ensureOk(await fetch(`${SUPABASE_URL}/rest/v1/staff_weekly_shifts?on_conflict=staff_id,day_of_week`,{
         method:"POST",
         headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates"},
         body:JSON.stringify({
@@ -7275,10 +7319,11 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
           start_time:existing.start_time,end_time:existing.end_time,
           store_id:storeId,
         })
-      });
+      }));
       if(onShiftsSaved) onShiftsSaved(); // カレンダー画面が使っているシフトデータも更新する
     }catch(e){
-      showToast("⚠ 保存に失敗しました。もう一度お試しください");
+      setGridShifts(prev=>{const n={...prev};if(prevCell)n[key]=prevCell;else delete n[key];return n;}); // 保存できなかった変更は画面から戻す
+      showToast("⚠ "+(e.message||"保存に失敗しました。もう一度お試しください"));
     }
     setSavingCell(null);
   }
@@ -7310,7 +7355,7 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
     const next=current.indexOf(storeId)>-1?current.filter(id=>id!==storeId):[...current,storeId];
     setSavingStore(staffId);
     try{
-      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      const token=await writeToken();
       const res=await fetch(`${SUPABASE_URL}/rest/v1/clinic_staff?id=eq.${staffId}`,{
         method:"PATCH",
         headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
@@ -7338,6 +7383,9 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
   const [monthHalfCustom,setMonthHalfCustom]=React.useState({}); // 半日出勤の「その日だけ」の時間 {"スタッフID_日付":["開始","終了"]}
   const [monthHolidays,setMonthHolidays]=React.useState({});
   const [editingCell,setEditingCell]=React.useState(null);
+  // 未保存の変更があるか（無いときは、他の端末で保存されたシフトを自動で取り込む）
+  const monthDirtyRef=React.useRef(false);
+  const sharedSettingsVersion=useSharedSettingsVersion();
   const SHIFT_TYPES=["出勤","午前出勤","午後出勤","休み","有休","振替","祝振替"];
   const SHIFT_COLORS={"出勤":"#2563eb","午前出勤":"#0ea5e9","午後出勤":"#6366f1","休み":"#9ca3af","有休":"#059669","振替":"#d97706","祝振替":"#7c3aed"};
   const SHIFT_ABBR={"出勤":"勤","午前出勤":"前","午後出勤":"後","休み":"休","有休":"有","振替":"振","祝振替":"祝"};
@@ -7347,7 +7395,7 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
   function showToast(msg){setToast(msg);setTimeout(()=>setToast(""),2500);}
 
   // 月次シフトのロード
-  React.useEffect(()=>{
+  function loadMonthShifts(){
     try{
       const s=localStorage.getItem(`shifts_${selMonth}`);
       if(s) setMonthShifts(JSON.parse(s));
@@ -7356,16 +7404,22 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
       const h=localStorage.getItem("holiday_balance");
       if(h) setMonthHolidays(JSON.parse(h));
       else{const init={};STAFF_ACCOUNTS.forEach(s=>{init[s.id]={有休残:10,振替残:0,祝振替残:0};});setMonthHolidays(init);}
+      monthDirtyRef.current=false;
     }catch{}
-  },[selMonth,mode,shiftTab]);
+  }
+  React.useEffect(loadMonthShifts,[selMonth,mode,shiftTab]);
+  // 他の端末で保存されたシフトが届いたら、未保存の変更が無いときだけ表示を最新にする
+  // （古い表のまま保存して、他の端末の登録を上書きしてしまうのを防ぐ）
+  React.useEffect(()=>{ if(!monthDirtyRef.current) loadMonthShifts(); },[sharedSettingsVersion]);
 
-  function saveMonthShifts(){
-    try{
-      sharedSettings.set(`shifts_${selMonth}`,JSON.stringify(monthShifts));
-      sharedSettings.set(`shifthalf_${selMonth}`,JSON.stringify(monthHalfCustom));
-      sharedSettings.set("holiday_balance",JSON.stringify(monthHolidays));
-      showToast("保存しました");
-    }catch{showToast("エラー");}
+  async function saveMonthShifts(){
+    const ok=await sharedSettings.saveNow({
+      [`shifts_${selMonth}`]:JSON.stringify(monthShifts),
+      [`shifthalf_${selMonth}`]:JSON.stringify(monthHalfCustom),
+      holiday_balance:JSON.stringify(monthHolidays),
+    });
+    if(ok){ monthDirtyRef.current=false; showToast("保存しました"); }
+    else showToast("⚠ 保存できませんでした（ログインし直して、もう一度保存してください）");
   }
 
   function setShiftCell(staffId,date,val){
@@ -7380,6 +7434,7 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
     if(val==="振替") newH[staffId].振替残=Math.max(0,(newH[staffId].振替残||0)-1);
     if(val==="祝振替") newH[staffId].祝振替残=Math.max(0,(newH[staffId].祝振替残||0)-1);
     setMonthHolidays(newH);
+    monthDirtyRef.current=true;
     setMonthShifts(prev=>({...prev,[key]:val}));
     // 半日出勤なら、その日の時間も選べるよう開いたままにする。半日でなくなったら「その日だけの時間」は消す
     if(!HALF_SHIFT[val]){ setMonthHalfCustom(prev=>{ if(!prev[key]) return prev; const n={...prev}; delete n[key]; return n; }); setEditingCell(null); }
@@ -7419,13 +7474,13 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
     if(!selStaff) return;
     setSaving(true);
     try{
-      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      const token=await writeToken();
       for(const shift of weeklyShifts){
-        await fetch(`${SUPABASE_URL}/rest/v1/staff_weekly_shifts?on_conflict=staff_id,day_of_week`,{
+        await ensureOk(await fetch(`${SUPABASE_URL}/rest/v1/staff_weekly_shifts?on_conflict=staff_id,day_of_week`,{
           method:"POST",
           headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates"},
           body:JSON.stringify({staff_id:selStaff.id,day_of_week:shift.day,is_working:shift.is_working,start_time:shift.start_time,end_time:shift.end_time,store_id:shift.store_id||null})
-        });
+        }));
       }
       showToast(`${selStaff.name}のシフトを保存しました`);
       if(onShiftsSaved) onShiftsSaved(); // カレンダー画面が使っているシフトデータも更新する
@@ -13121,15 +13176,16 @@ function Dashboard({user,onLogout}){
       if(next===base){
         await sb.query("staff_date_lanes","DELETE",null,`?staff_id=eq.${staffId}&date=eq.${dateStr}`);
       }else{
-        const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
-        await fetch(`${SUPABASE_URL}/rest/v1/staff_date_lanes?on_conflict=staff_id,date`,{
+        const token=await writeToken();
+        await ensureOk(await fetch(`${SUPABASE_URL}/rest/v1/staff_date_lanes?on_conflict=staff_id,date`,{
           method:"POST",
           headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates"},
           body:JSON.stringify({staff_id:staffId,date:dateStr,lane_count:next}),
-        });
+        }));
       }
     }catch(e){
       console.error("レーン数の保存に失敗しました",e);
+      alert("レーン数の保存に失敗しました：\n"+(e.message||"不明なエラー"));
     }
   }
   React.useEffect(()=>{
@@ -13561,7 +13617,7 @@ function Dashboard({user,onLogout}){
   async function cancelBooking(reason,rebookInfo){
     if(!cancelModalBooking) return;
     try{
-      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      const token=await writeToken();
       const res=await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${cancelModalBooking.id}`,{
         method:"PATCH",
         headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
@@ -13625,7 +13681,7 @@ function Dashboard({user,onLogout}){
   }
   async function restoreBooking(id){
     try{
-      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      const token=await writeToken();
       const res=await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${id}`,{
         method:"PATCH",
         headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
@@ -13649,7 +13705,7 @@ function Dashboard({user,onLogout}){
 
   async function deleteCancelledBooking(id){
     try{
-      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      const token=await writeToken();
       const res=await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${id}`,{
         method:"DELETE",
         headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,Prefer:"return=representation"},
@@ -14956,19 +15012,50 @@ function App(){
     restoreSession();
   },[]);
 
+  // ログインの有効期限切れ（別の端末でのログアウトなど）を検知したら、再ログインを促す。
+  // 画面だけログイン中のまま保存すると、保存されずに消えてしまうため。
+  const [loginExpired,setLoginExpired]=React.useState(false);
+  React.useEffect(()=>{
+    if(!user) return;
+    const onExpired=()=>setLoginExpired(true);
+    window.addEventListener("ando-login-expired",onExpired);
+    const {data:{subscription}}=supabaseClient.auth.onAuthStateChange((event)=>{ if(event==="SIGNED_OUT") onExpired(); });
+    const timer=setInterval(()=>{ sb.getSession().then(s=>{ if(!s) onExpired(); }).catch(()=>{}); },60000);
+    return ()=>{ window.removeEventListener("ando-login-expired",onExpired); subscription.unsubscribe(); clearInterval(timer); };
+  },[user]);
+
   function handleLogin(u){
     try{sessionStorage.setItem("ando_user",JSON.stringify(u));}catch{}
+    setLoginExpired(false);
     setUser(u);
   }
   function handleLogout(){
     try{sessionStorage.removeItem("ando_user");}catch{}
-    sb.logout();
     setUser(null);
+    sb.logout();
   }
 
   if(checking)return(<div className="loading"><div className="loading-spinner"></div><div style={{fontWeight:700,color:"#1e3a5f",fontSize:14}}>確認中...</div></div>);
   if(!user)return <LoginScreen onLogin={handleLogin}/>;
-  return <Dashboard user={user} onLogout={handleLogout}/>;
+  return(
+    <>
+      <Dashboard user={user} onLogout={handleLogout}/>
+      {loginExpired&&(
+        <div className="modal-overlay" style={{zIndex:10000}}>
+          <div className="modal-box" style={{maxWidth:420}} role="alertdialog" aria-label="ログインの有効期限切れ">
+            <div className="modal-header" style={{background:"linear-gradient(135deg,#dc2626,#b91c1c)"}}>
+              <div style={{fontWeight:800,fontSize:16,color:"white"}}>もう一度ログインしてください</div>
+            </div>
+            <div style={{padding:20,fontSize:14,lineHeight:1.8,color:"#374151"}}>
+              ログインの有効期限が切れました（別の端末でログアウトした場合などに起こります）。<br/>
+              このままでは変更が保存されません。ログインし直してから、もう一度入力・保存してください。
+              <button onClick={handleLogout} style={{display:"block",width:"100%",marginTop:16,padding:"12px",background:"#1e3a5f",color:"white",border:"none",borderRadius:8,fontWeight:800,fontSize:15,cursor:"pointer"}}>ログイン画面へ</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
