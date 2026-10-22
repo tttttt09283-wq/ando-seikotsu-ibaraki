@@ -37,7 +37,7 @@ test("scoreMonth: behavior = points x score/5, rank only when complete, required
   const scores = { pl: 5, shift: 5, claim: 5, develop: 5, pc: 2,
     basic_greeting: 5, basic_appearance: 5, basic_punctual: 2, basic_hourensou: 5, basic_rules: 5 };
   const r = scoreMonth(items, values, scores);
-  assert.equal(r.total, 92.2); // PC 配点10 × 2/5（-6）、時間厳守 配点3 × 2/5（-1.8）
+  assert.equal(r.total, 94.6); // 行動30%÷5項目＝PC 6点 × 2/5（-3.6）、基本15%÷5項目＝時間厳守 3点 × 2/5（-1.8）
   assert.equal(r.rank, "S");
   assert.deepEqual(r.requiredMissed, ["PC業務（必須）"]);
   assert.deepEqual(r.basicIssues, ["時間厳守・無遅刻無欠勤"]);
@@ -98,7 +98,7 @@ test("validateItems: cleans input, keeps ids unique, requires target for 数値,
     { kind: "数値", id: "a", label: "成約率", points: 10, target: "60%", unit: "%", direction: "以上", auto: "bogus" },
   ]);
   assert.equal(list[0].label, "報連相");
-  assert.equal(list[0].points, 5);
+  assert.equal(list[0].points, 0); // 配点は評価配分から自動
   assert.notEqual(list[1].id, "a"); // 重複IDは振り直し
   assert.equal(list[1].target, 60);
   assert.equal(list[1].auto, "");
@@ -282,4 +282,21 @@ test("total = class score (100) + department points, not scaled back to 100", as
   assert.equal(r.rank, "S");
   const plain = scoreMonth(itemsFor(DEFAULT_ITEMS, "G2", []), values, scores);
   assert.equal(plain.total, 100);
+});
+
+test("distribution: % split equally by item count, stricter required line for higher classes, validation", async () => {
+  const { itemsFor, parseDist, distRows, validateDist, DEFAULT_DIST, scoreMonth } = await import("../lib/evaluation.js");
+  const dist = parseDist(distRows({ ...DEFAULT_DIST, grades: { ...DEFAULT_DIST.grades, G2: { num: 60, beh: 25, basic: 15, line: 4 } }, depts: { 集客: 20 } }));
+  const items = itemsFor(DEFAULT_ITEMS, "G2", ["集客"], dist);
+  const nums = items.filter((it) => !it.dept && it.kind === "数値");
+  assert.ok(nums.every((it) => Math.abs(it.points - 60 / nums.length) < 1e-9));
+  assert.equal(items.filter((it) => it.dept).reduce((a, it) => a + it.points, 0), 20);
+  assert.equal(items[0].requiredMin, 4);
+  assert.ok(DEFAULT_DIST.grades.G6.line > DEFAULT_DIST.grades.G1.line);
+  assert.throws(() => validateDist("クラス", { num: 50, beh: 40, basic: 20, line: 3 }), /100/);
+  assert.equal(validateDist("部門", { points: 15 }).points, 15);
+  // 必須ラインより低いと必須未達
+  const pc = items.find((it) => it.id === "pc");
+  const r = scoreMonth(items.map((it) => (it.id === "pc" ? { ...it, required: true } : it)), {}, { pc: 3 });
+  assert.deepEqual(r.requiredMissed, [pc.label]);
 });

@@ -21,7 +21,7 @@ import { CAREER_SHEET_ID, loadModel, invalidateModel, loadNewPatients, authentic
 import { EVENT_SHEET, EVENT_HEADER, MAX_EVENT_BONUS, eventBonusMap, groupEvents, normDate } from "../lib/events.js";
 import {
   ITEM_SHEET, RECORD_SHEET, RECORD_HEADER, DEFAULT_ITEMS, COMMON_GRADE,
-  STAFF_SHEET, STAFF_HEADER, parseStaffSettings, DEPT_PREFIX, DEFAULT_DEPARTMENTS, departmentNames, deptMembership, canSetCandidate, gradeRank, itemSheetRows, parseItemSheet, parseRecords,
+  STAFF_SHEET, STAFF_HEADER, parseStaffSettings, DIST_SHEET, parseDist, distRows, validateDist, distFor, deptPointsFor, DEPT_PREFIX, DEFAULT_DEPARTMENTS, departmentNames, deptMembership, canSetCandidate, gradeRank, itemSheetRows, parseItemSheet, parseRecords,
   scoreMonth, rankOf, itemsFor, validateItems, GRADE_LABELS, AUTO_OPTIONS, parseMonthKey, monthKeyOf, halfMonthKeys, autoValues, superiorOf, canEvaluate, buildRecordRows,
 } from "../lib/evaluation.js";
 import { normName } from "../lib/incentive-calc.js";
@@ -37,14 +37,18 @@ async function loadSheets() {
   if (hasRecords) ranges.push(`'${RECORD_SHEET}'!A1:M20000`);
   if (hasStaff) ranges.push(`'${STAFF_SHEET}'!A1:F1000`);
   const hasLadder = titles.includes(LADDER_SHEET);
+  const hasDist = titles.includes(DIST_SHEET);
   if (hasLadder) ranges.push(`'${LADDER_SHEET}'!A1:L40`);
+  if (hasDist) ranges.push(`'${DIST_SHEET}'!A1:G200`);
   const got = ranges.length ? await batchGet(CAREER_SHEET_ID, ranges) : [];
   const itemRows = hasItems ? got.shift() : null;
   const recordRows = hasRecords ? got.shift() : null;
   const staffRows = hasStaff ? got.shift() : null;
   const ladderRows = hasLadder ? got.shift() : null;
+  const distSheetRows = hasDist ? got.shift() : null;
   return {
     hasStaff, staffSettings: parseStaffSettings(staffRows), ladder: parseLadder(ladderRows),
+    hasDist, distRowCount: distSheetRows ? distSheetRows.length : 0, dist: parseDist(distSheetRows),
     itemRowCount: itemRows ? itemRows.length : 0,
     setupNeeded: !hasItems || !hasRecords,
     hasItems, hasRecords,
@@ -104,7 +108,7 @@ function buildPayload({ model, np, viewer, isAdmin, sheets, monthKey }) {
   }));
   const people = visible.map((vp) => {
     const person = model.people.find((p) => p.key === vp.key);
-    const items = itemsFor(sheets.items, person.grade, deptsOf(person.key));
+    const items = itemsFor(sheets.items, person.grade, deptsOf(person.key), sheets.dist);
     const monthData = (key) => {
       const rec = records.get(`${key}|${person.key}`) || null;
       const auto = autoValues(model, person, key, np);
@@ -149,6 +153,7 @@ function buildPayload({ model, np, viewer, isAdmin, sheets, monthKey }) {
   return {
     month: monthKey, halfMonths: half, items: sheets.items, people, setupNeeded: sheets.setupNeeded, viewer, isAdmin,
     canEditItems: isAdmin || viewer.grade === "G6", gradeLabels: GRADE_LABELS, autoOptions: AUTO_OPTIONS,
+    dist: sheets.dist, // クラスごとの 数値％・行動％・基本％・必須ライン／部門の点数
     // 部門と担当者（評価項目の設定画面用。社長・GMだけ）
     departments: (isAdmin || viewer.grade === "G6") ? departmentNames(sheets.items).map((d) => ({
       name: d, members: model.people.filter((p) => deptsOf(p.key).includes(d)).map((p) => p.key),
@@ -260,16 +265,44 @@ async function setup() {
   if (data.length) await batchUpdate(CAREER_SHEET_ID, data);
 }
 
-// 1クラス分の項目を差し替えて「評価項目」シートを書き直す（減った行は空欄で上書き）
+// 「評価項目」シートの配点列に、評価配分から計算した点を書く（シートで見たときに分かるように）
+function withPoints(items, dist) {
+  const out = {};
+  for (const [g, list] of Object.entries(items)) {
+    if (g === COMMON_GRADE) { out[g] = list.map((it) => ({ ...it, points: "クラスの基本％÷項目数" })); continue; }
+    if (g.startsWith(DEPT_PREFIX)) { const t = deptPointsFor(dist, g.slice(DEPT_PREFIX.length)); out[g] = list.map((it) => ({ ...it, points: Math.round((t / list.length) * 100) / 100 })); continue; }
+    const d = distFor(dist, g);
+    const nums = list.filter((it) => it.kind === "数値").length, behs = list.length - nums;
+    out[g] = list.map((it) => ({ ...it, points: Math.round(((it.kind === "数値" ? d.num / nums : d.beh / behs) || 0) * 100) / 100 }));
+  }
+  return out;
+}
+
+// 評価配分シートを書き直す
+async function writeDist(sheets, dist) {
+  if (!sheets.hasDist) await addSheets(CAREER_SHEET_ID, [DIST_SHEET]);
+  const rows = distRows(dist);
+  while (rows.length < sheets.distRowCount) rows.push(Array(rows[0].length).fill(""));
+  await batchUpdate(CAREER_SHEET_ID, [{ range: `'${DIST_SHEET}'!A1:G${rows.length}`, values: rows }], "RAW");
+}
+
+// 1クラス分の項目（と配分）を差し替えて「評価項目」「評価配分」シートを書き直す（減った行は空欄で上書き）
 async function saveItems(body) {
   const grade = String(body.grade || "");
   const list = validateItems(grade, body.items);
   const sheets = await loadSheets();
   if (sheets.setupNeeded) throw new Error("先に「評価シートを準備」を押してください");
+  if (body.dist) {
+    const dist = { ...sheets.dist, grades: { ...sheets.dist.grades }, depts: { ...sheets.dist.depts } };
+    if (grade.startsWith(DEPT_PREFIX)) dist.depts[grade.slice(DEPT_PREFIX.length)] = validateDist("部門", body.dist).points;
+    else if (grade !== COMMON_GRADE) dist.grades[grade] = validateDist("クラス", body.dist);
+    await writeDist(sheets, dist);
+    sheets.dist = dist;
+  }
   const items = { ...sheets.items, [grade]: list };
   const ordered = Object.fromEntries(Object.keys(GRADE_LABELS).filter((g) => items[g]).map((g) => [g, items[g]]));
   for (const g of Object.keys(items)) if (!ordered[g]) ordered[g] = items[g]; // 一覧に無い等級の行も残す
-  const rows = itemSheetRows(ordered);
+  const rows = itemSheetRows(withPoints(ordered, sheets.dist));
   while (rows.length < sheets.itemRowCount) rows.push(Array(rows[0].length).fill(""));
   await batchUpdate(CAREER_SHEET_ID, [{ range: `'${ITEM_SHEET}'!A1:K${rows.length}`, values: rows }]);
 }
@@ -277,7 +310,7 @@ async function saveItems(body) {
 async function resetItems() {
   const sheets = await loadSheets();
   if (sheets.setupNeeded) throw new Error("先に「評価シートを準備」を押してください");
-  const rows = itemSheetRows();
+  const rows = itemSheetRows(withPoints(DEFAULT_ITEMS, sheets.dist));
   while (rows.length < sheets.itemRowCount) rows.push(Array(rows[0].length).fill(""));
   await batchUpdate(CAREER_SHEET_ID, [{ range: `'${ITEM_SHEET}'!A1:K${rows.length}`, values: rows }]);
 }
@@ -289,7 +322,7 @@ async function save({ model, np, viewer, isAdmin, staff, body }) {
   if (!person) throw new Error("評価する人が見つかりません");
   const sheets = await loadSheets();
   if (sheets.setupNeeded) throw new Error("先に管理者が「評価シートを準備」を押してください");
-  const items = itemsFor(sheets.items, person.grade, deptMembership(model, sheets.staffSettings, sheets.items).get(person.key) || []);
+  const items = itemsFor(sheets.items, person.grade, deptMembership(model, sheets.staffSettings, sheets.items).get(person.key) || [], sheets.dist);
   if (!items) throw new Error(`${person.grade || "等級なし"} の評価項目がありません`);
   if (!canEvaluate(model, viewer, isAdmin, person)) throw new Error("この人を評価できるのは直属の上司です");
 

@@ -17,6 +17,7 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 .btn-outline{background:rgba(255,255,255,.15);color:white;border:1.5px solid rgba(255,255,255,.4);}
 .btn-blue{background:#1e3a5f;color:white;width:100%;padding:12px;}
 .wrap{max-width:960px;margin:0 auto;padding:16px;}
+.wrap.wide{max-width:1400px;}
 .card{background:white;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:14px;overflow:hidden;}
 .card-h{padding:10px 16px;font-size:13px;font-weight:800;color:#1e3a5f;background:#f8fafc;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
 .card-b{padding:14px 16px;}
@@ -127,6 +128,19 @@ tr.st-hit-row td{background:#fef2f2;} tr.st-ng-row td:first-child{color:#b91c1c;
 .dept-h{font-size:12px;font-weight:800;color:#1e3a5f;background:#eef2ff;border-radius:6px;padding:4px 8px;margin:10px 0 2px;}
 .member-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:4px 12px;}
 .member-grid .ie-check{font-weight:600;padding:4px 0;}
+table.grid-tbl{min-width:1150px;}
+table.grid-tbl td{vertical-align:top;padding:4px 6px;}
+table.grid-tbl input,table.grid-tbl select,table.grid-tbl textarea{margin:0;padding:6px 8px;font-size:12px;border:1.5px solid #e2e8f0;border-radius:6px;font-family:inherit;background:white;}
+table.grid-tbl input.ie-label{min-width:170px;font-weight:700;}
+table.grid-tbl textarea{min-width:260px;min-height:38px;resize:vertical;}
+table.grid-tbl td.drag{cursor:grab;color:#94a3b8;text-align:center;font-size:16px;user-select:none;}
+table.grid-tbl td.mv .chip{padding:2px 8px;margin:0 2px 2px 0;}
+table.grid-tbl td.pts-cell{font-weight:800;color:#1e3a5f;text-align:right;}
+table.grid-tbl tr.req-row td{background:#fef2f2;}
+.dist-row{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:6px;}
+.dist-row label{display:flex;align-items:center;gap:6px;font-size:13px;color:#1e3a5f;margin:0;}
+.dist-row input.dist{width:64px;margin:0;padding:6px 8px;font-size:14px;font-weight:800;text-align:right;}
+.dist-row select.dist{width:auto;padding:6px 8px;border:1.5px solid #e2e8f0;border-radius:8px;font-family:inherit;}
 ul.notes{padding-left:18px;font-size:12px;color:#64748b;line-height:1.7;}
 </style>
 </head>
@@ -317,6 +331,7 @@ function render() {
     `<button class="btn btn-outline" onclick="logout()">ログアウト</button>`;
 
   const tabs = `<div class="tabs"><button class="tab ${view === "incentive" ? "sel" : ""}" onclick="view='incentive';render()">💰 インセンティブ</button><button class="tab ${view === "evaluation" ? "sel" : ""}" onclick="view='evaluation';render()">📝 月次評価</button>${data.canManageLogins ? `<button class="tab ${view === "logins" ? "sel" : ""}" onclick="view='logins';render()">🔑 ログイン設定</button>` : ""}</div>`;
+  root.classList.toggle("wide", view === "evaluation" && !!itemEditor); // 表形式の設定画面は横に広く
   if (view === "evaluation") {
     root.innerHTML = tabs + renderEvaluation();
     return;
@@ -689,13 +704,13 @@ function renderEvalDetail() {
       ? `<b>${fmtVal(p.auto[it.auto], it.unit)}</b>`
       : ro ? `<b>${fmtVal(evalDraft.values[it.id], it.unit)}</b>`
       : `<input class="num" inputmode="decimal" value="${esc(evalDraft.values[it.id] ?? "")}" placeholder="${esc(it.unit)}" oninput="evalDraft.values['${esc(it.id)}']=this.value;evalDirty=true;refreshEvalTotal()"/>`;
-    return `<div class="item ${negClass(it, sc.pts[it.id])}" id="item_${esc(it.id)}"><div class="lbl"><b>${esc(it.label)}</b>${isAuto ? '<span class="autotag">自動</span>' : ""}<div class="d">${esc(target)}（配点${it.points}）</div></div><div class="ctrl">${input}<div class="pts" id="pts_${esc(it.id)}">${it.dept ? raw(sc.pts[it.id]) : scaled(sc.pts[it.id])}</div></div></div>`;
+    return `<div class="item ${negClass(it, sc.pts[it.id])}" id="item_${esc(it.id)}"><div class="lbl"><b>${esc(it.label)}</b>${isAuto ? '<span class="autotag">自動</span>' : ""}<div class="d">${esc(target)}（配点${Math.round(it.points * 10) / 10}）</div></div><div class="ctrl">${input}<div class="pts" id="pts_${esc(it.id)}">${it.dept ? raw(sc.pts[it.id]) : scaled(sc.pts[it.id])}</div></div></div>`;
   };
   const numItems = items.filter((it) => it.kind === "数値" && !it.dept).map(numItem).join("");
   const scaleItem = (it) => {
     const cur = evalDraft.scores[it.id] || 0;
     const btns = [1, 2, 3, 4, 5].map((n) => `<button class="${cur === n ? "sel" : ""}${cur === n && n <= 2 ? " low" : ""}" ${ro ? "disabled" : ""} onclick="setEvalScore('${esc(it.id)}',${n})">${n}</button>`).join("");
-    return `<div class="item ${negClass(it, sc.pts[it.id])}"><div class="lbl"><b>${esc(it.label)}</b>${it.required ? '<span class="reqtag">必須</span>' : ""}<div class="d">${esc(it.note)}（配点${it.points}）</div></div><div class="ctrl"><div class="score-btns">${btns}</div><div class="pts">${it.dept ? raw(sc.pts[it.id]) : scaled(sc.pts[it.id])}</div></div></div>`;
+    return `<div class="item ${negClass(it, sc.pts[it.id])}"><div class="lbl"><b>${esc(it.label)}</b>${it.required ? `<span class="reqtag">必須 ${it.requiredMin || 3}以上</span>` : ""}<div class="d">${esc(it.note)}（配点${Math.round(it.points * 10) / 10}）</div></div><div class="ctrl"><div class="score-btns">${btns}</div><div class="pts">${it.dept ? raw(sc.pts[it.id]) : scaled(sc.pts[it.id])}</div></div></div>`;
   };
   const scaleItems = (kind) => items.filter((it) => it.kind === kind && !it.dept).map(scaleItem).join("");
   // 部門の評価（担当している部門ごと）
@@ -707,7 +722,7 @@ function renderEvalDetail() {
   const basicItems = scaleItems("基本");
   const basicIssues = items.filter((it) => it.kind === "基本" && evalDraft.scores[it.id] && evalDraft.scores[it.id] <= 2);
   const trend = p.trend.map((t) => `<td class="${t.month === evalMonth ? "bg-ok" : ""}" style="cursor:pointer;" onclick="jumpEvalMonth('${t.month}')" title="${monthLabel(t.month)}を開く">${t.evaluated ? `<b class="${rankCls(t.rank)}">${t.total ?? "-"}</b><div class="small">${t.rank || ""}${t.pc ? ` ・PC${t.pc}` : ""}</div>` : '<span class="small">-</span>'}</td>`).join("");
-  const reqMissed = items.filter((it) => it.required && evalDraft.scores[it.id] && evalDraft.scores[it.id] < 3);
+  const reqMissed = items.filter((it) => it.required && it.kind !== "数値" && evalDraft.scores[it.id] && evalDraft.scores[it.id] < (it.requiredMin || 3));
 
   return `<div class="monthnav" style="flex-wrap:wrap;"><button class="chip" onclick="closeEval()">‹ 一覧</button><span style="flex:1"></span><button class="chip" onclick="changeEvalMonth(-1)">‹ 前月</button><div class="m" style="min-width:100px;">${monthLabel(evalMonth)}</div><button class="chip" onclick="changeEvalMonth(1)">次月 ›</button></div>
   <div class="card"><div class="card-h"><span>${esc(p.name)}（${esc(p.grade)} ${esc(p.role)} ・ ${esc(p.clinics.join("・"))}）</span><span class="small">評価者：${esc(p.superior)}${p.evaluated ? ` ・ 最終更新 ${esc(p.updatedAt)}（${esc(p.evaluator)}）` : ""}</span></div><div class="card-b">
@@ -726,7 +741,7 @@ function renderEvalDetail() {
   ${eventCardForPerson(p)}
   <div class="card"><div class="card-h"><span>行動の評価（5段階）</span><span class="small">${sc.beh}点</span></div><div class="card-b">${behItems || '<div class="muted">項目なし</div>'}
     <div class="small" style="margin-top:8px;">5＝期待を大きく上回る　4＝上回る　3＝できている　2＝あと一歩　1＝できていない</div>
-    ${reqMissed.length ? `<div class="banner ng">⚠️ 必須項目（${reqMissed.map((it) => esc(it.label)).join("・")}）が3未満です。院長以上はPC業務が必須のため、改善指導の対象になります。</div>` : ""}</div></div>
+    ${reqMissed.length ? `<div class="banner ng">⚠️ 必須項目（${reqMissed.map((it) => esc(it.label)).join("・")}）が必須ライン（${reqMissed[0].requiredMin || 3}以上）に届いていません。改善指導の対象になります。</div>` : ""}</div></div>
   <div class="card"><div class="card-h">評価者コメント</div><div class="card-b">${ro ? `<div style="white-space:pre-wrap;font-size:13px;">${esc(evalDraft.comment) || '<span class="muted">なし</span>'}</div>` : `<textarea oninput="evalDraft.comment=this.value;evalDirty=true" placeholder="良かった点・次月の課題など">${esc(evalDraft.comment)}</textarea>`}</div>
     <div class="sticky-total"><div id="evalTotal">${totalHtml(sc)}</div>${ro ? "" : `<button class="btn btn-blue" style="width:auto;padding:10px 24px;" onclick="saveEval()">保存する</button>`}</div></div>`;
 }
@@ -794,7 +809,7 @@ let itemEditor = null; // { grade, draft: [項目], dirty, saved }
 
 function openItemEditor(grade) {
   if (itemEditor && itemEditor.dirty && grade !== itemEditor.grade && !confirm("保存していない変更があります。破棄してクラスを切り替えますか？")) return;
-  itemEditor = { grade, draft: JSON.parse(JSON.stringify(evalData.items[grade] || [])), dirty: false, saved: false };
+  itemEditor = { grade, draft: JSON.parse(JSON.stringify(evalData.items[grade] || [])), dist: distDraftFor(grade), dirty: false, saved: false };
   render();
   window.scrollTo(0, 0);
 }
@@ -807,7 +822,7 @@ function closeItemEditor() {
 
 function itemField(i, field, value) {
   const it = itemEditor.draft[i];
-  it[field] = field === "points" ? value : field === "required" ? !!value : value;
+  it[field] = field === "required" ? !!value : value;
   itemEditor.dirty = true;
   itemEditor.saved = false;
   if (field === "kind") { if (value === "数値" && !it.direction) it.direction = "以上"; keepScroll(render); }
@@ -832,7 +847,7 @@ function itemDelete(i) {
 
 function itemAdd() {
   const common = itemEditor.grade === "共通";
-  itemEditor.draft.push({ kind: common ? "基本" : "行動", id: "", label: "", points: 5, target: null, unit: "", direction: "", auto: "", required: false, note: "" });
+  itemEditor.draft.push({ kind: common ? "基本" : "行動", id: "", label: "", points: 0, target: null, unit: "", direction: "", auto: "", required: false, note: "" });
   itemEditor.dirty = true;
   render();
   const inputs = document.querySelectorAll(".ie-label");
@@ -841,82 +856,133 @@ function itemAdd() {
 
 function keepScroll(fn) { const y = window.scrollY; fn(); window.scrollTo(0, y); }
 
-function itemTotals() {
-  const sumOf = (list) => list.reduce((a, it) => a + (Number(it.points) || 0), 0);
-  const own = sumOf(itemEditor.draft);
-  const common = itemEditor.grade === "共通" ? 0 : sumOf(evalData.items["共通"] || []);
-  return { own, common, total: own + common };
+// ===== 評価項目の設定（表形式） =====
+// 配点は手で入れず、クラスの「数値％・行動％・基本％」を項目数で等分する（部門は「部門の点数」を等分）
+function distDraftFor(grade) {
+  const d = evalData.dist || { grades: {}, depts: {}, deptDefault: 10 };
+  if (isDept(grade)) { const n = grade.slice(3); return { points: d.depts && d.depts[n] !== undefined ? d.depts[n] : d.deptDefault }; }
+  const g = (d.grades || {})[grade];
+  return g ? { ...g } : { num: 50, beh: 35, basic: 15, line: 3 };
 }
 
+function distField(field, value) {
+  itemEditor.dist[field] = value;
+  itemEditor.dirty = true;
+  itemEditor.saved = false;
+  refreshItemTotal();
+}
+
+// いまの入力から各項目の配点を計算（画面のプレビュー用。保存後はサーバーが同じ計算をする）
+function previewPoints() {
+  const g = itemEditor.grade, d = itemEditor.dist, list = itemEditor.draft;
+  if (g === "共通") return list.map(() => null);
+  if (isDept(g)) return list.map(() => (list.length ? Number(d.points || 0) / list.length : 0));
+  const nums = list.filter((it) => it.kind === "数値").length, behs = list.length - nums;
+  return list.map((it) => (it.kind === "数値" ? (nums ? Number(d.num || 0) / nums : 0) : (behs ? Number(d.beh || 0) / behs : 0)));
+}
+const fmtPts = (v) => (v === null || v === undefined ? "" : (Math.round(v * 10) / 10).toString());
+
 function totalsHtml() {
-  const t = itemTotals();
-  if (isDept(itemEditor.grade)) {
-    return `<span class="small">この部門</span> <b style="font-size:20px;">${t.own}点</b> <span class="small">（担当者のクラスの点100点に、そのまま足します）</span>`;
-  }
-  if (itemEditor.grade === "共通") {
-    return `<span class="small">共通の基本</span> <b style="font-size:20px;">${t.own}点</b> <span class="small">（全クラスの配点に加わります）</span>`;
-  }
-  const ok = t.total === 100;
-  return `<span class="small">このクラス ${t.own}点 ＋ 共通の基本 ${t.common}点 ＝</span> <b style="font-size:20px;" class="${ok ? "ok" : "warn"}">${t.total}点</b>${ok ? "" : ' <span class="small warn">（100点でなくても100点満点に換算されます）</span>'}`;
+  const g = itemEditor.grade, d = itemEditor.dist;
+  if (g === "共通") return `<span class="small">社会人としての基本の配点は、各クラスの「基本％」をこの項目数（${itemEditor.draft.length}）で等分します。</span>`;
+  if (isDept(g)) return `<span class="small">この部門</span> <b style="font-size:20px;">${Number(d.points || 0)}点</b> <span class="small">を ${itemEditor.draft.length}項目で等分（担当者のクラスの点100点に足します）</span>`;
+  const sum = Number(d.num || 0) + Number(d.beh || 0) + Number(d.basic || 0);
+  const ok = Math.round(sum) === 100;
+  return `<span class="small">数値 ${Number(d.num || 0)}％ ＋ 行動 ${Number(d.beh || 0)}％ ＋ 基本 ${Number(d.basic || 0)}％ ＝</span> <b style="font-size:20px;" class="${ok ? "ok" : "ng"}">${sum}％</b>${ok ? "" : ' <span class="small ng">（100％にしてください）</span>'}`;
 }
 
 function refreshItemTotal() {
   const el = document.getElementById("itemTotal");
   if (el) el.innerHTML = totalsHtml();
+  const pts = previewPoints();
+  pts.forEach((v, i) => { const c = document.getElementById("ipts_" + i); if (c) c.textContent = fmtPts(v); });
+}
+
+// ドラッグで並べ替え
+let dragFrom = null;
+function itemDrop(to) {
+  if (dragFrom === null || dragFrom === to) return;
+  const list = itemEditor.draft;
+  const [moved] = list.splice(dragFrom, 1);
+  list.splice(to, 0, moved);
+  dragFrom = null;
+  itemEditor.dirty = true;
+  keepScroll(render);
 }
 
 function renderItemEditor() {
   const g = itemEditor.grade;
   const labels = evalData.gradeLabels || {};
   const common = g === "共通";
+  const dept = isDept(g);
+  const d = itemEditor.dist;
   const chips = Object.entries(labels).map(([k, v]) => `<button class="chip ${k === g ? "sel" : ""}" onclick="openItemEditor('${esc(k)}')">${esc(v)}</button>`).join("");
-  // 部門（担当者がいる人だけ評価に加わる）
-  const deptKeys = [...new Set([...(evalData.departments || []).map((d) => "部門:" + d.name), ...(isDept(g) ? [g] : [])])];
+  const deptKeys = [...new Set([...(evalData.departments || []).map((x) => "部門:" + x.name), ...(dept ? [g] : [])])];
   const deptChips = deptKeys.map((k) => `<button class="chip ${k === g ? "sel" : ""}" onclick="openItemEditor('${esc(k)}')">🏷 ${esc(k.slice(3))}</button>`).join("")
     + `<button class="chip" onclick="addDepartment()">＋ 部門を追加</button>`;
   const autoOpts = (cur) => `<option value="">手入力</option>` + Object.entries(evalData.autoOptions || {}).map(([k, v]) => `<option value="${esc(k)}" ${cur === k ? "selected" : ""}>自動：${esc(v)}</option>`).join("");
-  const cards = itemEditor.draft.map((it, i) => {
-    const kindSel = common
-      ? `<span class="badge b-run" style="margin:0;">基本</span>`
-      : `<select onchange="itemField(${i},'kind',this.value)" style="width:auto;">${["行動", "数値"].map((k) => `<option ${it.kind === k ? "selected" : ""}>${k}</option>`).join("")}</select>`;
-    const numFields = it.kind === "数値" ? `
-      <div class="ie-grid">
-        <div><label>目標値</label><input inputmode="decimal" value="${esc(it.target ?? "")}" oninput="itemField(${i},'target',this.value)" placeholder="例 70"/></div>
-        <div><label>単位</label><input value="${esc(it.unit)}" oninput="itemField(${i},'unit',this.value)" placeholder="% / 円 / 名 / 件"/></div>
-        <div><label>目標の向き</label><select onchange="itemField(${i},'direction',this.value)"><option value="以上" ${it.direction !== "以下" ? "selected" : ""}>以上が良い</option><option value="以下" ${it.direction === "以下" ? "selected" : ""}>以下が良い</option></select></div>
-        <div><label>実績の入れ方</label><select onchange="itemField(${i},'auto',this.value)">${autoOpts(it.auto)}</select></div>
-      </div>` : `
-      <label class="ie-check"><input type="checkbox" ${it.required ? "checked" : ""} onchange="itemField(${i},'required',this.checked)"/> 必須にする（3未満で警告）</label>`;
-    return `<div class="ie-card">
-      <div class="ie-head"><span class="small">No.${i + 1}</span>${kindSel}<span style="flex:1"></span>
-        <button class="chip" onclick="itemMove(${i},-1)" ${i === 0 ? "disabled" : ""}>↑</button><button class="chip" onclick="itemMove(${i},1)" ${i === itemEditor.draft.length - 1 ? "disabled" : ""}>↓</button><button class="chip" style="color:#b91c1c;" onclick="itemDelete(${i})">🗑 削除</button></div>
-      <div class="ie-grid2">
-        <div><label>項目</label><input class="ie-label" value="${esc(it.label)}" oninput="itemField(${i},'label',this.value)" placeholder="例：報連相"/></div>
-        <div><label>配点</label><input inputmode="numeric" value="${esc(it.points)}" oninput="itemField(${i},'points',this.value)"/></div>
-      </div>
-      <label>内容（評価のポイント・採点基準）</label>
-      <textarea oninput="itemField(${i},'note',this.value)" placeholder="（未入力）評価者が迷わないよう、何ができていれば高い点かを書いてください">${esc(it.note)}</textarea>
-      ${numFields}
-    </div>`;
+  const pts = previewPoints();
+
+  // 上の設定（クラス：％と必須ライン／部門：点数）
+  let settings;
+  if (common) {
+    settings = `<div class="small">各クラスの「基本％」：${Object.entries((evalData.dist || {}).grades || {}).map(([k, v]) => `${esc(labels[k] || k)} ${v.basic}％`).join("／")}（クラスを選ぶと変えられます）</div>`;
+  } else if (dept) {
+    settings = `<div class="dist-row"><label>部門の点数<input class="dist" inputmode="numeric" value="${esc(d.points)}" oninput="distField('points',this.value)"/>点</label>
+      <span class="small">担当者のクラスの点（100点）に足す点。項目数で等分します。</span></div>`;
+  } else {
+    settings = `<div class="dist-row">
+      <label>数値<input class="dist" inputmode="numeric" value="${esc(d.num)}" oninput="distField('num',this.value)"/>％</label>
+      <label>行動<input class="dist" inputmode="numeric" value="${esc(d.beh)}" oninput="distField('beh',this.value)"/>％</label>
+      <label>基本<input class="dist" inputmode="numeric" value="${esc(d.basic)}" oninput="distField('basic',this.value)"/>％</label>
+      <label>必須ライン<select class="dist" onchange="distField('line',Number(this.value))">${[1, 2, 3, 4, 5].map((n) => `<option value="${n}" ${Number(d.line) === n ? "selected" : ""}>${n}以上</option>`).join("")}</select></label>
+    </div>
+    <div class="small">配点は「数値％÷数値の項目数」「行動％÷行動の項目数」で自動で決まります。基本％は「社会人としての基本」の項目に等分します。
+      必須にした行動の項目は、5段階で必須ライン未満だと「必須未達」になります（数値の必須は目標達成が必要）。必須ラインは上のクラスほど厳しく（初期値：GM・BM 4／院長・副院長・一般 3／新人・短時間・受付 2）。</div>`;
+  }
+
+  const rows = itemEditor.draft.map((it, i) => {
+    const isNum = it.kind === "数値";
+    const kindCell = common ? `<span class="badge b-run" style="margin:0;">基本</span>`
+      : `<select onchange="itemField(${i},'kind',this.value)">${["行動", "数値"].map((k) => `<option ${it.kind === k ? "selected" : ""}>${k}</option>`).join("")}</select>`;
+    const na = `<span class="small">—</span>`;
+    return `<tr ondragover="event.preventDefault()" ondrop="itemDrop(${i})" class="${it.required ? "req-row" : ""}">
+      <td class="drag" draggable="true" ondragstart="dragFrom=${i}" title="ドラッグで並べ替え">⠿<div class="small">${i + 1}</div></td>
+      <td class="mv"><button class="chip" onclick="itemMove(${i},-1)" ${i === 0 ? "disabled" : ""}>↑</button><button class="chip" onclick="itemMove(${i},1)" ${i === itemEditor.draft.length - 1 ? "disabled" : ""}>↓</button></td>
+      <td>${kindCell}</td>
+      <td><input class="ie-label" value="${esc(it.label)}" oninput="itemField(${i},'label',this.value)" placeholder="項目名"/></td>
+      <td><textarea rows="2" oninput="itemField(${i},'note',this.value)" placeholder="評価のポイント・採点基準">${esc(it.note)}</textarea></td>
+      <td>${isNum ? `<input inputmode="decimal" value="${esc(it.target ?? "")}" oninput="itemField(${i},'target',this.value)" style="width:90px;"/>` : na}</td>
+      <td>${isNum ? `<input value="${esc(it.unit)}" oninput="itemField(${i},'unit',this.value)" style="width:56px;" placeholder="%"/>` : na}</td>
+      <td>${isNum ? `<select onchange="itemField(${i},'direction',this.value)"><option value="以上" ${it.direction !== "以下" ? "selected" : ""}>以上</option><option value="以下" ${it.direction === "以下" ? "selected" : ""}>以下</option></select>` : na}</td>
+      <td>${isNum ? `<select onchange="itemField(${i},'auto',this.value)" style="max-width:190px;">${autoOpts(it.auto)}</select>` : na}</td>
+      <td style="text-align:center;"><input type="checkbox" ${it.required ? "checked" : ""} onchange="itemField(${i},'required',this.checked);keepScroll(render)" style="width:auto;margin:0;"/></td>
+      <td class="pts-cell" id="ipts_${i}">${fmtPts(pts[i])}</td>
+      <td><button class="chip" style="color:#b91c1c;" onclick="itemDelete(${i})">🗑</button></td>
+    </tr>`;
   }).join("");
 
   return `<div class="monthnav"><button class="chip" onclick="closeItemEditor()">‹ 評価一覧に戻る</button><div class="m" style="text-align:left;">⚙️ 評価項目の設定</div></div>
   <div class="chip-row" style="margin-bottom:8px;">${chips}</div>
   <div class="small" style="margin:0 0 4px;">部門</div>
   <div class="chip-row" style="margin-bottom:14px;">${deptChips}</div>
-  ${isDept(g) ? deptMembersCard(g.slice(3)) : ""}
-  ${itemEditor.saved ? '<div class="banner ok" style="margin:0 0 14px;">✅ 保存しました。次の評価から新しい項目が使われます（保存済みの過去の点数は変わりません）。</div>' : ""}
-  <div class="card"><div class="card-h"><span>${esc(labels[g] || (isDept(g) ? "部門：" + g.slice(3) : g))} の評価項目（${itemEditor.draft.length}項目）</span></div><div class="card-b">
-    <div class="small" style="margin-bottom:10px;">${common
-      ? "ここの項目は全クラス共通で、どのクラスの評価にも表示されます。"
-      : isDept(g) ? "この部門の担当者の評価に加わる項目です（担当者は上で設定）。部門の点はクラスの点（100点）にそのまま足します。"
-      : "「行動」は上司が5段階で採点、「数値」は目標値に対する実績で自動採点します（実績は手入力、または売上シートから自動）。"}</div>
-    ${cards || '<div class="muted">項目がありません。下のボタンから追加してください。</div>'}
-    <button class="btn btn-blue" style="background:white;color:#1e3a5f;border:1.5px dashed #94a3b8;margin-top:6px;" onclick="itemAdd()">＋ 項目を追加</button>
+  ${dept ? deptMembersCard(g.slice(3)) : ""}
+  ${itemEditor.saved ? '<div class="banner ok" style="margin:0 0 14px;">✅ 保存しました。次の評価から新しい項目・配点が使われます（保存済みの過去の点数は変わりません）。</div>' : ""}
+  <div class="card"><div class="card-h"><span>${esc(labels[g] || (dept ? "部門：" + g.slice(3) : g))} の評価項目（${itemEditor.draft.length}項目）</span></div><div class="card-b">
+    ${settings}
+    <div class="scroll" style="margin-top:12px;"><table class="grid-tbl">
+      <tr><th></th><th>順番</th><th class="l">区分</th><th class="l">項目</th><th class="l">内容（評価のポイント）</th><th>目標</th><th>単位</th><th>向き</th><th class="l">実績の入れ方</th><th>必須</th><th>配点<br><span class="small">（自動）</span></th><th></th></tr>
+      ${rows || '<tr><td colspan="12" class="l muted">項目がありません。下のボタンから追加してください。</td></tr>'}
+    </table></div>
+    <button class="btn btn-blue" style="background:white;color:#1e3a5f;border:1.5px dashed #94a3b8;margin-top:10px;" onclick="itemAdd()">＋ 項目を追加</button>
+    <div class="small" style="margin-top:8px;">行の左端（⠿）をドラッグするか、↑↓で並べ替えられます。並び順はそのまま評価画面の表示順になります。必須の行は赤く表示されます。</div>
   </div>
   ${evalData.isAdmin ? `<div style="padding:0 16px 12px;"><button class="chip" onclick="resetItems()">↺ 全クラスの評価項目を初期値に戻す</button></div>` : ""}
   <div class="sticky-total"><div id="itemTotal">${totalsHtml()}</div><button class="btn btn-blue" style="width:auto;padding:10px 24px;" onclick="saveItems()">保存する</button></div></div>`;
 }
+
+
+
 
 async function saveItems() {
   const items = itemEditor.draft;
@@ -926,10 +992,12 @@ async function saveItems() {
   const grade = itemEditor.grade;
   root.innerHTML = `<div class="center">保存中...</div>`;
   try {
-    const json = await evalFetch("POST", { action: "saveItems", month: evalMonth, grade, items });
+    const dist = grade === "共通" ? null : itemEditor.dist;
+    if (dist && !isDept(grade) && Math.round(Number(dist.num) + Number(dist.beh) + Number(dist.basic)) !== 100) { alert("数値％＋行動％＋基本％ を100にしてください"); render(); return; }
+    const json = await evalFetch("POST", { action: "saveItems", month: evalMonth, grade, items, dist });
     if (json) {
       evalData = json;
-      itemEditor = { grade, draft: JSON.parse(JSON.stringify(json.items[grade] || [])), dirty: false, saved: true };
+      itemEditor = { grade, draft: JSON.parse(JSON.stringify(json.items[grade] || [])), dist: distDraftFor(grade), dirty: false, saved: true };
     }
   } catch (e) {
     alert(e.message);
