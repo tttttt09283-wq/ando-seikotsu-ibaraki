@@ -1,7 +1,7 @@
 // node --test test/  で実行（実データではなく架空のデータ）
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildModel, resolveViewer, filterModelForViewer, canonClinic, clinicsAt, evalGradeAt, evalAsAt } from "../lib/incentive-calc.js";
+import { buildModel, resolveViewer, filterModelForViewer, canonClinic, clinicsAt, evalGradeAt, evalAsAt, salaryChange, parseEvaluations } from "../lib/incentive-calc.js";
 
 const clinicRows = [
   [],
@@ -116,4 +116,18 @@ test("10月からの異動・院長候補が月ごとに反映される", () => 
   assert.equal(evalGradeAt(p, "2026-09"), "G3");
   assert.equal(evalGradeAt(p, "2026-11"), "G4");
   assert.equal(evalAsAt(p, "2026-09"), null);
+});
+
+test("改定前・改定後の給与と増減がわかる", () => {
+  const head = ["所属院", "氏名", "等級", "役職", "総合評価点", "評価ランク", "給与判定", "改定額", "改定後固定支給額", "役職適格判定", "賞与想定額", "最終決裁"];
+  const [a, b, c] = parseEvaluations([head,
+    ["枚方本院", "甲", "G2", "", 85, "A", "昇給", 7500, 307500, "", 0, ""],
+    ["枚方本院", "乙", "G2", "", 40, "D", "降給検討", 0, 260000, "", 0, ""],
+    ["枚方本院", "丙", "G2", "", 70, "B", "据置", 0, 280000, "", 0, ""]]);
+  assert.equal(a.prevSalary, 300000);
+  assert.equal(a.change, "up");
+  assert.equal(b.change, "downReview");
+  assert.equal(c.change, "keep");
+  assert.equal(salaryChange(-5000, ""), "down");
+  assert.equal(salaryChange(null, ""), null);
 });
