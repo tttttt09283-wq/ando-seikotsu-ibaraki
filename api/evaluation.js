@@ -1,5 +1,5 @@
 // Vercel Serverless Function: /api/evaluation
-// 等級別の月次評価（獲得点÷満点の評価率）を読み書きする。
+// 等級別の月次評価（獲得点÷満点×100＝100点満点）を読み書きする。
 //
 //   GET  ?month=2027-01            … その月の評価（見てよい人だけ）と、同じ半期の点数推移
 //   POST { action: "save", month, personKey, values, scores, comment } … 直属の上司（または管理者・GM）が保存
@@ -16,7 +16,7 @@
 // 評価項目は台帳の「評価項目」シートを直接編集すれば変更できる（配点・目標値・採点基準など）。
 
 import { batchGet, batchUpdate, getSheetTitles, addSheets, appendRows } from "../lib/google-sheets.js";
-import { resolveViewer, filterModelForViewer, canSeeLabor, clinicsAt, evalGradeAt, evalAsAt } from "../lib/incentive-calc.js";
+import { resolveViewer, filterModelForViewer, canSeeLabor, canSeeCompany, clinicsAt, evalGradeAt, evalAsAt } from "../lib/incentive-calc.js";
 import { CAREER_SHEET_ID, loadModel, invalidateModel, loadNewPatients, authenticate, viewerNotFound } from "../lib/incentive-data.js";
 import { EVENT_SHEET, EVENT_HEADER, MAX_EVENT_BONUS, eventBonusMap, groupEvents, normDate } from "../lib/events.js";
 import {
@@ -26,6 +26,10 @@ import {
 } from "../lib/evaluation.js";
 import { normName } from "../lib/incentive-calc.js";
 import { LADDER_SHEET, parseLadder, judgeCareer, maskSensitive } from "../lib/career-judgement.js";
+import {
+  REVIEW_SHEET, REVIEW_HEADER, OVERALL_RULE_SHEET, OVERALL_MAX, SALARY_CHOICES, POSITION_CHOICES,
+  parseOverallRules, overallRuleRows, validateOverallRules, computeOverall, assessmentScore, parseReviews, halfIdOf, halfLabel,
+} from "../lib/overall.js";
 
 const nowJst = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().replace("T", " ").slice(0, 16);
 
@@ -40,13 +44,19 @@ async function loadSheets() {
   const hasDist = titles.includes(DIST_SHEET);
   if (hasLadder) ranges.push(`'${LADDER_SHEET}'!A1:L40`);
   if (hasDist) ranges.push(`'${DIST_SHEET}'!A1:G200`);
+  const hasReviews = titles.includes(REVIEW_SHEET), hasRules = titles.includes(OVERALL_RULE_SHEET);
+  if (hasReviews) ranges.push(`'${REVIEW_SHEET}'!A1:M5000`);
+  if (hasRules) ranges.push(`'${OVERALL_RULE_SHEET}'!A1:E30`);
   const got = ranges.length ? await batchGet(CAREER_SHEET_ID, ranges) : [];
   const itemRows = hasItems ? got.shift() : null;
   const recordRows = hasRecords ? got.shift() : null;
   const staffRows = hasStaff ? got.shift() : null;
   const ladderRows = hasLadder ? got.shift() : null;
   const distSheetRows = hasDist ? got.shift() : null;
+  const reviewRows = hasReviews ? got.shift() : null;
+  const ruleRows = hasRules ? got.shift() : null;
   return {
+    hasReviews, reviews: parseReviews(reviewRows), hasRules, ruleRowCount: ruleRows ? ruleRows.length : 0, overallRules: parseOverallRules(ruleRows),
     hasStaff, staffSettings: parseStaffSettings(staffRows), ladder: parseLadder(ladderRows),
     hasDist, distRowCount: distSheetRows ? distSheetRows.length : 0, dist: parseDist(distSheetRows),
     itemRowCount: itemRows ? itemRows.length : 0,
@@ -98,6 +108,7 @@ function buildPayload({ model, np, viewer, isAdmin, sheets, monthKey }) {
   const deptsOf = (key) => membership.get(key) || [];
   const visible = filterModelForViewer(model, viewer).people.filter((p) => itemsFor(sheets.items, p.grade));
   const half = halfMonthKeys(monthKey);
+  const halfId = halfIdOf(monthKey);
   // 全社イベントの加点を、保存済みの月次評価の合計点に足す（上限なし）
   const bonus = eventBonusMap(model.events || []);
   const records = new Map([...sheets.records].map(([k, rec]) => {
@@ -133,6 +144,10 @@ function buildPayload({ model, np, viewer, isAdmin, sheets, monthKey }) {
     const halfAvg = done.length ? Math.round((done.reduce((a, t) => a + t.total, 0) / done.length) * 10) / 10 : null;
     const sup = superiorOf(model, pm);
     const self = person.key === viewer.personKey;
+    // 総合評価（半期査定100点＋月次評価の半期平均100点）
+    const ov = computeOverall({ assessment: assessmentScore(person), monthly: halfAvg, monthlyCount: done.length, rules: sheets.overallRules });
+    const saved = sheets.reviews.get(`${halfId}|${person.key}`) || null;
+    const overall = { ...ov, raise: canSeeCompany(viewer) ? ov.raise : undefined, saved: saved ? { ...saved, raise: canSeeCompany(viewer) ? saved.raise : undefined } : null };
     const ea = evalAsAt(person, monthKey);
     return {
       key: person.key, name: person.name, grade: person.grade, role: person.role, clinics: pm.clinics, items, depts: deptsOf(person.key),
@@ -152,14 +167,17 @@ function buildPayload({ model, np, viewer, isAdmin, sheets, monthKey }) {
       eventBonus: bonus.get(`${monthKey}|${person.key}`) || 0,
       events: (model.events || []).filter((e) => e.key === person.key && e.month === monthKey)
         .map((e) => ({ date: e.date, name: e.name, result: e.result, bonus: e.bonus, reward: e.reward })),
-      trend, halfAvg, halfMonthsEvaluated: done.length,
+      trend, halfAvg, halfMonthsEvaluated: done.length, overall,
     };
   });
   // 自分 → 評価する人 → その他 の順
   // クラスが高い順 → 同じクラスは院・名前順
   people.sort((a, b) => gradeRank(a.grade) - gradeRank(b.grade) || (a.clinics[0] || "").localeCompare(b.clinics[0] || "", "ja") || a.name.localeCompare(b.name, "ja"));
   return {
-    month: monthKey, halfMonths: half, items: sheets.items, people, setupNeeded: sheets.setupNeeded, viewer, isAdmin,
+    month: monthKey, halfMonths: half, halfId, halfLabel: halfLabel(halfId),
+    overallRules: canSeeCompany(viewer) ? sheets.overallRules : sheets.overallRules.map(({ raise, ...r }) => r),
+    overallMax: OVERALL_MAX, salaryChoices: SALARY_CHOICES, positionChoices: POSITION_CHOICES,
+    canEditOverallRules: isAdmin || viewer.grade === "G6", items: sheets.items, people, setupNeeded: sheets.setupNeeded, viewer, isAdmin,
     canEditItems: isAdmin || viewer.grade === "G6", gradeLabels: GRADE_LABELS, autoOptions: AUTO_OPTIONS,
     dist: sheets.dist, // クラスごとの 数値％・行動％・基本％・必須ライン／部門の点数
     // 部門と担当者（評価項目の設定画面用。社長・GMだけ）
@@ -323,6 +341,37 @@ async function resetItems() {
   await batchUpdate(CAREER_SHEET_ID, [{ range: `'${ITEM_SHEET}'!A1:K${rows.length}`, values: rows }]);
 }
 
+// 総評（半期の総合評価＋コメント）を確定して「総評」シートに残す
+async function saveReview({ model, np, viewer, isAdmin, staff, body, monthKey }) {
+  const person = model.people.find((p) => p.key === normName(body.personKey));
+  if (!person) throw new Error("評価する人が見つかりません");
+  const pm = { ...person, clinics: clinicsAt(person, monthKey), grade: evalGradeAt(person, monthKey) };
+  if (!canEvaluate(model, viewer, isAdmin, pm)) throw new Error("総評を書けるのは直属の上司です");
+  const sheets = await loadSheets();
+  const payload = buildPayload({ model, np, viewer: { ...viewer, scope: "all" }, isAdmin: true, sheets, monthKey });
+  const p = payload.people.find((x) => x.key === person.key);
+  if (!p || p.overall.total === null) throw new Error("半期査定・月次評価のどちらも無いため、総合評価が出せません");
+  const ov = p.overall, halfId = halfIdOf(monthKey);
+  const row = [halfId, person.key, person.name, ov.assessment ?? "", ov.monthly ?? "", ov.total, ov.rank, ov.salary, ov.raise ?? 0, ov.position,
+    String(body.comment || "").slice(0, 2000), viewer.name || staff.name || "管理者", nowJst()];
+  if (!sheets.hasReviews) {
+    await addSheets(CAREER_SHEET_ID, [REVIEW_SHEET]);
+    await batchUpdate(CAREER_SHEET_ID, [{ range: `'${REVIEW_SHEET}'!A1:M1`, values: [REVIEW_HEADER] }], "RAW");
+  }
+  const existing = sheets.reviews.get(`${halfId}|${person.key}`);
+  if (existing) await batchUpdate(CAREER_SHEET_ID, [{ range: `'${REVIEW_SHEET}'!A${existing.row}:M${existing.row}`, values: [row] }], "RAW");
+  else await appendRows(CAREER_SHEET_ID, `'${REVIEW_SHEET}'!A:M`, [row]);
+}
+
+async function saveOverallRules(body) {
+  const rules = validateOverallRules(body.rules);
+  const sheets = await loadSheets();
+  if (!sheets.hasRules) await addSheets(CAREER_SHEET_ID, [OVERALL_RULE_SHEET]);
+  const rows = overallRuleRows(rules);
+  while (rows.length < sheets.ruleRowCount) rows.push(["", "", "", "", ""]);
+  await batchUpdate(CAREER_SHEET_ID, [{ range: `'${OVERALL_RULE_SHEET}'!A1:E${rows.length}`, values: rows }], "RAW");
+}
+
 async function save({ model, np, viewer, isAdmin, staff, body }) {
   const monthKey = String(body.month || "");
   if (!parseMonthKey(monthKey)) throw new Error("対象月が正しくありません");
@@ -406,6 +455,11 @@ export default async function handler(req, res) {
       } else if (body.action === "saveItems") {
         if (!(isAdmin || viewer.grade === "G6")) { res.status(403).json({ error: "評価項目の編集は管理者・GMのみ可能です" }); return; }
         await saveItems(body);
+      } else if (body.action === "saveReview") {
+        await saveReview({ model, np, viewer, isAdmin, staff, body, monthKey });
+      } else if (body.action === "saveOverallRules") {
+        if (!(isAdmin || viewer.grade === "G6")) { res.status(403).json({ error: "総合評価の基準の変更は社長・GMのみ可能です" }); return; }
+        await saveOverallRules(body);
       } else if (body.action === "save") {
         await save({ model, np, viewer, isAdmin, staff, body });
       } else {

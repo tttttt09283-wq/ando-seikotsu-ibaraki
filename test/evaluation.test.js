@@ -212,7 +212,7 @@ test("career judgement: reasons for promotion and demotion, unknown months are n
   const s = { count: 5, closed: 4, firstPay: 100000, contract: 100000, continued: 4, closeBase: 5, contBase: 5 };
   const g2 = judgeCareer({ key: "p", grade: "G2", clinics: ["A"], monthlySales: sales(1100000, 1200000, 1050000) }, ctx(npMap({ "2026-09": s })));
   assert.equal(g2.promotion.find((c) => c.label.includes("3ヶ月連続")).status, "ok");
-  assert.equal(g2.promotion.find((c) => c.label.includes("半期の評価")).status, "unknown");
+  assert.equal(g2.promotion.find((c) => c.label.includes("半期の月次評価")).status, "unknown");
   assert.equal(g2.level, "keep");
 
   // 通院を記入していない月（contBase 0）は継続率 0% として数えない
