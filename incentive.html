@@ -1,0 +1,1461 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>インセンティブ・人件費管理 - あんど整骨院</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#eef2f7;color:#1e293b;}
+.topbar{position:sticky;top:0;z-index:10;background:linear-gradient(135deg,#1e3a5f,#2d6a9f);color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.topbar h1{font-size:16px;font-weight:800;}
+.topbar .sub{font-size:11px;opacity:.8;}
+.topbar-actions{display:flex;gap:8px;}
+.btn{padding:8px 14px;border-radius:8px;border:none;font-family:inherit;font-size:13px;font-weight:700;cursor:pointer;}
+.btn-white{background:white;color:#1e3a5f;}
+.btn-outline{background:rgba(255,255,255,.15);color:white;border:1.5px solid rgba(255,255,255,.4);}
+.btn-blue{background:#1e3a5f;color:white;width:100%;padding:12px;}
+.wrap{max-width:960px;margin:0 auto;padding:16px;}
+.wrap.wide{max-width:1400px;}
+.wrap.with-side{max-width:1240px;}
+.side-layout{display:grid;grid-template-columns:200px minmax(0,1fr);gap:16px;align-items:start;}
+.side-menu{position:sticky;top:76px;background:white;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:8px;display:flex;flex-direction:column;gap:2px;}
+.side-item{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:10px 12px;border:none;border-radius:8px;background:none;color:#374151;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}
+.side-item:hover{background:#f1f5f9;}
+.side-item.sel{background:#1e3a5f;color:white;}
+.side-ic{width:20px;text-align:center;}
+.side-main{min-width:0;}
+@media (max-width:760px){
+  .side-layout{display:block;}
+  .side-menu{position:static;flex-direction:row;overflow-x:auto;margin-bottom:12px;border-radius:10px;}
+  .side-item{width:auto;white-space:nowrap;padding:8px 10px;font-size:12px;}
+}
+.card{background:white;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.06);margin-bottom:14px;overflow:hidden;}
+.card-h{padding:10px 16px;font-size:13px;font-weight:800;color:#1e3a5f;background:#f8fafc;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
+.card-b{padding:14px 16px;}
+.scroll{overflow-x:auto;}
+label{display:block;font-size:11px;font-weight:700;color:#64748b;margin-bottom:4px;}
+input{width:100%;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:14px;font-family:inherit;background:white;margin-bottom:12px;}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th,td{border:1px solid #e2e8f0;padding:6px 8px;text-align:right;white-space:nowrap;}
+th{background:#f8fafc;font-weight:700;color:#64748b;font-size:11px;}
+td.l,th.l{text-align:left;}
+.chip-row{display:flex;gap:6px;flex-wrap:wrap;}
+.chip{padding:6px 14px;border-radius:20px;border:1.5px solid #e2e8f0;background:white;color:#374151;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;}
+.chip.sel{background:#1e3a5f;color:white;border-color:#1e3a5f;}
+.small{font-size:11px;color:#94a3b8;}
+.muted{color:#64748b;}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;}
+.kpi{background:#f8fafc;border-radius:10px;padding:10px 12px;}
+.kpi .k{font-size:11px;color:#64748b;font-weight:700;}
+.kpi .v{font-size:18px;font-weight:800;margin-top:2px;}
+.kpi .s{font-size:11px;color:#94a3b8;margin-top:2px;}
+.ok{color:#047857;} .ng{color:#b91c1c;} .warn{color:#b45309;}
+.chg{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:800;white-space:nowrap;}
+.chg-up{background:#d1fae5;color:#047857;} .chg-down{background:#fee2e2;color:#b91c1c;} .chg-keep{background:#f1f5f9;color:#64748b;} .chg-demote{background:#b91c1c;color:white;}
+tr.row-up td{background:#f0fdf4;} tr.row-down td{background:#fef2f2;}
+.chg-sum{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-bottom:10px;font-size:13px;}
+.chg-total{margin-left:auto;font-size:12px;}
+.bg-ok{background:#ecfdf5;} .bg-ng{background:#fef2f2;}
+.banner{border-radius:10px;padding:10px 12px;font-size:13px;font-weight:700;margin-top:12px;line-height:1.6;}
+.banner.ok{background:#ecfdf5;border:1px solid #a7f3d0;}
+.banner.ng{background:#fef2f2;border:1px solid #fecaca;}
+.person{border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-bottom:10px;}
+.person-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;}
+.person-h .n{font-weight:800;font-size:14px;}
+.inc{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:8px 0;border-top:1px dashed #e2e8f0;margin-top:8px;flex-wrap:wrap;}
+.inc .t{font-size:12px;font-weight:700;}
+.inc .d{font-size:11px;color:#64748b;margin-top:2px;}
+.inc .amt{font-size:16px;font-weight:800;text-align:right;margin-left:auto;}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:800;margin-left:6px;vertical-align:middle;}
+.b-ok{background:#d1fae5;color:#065f46;} .b-ng{background:#fee2e2;color:#991b1b;} .b-run{background:#e0e7ff;color:#3730a3;} .b-wait{background:#f1f5f9;color:#64748b;}
+.bar{height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;margin-top:6px;position:relative;}
+.bar>i{display:block;height:100%;background:#2d6a9f;}
+.bar.ok>i{background:#059669;}
+.dots{display:flex;gap:4px;margin-top:6px;}
+.dot{width:26px;height:20px;border-radius:5px;font-size:10px;display:flex;align-items:center;justify-content:center;font-weight:700;background:#f1f5f9;color:#94a3b8;}
+.dot.y{background:#d1fae5;color:#065f46;} .dot.n{background:#fee2e2;color:#991b1b;}
+.login{max-width:360px;margin:60px auto;}
+input.pay{width:120px;margin:0 6px 0 0;padding:5px 8px;font-size:12px;display:inline-block;}
+.btn-save{padding:5px 10px;font-size:12px;background:#1e3a5f;color:white;}
+.err{color:#b91c1c;font-size:12px;margin-bottom:10px;white-space:pre-wrap;}
+.center{text-align:center;padding:60px 20px;color:#9ca3af;}
+.tabs{display:flex;gap:6px;margin-bottom:14px;border-bottom:2px solid #dbe3ee;}
+.tab{flex:1;padding:10px 8px;border:none;background:none;font-family:inherit;font-size:14px;font-weight:800;color:#64748b;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;}
+.tab.sel{color:#1e3a5f;border-bottom-color:#1e3a5f;}
+.monthnav{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+.monthnav .m{font-size:16px;font-weight:800;min-width:120px;text-align:center;}
+.evrow{cursor:pointer;} .evrow:hover td{background:#f8fafc;}
+.item{display:flex;gap:10px;align-items:center;padding:9px 0;border-top:1px dashed #e2e8f0;flex-wrap:wrap;}
+.item .lbl{flex:1;min-width:180px;}
+.item .lbl b{font-size:13px;} .item .lbl .d{font-size:11px;color:#64748b;margin-top:2px;}
+.item .pts{width:52px;text-align:right;font-weight:800;font-size:13px;}
+.item .ctrl{display:flex;align-items:center;gap:8px;margin-left:auto;}
+.item input.num{width:130px;margin:0;padding:7px 9px;font-size:13px;}
+.score-btns{display:flex;gap:4px;}
+.score-btns button{width:34px;height:32px;border-radius:7px;border:1.5px solid #cbd5e1;background:white;font-weight:800;font-family:inherit;cursor:pointer;color:#475569;}
+.score-btns button.sel{background:#1e3a5f;border-color:#1e3a5f;color:white;}
+.score-btns button:disabled{cursor:default;opacity:.7;}
+.autotag{display:inline-block;font-size:10px;font-weight:800;background:#e0e7ff;color:#3730a3;border-radius:6px;padding:1px 6px;margin-left:6px;}
+.reqtag{display:inline-block;font-size:10px;font-weight:800;background:#fee2e2;color:#991b1b;border-radius:6px;padding:1px 6px;margin-left:6px;}
+.sticky-total{position:sticky;bottom:0;background:white;border-top:2px solid #e2e8f0;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;}
+textarea{width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:inherit;min-height:70px;}
+.ie-card{border:1px solid #e2e8f0;border-radius:10px;padding:10px 12px;margin-bottom:10px;background:#fcfdff;}
+.ie-card input,.ie-card select,.ie-card textarea{margin-bottom:8px;}
+.ie-card select{width:100%;padding:9px 10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:inherit;background:white;}
+.ie-head{display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;}
+.ie-head .chip{padding:4px 10px;}
+.ie-head .chip:disabled{opacity:.4;cursor:default;}
+.ie-grid2{display:grid;grid-template-columns:1fr 90px;gap:8px;}
+.ie-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;}
+.ie-check{display:flex;align-items:center;gap:6px;font-size:12px;color:#475569;font-weight:700;}
+.ie-check input{width:auto;margin:0;}
+.cand{display:inline-block;margin-left:6px;font-size:10px;font-weight:800;background:#fef3c7;color:#92400e;border-radius:6px;padding:1px 6px;vertical-align:middle;}
+.inc-group{border:1px solid #e2e8f0;border-radius:10px;margin-bottom:10px;background:#f8fafc;}
+.inc-group>summary{list-style:none;cursor:pointer;padding:10px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.inc-group>summary>span:first-of-type{flex:1;text-align:left;}
+.inc-group>summary b{font-size:14px;color:#1e3a5f;}
+.inc-group>summary::-webkit-details-marker{display:none;}
+.inc-group>summary::before{content:"▾";color:#64748b;margin-right:4px;}
+.inc-group:not([open])>summary::before{content:"▸";}
+.inc-group>.person{margin:0 10px 10px;background:white;}
+select.pick{width:100%;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:14px;font-family:inherit;background:white;margin-bottom:12px;}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14px;letter-spacing:1px;}
+@media print{
+  body{background:white;}
+  .topbar,.tabs,.no-print{display:none!important;}
+  .side-layout{display:block;}
+  .wrap{max-width:100%;padding:0;}
+  .card{box-shadow:none;border:1px solid #999;break-inside:avoid;}
+}
+.lv{display:inline-block;margin-left:6px;font-size:10px;font-weight:800;border-radius:6px;padding:1px 7px;vertical-align:middle;}
+.lv-up{background:#d1fae5;color:#065f46;} .lv-keep{background:#f1f5f9;color:#64748b;} .lv-warn{background:#fef3c7;color:#92400e;} .lv-down{background:#fee2e2;color:#991b1b;}
+.card.career.lv-border-down{border:2px solid #fca5a5;} .card.career.lv-border-warn{border:2px solid #fcd34d;} .card.career.lv-border-up{border:2px solid #6ee7b7;}
+ul.reasons{list-style:none;padding:0;margin:0;font-size:13px;line-height:1.6;}
+ul.reasons li{padding:6px 10px;border-radius:8px;margin-bottom:6px;font-weight:700;}
+.rs-ng{background:#fef2f2;color:#b91c1c;border-left:4px solid #ef4444;} .rs-warn{background:#fffbeb;color:#92400e;border-left:4px solid #f59e0b;}
+.rs-ok{background:#ecfdf5;color:#065f46;border-left:4px solid #10b981;} .rs-muted{background:#f8fafc;color:#475569;border-left:4px solid #cbd5e1;}
+table.checks td{font-size:12px;}
+.st{display:inline-block;font-size:11px;font-weight:800;border-radius:6px;padding:2px 7px;white-space:nowrap;}
+.st-ok{background:#d1fae5;color:#065f46;} .st-ng{background:#fee2e2;color:#b91c1c;} .st-hit{background:#dc2626;color:white;} .st-warn{background:#fef3c7;color:#92400e;}
+.st-unk{background:#f1f5f9;color:#94a3b8;} .st-man{background:#e0e7ff;color:#3730a3;}
+tr.st-hit-row td{background:#fef2f2;} tr.st-ng-row td:first-child{color:#b91c1c;font-weight:700;} tr.st-warn-row td{background:#fffbeb;}
+.item.neg{background:#fef2f2;border-radius:8px;padding-left:8px;padding-right:8px;} .item.neg .pts{color:#dc2626;}
+.item.weak{background:#fffbeb;border-radius:8px;padding-left:8px;padding-right:8px;} .item.weak .pts{color:#b45309;}
+.score-btns button.sel.low{background:#dc2626;border-color:#dc2626;}
+.dept-h{font-size:12px;font-weight:800;color:#1e3a5f;background:#eef2ff;border-radius:6px;padding:4px 8px;margin:10px 0 2px;}
+.member-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:4px 12px;}
+.member-grid .ie-check{font-weight:600;padding:4px 0;}
+table.grid-tbl{min-width:1150px;}
+table.grid-tbl td{vertical-align:top;padding:4px 6px;}
+table.grid-tbl input,table.grid-tbl select,table.grid-tbl textarea{margin:0;padding:6px 8px;font-size:12px;border:1.5px solid #e2e8f0;border-radius:6px;font-family:inherit;background:white;}
+table.grid-tbl input.ie-label{min-width:170px;font-weight:700;}
+table.grid-tbl textarea{min-width:260px;min-height:38px;resize:vertical;}
+table.grid-tbl td.drag{cursor:grab;color:#94a3b8;text-align:center;font-size:16px;user-select:none;}
+table.grid-tbl td.mv .chip{padding:2px 8px;margin:0 2px 2px 0;}
+table.grid-tbl td.pts-cell{font-weight:800;color:#1e3a5f;text-align:right;}
+table.grid-tbl tr.req-row td{background:#fef2f2;}
+.dist-row{display:flex;gap:14px;flex-wrap:wrap;align-items:center;margin-bottom:6px;}
+.dist-row label{display:flex;align-items:center;gap:6px;font-size:13px;color:#1e3a5f;margin:0;}
+.dist-row input.dist{width:64px;margin:0;padding:6px 8px;font-size:14px;font-weight:800;text-align:right;}
+.dist-row select.dist{width:auto;padding:6px 8px;border:1.5px solid #e2e8f0;border-radius:8px;font-family:inherit;}
+ul.notes{padding-left:18px;font-size:12px;color:#64748b;line-height:1.7;}
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div>
+    <h1>💰 インセンティブ・人件費42%管理</h1>
+    <div class="sub" id="subLabel">読み込み中...</div>
+  </div>
+  <div class="topbar-actions" id="topActions"></div>
+</div>
+<div class="wrap" id="root"><div class="center">読み込み中...</div></div>
+
+<script>
+const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
+const LOGIN_ID_DOMAIN = "ando.jp";
+
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
+});
+
+const TYPE_LABEL = { gm: "GMインセンティブ（年間・決算）", bm: "BMインセンティブ", manager: "院長インセンティブ", staff: "スタッフインセンティブ", event: "全社イベント報酬" };
+const SCOPE_LABEL = { all: "全院", block: "担当ブロック", clinic: "自院", self: "自分のみ" };
+
+let data = null;
+let halfKey = null;
+let incSection = (() => { try { return localStorage.getItem("incSection") || "all"; } catch (e) { return "all"; } })(); // 左メニューで選んでいる項目
+let clinicFilter = ""; // 複数院を見られる人向けの絞り込み（空＝すべて）
+let view = "incentive"; // incentive（インセンティブ） / evaluation（月次評価）
+
+const root = document.getElementById("root");
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const yen = (v) => (v === null || v === undefined || !isFinite(v)) ? "-" : (v < 0 ? "-¥" : "¥") + Math.abs(Math.round(v)).toLocaleString("ja-JP");
+const man = (v) => (v === null || v === undefined || !isFinite(v)) ? "-" : (Math.round(v / 1000) / 10).toLocaleString("ja-JP") + "万";
+const pct = (v) => (v === null || v === undefined || !isFinite(v)) ? "-" : (v * 100).toFixed(1) + "%";
+
+function statusBadge(s) {
+  const cls = s === "確定" || s === "達成ペース" ? "b-ok" : s === "未達確定" || s === "未達ペース" ? "b-ng" : s === "集計中" ? "b-run" : "b-wait";
+  return `<span class="badge ${cls}">${esc(s)}</span>`;
+}
+
+// ===== ログイン =====
+// ===== ログイン =====
+// 院ID＋院PASS → 名前を選んで個人PASS（スタッフ・院長・BM）／メールアドレス（社長・GM）
+const PIN_KEY = "ando_pin_token";
+const ssGet = (k) => { try { return sessionStorage.getItem(k); } catch (e) { return null; } };
+const ssSet = (k, v) => { try { v === null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch (e) {} };
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+let loginMode = "clinic";  // clinic（院ID） / email（社長・GM）
+let clinicStep = null;     // 院IDが通ったあと { clinic, staff, clinicToken }
+
+async function authHeader() {
+  const pin = ssGet(PIN_KEY);
+  if (pin) return `Pin ${pin}`;
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  return session ? `Bearer ${session.access_token}` : null;
+}
+
+async function postJson(url, body) {
+  const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `エラー（HTTP ${res.status}）`);
+  return json;
+}
+
+function renderLogin(msg) {
+  ssSet(PIN_KEY, null);
+  document.getElementById("subLabel").textContent = "ログインしてください";
+  document.getElementById("topActions").innerHTML = "";
+  const tabs = `<div class="tabs" style="margin-bottom:12px;"><button class="tab ${loginMode === "clinic" ? "sel" : ""}" onclick="loginMode='clinic';clinicStep=null;renderLogin()">院のIDでログイン</button><button class="tab ${loginMode === "email" ? "sel" : ""}" onclick="loginMode='email';renderLogin()">社長・GM</button></div>`;
+  const err = msg ? `<div class="err">${esc(msg)}</div>` : "";
+  let form;
+  if (loginMode === "email") {
+    form = `<label>ログインID（メールアドレス）</label><input id="lid" autocomplete="username"/>
+      <label>パスワード</label><input id="lpw" type="password" autocomplete="current-password"/>
+      <button class="btn btn-blue" id="lbtn">ログイン</button>
+      <div class="small" style="margin-top:10px;">予約管理と同じID・パスワードでログインできます</div>`;
+  } else if (!clinicStep) {
+    form = `<label>院ID</label><input id="cid" autocomplete="username" autocapitalize="off" value="${esc(lsGet("ando_clinic_id") || "")}" placeholder="例：ibaraki"/>
+      <label>院PASS（数字4桁）</label><input id="cpw" type="password" inputmode="numeric" maxlength="4" autocomplete="off"/>
+      <button class="btn btn-blue" id="lbtn">次へ</button>
+      <div class="small" style="margin-top:10px;">院ID・院PASSは院長に確認してください</div>`;
+  } else {
+    form = `<div style="font-weight:800;margin-bottom:8px;">${esc(clinicStep.clinic)}院</div>
+      <label>名前</label><select id="pname" class="pick">${clinicStep.staff.map((p) => `<option value="${esc(p.key)}">${esc(p.name)}</option>`).join("")}</select>
+      <label>個人PASS（自分の名字・漢字）</label><input id="ppw" type="password" autocomplete="off" placeholder="例：山田"/>
+      <button class="btn btn-blue" id="lbtn">ログイン</button>
+      <div style="margin-top:10px;"><button class="chip" onclick="clinicStep=null;renderLogin()">‹ 院IDからやり直す</button></div>`;
+  }
+  root.innerHTML = `<div class="card login"><div class="card-b">${tabs}${err}${form}</div></div>`;
+  const btn = document.getElementById("lbtn");
+  const go = async () => {
+    btn.disabled = true;
+    try {
+      if (loginMode === "email") {
+        const id = document.getElementById("lid").value.trim().toLowerCase();
+        const pw = document.getElementById("lpw").value;
+        if (!id || !pw) return renderLogin("IDとパスワードを入力してください");
+        const email = id.includes("@") ? id : id + "@" + LOGIN_ID_DOMAIN;
+        const { error } = await supabaseClient.auth.signInWithPassword({ email, password: pw });
+        if (error) return renderLogin("IDまたはパスワードが違います");
+        return load();
+      }
+      if (!clinicStep) {
+        const id = document.getElementById("cid").value.trim().toLowerCase();
+        const pass = document.getElementById("cpw").value.trim();
+        if (!id || !/^\d{4}$/.test(pass)) return renderLogin("院IDと、院PASS（数字4桁）を入力してください");
+        const json = await postJson("/api/pin-login", { action: "clinic", id, pass });
+        lsSet("ando_clinic_id", id);
+        clinicStep = json;
+        if (!json.staff.length) { clinicStep = null; return renderLogin("この院でログインできるスタッフがまだ登録されていません。社長・GMに連絡してください"); }
+        return renderLogin();
+      }
+      const pin = document.getElementById("ppw").value.trim();
+      if (!pin) return renderLogin("個人PASS（自分の名字）を入力してください");
+      const json = await postJson("/api/pin-login", { action: "person", clinicToken: clinicStep.clinicToken, personKey: document.getElementById("pname").value, pin });
+      await supabaseClient.auth.signOut().catch(() => {});
+      ssSet(PIN_KEY, json.token);
+      clinicStep = null;
+      return load();
+    } catch (e) {
+      if (/やり直/.test(e.message)) clinicStep = null;
+      return renderLogin(e.message);
+    }
+  };
+  btn.onclick = go;
+  root.querySelectorAll("input").forEach((el) => { el.onkeydown = (e) => { if (e.key === "Enter") go(); }; });
+}
+
+async function load(refresh) {
+  const auth = await authHeader();
+  if (!auth) return renderLogin();
+  root.innerHTML = `<div class="center">スプレッドシートを読み込み中...</div>`;
+  try {
+    const res = await fetch(`/api/incentive${refresh ? "?refresh=1" : ""}`, { headers: { Authorization: auth } });
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 401) return renderLogin(body.error);
+    if (!res.ok) throw new Error(body.error || `読み込みに失敗しました（HTTP ${res.status}）`);
+    data = body;
+    if (!halfKey) {
+      const cur = data.halves.find((h) => h.elapsed.length && !h.complete) || [...data.halves].reverse().find((h) => h.elapsed.length) || data.halves[0];
+      halfKey = cur.key;
+    }
+    render();
+  } catch (e) {
+    root.innerHTML = `<div class="card"><div class="card-b"><div class="err">${esc(e.message)}</div><button class="btn btn-blue" onclick="load()">もう一度読み込む</button></div></div>`;
+  }
+}
+
+async function savePayroll(month) {
+  const raw = document.getElementById("pay" + month).value.replace(/[,，¥円\s]/g, "");
+  if (!raw || !/^\d+$/.test(raw)) return alert("支給合計額を数字で入力してください");
+  if (!confirm(`${month}月の支給合計額を ${yen(Number(raw))} で保存します。よろしいですか？`)) return;
+  const auth = await authHeader();
+  if (!auth) return renderLogin();
+  root.innerHTML = `<div class="center">保存中...</div>`;
+  try {
+    const res = await fetch("/api/incentive", {
+      method: "POST",
+      headers: { Authorization: auth, "Content-Type": "application/json" },
+      body: JSON.stringify({ month, amount: Number(raw) }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `保存に失敗しました（HTTP ${res.status}）`);
+    data = body;
+    render();
+  } catch (e) {
+    alert(e.message);
+    load();
+  }
+}
+
+async function logout() {
+  ssSet(PIN_KEY, null);
+  await supabaseClient.auth.signOut().catch(() => {});
+  data = null; halfKey = null; evalData = null; evalSelected = null; loginsData = null; view = "incentive";
+  renderLogin();
+}
+
+// ===== 画面 =====
+function render() {
+  const v = data.viewer;
+  document.getElementById("subLabel").textContent =
+    `${data.fiscalYear}年度 ・ ${data.latestMonth ? data.latestMonth + "月分まで反映" : "実績なし"} ・ ${v.name}さん（${SCOPE_LABEL[v.scope]}）`;
+  document.getElementById("topActions").innerHTML =
+    `<button class="btn btn-outline" onclick="${view === "evaluation" ? "loadEval(true)" : view === "logins" ? "loginsData=null;render()" : "load(true)"}">↻ 最新に更新</button>` +
+    `<button class="btn btn-outline" onclick="logout()">ログアウト</button>`;
+
+  const tabs = `<div class="tabs"><button class="tab ${view === "incentive" ? "sel" : ""}" onclick="view='incentive';render()">💰 インセンティブ</button><button class="tab ${view === "evaluation" ? "sel" : ""}" onclick="view='evaluation';render()">📝 月次評価</button>${data.canManageLogins ? `<button class="tab ${view === "logins" ? "sel" : ""}" onclick="view='logins';render()">🔑 ログイン設定</button>` : ""}</div>`;
+  root.classList.toggle("wide", view === "evaluation" && !!itemEditor); // 表形式の設定画面は横に広く
+  root.classList.toggle("with-side", view === "incentive");
+  if (view === "evaluation") {
+    root.innerHTML = tabs + renderEvaluation();
+    return;
+  }
+  if (view === "logins") {
+    root.innerHTML = tabs + renderLogins();
+    return;
+  }
+  const half = data.halves.find((h) => h.key === halfKey);
+  let html = `<div class="chip-row" style="margin-bottom:14px;">${data.halves.map((h) =>
+    `<button class="chip ${h.key === halfKey ? "sel" : ""}" onclick="halfKey='${h.key}';render()">${esc(h.label)}</button>`).join("")}</div>`;
+
+  if (data.clinics.length > 1) {
+    html += `<div class="chip-row" style="margin-bottom:14px;"><button class="chip ${clinicFilter ? "" : "sel"}" onclick="clinicFilter='';render()">すべての院</button>${data.clinics.map((c) =>
+      `<button class="chip ${clinicFilter === c.name ? "sel" : ""}" onclick="clinicFilter='${esc(c.name)}';render()">${esc(c.name)}</button>`).join("")}</div>`;
+  }
+  // 左のメニューで項目ごとに切り替える（中身がない項目はメニューに出さない）
+  const sections = [
+    { key: "company", icon: "🏢", label: "全社 人件費42%", html: data.company && !clinicFilter ? companyCard(data.company.find((c) => c.key === halfKey)) : "" },
+    { key: "clinics", icon: "🏥", label: "院別 売上・人件費", html: data.clinics.length ? clinicCard(half) : "" },
+    { key: "incentives", icon: "💰", label: "インセンティブ", html: incentiveCard(half) },
+    { key: "sales", icon: "📈", label: "個人売上・昇降格", html: salesCard() },
+    { key: "evaluation", icon: "📊", label: "半期査定・給与改定", html: evaluationCard() },
+    { key: "overall", icon: "🏆", label: "総合評価（総評）", html: overallSection(incSection === "overall" || incSection === "all") },
+    { key: "notes", icon: "⚠️", label: "データの注意", html: data.notes && data.notes.length ? `<div class="card"><div class="card-h">データについての注意</div><div class="card-b"><ul class="notes">${data.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></div></div>` : "" },
+    { key: "rules", icon: "📜", label: "インセンティブ規定", html: rulesCard() },
+  ].filter((x) => x.html);
+  if (incSection !== "all" && !sections.some((x) => x.key === incSection)) incSection = "all";
+  const menu = [{ key: "all", icon: "📋", label: "すべて表示" }, ...sections].map((x) =>
+    `<button class="side-item ${incSection === x.key ? "sel" : ""}" onclick="setIncSection('${x.key}')"><span class="side-ic">${x.icon}</span>${esc(x.label)}</button>`).join("");
+  html += sections.filter((x) => incSection === "all" || x.key === incSection).map((x) => x.html).join("");
+  root.innerHTML = tabs + `<div class="side-layout"><nav class="side-menu no-print">${menu}</nav><div class="side-main">${html}</div></div>`;
+  // スマホでは横スクロールのメニューなので、選んでいる項目が見える位置に寄せる
+  const nav = root.querySelector(".side-menu"), sel = nav && nav.querySelector(".sel");
+  if (nav && sel && nav.scrollWidth > nav.clientWidth) nav.scrollLeft = sel.offsetLeft - 8;
+}
+
+function setIncSection(key) {
+  incSection = key;
+  try { localStorage.setItem("incSection", key); } catch (e) {}
+  render();
+  window.scrollTo(0, 0);
+}
+
+// 院の絞り込みに合う人・院だけ
+const visiblePeople = () => clinicFilter ? data.people.filter((p) => p.clinics.includes(clinicFilter)) : data.people;
+const visibleClinics = () => clinicFilter ? data.clinics.filter((c) => c.name === clinicFilter) : data.clinics;
+
+function companyCard(c) {
+  if (!c || !c.monthsElapsed) return `<div class="card"><div class="card-h">全社 人件費42%枠</div><div class="card-b muted">この期間の実績はまだありません。</div></div>`;
+  const within = c.payableRatio === null || c.payableRatio >= 1;
+  const banner = c.incentivePaid === 0
+    ? `<div class="banner ${c.roomProjected >= 0 ? "ok" : "ng"}">現時点で支給見込みのインセンティブはありません。42%枠の残り（見込み）：${yen(c.roomProjected)}</div>`
+    : within
+      ? `<div class="banner ok">✅ インセンティブ見込み ${yen(c.incentiveCost)}（社保込）は、42%枠の残り（見込み）${yen(c.roomProjected)} に収まっています。</div>`
+      : `<div class="banner ng">⚠️ 42%枠を超えます。インセンティブ見込み ${yen(c.incentiveCost)}（社保込）に対して、枠の残り（見込み）は ${yen(c.roomProjected)}。<br>42%以内に収めるには、支給額を <b>${pct(c.payableRatio)}</b> に圧縮する必要があります（不足 ${yen(c.incentiveCost - Math.max(0, c.roomProjected))}）。</div>`;
+  const payrollCell = (m) => data.isAdmin
+    ? `<td><input class="pay" id="pay${m.month}" inputmode="numeric" placeholder="例 9800000" value="${m.paid ?? ""}"/><button class="btn btn-save" onclick="savePayroll(${m.month})">保存</button></td>`
+    : "";
+  const rows = c.months.map((m) => `<tr><td class="l">${m.month}月</td><td>${yen(m.sales)}</td><td>${yen(m.labor)}${m.laborEstimated ? ' <span class="small warn">推定</span>' : ""}</td><td class="${m.rate > data.laborCapRate ? "ng" : "ok"}">${pct(m.rate)}</td><td>${yen(m.sales * data.laborCapRate - m.labor)}</td>${payrollCell(m)}</tr>`).join("");
+  return `<div class="card"><div class="card-h">全社 人件費42%枠（${esc(c.label)}・${c.monthsElapsed}ヶ月経過）</div><div class="card-b">
+    <div class="kpis">
+      <div class="kpi"><div class="k">売上</div><div class="v">${man(c.sales)}</div></div>
+      <div class="kpi"><div class="k">人件費（社保込）</div><div class="v">${man(c.labor)}</div></div>
+      <div class="kpi"><div class="k">人件費率</div><div class="v ${c.laborRate > data.laborCapRate ? "ng" : "ok"}">${pct(c.laborRate)}</div><div class="s">上限 ${pct(data.laborCapRate)}</div></div>
+      <div class="kpi"><div class="k">42%枠の残り（半期見込み）</div><div class="v ${c.roomProjected >= 0 ? "ok" : "ng"}">${man(c.roomProjected)}</div><div class="s">経過分 ${man(c.room)}</div></div>
+      <div class="kpi"><div class="k">インセンティブ見込み</div><div class="v">${man(c.incentivePaid)}</div><div class="s">社保込 ${man(c.incentiveCost)}${c.eventRewards ? `<br>うちイベント報酬 ${man(c.eventRewards)}` : ""}</div></div>
+      <div class="kpi"><div class="k">インセンティブ込み人件費率</div><div class="v ${c.laborRateWithIncentive > data.laborCapRate ? "ng" : "ok"}">${pct(c.laborRateWithIncentive)}</div></div>
+    </div>
+    ${banner}
+    <div class="scroll" style="margin-top:12px;"><table><tr><th class="l">月</th><th>売上</th><th>人件費（社保込）</th><th>人件費率</th><th>42%枠の残り</th>${data.isAdmin ? "<th>人件費を入力<br><span class=\"small\">支給合計額（社保抜き）</span></th>" : ""}</tr>${rows}</table></div>
+    ${data.isAdmin ? '<div class="small" style="margin-top:8px;">保存するとキャリア制度台帳の「月次推移ダッシュボード」に書き込まれます（会社売上も院シートの実績合計で更新）。「推定」の月は未入力です。</div>' : ""}
+  </div></div>`;
+}
+
+function clinicCard(half) {
+  const head = half.months.map((m) => `<th>${m}月</th>`).join("");
+  const rows = visibleClinics().map((c) => {
+    const ms = c.months.filter((m) => half.months.includes(m.month));
+    const cells = ms.map((m) => {
+      if (m.actual === null || m.actual === undefined) return `<td class="small">予算 ${man(m.budget)}</td>`;
+      const ok = m.budget && m.actual >= m.budget;
+      return `<td class="${ok ? "bg-ok" : "bg-ng"}"><b>${man(m.actual)}</b><div class="small">${pct(m.rate)}</div></td>`;
+    }).join("");
+    const budget = ms.reduce((a, m) => a + (m.actual !== null && m.actual !== undefined ? m.budget || 0 : 0), 0);
+    const actual = ms.reduce((a, m) => a + (m.actual || 0), 0);
+    return `<tr><td class="l"><b>${esc(c.name)}</b><div class="small">${c.manager ? "院長 " + esc(c.manager) : ""}${c.bm ? " ・BM " + esc(c.bm) : ""}</div></td>${cells}
+      <td class="${budget && actual >= budget ? "ok" : "ng"}"><b>${budget ? pct(actual / budget) : "-"}</b></td>
+      ${data.canSeeLabor ? `<td>${man(c.fixedLabor)}</td><td class="${c.laborRate > data.laborCapRate ? "ng" : "ok"}">${pct(c.laborRate)}</td>` : ""}</tr>`;
+  }).join("");
+  return `<div class="card"><div class="card-h">院別 売上予算の達成状況（${esc(half.label)}）</div><div class="card-b">
+    <div class="scroll"><table><tr><th class="l">院</th>${head}<th>累計達成率</th>${data.canSeeLabor ? '<th>固定人件費</th><th>人件費率<br><span class="small">（最新月）</span></th>' : ""}</tr>${rows}</table></div>
+    <div class="small" style="margin-top:8px;">緑＝予算達成、赤＝未達。${data.canSeeLabor ? "固定人件費は台帳の各院査定シートの値（社保込）です。" : ""}</div>
+  </div></div>`;
+}
+
+function incentiveBody(i) {
+  let extra = "";
+  if (i.type === "manager") {
+    extra = `<div class="dots">${i.monthly.map((m) => `<div class="dot ${m.actual === null ? "" : m.achieved ? "y" : "n"}" title="${m.month}月">${m.month}月</div>`).join("")}</div>`;
+  } else if (i.type === "staff" && i.avg !== null) {
+    const r = Math.min(1, i.avg / data.rules.staff.threshold);
+    extra = `<div class="bar ${r >= 1 ? "ok" : ""}"><i style="width:${(r * 100).toFixed(0)}%"></i></div>`;
+  } else if ((i.type === "bm" || i.type === "gm") && i.rate !== null) {
+    extra = `<div class="bar ${i.rate >= 1 ? "ok" : ""}"><i style="width:${Math.min(100, i.rate * 100).toFixed(0)}%"></i></div><div class="d">累計達成率 ${pct(i.rate)}</div>`;
+  }
+  const amount = i.type === "manager"
+    ? `${yen(i.earned)}<div class="small">最大 ${yen(i.max)}</div>`
+    : `${yen(i.projected)}<div class="small">${i.status === "確定" ? "確定" : "見込み"}（満額 ${yen(i.max)}）</div>`;
+  return `<div class="inc"><div style="flex:1;min-width:200px;">
+      <div class="t">${TYPE_LABEL[i.type]}${statusBadge(i.status)}</div>
+      <div class="d">${esc(i.detail)}</div>
+      ${i.profitCondition ? `<div class="d warn">営業利益：${esc(i.profitCondition)}</div>` : ""}
+      ${extra}
+    </div><div class="amt">${amount}</div></div>`;
+}
+
+// インセンティブを院ごとに分けて表示（GM・BMは「全社・エリア」、院長は担当院、スタッフは所属院）
+function incentiveCard(half) {
+  const amountOf = (i) => (i.half === half.key ? (i.type === "manager" ? i.earned : i.projected) : 0);
+  const groups = new Map(); // key → Map(personKey → { p, incs })
+  const put = (key, p, i) => {
+    if (!groups.has(key)) groups.set(key, new Map());
+    const g = groups.get(key);
+    if (!g.has(p.key)) g.set(p.key, { p, incs: [] });
+    g.get(p.key).incs.push(i);
+  };
+  const people = [...data.people].sort((a, b) => gradeRankClient(a.grade) - gradeRankClient(b.grade));
+  for (const p of people) {
+    for (const i of p.incentives.filter((i) => i.half === half.key || i.type === "gm")) {
+      if (i.type === "gm" || i.type === "bm") {
+        if (!clinicFilter || i.type === "gm" || (i.clinics || []).includes(clinicFilter)) put("__area", p, i);
+      } else {
+        // 兼務の人は、見ている人の担当院のうち最初の院にまとめる
+        const clinic = i.type === "manager" ? i.clinic : p.clinics.find((c) => data.clinics.some((x) => x.name === c)) || p.clinics[0] || "__other";
+        if (!clinicFilter || clinic === clinicFilter) put(clinic, p, i);
+      }
+    }
+  }
+  const order = ["__area", ...data.clinics.map((c) => c.name), ...[...groups.keys()].filter((k) => k !== "__area" && !data.clinics.some((c) => c.name === k))];
+  const sections = order.filter((k) => groups.has(k)).map((k) => {
+    const entries = [...groups.get(k).values()];
+    const sub = entries.reduce((a, e) => a + e.incs.reduce((s, i) => s + amountOf(i), 0), 0);
+    const clinic = data.clinics.find((c) => c.name === k);
+    const title = k === "__area" ? "全社・エリア（GM・BM）" : k === "__other" ? "所属院なし" : `${k}院`;
+    const sub2 = clinic && clinic.manager ? `院長 ${esc(clinic.manager)}` : "";
+    return `<details class="inc-group" open><summary><span><b>${esc(title)}</b> <span class="small">${sub2} ${entries.length}名</span></span><span class="small">見込み ${yen(sub)}</span></summary>
+      ${entries.map(({ p, incs }) => `<div class="person">
+        <div class="person-h"><div class="n">${esc(p.name)}</div><div class="small">${esc(p.grade)} ${esc(p.role)} ・ ${esc(p.clinics.join("・"))}</div></div>
+        ${incs.map(incentiveBody).join("")}
+      </div>`).join("")}
+    </details>`;
+  });
+  const total = [...groups.values()].reduce((a, g) => a + [...g.values()].reduce((b, e) => b + e.incs.reduce((s, i) => s + amountOf(i), 0), 0), 0);
+  return `<div class="card"><div class="card-h"><span>インセンティブ進捗（${esc(half.label)}）</span>${sections.length ? `<span class="small">表示中の見込み合計 ${yen(total)}</span>` : ""}</div><div class="card-b">${sections.join("") || '<div class="muted">対象のインセンティブはありません。</div>'}
+    ${sections.length > 1 ? '<div class="small" style="margin-top:4px;">院の見出しを押すと開閉できます。上の院のボタンで1院だけに絞り込めます。</div>' : ""}</div></div>`;
+}
+
+function salesCard() {
+  const people = visiblePeople().filter((p) => p.hasSalesData && p.monthlySales.length)
+    .sort((a, b) => gradeRankClient(a.grade) - gradeRankClient(b.grade));
+  if (!people.length) return "";
+  const months = people[0].monthlySales.map((m) => m.month);
+  const rows = people.map((p) => {
+    const cells = p.monthlySales.map((m) => `<td class="${m.total >= 1000000 ? "ok" : m.total < 650000 ? "muted" : ""}">${man(m.total)}</td>`).join("");
+    const ladder = p.ladder.items.map((x) => `<div class="${x.kind === "demotion" ? (x.warn ? "ng" : "muted") : x.ok ? "ok" : "muted"}">${x.ok && x.kind === "promotion" ? "★ " : ""}${esc(x.label)}：${esc(x.value)}</div>`).join("");
+    return `<tr><td class="l"><b>${esc(p.name)}</b><div class="small">${esc(p.grade)} ${esc(p.clinics.join("・"))}</div></td>${cells}<td class="l" style="white-space:normal;min-width:220px;font-size:11px;">${ladder || '<span class="small">-</span>'}</td></tr>`;
+  }).join("");
+  return `<div class="card"><div class="card-h">個人売上（窓口＋保険請求）と昇格・降格チェック</div><div class="card-b">
+    <div class="scroll"><table><tr><th class="l">氏名</th>${months.map((m) => `<th>${m}月</th>`).join("")}<th class="l">キャリアラダー（売上要件）</th></tr>${rows}</table></div>
+    <div class="small" style="margin-top:8px;">緑＝100万円以上、灰＝65万円未満。昇格には売上以外の要件（技術・行動）もあります。</div>
+  </div></div>`;
+}
+
+const CHANGE = { up: ["▲ 増", "chg-up"], down: ["▼ 減", "chg-down"], downReview: ["▼ 減給検討", "chg-down"], keep: ["― 据置", "chg-keep"] };
+// D判定（50点未満）は台帳の規定どおり「降格対象」
+const isDemotion = (e) => e.rank === "D" || /降格対象/.test(String(e.positionDecision ?? ""));
+const changeChip = (c) => (CHANGE[c] ? `<span class="chg ${CHANGE[c][1]}">${CHANGE[c][0]}</span>` : '<span class="small">-</span>');
+function evaluationCard() {
+  const evs = [...visiblePeople()].sort((a, b) => gradeRankClient(a.grade) - gradeRankClient(b.grade)).flatMap((p) => p.evaluations || []).filter((e) => !clinicFilter || e.clinic === clinicFilter);
+  if (!evs.length) return "";
+  const money = data.canSeeSalary;
+  const diff = (e) => (e.newSalary != null && e.prevSalary != null ? e.newSalary - e.prevSalary : null);
+  const diffCell = (e) => { const d = diff(e); return d == null ? "-" : `<b class="${d > 0 ? "ok" : d < 0 ? "ng" : "muted"}">${d > 0 ? "+" : ""}${yen(d)}</b>`; };
+  const rows = evs.map((e) => `<tr class="${e.change === "up" ? "row-up" : e.change === "down" || e.change === "downReview" ? "row-down" : ""}"><td class="l">${esc(e.clinic)}</td><td class="l"><b>${esc(e.name)}</b>${isDemotion(e) ? ' <span class="chg chg-demote">⚠ 降格対象</span>' : ""}</td><td class="l">${esc(e.grade)}</td><td>${e.score ?? "-"}</td>
+    <td class="l"><b class="${e.rank === "S" || e.rank === "A" ? "ok" : e.rank === "D" ? "ng" : e.rank === "C" ? "warn" : ""}">${esc(e.rank ?? "-")}</b></td>
+    <td class="l">${changeChip(e.change)}</td>${money ? `<td>${yen(e.prevSalary)}</td><td><b>${yen(e.newSalary)}</b></td><td>${diffCell(e)}</td>` : ""}<td class="l">${esc(e.salaryDecision ?? "")}</td><td class="l">${esc(e.positionDecision ?? "")}</td>${money ? `<td>${yen(e.bonus)}</td>` : ""}<td class="l">${esc(e.approval ?? "")}</td></tr>`).join("");
+  // 兼務の人は院ごとに行があるので、人数・合計は1人1回で数える
+  const uniq = [...new Map(evs.map((e) => [e.key, e])).values()];
+  const count = (cs) => uniq.filter((e) => cs.includes(e.change)).length;
+  const sum = (f) => uniq.reduce((a, e) => a + (f(e) || 0), 0);
+  const summary = `<div class="chg-sum">${changeChip("up")} <b>${count(["up"])}人</b>　<span class="chg chg-down">▼ 減・減給検討</span> <b>${count(["down", "downReview"])}人</b>　${changeChip("keep")} <b>${count(["keep"])}人</b>　<span class="chg chg-demote">⚠ 降格対象</span> <b>${uniq.filter(isDemotion).length}人</b>
+    ${money ? `<span class="chg-total">月額合計 ${yen(sum((e) => e.prevSalary))} → <b>${yen(sum((e) => e.newSalary))}</b>（${(() => { const d = sum(diff); return `<b class="${d > 0 ? "ok" : d < 0 ? "ng" : ""}">${d > 0 ? "+" : ""}${yen(d)}</b>`; })()}）</span>` : ""}</div>`;
+  return `<div class="card"><div class="card-h">半期査定の結果（キャリア制度台帳より）</div><div class="card-b">
+    ${summary}
+    <div class="scroll"><table><tr><th class="l">院</th><th class="l">氏名</th><th class="l">等級</th><th>評価点</th><th class="l">ランク</th><th class="l">増減</th>${money ? "<th>改定前</th><th>改定後</th><th>差額</th>" : ""}<th class="l">給与判定</th><th class="l">役職判定</th>${money ? "<th>賞与想定</th>" : ""}<th class="l">決裁</th></tr>${rows}</table></div>
+    <div class="small" style="margin-top:8px;">${money ? "改定前＝基本給＋役職・資格手当、改定後＝改定前＋改定額（いずれも月額の固定支給）。" : ""}「減給検討」はD判定で、金額は未定です。評価点の入力・修正はキャリア制度台帳（スプレッドシート）で行ってください。</div>
+  </div></div>`;
+}
+
+function rulesCard() {
+  const r = data.rules;
+  return `<div class="card"><div class="card-h">2026年 インセンティブ規定</div><div class="card-b"><div class="scroll"><table>
+    <tr><th class="l">対象</th><th>年間最大</th><th class="l">達成条件</th></tr>
+    <tr><td class="l">${esc(r.gm.label)}</td><td>${yen(r.gm.annual)}</td><td class="l">${esc(r.gm.condition)}</td></tr>
+    <tr><td class="l">${esc(r.bm.label)}</td><td>${yen(r.bm.perHalf * 2)}</td><td class="l">${esc(r.bm.condition)}</td></tr>
+    <tr><td class="l">${esc(r.manager.label)}</td><td>${yen(r.manager.perMonth * 12)}</td><td class="l">${esc(r.manager.condition)}</td></tr>
+    <tr><td class="l">${esc(r.staff.label)}</td><td>${yen(r.staff.perHalf * 2)}</td><td class="l">${esc(r.staff.condition)}</td></tr>
+  </table></div>
+  <div class="small" style="margin-top:8px;">インセンティブ（業績賞与・決算賞与）は支給時期が違っても、社保込みで人件費42%の枠内に収めます。</div></div></div>`;
+}
+
+// ===== 月次評価 =====
+let evalData = null;
+let evalMonth = null;     // "2027-01"
+let evalSelected = null;  // 開いている人のkey
+let evalDraft = null;     // { values, scores, comment }
+let evalLoading = false;
+let evalDirty = false;    // 個人の評価画面で未保存の入力があるか
+let evalCandidateOnly = false; // 一覧を院長候補だけに絞る
+
+const EVAL_START = "2027-01"; // 本運用の開始月
+
+function monthLabel(key) { const [y, m] = key.split("-"); return `${y}年${Number(m)}月`; }
+function shiftMonth(key, d) { const [y, m] = key.split("-").map(Number); const t = new Date(y, m - 1 + d, 1); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`; }
+
+async function evalFetch(method, body, refresh) {
+  const auth = await authHeader();
+  if (!auth) { renderLogin(); return null; }
+  const url = method === "GET" ? `/api/evaluation?month=${encodeURIComponent(evalMonth || "")}${refresh ? "&refresh=1" : ""}` : "/api/evaluation";
+  const res = await fetch(url, {
+    method,
+    headers: { Authorization: auth, ...(body ? { "Content-Type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (res.status === 401) { renderLogin(json.error); return null; }
+  if (!res.ok) throw new Error(json.error || `読み込みに失敗しました（HTTP ${res.status}）`);
+  return json;
+}
+
+async function loadEval(refresh) {
+  if (evalLoading) return;
+  evalLoading = true;
+  if (view === "evaluation") root.innerHTML = `<div class="center">評価を読み込み中...</div>`;
+  try {
+    const json = await evalFetch("GET", null, refresh);
+    if (!json) return;
+    evalData = json;
+    evalMonth = json.month;
+    if (evalSelected && !json.people.some((p) => p.key === evalSelected)) evalSelected = null;
+    if (evalSelected) openEval(evalSelected, true);
+  } catch (e) {
+    evalData = { error: e.message };
+  } finally {
+    evalLoading = false;
+  }
+  render();
+}
+
+function changeEvalMonth(d) { jumpEvalMonth(shiftMonth(evalMonth, d)); }
+
+// 月を切り替える。個人の評価画面を開いていれば、その人のまま別の月を表示する
+function jumpEvalMonth(key) {
+  if (key === evalMonth) return;
+  if (evalSelected && evalDirty && !confirm("保存していない入力があります。破棄して月を切り替えますか？")) return;
+  evalMonth = key;
+  evalDraft = null;
+  evalDirty = false;
+  evalData = null;
+  render();
+}
+
+async function setupEvalSheets() {
+  if (!confirm("キャリア制度台帳に「評価項目」「評価記録」シートを作成します。よろしいですか？")) return;
+  root.innerHTML = `<div class="center">シートを作成中...</div>`;
+  try {
+    evalData = await evalFetch("POST", { action: "setup", month: evalMonth });
+  } catch (e) { alert(e.message); }
+  render();
+}
+
+function openEval(key, keepDraft) {
+  const p = evalData.people.find((x) => x.key === key);
+  if (!p) return;
+  evalSelected = key;
+  if (!keepDraft || !evalDraft) {
+    const items = p.items || [];
+    const values = {};
+    for (const it of items) if (it.kind === "数値" && !(it.auto && p.auto[it.auto] !== undefined) && p.values[it.id] !== undefined) values[it.id] = p.values[it.id];
+    evalDraft = { values, scores: { ...p.scores }, comment: p.comment || "" };
+    evalDirty = false;
+  }
+  render();
+  window.scrollTo(0, 0);
+}
+
+function closeEval() {
+  if (evalDirty && !confirm("保存していない入力があります。破棄して一覧に戻りますか？")) return;
+  evalSelected = null; evalDraft = null; evalDirty = false; render();
+}
+
+// サーバーと同じ採点（画面上ですぐ点数を出すため）
+function clientScore(items, p, draft) {
+  const max = items.reduce((a, it) => a + it.points, 0); // 満点（クラス・共通・部門すべて）
+  let earned = 0, filled = 0, num = 0, beh = 0, bas = 0;
+  const pts = {};
+  for (const it of items) {
+    let v = null;
+    if (it.kind === "数値") {
+      if (p.hidden && it.id in p.hidden) { // 人件費率（値は非表示・点数だけ）
+        pts[it.id] = p.hidden[it.id];
+        if (pts[it.id] !== null) { earned += pts[it.id]; filled++; num += pts[it.id]; }
+        continue;
+      }
+      const val = it.auto && p.auto[it.auto] !== undefined ? p.auto[it.auto] : draft.values[it.id];
+      const n = val === "" || val === undefined || val === null ? null : Number(String(val).replace(/[,%円¥\s]/g, ""));
+      if (n !== null && isFinite(n) && it.target) {
+        v = it.direction === "以下" ? (n <= it.target ? it.points : it.points * Math.max(0, 1 - (n - it.target) / 10)) : it.points * Math.max(0, Math.min(1, n / it.target));
+      }
+    } else if (draft.scores[it.id]) v = it.points * draft.scores[it.id] / 5;
+    pts[it.id] = v;
+    if (v !== null) { earned += v; filled++; if (it.dept) {} else if (it.kind === "数値") num += v; else if (it.kind === "基本") bas += v; else beh += v; }
+  }
+  const r1 = (v) => Math.round(v * 10) / 10;
+  const t = filled && max ? r1((earned / max) * 100) : null; // 月次の点数（100点満点に換算）＝獲得点÷満点×100
+  const complete = filled === items.length;
+  const rank = !complete || t === null ? null : t >= 90 ? "S" : t >= 80 ? "A" : t >= 65 ? "B" : t >= 50 ? "C" : "D";
+  return { pts, total: t, rank, complete, filled, count: items.length, earned: r1(earned), max: r1(max), num: r1(num), beh: r1(beh), bas: r1(bas) };
+}
+
+function fmtVal(v, unit) {
+  if (v === null || v === undefined || v === "") return "-";
+  if (unit === "円") return yen(Number(v));
+  return `${Number(v).toLocaleString("ja-JP")}${unit}`;
+}
+const rankCls = (r) => r === "S" || r === "A" ? "ok" : r === "D" ? "ng" : r === "C" ? "warn" : "";
+
+function renderEvaluation() {
+  if (!evalMonth) { const t = new Date(); evalMonth = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`; }
+  if (!evalData) { if (!evalLoading) setTimeout(() => loadEval(), 0); return `<div class="center">評価を読み込み中...</div>`; }
+  if (evalData.error) return `<div class="card"><div class="card-b"><div class="err">${esc(evalData.error)}</div><button class="btn btn-blue" onclick="evalData=null;render()">もう一度読み込む</button></div></div>`;
+  if (eventEditor) return renderEventEditor();
+  if (itemEditor) return renderItemEditor();
+  if (evalSelected) return renderEvalDetail();
+
+  let html = `<div class="monthnav"><button class="chip" onclick="changeEvalMonth(-1)">‹ 前月</button><div class="m">${monthLabel(evalMonth)}</div><button class="chip" onclick="changeEvalMonth(1)">次月 ›</button></div>`;
+  if (evalMonth < EVAL_START) html += `<div class="banner ok" style="margin:0 0 14px;">🧪 本運用は ${monthLabel(EVAL_START)} からです。それまでの月は試しに入力して使い方を確認できます。</div>`;
+  if (evalData.setupNeeded) {
+    html += evalData.isAdmin
+      ? `<div class="card"><div class="card-b"><b>評価を始めるには、台帳に評価用のシートを作成してください。</b><div class="small" style="margin:6px 0 12px;">「評価項目」（等級別の項目・配点・目標値。シート上で自由に編集できます）と「評価記録」（毎月の評価結果）の2つを作成します。</div><button class="btn btn-blue" onclick="setupEvalSheets()">評価シートを準備</button></div></div>`
+      : `<div class="card"><div class="card-b muted">管理者が評価シートを準備するまでお待ちください。</div></div>`;
+  }
+  if (evalData.isAdmin && evalData.legacyItems && !evalData.setupNeeded) {
+    html += `<div class="banner ng" style="margin:0 0 14px;">⚠️ 評価項目シートが古い版です（「社会人としての基本」や新患の自動取得が入っていません）。<br><button class="btn btn-save" style="margin-top:8px;" onclick="resetItems()">評価項目を初期値に戻す</button>${evalData.hasRecords ? '<div class="small">保存済みの評価の点数は変わりません。</div>' : ""}</div>`;
+  }
+  if (evalData.newPatientError && (evalData.isAdmin || evalData.canEditItems)) {
+    html += `<div class="banner ng" style="margin:0 0 14px;">⚠️ ${esc(evalData.newPatientError)}<div class="small">共有されるまでは、新患対応数・初回成約率・初回売上は自動で入りません。</div></div>`;
+  }
+  const candidates = evalData.people.filter((p) => p.candidate);
+  if (candidates.length || evalData.people.some((p) => p.canSetCandidate)) {
+    html += `<div class="chip-row" style="margin-bottom:14px;"><button class="chip ${evalCandidateOnly ? "" : "sel"}" onclick="evalCandidateOnly=false;render()">全員</button><button class="chip ${evalCandidateOnly ? "sel" : ""}" onclick="evalCandidateOnly=true;render()">⭐ 院長候補のみ（${candidates.length}名）</button></div>`;
+  }
+  const people = evalCandidateOnly ? candidates : evalData.people;
+  const toDo = people.filter((p) => p.canEdit && !p.evaluated).length;
+  const rows = people.map((p) => {
+    const t = p.result;
+    const status = p.evaluated ? `<b class="${rankCls(p.savedRank)}">${p.savedTotal ?? "-"}点 ${p.savedRank || ""}</b>${t.complete ? "" : `<div class="small">${t.filled}/${t.count}項目</div>`}` : `<span class="small">${p.canEdit ? "未評価" : "-"}</span>`;
+    const pcScore = p.scores.pc;
+    return `<tr class="evrow" onclick="openEval('${esc(p.key)}')"><td class="l"><b>${esc(p.name)}</b>${p.candidate ? '<span class="cand">⭐院長候補</span>' : ""}${levelChip(p.career)}<div class="small">${esc(p.grade)} ${esc(p.clinics.join("・"))} ・ 評価者 ${esc(p.superior)}${p.evalAsLabel ? ` ・ <b>${esc(p.evalAsLabel)}</b>` : ""}</div></td>
+      <td>${status}</td>
+      <td>${p.halfAvg !== null ? `<b class="${rankCls(rankOfClient(p.halfAvg))}">${p.halfAvg}点</b><div class="small">${p.halfMonthsEvaluated}ヶ月分</div>` : "-"}</td>
+      <td>${overallCell(p.overall)}</td>
+      <td>${pcScore ? `${pcScore}/5` : "-"}${t.requiredMissed && t.requiredMissed.length ? '<div class="small ng">必須未達</div>' : ""}${t.basicIssues && t.basicIssues.length ? '<div class="small ng">基本に課題</div>' : ""}</td>
+      <td>${p.canEdit ? `<button class="btn btn-save">${p.evaluated ? "修正" : "評価する"}</button>` : `<button class="btn btn-save" style="background:#64748b;">見る</button>`}</td></tr>`;
+  }).join("");
+  if (evalData.canEditItems && !evalData.setupNeeded) html += `<div style="margin-bottom:14px;text-align:right;"><button class="chip" onclick="eventEditor={mode:'list'};render()">🎉 全社イベント</button> <button class="chip" onclick="openItemEditor('共通')">⚙️ 評価項目の設定（クラス・部門別に追加・削除・編集）</button></div>`;
+  html += `<div class="card"><div class="card-h"><span>${monthLabel(evalMonth)} の評価</span>${toDo ? `<span class="small ng">あなたの未評価 ${toDo}名</span>` : ""}</div><div class="card-b">
+    ${people.length ? `<div class="scroll"><table><tr><th class="l">氏名</th><th>今月</th><th>半期平均</th><th>総合（${evalData.overallMax}点）</th><th>PC・基本</th><th></th></tr>${rows}</table></div>` : '<div class="muted">表示できる評価対象者がいません。</div>'}
+    ${evalData.newPatientUnmatched && evalData.newPatientUnmatched.length ? `<div class="small warn" style="margin-top:8px;">新規集客シートの「初回施術担当者」でスタッフと結びつかなかった名前：${evalData.newPatientUnmatched.map(esc).join("、")}（台帳の評価シートに載っていない人は対象外です）</div>` : ""}
+    <div class="small" style="margin-top:8px;">評価は毎月、直属の上司が付けます（スタッフ→院長、院長→BM、BM→GM）。月次の点数＝獲得点÷満点×100（100点満点に換算・部門の項目も含む）＋イベント加点。S90点以上・A80点以上・B65点以上・C50点以上・D50点未満。半期査定（100点）＋月次の半期平均（100点）＝200点で総合評価を出します。</div>
+  </div></div>`;
+  return html;
+}
+const rankOfClient = (t) => t >= 90 ? "S" : t >= 80 ? "A" : t >= 65 ? "B" : t >= 50 ? "C" : "D";
+
+function renderEvalDetail() {
+  const p = evalData.people.find((x) => x.key === evalSelected);
+  const items = p.items || [];
+  const ro = !p.canEdit || evalData.setupNeeded;
+  const sc = clientScore(items, p, evalDraft);
+  const totalPts = items.filter((it) => !it.dept).reduce((a, it) => a + it.points, 0) || 100;
+  const scaled = (v) => v === null || v === undefined ? "-" : Math.round(v * 10) / 10; // 獲得点（配点そのまま）
+  const raw = (v) => v === null || v === undefined ? "-" : Math.round(v * 10) / 10;
+  const secMax = (kind) => raw(items.filter((it) => !it.dept && it.kind === kind).reduce((a, it) => a + it.points, 0));
+
+  const numItem = (it) => {
+    const isHidden = p.hidden && it.id in p.hidden;
+    const isAuto = isHidden || (it.auto && p.auto[it.auto] !== undefined);
+    const target = it.target !== null && it.target !== undefined ? `目標 ${fmtVal(it.target, it.unit)} ${it.direction}` : "";
+    const input = isHidden
+      ? `<span class="small">非表示</span>`
+      : isAuto
+      ? `<b>${fmtVal(p.auto[it.auto], it.unit)}</b>`
+      : ro ? `<b>${fmtVal(evalDraft.values[it.id], it.unit)}</b>`
+      : `<input class="num" inputmode="decimal" value="${esc(evalDraft.values[it.id] ?? "")}" placeholder="${esc(it.unit)}" oninput="evalDraft.values['${esc(it.id)}']=this.value;evalDirty=true;refreshEvalTotal()"/>`;
+    return `<div class="item ${negClass(it, sc.pts[it.id])}" id="item_${esc(it.id)}"><div class="lbl"><b>${esc(it.label)}</b>${isAuto ? '<span class="autotag">自動</span>' : ""}<div class="d">${esc(target)}（配点${Math.round(it.points * 10) / 10}）</div></div><div class="ctrl">${input}<div class="pts" id="pts_${esc(it.id)}">${scaled(sc.pts[it.id])}</div></div></div>`;
+  };
+  const numItems = items.filter((it) => it.kind === "数値" && !it.dept).map(numItem).join("");
+  const scaleItem = (it) => {
+    const cur = evalDraft.scores[it.id] || 0;
+    const btns = [1, 2, 3, 4, 5].map((n) => `<button class="${cur === n ? "sel" : ""}${cur === n && n <= 2 ? " low" : ""}" ${ro ? "disabled" : ""} onclick="setEvalScore('${esc(it.id)}',${n})">${n}</button>`).join("");
+    return `<div class="item ${negClass(it, sc.pts[it.id])}"><div class="lbl"><b>${esc(it.label)}</b>${it.required ? `<span class="reqtag">必須 ${it.requiredMin || 3}以上</span>` : ""}<div class="d">${esc(it.note)}（配点${Math.round(it.points * 10) / 10}）</div></div><div class="ctrl"><div class="score-btns">${btns}</div><div class="pts">${scaled(sc.pts[it.id])}</div></div></div>`;
+  };
+  const scaleItems = (kind) => items.filter((it) => it.kind === kind && !it.dept).map(scaleItem).join("");
+  // 部門の評価（担当している部門ごと）
+  const depts = [...new Set(items.filter((it) => it.dept).map((it) => it.dept))];
+  const deptHtml = depts.map((d) => `<div class="dept-h">🏷 ${esc(d)}</div>` + items.filter((it) => it.dept === d).map((it) => (it.kind === "数値" ? numItem(it) : scaleItem(it))).join("")).join("");
+  const deptPts = items.filter((it) => it.dept).reduce((a, it) => a + (sc.pts[it.id] || 0), 0);
+
+  const behItems = scaleItems("行動");
+  const basicItems = scaleItems("基本");
+  const basicIssues = items.filter((it) => it.kind === "基本" && evalDraft.scores[it.id] && evalDraft.scores[it.id] <= 2);
+  const trend = p.trend.map((t) => `<td class="${t.month === evalMonth ? "bg-ok" : ""}" style="cursor:pointer;" onclick="jumpEvalMonth('${t.month}')" title="${monthLabel(t.month)}を開く">${t.evaluated ? `<b class="${rankCls(t.rank)}">${t.total ?? "-"}点</b><div class="small">${t.rank || ""}${t.pc ? ` ・PC${t.pc}` : ""}</div>` : '<span class="small">-</span>'}</td>`).join("");
+  const reqMissed = items.filter((it) => it.required && it.kind !== "数値" && evalDraft.scores[it.id] && evalDraft.scores[it.id] < (it.requiredMin || 3));
+
+  return `<div class="monthnav" style="flex-wrap:wrap;"><button class="chip" onclick="closeEval()">‹ 一覧</button><span style="flex:1"></span><button class="chip" onclick="changeEvalMonth(-1)">‹ 前月</button><div class="m" style="min-width:100px;">${monthLabel(evalMonth)}</div><button class="chip" onclick="changeEvalMonth(1)">次月 ›</button></div>
+  <div class="card"><div class="card-h"><span>${esc(p.name)}（${esc(p.grade)} ${esc(p.role)} ・ ${esc(p.clinics.join("・"))}）</span><span class="small">${p.evalAsLabel ? `<b>${esc(p.evalAsLabel)}</b> ・ ` : ""}評価者：${esc(p.superior)}${p.evaluated ? ` ・ 最終更新 ${esc(p.updatedAt)}（${esc(p.evaluator)}）` : ""}</span></div><div class="card-b">
+    <div class="small" style="margin-bottom:6px;">半期の推移（100点満点・月を押すとその月を開きます）${p.halfAvg !== null ? ` ・ 半期平均 <b class="${rankCls(rankOfClient(p.halfAvg))}">${p.halfAvg}点 ${rankOfClient(p.halfAvg)}</b>` : ""}</div>
+    <div class="scroll"><table><tr>${p.trend.map((t) => `<th>${Number(t.month.split("-")[1])}月</th>`).join("")}</tr><tr>${trend}</tr></table></div>
+  </div></div>
+  ${overallCard(p)}
+  ${careerCard(p)}
+  ${candidateCard(p)}
+  ${referenceCard(p)}
+  <div class="card"><div class="card-h"><span>社会人としての基本（全員共通・5段階）</span><span class="small">${sc.bas}点／${secMax("基本")}点</span></div><div class="card-b">${basicItems || '<div class="muted">項目なし</div>'}
+    ${basicIssues.length ? `<div class="banner ng">⚠️ 社会人としての基本（${basicIssues.map((it) => esc(it.label)).join("・")}）が2以下です。等級に関係なく、まず改善が必要な項目です。</div>` : ""}</div></div>
+  <div class="card"><div class="card-h"><span>数値の評価</span><span class="small" id="numSum">${sc.num}点／${secMax("数値")}点</span></div><div class="card-b">${numItems || '<div class="muted">項目なし</div>'}
+    <div class="small" style="margin-top:8px;">「自動」は進捗売上実績・台帳から自動で入ります。目標「以上」は達成率に応じて、「以下」は目標以下で満点（目標を10ポイント超えると0点）。</div></div></div>
+  ${depts.length ? `<div class="card"><div class="card-h"><span>部門の評価（${depts.map(esc).join("・")}）</span><span class="small">${raw(deptPts)}点／${raw(items.filter((it) => it.dept).reduce((a, it) => a + it.points, 0))}点</span></div><div class="card-b">${deptHtml}
+    <div class="small" style="margin-top:8px;">担当している部門の項目です。部門の点も満点・獲得点に入れて100点満点に換算します。</div></div></div>` : ""}
+  ${eventCardForPerson(p)}
+  <div class="card"><div class="card-h"><span>行動の評価（5段階）</span><span class="small">${sc.beh}点／${secMax("行動")}点</span></div><div class="card-b">${behItems || '<div class="muted">項目なし</div>'}
+    <div class="small" style="margin-top:8px;">5＝期待を大きく上回る　4＝上回る　3＝できている　2＝あと一歩　1＝できていない</div>
+    ${reqMissed.length ? `<div class="banner ng">⚠️ 必須項目（${reqMissed.map((it) => esc(it.label)).join("・")}）が必須ライン（${reqMissed[0].requiredMin || 3}以上）に届いていません。改善指導の対象になります。</div>` : ""}</div></div>
+  <div class="card"><div class="card-h">評価者コメント</div><div class="card-b">${ro ? `<div style="white-space:pre-wrap;font-size:13px;">${esc(evalDraft.comment) || '<span class="muted">なし</span>'}</div>` : `<textarea oninput="evalDraft.comment=this.value;evalDirty=true" placeholder="良かった点・次月の課題など">${esc(evalDraft.comment)}</textarea>`}</div>
+    <div class="sticky-total"><div id="evalTotal">${totalHtml(sc)}</div>${ro ? "" : `<button class="btn btn-blue" style="width:auto;padding:10px 24px;" onclick="saveEval()">保存する</button>`}</div></div>`;
+}
+
+function totalHtml(sc) {
+  const p = evalData && evalData.people.find((x) => x.key === evalSelected);
+  const bonus = p ? p.eventBonus || 0 : 0;
+  const final = sc.total === null ? null : Math.round((sc.total + bonus) * 10) / 10;
+  const rank = sc.rank && final !== null ? rankOfClient(final) : sc.rank;
+  return `<span class="small">今月</span> <b style="font-size:22px;" class="${rankCls(rank)}">${final ?? "-"}点</b><span class="small">／100点</span> <b class="${rankCls(rank)}">${rank || ""}</b>`
+    + ` <span class="small">（獲得${sc.earned}点÷満点${sc.max}点×100${bonus ? ` ＋ イベント加点 ${bonus}点` : ""}・${sc.filled}/${sc.count}項目入力）</span>`;
+}
+
+// ===== 総合評価（総評）：半期査定100点＋月次評価の半期平均100点＝200点 =====
+const SALARY_CLS = { 昇給: "chg-up", 現状維持: "chg-keep", 降給: "chg-down" };
+const POSITION_CLS = { 昇格対象: "chg-up", 現状維持: "chg-keep", 降格対象: "chg-demote" };
+const POSITION_ICON = { 昇格対象: "⬆ ", 降格対象: "⚠ ", 現状維持: "" };
+const salaryBadge = (o) => o.salary ? `<span class="chg ${SALARY_CLS[o.salary] || "chg-keep"}">${o.salary === "昇給" ? "▲ " : o.salary === "降給" ? "▼ " : "― "}${esc(o.salary)}${o.salary === "昇給" && o.raise ? ` +${yen(o.raise)}` : ""}</span>` : "";
+const positionBadge = (o) => o.position ? `<span class="chg ${POSITION_CLS[o.position] || "chg-keep"}">${POSITION_ICON[o.position] || ""}${esc(o.position)}</span>` : "";
+const overallRankCls = (o) => {
+  const rules = (evalData && evalData.overallRules) || [];
+  const i = rules.findIndex((r) => r.rank === o.rank);
+  return i < 0 ? "" : i <= 1 ? "ok" : i === rules.length - 1 ? "ng" : i === rules.length - 2 ? "warn" : "";
+};
+function overallCell(o) {
+  if (!o || o.total === null) return '<span class="small">-</span>';
+  return `<b class="${overallRankCls(o)}">${o.total}点 ${esc(o.rank)}</b>${o.provisional ? '<span class="small warn"> 仮</span>' : ""}<div style="margin-top:2px;">${salaryBadge(o)} ${positionBadge(o)}</div>${o.saved ? '<div class="small ok">✓ 総評済</div>' : ""}`;
+}
+const pt = (v) => (v === null || v === undefined ? "-" : `${v}点`);
+function overallBreakdown(o) {
+  const max = evalData.overallMax;
+  const bar = (v, color) => `<div style="flex:${v || 0};background:${color};height:10px;"></div>`;
+  return `<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">
+      <div><span class="small">総合</span> <b style="font-size:26px;" class="${overallRankCls(o)}">${o.total ?? "-"}</b><span class="small">／${max}点</span> <b style="font-size:20px;" class="${overallRankCls(o)}">${esc(o.rank || "")}</b>${o.provisional ? ' <span class="chg chg-keep">仮判定</span>' : ""}</div>
+      <div>${salaryBadge(o)} ${positionBadge(o)}</div></div>
+    <div style="display:flex;border-radius:6px;overflow:hidden;background:#e2e8f0;margin:8px 0 4px;">${bar(o.assessment, "#2d6a9f")}${bar(o.monthly, "#059669")}<div style="flex:${Math.max(0, max - (o.assessment || 0) - (o.monthly || 0))};"></div></div>
+    <div class="small">🟦 半期査定（台帳） <b>${pt(o.assessment)}</b>／100　＋　🟩 月次評価の半期平均 <b>${pt(o.monthly)}</b>／100${o.monthlyCount ? `（${o.monthlyCount}ヶ月分）` : ""}</div>
+    ${o.provisional ? `<div class="small warn" style="margin-top:4px;">${o.assessment === null ? "半期査定の点がまだ無い" : "月次評価がまだ無い"}ため、ある方の点を2倍にした仮の判定です。</div>` : ""}`;
+}
+function overallCard(p) {
+  const o = p.overall;
+  if (!o) return "";
+  const ro = !p.canEdit;
+  const saved = o.saved;
+  const changed = saved && (saved.total !== o.total || saved.rank !== o.rank);
+  return `<div class="card"><div class="card-h"><span>🏆 総合評価・総評（${esc(evalData.halfLabel)}）</span>${saved ? `<span class="small ok">✓ 総評済 ${esc(saved.updatedAt)}（${esc(saved.evaluator)}）</span>` : '<span class="small">総評は未確定</span>'}</div><div class="card-b">
+    ${o.total === null ? '<div class="muted">半期査定・月次評価のどちらもまだありません。</div>' : overallBreakdown(o)}
+    ${changed ? `<div class="banner ng" style="margin-top:8px;">確定時（${saved.total}点 ${esc(saved.rank)}・${esc(saved.salary)}・${esc(saved.position)}）から点数が変わっています。内容を確認して確定し直してください。</div>` : ""}
+    <div style="margin-top:10px;"><div class="small" style="margin-bottom:4px;">総評コメント（半期のまとめ・給与と役職の判断理由・次の半期の目標）</div>
+    ${ro ? `<div style="white-space:pre-wrap;font-size:13px;">${esc(saved ? saved.comment : "") || '<span class="muted">なし</span>'}</div>`
+      : `<textarea id="reviewComment" placeholder="例）売上は目標達成。後輩指導が課題。次の半期は院長候補として新患対応を任せる">${esc(saved ? saved.comment : "")}</textarea>
+      ${o.total !== null ? `<button class="btn btn-blue" style="width:auto;padding:10px 24px;margin-top:8px;" onclick="saveReview('${esc(p.key)}')">${saved ? "総評を更新する" : "総評を確定する"}</button>` : ""}`}
+    </div>
+    <div class="small" style="margin-top:8px;">総合点で、給与（昇給・現状維持・降給）と役職（昇格対象・現状維持・降格対象）を決めます。基準は「インセンティブ → 総合評価（総評）」で確認できます。</div>
+  </div></div>`;
+}
+async function saveReview(key) {
+  const el = document.getElementById("reviewComment");
+  const comment = el ? el.value : "";
+  const p = evalData.people.find((x) => x.key === key);
+  const o = p.overall;
+  if (!confirm(`${p.name}さんの総評を確定します。\n総合 ${o.total}点 ${o.rank}・${o.salary}・${o.position}${o.provisional ? "（仮判定）" : ""}`)) return;
+  try {
+    const json = await evalFetch("POST", { action: "saveReview", month: evalMonth, personKey: key, comment });
+    if (json) { evalData = json; if (evalSelected) openEval(evalSelected, true); }
+  } catch (e) { alert(e.message); }
+  render();
+}
+
+let overallRuleDraft = null; // 基準の編集中（社長・GM）
+function overallShiftHalf(d) {
+  evalMonth = shiftMonth(evalMonth, 6 * d);
+  evalData = null; evalSelected = null;
+  loadEval();
+}
+function overallSection(wantLoad) {
+  if (!evalData || evalData.error) {
+    if (wantLoad && !evalLoading && !(evalData && evalData.error)) setTimeout(() => loadEval(), 0);
+    return `<div class="card"><div class="card-h">🏆 総合評価（総評）</div><div class="card-b">${evalData && evalData.error ? `<div class="err">${esc(evalData.error)}</div><button class="btn btn-blue" onclick="evalData=null;render()">もう一度読み込む</button>` : '<div class="muted">読み込み中...</div>'}</div></div>`;
+  }
+  const people = (clinicFilter ? evalData.people.filter((p) => p.clinics.includes(clinicFilter)) : evalData.people).filter((p) => p.overall);
+  const count = (f) => people.filter((p) => p.overall.total !== null && f(p.overall)).length;
+  const rows = people.map((p) => {
+    const o = p.overall;
+    return `<tr class="evrow ${o.position === "降格対象" ? "row-down" : o.position === "昇格対象" ? "row-up" : ""}" onclick="view='evaluation';openEval('${esc(p.key)}')">
+      <td class="l"><b>${esc(p.name)}</b>${p.candidate ? '<span class="cand">⭐院長候補</span>' : ""}<div class="small">${esc(p.grade)} ${esc(p.clinics.join("・"))}</div></td>
+      <td>${pt(o.assessment)}</td><td>${pt(o.monthly)}${o.monthlyCount ? `<div class="small">${o.monthlyCount}ヶ月</div>` : ""}</td>
+      <td>${o.total === null ? "-" : `<b class="${overallRankCls(o)}">${o.total}点</b>${o.provisional ? '<div class="small warn">仮</div>' : ""}`}</td>
+      <td><b class="${overallRankCls(o)}">${esc(o.rank || "-")}</b></td>
+      <td class="l">${salaryBadge(o) || "-"}</td><td class="l">${positionBadge(o) || "-"}</td>
+      <td class="l">${o.saved ? `<span class="small ok">✓ 総評済</span><div class="small" style="max-width:220px;white-space:normal;">${esc((o.saved.comment || "").slice(0, 60))}${(o.saved.comment || "").length > 60 ? "…" : ""}</div>` : '<span class="small">未</span>'}</td></tr>`;
+  }).join("");
+  const anyProvisional = people.some((p) => p.overall.provisional);
+  return `<div class="card"><div class="card-h"><span>🏆 総合評価（総評） ${esc(evalData.halfLabel)}</span><span><button class="chip" onclick="overallShiftHalf(-1)">‹ 前の半期</button> <button class="chip" onclick="overallShiftHalf(1)">次の半期 ›</button></span></div><div class="card-b">
+    <div class="chg-sum"><span class="chg chg-up">▲ 昇給</span> <b>${count((o) => o.salary === "昇給")}人</b>　<span class="chg chg-keep">― 現状維持</span> <b>${count((o) => o.salary === "現状維持")}人</b>　<span class="chg chg-down">▼ 降給</span> <b>${count((o) => o.salary === "降給")}人</b>　｜　<span class="chg chg-up">⬆ 昇格対象</span> <b>${count((o) => o.position === "昇格対象")}人</b>　<span class="chg chg-demote">⚠ 降格対象</span> <b>${count((o) => o.position === "降格対象")}人</b></div>
+    ${people.length ? `<div class="scroll"><table><tr><th class="l">氏名</th><th>半期査定<div class="small">100点</div></th><th>月次平均<div class="small">100点</div></th><th>総合<div class="small">${evalData.overallMax}点</div></th><th>ランク</th><th class="l">給与</th><th class="l">役職</th><th class="l">総評</th></tr>${rows}</table></div>` : '<div class="muted">表示できる人がいません。</div>'}
+    <div class="small" style="margin-top:8px;">総合＝半期査定（キャリア制度台帳の総合評価点）＋月次評価の半期平均（イベント加点込み・100点まで）。行を押すとその人の総評を書けます（直属の上司）。${anyProvisional ? "「仮」は片方の点しか無いため、ある方を2倍にした仮の判定です。" : ""}</div>
+  </div></div>` + overallRulesCard();
+}
+function overallRulesCard() {
+  const rules = overallRuleDraft || evalData.overallRules;
+  const editing = !!overallRuleDraft;
+  const money = rules.some((r) => r.raise !== undefined);
+  const opt = (list, v) => list.map((x) => `<option ${x === v ? "selected" : ""}>${esc(x)}</option>`).join("");
+  const rows = rules.map((r, i) => editing
+    ? `<tr><td class="l"><input class="num" style="width:60px;" value="${esc(r.rank)}" oninput="overallRuleDraft[${i}].rank=this.value"/></td>
+        <td><input class="num" style="width:70px;" inputmode="numeric" value="${esc(r.min)}" oninput="overallRuleDraft[${i}].min=this.value"/> 点以上</td>
+        <td class="l"><select onchange="overallRuleDraft[${i}].salary=this.value">${opt(evalData.salaryChoices, r.salary)}</select></td>
+        <td><input class="num" style="width:90px;" inputmode="numeric" value="${esc(r.raise ?? 0)}" oninput="overallRuleDraft[${i}].raise=this.value"/></td>
+        <td class="l"><select onchange="overallRuleDraft[${i}].position=this.value">${opt(evalData.positionChoices, r.position)}</select></td>
+        <td><button class="chip" onclick="overallRuleDraft.splice(${i},1);render()">削除</button></td></tr>`
+    : `<tr><td class="l"><b>${esc(r.rank)}</b></td><td>${r.min}点以上</td><td class="l">${salaryBadge(r)}</td>${money ? `<td>${r.raise ? yen(r.raise) : "-"}</td>` : ""}<td class="l">${positionBadge(r)}</td></tr>`).join("");
+  return `<div class="card"><div class="card-h"><span>総合評価の基準（${evalData.overallMax}点満点）</span>${evalData.canEditOverallRules && !editing ? `<button class="chip" onclick="overallRuleDraft=evalData.overallRules.map((r)=>({...r}));render()">✏️ 基準を編集</button>` : ""}</div><div class="card-b">
+    <div class="scroll"><table><tr><th class="l">ランク</th><th>総合点</th><th class="l">給与判定</th>${editing || money ? "<th>改定額（月額）</th>" : ""}<th class="l">役職判定</th>${editing ? "<th></th>" : ""}</tr>${rows}</table></div>
+    ${editing ? `<div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;"><button class="chip" onclick="overallRuleDraft.push({rank:'',min:0,salary:'現状維持',raise:0,position:'現状維持'});render()">＋ ランクを追加</button><span style="flex:1"></span><button class="chip" onclick="overallRuleDraft=null;render()">キャンセル</button><button class="btn btn-blue" style="width:auto;padding:8px 20px;" onclick="saveOverallRules()">保存する</button></div>` : ""}
+    <div class="small" style="margin-top:8px;">初期値は台帳の判定表（S90・A80・B65・C50点）を200点に置き換えたものです。降給の金額は台帳の改定額で決めてください。</div>
+  </div></div>`;
+}
+async function saveOverallRules() {
+  try {
+    const json = await evalFetch("POST", { action: "saveOverallRules", month: evalMonth, rules: overallRuleDraft });
+    if (json) { evalData = json; overallRuleDraft = null; }
+  } catch (e) { alert(e.message); }
+  render();
+}
+
+// その月のイベント（加点・報酬）
+function eventCardForPerson(p) {
+  if (!p.events || !p.events.length) return "";
+  return `<div class="card"><div class="card-h"><span>🎉 全社イベント（${monthLabel(evalMonth)}）</span><span class="small ok">加点 +${p.eventBonus}点</span></div><div class="card-b">
+    <div class="scroll"><table><tr><th class="l">日付</th><th class="l">イベント</th><th class="l">結果</th><th>加点</th><th>報酬</th></tr>
+    ${p.events.map((e) => `<tr><td class="l">${esc(e.date.slice(5).replace("-", "/"))}</td><td class="l">${esc(e.name)}</td><td class="l">${esc(e.result)}</td><td class="ok">+${e.bonus}点</td><td>${yen(e.reward)}</td></tr>`).join("")}</table></div>
+    <div class="small" style="margin-top:6px;">加点は月次の点数（100点満点）に足されます（例：+5 → ＋5点）。報酬はインセンティブと同じく人件費に含めます。</div>
+  </div></div>`;
+}
+
+function refreshEvalTotal() {
+  const p = evalData.people.find((x) => x.key === evalSelected);
+  const items = p.items || [];
+  const sc = clientScore(items, p, evalDraft);
+  const totalPts = items.filter((it) => !it.dept).reduce((a, it) => a + it.points, 0) || 100;
+  for (const it of items) {
+    const el = document.getElementById("pts_" + it.id);
+    if (el) el.textContent = sc.pts[it.id] === null ? "-" : Math.round(sc.pts[it.id] * 10) / 10;
+    const row = document.getElementById("item_" + it.id);
+    if (row) { row.classList.remove("neg", "weak"); const c = negClass(it, sc.pts[it.id]); if (c) row.classList.add(c); }
+  }
+  document.getElementById("evalTotal").innerHTML = totalHtml(sc);
+  document.getElementById("numSum").textContent = `${sc.num}点／${Math.round(items.filter((it) => !it.dept && it.kind === "数値").reduce((a, it) => a + it.points, 0) * 10) / 10}点`;
+}
+
+function setEvalScore(id, n) {
+  evalDraft.scores[id] = evalDraft.scores[id] === n ? undefined : n;
+  evalDirty = true;
+  const y = window.scrollY;
+  render();
+  window.scrollTo(0, y);
+}
+
+async function saveEval() {
+  const p = evalData.people.find((x) => x.key === evalSelected);
+  const items = p.items || [];
+  const sc = clientScore(items, p, evalDraft);
+  if (!sc.complete && !confirm(`まだ ${sc.count - sc.filled} 項目が未入力です。このまま保存しますか？`)) return;
+  root.innerHTML = `<div class="center">保存中...</div>`;
+  try {
+    const json = await evalFetch("POST", { action: "save", month: evalMonth, personKey: p.key, values: evalDraft.values, scores: evalDraft.scores, comment: evalDraft.comment });
+    if (json) { evalData = json; evalSelected = null; evalDraft = null; evalDirty = false; }
+  } catch (e) {
+    alert(e.message);
+  }
+  render();
+}
+
+// ===== 評価項目の設定（管理者・GM） =====
+let itemEditor = null; // { grade, draft: [項目], dirty, saved }
+
+function openItemEditor(grade) {
+  if (itemEditor && itemEditor.dirty && grade !== itemEditor.grade && !confirm("保存していない変更があります。破棄してクラスを切り替えますか？")) return;
+  itemEditor = { grade, draft: JSON.parse(JSON.stringify(evalData.items[grade] || [])), dist: distDraftFor(grade), dirty: false, saved: false };
+  render();
+  window.scrollTo(0, 0);
+}
+
+function closeItemEditor() {
+  if (itemEditor && itemEditor.dirty && !confirm("保存していない変更があります。破棄して戻りますか？")) return;
+  itemEditor = null;
+  render();
+}
+
+function itemField(i, field, value) {
+  const it = itemEditor.draft[i];
+  it[field] = field === "required" ? !!value : value;
+  itemEditor.dirty = true;
+  itemEditor.saved = false;
+  if (field === "kind") { if (value === "数値" && !it.direction) it.direction = "以上"; keepScroll(render); }
+  else refreshItemTotal();
+}
+
+function itemMove(i, d) {
+  const j = i + d, list = itemEditor.draft;
+  if (j < 0 || j >= list.length) return;
+  [list[i], list[j]] = [list[j], list[i]];
+  itemEditor.dirty = true;
+  keepScroll(render);
+}
+
+function itemDelete(i) {
+  const it = itemEditor.draft[i];
+  if (!confirm(`「${it.label || "（名前なし）"}」を削除しますか？\n（保存するまでは元に戻せます。過去の評価の点数は変わりません）`)) return;
+  itemEditor.draft.splice(i, 1);
+  itemEditor.dirty = true;
+  keepScroll(render);
+}
+
+function itemAdd() {
+  const common = itemEditor.grade === "共通";
+  itemEditor.draft.push({ kind: common ? "基本" : "行動", id: "", label: "", points: 0, target: null, unit: "", direction: "", auto: "", required: false, note: "" });
+  itemEditor.dirty = true;
+  render();
+  const inputs = document.querySelectorAll(".ie-label");
+  if (inputs.length) { inputs[inputs.length - 1].focus(); inputs[inputs.length - 1].scrollIntoView({ block: "center" }); }
+}
+
+function keepScroll(fn) { const y = window.scrollY; fn(); window.scrollTo(0, y); }
+
+// ===== 評価項目の設定（表形式） =====
+// 配点は手で入れず、クラスの「数値％・行動％・基本％」を項目数で等分する（部門は「部門の点数」を等分）
+function distDraftFor(grade) {
+  const d = evalData.dist || { grades: {}, depts: {}, deptDefault: 10 };
+  if (isDept(grade)) { const n = grade.slice(3); return { points: d.depts && d.depts[n] !== undefined ? d.depts[n] : d.deptDefault }; }
+  const g = (d.grades || {})[grade];
+  return g ? { ...g } : { num: 50, beh: 35, basic: 15, line: 3 };
+}
+
+function distField(field, value) {
+  itemEditor.dist[field] = value;
+  itemEditor.dirty = true;
+  itemEditor.saved = false;
+  refreshItemTotal();
+}
+
+// いまの入力から各項目の配点を計算（画面のプレビュー用。保存後はサーバーが同じ計算をする）
+function previewPoints() {
+  const g = itemEditor.grade, d = itemEditor.dist, list = itemEditor.draft;
+  if (g === "共通") return list.map(() => null);
+  if (isDept(g)) return list.map(() => (list.length ? Number(d.points || 0) / list.length : 0));
+  const nums = list.filter((it) => it.kind === "数値").length, behs = list.length - nums;
+  return list.map((it) => (it.kind === "数値" ? (nums ? Number(d.num || 0) / nums : 0) : (behs ? Number(d.beh || 0) / behs : 0)));
+}
+const fmtPts = (v) => (v === null || v === undefined ? "" : (Math.round(v * 10) / 10).toString());
+
+function totalsHtml() {
+  const g = itemEditor.grade, d = itemEditor.dist;
+  if (g === "共通") return `<span class="small">社会人としての基本の配点は、各クラスの「基本の点」をこの項目数（${itemEditor.draft.length}）で等分します。</span>`;
+  if (isDept(g)) return `<span class="small">この部門</span> <b style="font-size:20px;">${Number(d.points || 0)}点</b> <span class="small">を ${itemEditor.draft.length}項目で等分（担当者の満点・獲得点に加わります）</span>`;
+  const sum = Number(d.num || 0) + Number(d.beh || 0) + Number(d.basic || 0);
+  return `<span class="small">数値 ${Number(d.num || 0)}点 ＋ 行動 ${Number(d.beh || 0)}点 ＋ 基本 ${Number(d.basic || 0)}点 ＝ 満点</span> <b style="font-size:20px;">${sum}点</b> <span class="small">（担当部門があればその点も加わります。評価は獲得点÷満点の率）</span>`;
+}
+
+function refreshItemTotal() {
+  const el = document.getElementById("itemTotal");
+  if (el) el.innerHTML = totalsHtml();
+  const pts = previewPoints();
+  pts.forEach((v, i) => { const c = document.getElementById("ipts_" + i); if (c) c.textContent = fmtPts(v); });
+}
+
+// ドラッグで並べ替え
+let dragFrom = null;
+function itemDrop(to) {
+  if (dragFrom === null || dragFrom === to) return;
+  const list = itemEditor.draft;
+  const [moved] = list.splice(dragFrom, 1);
+  list.splice(to, 0, moved);
+  dragFrom = null;
+  itemEditor.dirty = true;
+  keepScroll(render);
+}
+
+function renderItemEditor() {
+  const g = itemEditor.grade;
+  const labels = evalData.gradeLabels || {};
+  const common = g === "共通";
+  const dept = isDept(g);
+  const d = itemEditor.dist;
+  const chips = Object.entries(labels).map(([k, v]) => `<button class="chip ${k === g ? "sel" : ""}" onclick="openItemEditor('${esc(k)}')">${esc(v)}</button>`).join("");
+  const deptKeys = [...new Set([...(evalData.departments || []).map((x) => "部門:" + x.name), ...(dept ? [g] : [])])];
+  const deptChips = deptKeys.map((k) => `<button class="chip ${k === g ? "sel" : ""}" onclick="openItemEditor('${esc(k)}')">🏷 ${esc(k.slice(3))}</button>`).join("")
+    + `<button class="chip" onclick="addDepartment()">＋ 部門を追加</button>`;
+  const autoOpts = (cur) => `<option value="">手入力</option>` + Object.entries(evalData.autoOptions || {}).map(([k, v]) => `<option value="${esc(k)}" ${cur === k ? "selected" : ""}>自動：${esc(v)}</option>`).join("");
+  const pts = previewPoints();
+
+  // 上の設定（クラス：％と必須ライン／部門：点数）
+  let settings;
+  if (common) {
+    settings = `<div class="small">各クラスの「基本の点」：${Object.entries((evalData.dist || {}).grades || {}).map(([k, v]) => `${esc(labels[k] || k)} ${v.basic}点`).join("／")}（クラスを選ぶと変えられます）</div>`;
+  } else if (dept) {
+    settings = `<div class="dist-row"><label>部門の点数<input class="dist" inputmode="numeric" value="${esc(d.points)}" oninput="distField('points',this.value)"/>点</label>
+      <span class="small">担当者の満点に加わる点。項目数で等分します。</span></div>`;
+  } else {
+    settings = `<div class="dist-row">
+      <label>数値<input class="dist" inputmode="numeric" value="${esc(d.num)}" oninput="distField('num',this.value)"/>点</label>
+      <label>行動<input class="dist" inputmode="numeric" value="${esc(d.beh)}" oninput="distField('beh',this.value)"/>点</label>
+      <label>基本<input class="dist" inputmode="numeric" value="${esc(d.basic)}" oninput="distField('basic',this.value)"/>点</label>
+      <label>必須ライン<select class="dist" onchange="distField('line',Number(this.value))">${[1, 2, 3, 4, 5].map((n) => `<option value="${n}" ${Number(d.line) === n ? "selected" : ""}>${n}以上</option>`).join("")}</select></label>
+    </div>
+    <div class="small">配点は「数値の点÷数値の項目数」「行動の点÷行動の項目数」で自動で決まります。基本の点は「社会人としての基本」の項目に等分します。合計は100点でなくて大丈夫です（評価は「獲得点÷満点」の率で出します）。
+      必須にした行動の項目は、5段階で必須ライン未満だと「必須未達」になります（数値の必須は目標達成が必要）。必須ラインは上のクラスほど厳しく（初期値：GM・BM 4／院長・副院長・一般 3／新人・短時間・受付 2）。</div>`;
+  }
+
+  const rows = itemEditor.draft.map((it, i) => {
+    const isNum = it.kind === "数値";
+    const kindCell = common ? `<span class="badge b-run" style="margin:0;">基本</span>`
+      : `<select onchange="itemField(${i},'kind',this.value)">${["行動", "数値"].map((k) => `<option ${it.kind === k ? "selected" : ""}>${k}</option>`).join("")}</select>`;
+    const na = `<span class="small">—</span>`;
+    return `<tr ondragover="event.preventDefault()" ondrop="itemDrop(${i})" class="${it.required ? "req-row" : ""}">
+      <td class="drag" draggable="true" ondragstart="dragFrom=${i}" title="ドラッグで並べ替え">⠿<div class="small">${i + 1}</div></td>
+      <td class="mv"><button class="chip" onclick="itemMove(${i},-1)" ${i === 0 ? "disabled" : ""}>↑</button><button class="chip" onclick="itemMove(${i},1)" ${i === itemEditor.draft.length - 1 ? "disabled" : ""}>↓</button></td>
+      <td>${kindCell}</td>
+      <td><input class="ie-label" value="${esc(it.label)}" oninput="itemField(${i},'label',this.value)" placeholder="項目名"/></td>
+      <td><textarea rows="2" oninput="itemField(${i},'note',this.value)" placeholder="評価のポイント・採点基準">${esc(it.note)}</textarea></td>
+      <td>${isNum ? `<input inputmode="decimal" value="${esc(it.target ?? "")}" oninput="itemField(${i},'target',this.value)" style="width:90px;"/>` : na}</td>
+      <td>${isNum ? `<input value="${esc(it.unit)}" oninput="itemField(${i},'unit',this.value)" style="width:56px;" placeholder="%"/>` : na}</td>
+      <td>${isNum ? `<select onchange="itemField(${i},'direction',this.value)"><option value="以上" ${it.direction !== "以下" ? "selected" : ""}>以上</option><option value="以下" ${it.direction === "以下" ? "selected" : ""}>以下</option></select>` : na}</td>
+      <td>${isNum ? `<select onchange="itemField(${i},'auto',this.value)" style="max-width:190px;">${autoOpts(it.auto)}</select>` : na}</td>
+      <td style="text-align:center;"><input type="checkbox" ${it.required ? "checked" : ""} onchange="itemField(${i},'required',this.checked);keepScroll(render)" style="width:auto;margin:0;"/></td>
+      <td class="pts-cell" id="ipts_${i}">${fmtPts(pts[i])}</td>
+      <td><button class="chip" style="color:#b91c1c;" onclick="itemDelete(${i})">🗑</button></td>
+    </tr>`;
+  }).join("");
+
+  return `<div class="monthnav"><button class="chip" onclick="closeItemEditor()">‹ 評価一覧に戻る</button><div class="m" style="text-align:left;">⚙️ 評価項目の設定</div></div>
+  <div class="chip-row" style="margin-bottom:8px;">${chips}</div>
+  <div class="small" style="margin:0 0 4px;">部門</div>
+  <div class="chip-row" style="margin-bottom:14px;">${deptChips}</div>
+  ${dept ? deptMembersCard(g.slice(3)) : ""}
+  ${itemEditor.saved ? '<div class="banner ok" style="margin:0 0 14px;">✅ 保存しました。次の評価から新しい項目・配点が使われます（保存済みの過去の点数は変わりません）。</div>' : ""}
+  <div class="card"><div class="card-h"><span>${esc(labels[g] || (dept ? "部門：" + g.slice(3) : g))} の評価項目（${itemEditor.draft.length}項目）</span></div><div class="card-b">
+    ${settings}
+    <div class="scroll" style="margin-top:12px;"><table class="grid-tbl">
+      <tr><th></th><th>順番</th><th class="l">区分</th><th class="l">項目</th><th class="l">内容（評価のポイント）</th><th>目標</th><th>単位</th><th>向き</th><th class="l">実績の入れ方</th><th>必須</th><th>配点<br><span class="small">（自動）</span></th><th></th></tr>
+      ${rows || '<tr><td colspan="12" class="l muted">項目がありません。下のボタンから追加してください。</td></tr>'}
+    </table></div>
+    <button class="btn btn-blue" style="background:white;color:#1e3a5f;border:1.5px dashed #94a3b8;margin-top:10px;" onclick="itemAdd()">＋ 項目を追加</button>
+    <div class="small" style="margin-top:8px;">行の左端（⠿）をドラッグするか、↑↓で並べ替えられます。並び順はそのまま評価画面の表示順になります。必須の行は赤く表示されます。</div>
+  </div>
+  ${evalData.isAdmin ? `<div style="padding:0 16px 12px;"><button class="chip" onclick="resetItems()">↺ 全クラスの評価項目を初期値に戻す</button></div>` : ""}
+  <div class="sticky-total"><div id="itemTotal">${totalsHtml()}</div><button class="btn btn-blue" style="width:auto;padding:10px 24px;" onclick="saveItems()">保存する</button></div></div>`;
+}
+
+
+
+
+async function saveItems() {
+  const items = itemEditor.draft;
+  const empty = items.findIndex((it) => !String(it.label || "").trim());
+  if (empty >= 0) return alert(`${empty + 1}番目の「項目」が空です`);
+  if (!confirm(`「${evalData.gradeLabels[itemEditor.grade] || itemEditor.grade.replace("部門:", "部門：")}」の評価項目を保存します。よろしいですか？`)) return;
+  const grade = itemEditor.grade;
+  root.innerHTML = `<div class="center">保存中...</div>`;
+  try {
+    const dist = grade === "共通" ? null : itemEditor.dist;
+    const json = await evalFetch("POST", { action: "saveItems", month: evalMonth, grade, items, dist });
+    if (json) {
+      evalData = json;
+      itemEditor = { grade, draft: JSON.parse(JSON.stringify(json.items[grade] || [])), dist: distDraftFor(grade), dirty: false, saved: true };
+    }
+  } catch (e) {
+    alert(e.message);
+  }
+  render();
+}
+
+// 今月の実績（シートから自動で取得した数字。配点に入っていない数字も参考に表示）
+function referenceCard(p) {
+  const a = p.auto || {};
+  const cells = [
+    ["個人売上", a.personal_sales, "円"], ["対応人数", a.personal_visits, "人"], ["平均売上", a.personal_avg, "円"],
+    ["新患対応数", a.new_count, "名"], ["初回成約率", a.new_close, "%"], ["初回売上", a.new_sales, "円"],
+    ["継続率（初回の通院率）", a.new_continue, "%"], ["初回単価", a.new_first_avg, "円"],
+  ].filter(([, v]) => v !== undefined && v !== null);
+  if (!cells.length) return "";
+  return `<div class="card"><div class="card-h"><span>${monthLabel(evalMonth)}の実績（シートから自動）</span></div><div class="card-b">
+    <div class="kpis">${cells.map(([k, v, u]) => `<div class="kpi"><div class="k">${k}</div><div class="v" style="font-size:16px;">${fmtVal(v, u)}</div></div>`).join("")}</div>
+    <div class="small" style="margin-top:8px;">売上・対応人数・平均売上は「進捗売上実績」、新患の数字は「あんど新規集客」（初回施術担当者・巻き爪除く）から集計しています。</div>
+  </div></div>`;
+}
+
+async function resetItems() {
+  if (!confirm("評価項目シートを初期値（社会人としての基本・新患の自動取得を含む最新版）に戻します。\nシートで直した項目は元に戻ります。よろしいですか？")) return;
+  root.innerHTML = `<div class="center">評価項目を初期値に戻しています...</div>`;
+  try {
+    const json = await evalFetch("POST", { action: "resetItems", month: evalMonth });
+    if (json) { evalData = json; itemEditor = null; }
+  } catch (e) { alert(e.message); }
+  render();
+}
+
+// クラスが高い順（GM → BM → 院長 → 副院長 → 一般 → 新人 → 短時間 → 受付 → その他）
+const GRADE_ORDER = ["G6", "G5", "G4", "G3", "G2", "G1", "-S", "-R", "-P"];
+function gradeRankClient(g) { const i = GRADE_ORDER.indexOf(g); return i < 0 ? GRADE_ORDER.length : i; }
+
+// ===== 院長候補 =====
+function candidateCard(p) {
+  if (!p.canSetCandidate && !p.candidate) return "";
+  if (!p.canSetCandidate) {
+    return `<div class="banner ok" style="margin:0 0 14px;">⭐ 院長候補${p.candidateMemo ? `：${esc(p.candidateMemo)}` : ""}</div>`;
+  }
+  return `<div class="card"><div class="card-b" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    <label class="ie-check" style="font-size:14px;margin:0;"><input type="checkbox" id="candChk" ${p.candidate ? "checked" : ""}/> ⭐ 院長候補にする</label>
+    <input id="candMemo" style="flex:1;min-width:180px;margin:0;" value="${esc(p.candidateMemo)}" placeholder="メモ（例：2027年度に田口山院の院長候補）"/>
+    <button class="btn btn-save" onclick="saveCandidate('${esc(p.key)}')">保存</button>
+    <div class="small" style="width:100%;">本人には表示されません。上司・BM・GM・管理者が見られます。</div>
+  </div></div>`;
+}
+
+async function saveCandidate(key) {
+  const candidate = document.getElementById("candChk").checked;
+  const memo = document.getElementById("candMemo").value;
+  try {
+    const json = await evalFetch("POST", { action: "setCandidate", month: evalMonth, personKey: key, candidate, memo });
+    if (json) { evalData = json; keepScroll(render); }
+  } catch (e) { alert(e.message); }
+}
+
+// ===== ログイン設定（社長・GM） =====
+let loginsData = null;
+let loginsLoading = false;
+
+async function loginsFetch(method, body) {
+  const auth = await authHeader();
+  if (!auth) { renderLogin(); return null; }
+  const res = await fetch("/api/pin-login", {
+    method,
+    headers: { Authorization: auth, ...(body ? { "Content-Type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `読み込みに失敗しました（HTTP ${res.status}）`);
+  return json;
+}
+
+async function loadLogins(body) {
+  if (loginsLoading) return;
+  loginsLoading = true;
+  try {
+    loginsData = await loginsFetch(body ? "POST" : "GET", body);
+  } catch (e) {
+    if (body) alert(e.message); else loginsData = { error: e.message };
+  } finally {
+    loginsLoading = false;
+  }
+  render();
+}
+
+function reissuePin(kind, target, label) {
+  if (!confirm(`${label} のPASSを再発行します。\n古いPASSは使えなくなり、${kind === "個人" ? "その人" : "この院の院PASSで入る人"}はログインし直しになります。よろしいですか？`)) return;
+  root.innerHTML = `<div class="center">再発行中...</div>`;
+  loadLogins(kind === "院" ? { action: "reissue", kind, clinic: target } : { action: "reissue", kind, personKey: target });
+}
+
+function generatePins() {
+  if (!confirm("まだPASSが無い院・スタッフに、数字4桁のPASSをランダムで作成します。よろしいですか？")) return;
+  root.innerHTML = `<div class="center">作成中...</div>`;
+  loadLogins({ action: "generate" });
+}
+
+function renderLogins() {
+  if (!loginsData) { if (!loginsLoading) setTimeout(() => loadLogins(), 0); return `<div class="center">読み込み中...</div>`; }
+  if (loginsData.error) return `<div class="card"><div class="card-b"><div class="err">${esc(loginsData.error)}</div><button class="btn btn-blue" onclick="loginsData=null;render()">もう一度読み込む</button></div></div>`;
+  const d = loginsData;
+  const bySurname = d.personPassMode === "surname";
+  let html = `<div class="card no-print"><div class="card-b" style="font-size:13px;line-height:1.8;">
+    スタッフ・院長・BMは「院のIDでログイン」から、<b>院ID → 院PASS → 自分の名前 → 個人PASS</b> の順で入ります。見られる範囲は等級で自動で決まります（スタッフ＝自分だけ／院長＝自院／BM＝管轄エリア）。<br>
+    社長・GMは今までどおりメールアドレスでログインします。PASSを${d.maxFails}回まちがえると${d.lockMinutes}分ロックされ、「再発行」で解除できます。<br>
+    ${bySurname ? "<b>個人PASSは当面、自分の名字（漢字）です。</b>院IDと院PASSは院の外に出さないでください。" : "<b>個人PASSは本人だけに伝えてください。</b>"}
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+      ${d.missing ? `<button class="btn btn-blue" style="width:auto;" onclick="generatePins()">まだ無いPASSをまとめて作成（${d.missing}件）</button>` : '<span class="small ok">全員分のPASSが作成済みです</span>'}
+      <button class="btn btn-save" onclick="window.print()">🖨 印刷</button>
+    </div></div></div>`;
+  html += d.clinics.map((c) => `<div class="card login-card"><div class="card-h"><span>${esc(c.name)}院</span>
+      <span>院ID <b class="mono">${esc(c.clinicId)}</b> ・ 院PASS <b class="mono">${c.pass ? esc(c.pass) : "未作成"}</b>${c.locked ? ' <span class="badge b-ng">ロック中</span>' : ""}
+      ${c.pass ? `<button class="chip no-print" onclick="reissuePin('院','${esc(c.name)}','${esc(c.name)}院')">再発行</button>` : ""}</span></div>
+    <div class="card-b"><div class="scroll"><table><tr><th class="l">名前</th><th class="l">等級</th><th>個人PASS${bySurname ? "（名字）" : ""}</th><th class="no-print"></th></tr>
+    ${c.staff.map((p) => `<tr><td class="l"><b>${esc(p.name)}</b></td><td class="l">${esc(p.grade || "-")} ${esc(p.role || "")}</td>
+      <td><b class="mono">${p.pin ? esc(p.pin) : '<span class="small">未作成</span>'}</b>${p.locked ? ' <span class="badge b-ng">ロック中</span>' : ""}</td>
+      <td class="no-print">${bySurname ? (p.locked ? `<button class="chip" onclick="reissuePin('個人','${esc(p.key)}','${esc(p.name)}')">ロック解除</button>` : "") : p.pin ? `<button class="chip" onclick="reissuePin('個人','${esc(p.key)}','${esc(p.name)}')">再発行</button>` : ""}</td></tr>`).join("") || '<tr><td colspan="4" class="l muted">スタッフがいません</td></tr>'}
+    </table></div></div></div>`).join("");
+  return html;
+}
+
+// ===== 昇格・降格の判定 =====
+const LEVEL_LABEL = { up: "昇格候補", keep: "現状維持", warn: "改善指導", down: "降格対象" };
+function levelChip(c) {
+  if (!c) return "";
+  return `<span class="lv lv-${c.level}">${c.level === "up" ? "▲" : c.level === "down" ? "▼" : c.level === "warn" ? "！" : "－"} ${esc(LEVEL_LABEL[c.level])}</span>`;
+}
+
+const STATUS = {
+  ok: ["st-ok", "✓ 達成"], ng: ["st-ng", "✕ 未達"], hit: ["st-hit", "▼ 該当"], warn: ["st-warn", "！ 注意"],
+  unknown: ["st-unk", "－ データなし"], manual: ["st-man", "上司が確認"],
+};
+function checkRows(list, isDemotion) {
+  return list.map((c) => {
+    const [cls, label0] = STATUS[c.status] || STATUS.unknown;
+    const label = isDemotion && c.status === "ok" ? "✓ 問題なし" : label0;
+    return `<tr class="${cls}-row"><td class="l" style="white-space:normal;">${esc(c.label)}</td><td class="l" style="white-space:normal;">${esc(c.detail || "")}</td><td><span class="st ${cls}">${label}</span></td></tr>`;
+  }).join("");
+}
+
+function careerCard(p) {
+  const c = p.career;
+  if (!c) return "";
+  const reasons = c.reasons.map((r) => `<li class="rs-${r.tone}">${esc(r.text)}</li>`).join("");
+  return `<div class="card career lv-border-${c.level}"><div class="card-h"><span>昇格・降格の判定（${esc(c.grade)}）</span>${levelChip(c)}</div><div class="card-b">
+    <ul class="reasons">${reasons}</ul>
+    ${c.promotion.length ? `<div class="small" style="margin:10px 0 4px;font-weight:800;color:#1e3a5f;">▲ ${esc(c.to)}（${esc(c.toRole)}）への昇格条件</div>
+      <div class="scroll"><table class="checks"><tr><th class="l">条件</th><th class="l">いまの数字</th><th>判定</th></tr>${checkRows(c.promotion)}</table></div>` : ""}
+    ${c.demotion.length ? `<div class="small" style="margin:12px 0 4px;font-weight:800;color:#991b1b;">▼ 降格・改善指導の条件（${esc(c.grade)}）</div>
+      <div class="scroll"><table class="checks"><tr><th class="l">条件</th><th class="l">いまの数字</th><th>判定</th></tr>${checkRows(c.demotion, true)}</table></div>` : ""}
+    <div class="small" style="margin-top:8px;">条件の文言は台帳「キャリアラダー＆昇降格規定」、数字は進捗売上実績・あんど新規集客・月次評価から自動で判定しています。最終判断は半期査定で行います。</div>
+  </div></div>`;
+}
+
+// 点数が配点の6割未満（行動・基本は2以下）を赤、8割未満を黄色に
+function negClass(it, pts) {
+  if (pts === null || pts === undefined || !it.points) return "";
+  const r = Math.round((pts / it.points) * 100) / 100; // 2.4/3 などの小数誤差を丸める
+  if (r < 0.6) return "neg";
+  if (r < 0.8) return "weak";
+  return "";
+}
+
+// ===== 部門（評価項目の設定画面） =====
+const isDept = (g) => String(g || "").startsWith("部門:");
+
+function addDepartment() {
+  const name = (prompt("新しい部門の名前（例：広報）") || "").trim();
+  if (!name) return;
+  if ((evalData.departments || []).some((d) => d.name === name)) return alert("同じ名前の部門があります");
+  if (name.length > 20 || /[、,]/.test(name)) return alert("部門名は20文字以内で、「、」「,」は使えません");
+  openItemEditor("部門:" + name);
+  itemEditor.dirty = true;
+  render();
+}
+
+function deptMembersCard(dept) {
+  const d = (evalData.departments || []).find((x) => x.name === dept);
+  const members = new Set(d ? d.members : []);
+  const people = evalData.allPeople || [];
+  if (!d) return `<div class="banner ok" style="margin:0 0 14px;">新しい部門です。先に下で項目を作って「保存する」を押すと、担当者を選べるようになります。</div>`;
+  return `<div class="card"><div class="card-h"><span>👥 ${esc(dept)} の担当者（${members.size}名）</span><button class="btn btn-save" onclick="saveDeptMembers('${esc(dept)}')">担当者を保存</button></div><div class="card-b">
+    <div class="member-grid">${people.map((p) => `<label class="ie-check"><input type="checkbox" class="dm" value="${esc(p.key)}" ${members.has(p.key) ? "checked" : ""}/> ${esc(p.name)} <span class="small">${esc(p.grade)} ${esc((p.clinics || []).join("・"))}</span></label>`).join("")}</div>
+    <div class="small" style="margin-top:8px;">チェックした人の月次評価に、この部門の項目が加わります。台帳に載っていない人（例：育休中・新入社員）は、台帳の評価シートに追加すると選べるようになります。</div>
+  </div></div>`;
+}
+
+async function saveDeptMembers(dept) {
+  const memberKeys = [...document.querySelectorAll("input.dm:checked")].map((el) => el.value);
+  try {
+    const json = await evalFetch("POST", { action: "saveDeptMembers", month: evalMonth, dept, memberKeys });
+    if (json) { evalData = json; itemEditor.saved = true; keepScroll(render); }
+  } catch (e) { alert(e.message); }
+}
+
+// ===== 全社イベント（社長・GM） =====
+let eventEditor = null; // { mode: "list" } | { mode: "edit", draft, replace }
+
+function newEventDraft() {
+  const t = new Date();
+  return { date: `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`, name: "", memo: "", entries: [] };
+}
+
+function editEvent(i) {
+  const g = evalData.eventGroups[i];
+  eventEditor = { mode: "edit", replace: { date: g.date, name: g.name },
+    draft: { date: g.date, name: g.name, memo: g.memo || "", entries: g.entries.filter((e) => e.key).map((e) => ({ personKey: e.key, result: e.result, bonus: e.bonus, reward: e.reward })) } };
+  render(); window.scrollTo(0, 0);
+}
+
+async function deleteEvent(i) {
+  const g = evalData.eventGroups[i];
+  if (!confirm(`「${g.date} ${g.name}」を削除しますか？（加点・報酬も取り消されます）`)) return;
+  root.innerHTML = `<div class="center">削除中...</div>`;
+  try { const json = await evalFetch("POST", { action: "deleteEvent", month: evalMonth, date: g.date, name: g.name }); if (json) evalData = json; }
+  catch (e) { alert(e.message); }
+  render();
+}
+
+function evField(field, value) { eventEditor.draft[field] = value; }
+function evEntry(i, field, value) { eventEditor.draft.entries[i][field] = value; refreshEventTotal(); }
+function evAdd(keys) {
+  const have = new Set(eventEditor.draft.entries.map((e) => e.personKey));
+  for (const k of keys) if (!have.has(k)) eventEditor.draft.entries.push({ personKey: k, result: "", bonus: 0, reward: 0 });
+  keepScroll(render);
+}
+function evRemove(i) { eventEditor.draft.entries.splice(i, 1); keepScroll(render); }
+function eventTotals() {
+  const reward = eventEditor.draft.entries.reduce((a, e) => a + (Number(String(e.reward || 0).replace(/[,円¥]/g, "")) || 0), 0);
+  return { reward, cost: Math.round(reward * 1.15) };
+}
+function refreshEventTotal() { const el = document.getElementById("evTotal"); if (el) { const t = eventTotals(); el.textContent = `報酬合計 ${yen(t.reward)}（社保込み ${yen(t.cost)}）`; } }
+
+function renderEventEditor() {
+  const back = `<div class="monthnav"><button class="chip" onclick="${eventEditor.mode === "edit" ? "eventEditor={mode:'list'}" : "eventEditor=null"};render()">‹ ${eventEditor.mode === "edit" ? "イベント一覧" : "評価一覧"}に戻る</button><div class="m" style="text-align:left;">🎉 全社イベント</div></div>`;
+  const people = evalData.allPeople || [];
+  const nameOf = (k) => (people.find((p) => p.key === k) || {}).name || k;
+  if (eventEditor.mode === "list") {
+    const groups = evalData.eventGroups || [];
+    return back + `<div class="card"><div class="card-b" style="font-size:13px;line-height:1.7;">
+        全社イベントの結果を登録すると、<b>加点</b>はその月の点数に足され（+5 → +5点）、<b>報酬</b>はインセンティブと同じく人件費（社保込み）の42%枠に含まれます。
+        <div style="margin-top:10px;"><button class="btn btn-blue" style="width:auto;" onclick="eventEditor={mode:'edit',draft:newEventDraft()};render()">＋ イベントを登録</button></div></div></div>`
+      + (groups.length ? groups.map((g, i) => {
+        const reward = g.entries.reduce((a, e) => a + e.reward, 0);
+        return `<div class="card"><div class="card-h"><span>${esc(g.date.replace(/-/g, "/"))}　${esc(g.name)}（${g.entries.length}名）</span>
+          <span><span class="small">報酬合計 ${yen(reward)}</span> <button class="chip" onclick="editEvent(${i})">編集</button> <button class="chip" style="color:#b91c1c;" onclick="deleteEvent(${i})">削除</button></span></div>
+          <div class="card-b">${g.memo ? `<div class="small" style="margin-bottom:6px;">${esc(g.memo)}</div>` : ""}<div class="scroll"><table><tr><th class="l">氏名</th><th class="l">結果</th><th>加点</th><th>報酬</th></tr>
+          ${g.entries.map((e) => `<tr><td class="l">${esc(e.name)}${e.key ? "" : ' <span class="small ng">（台帳に無い名前）</span>'}</td><td class="l">${esc(e.result)}</td><td class="ok">${e.bonus ? "+" + e.bonus : "-"}</td><td>${yen(e.reward)}</td></tr>`).join("")}</table></div></div></div>`;
+      }).join("") : '<div class="card"><div class="card-b muted">まだイベントが登録されていません。</div></div>');
+  }
+  const d = eventEditor.draft;
+  const clinics = [...new Set(people.flatMap((p) => p.clinics || []))];
+  const rows = d.entries.map((e, i) => `<tr><td class="l"><b>${esc(nameOf(e.personKey))}</b></td>
+    <td class="l"><input value="${esc(e.result)}" oninput="evEntry(${i},'result',this.value)" placeholder="例：優勝・参加" style="margin:0;min-width:120px;"/></td>
+    <td><input inputmode="numeric" value="${esc(e.bonus)}" oninput="evEntry(${i},'bonus',this.value)" style="margin:0;width:64px;"/></td>
+    <td><input inputmode="numeric" value="${esc(e.reward)}" oninput="evEntry(${i},'reward',this.value)" style="margin:0;width:100px;"/></td>
+    <td><button class="chip" onclick="evRemove(${i})">✕</button></td></tr>`).join("");
+  const t = eventTotals();
+  return back + `<div class="card"><div class="card-h">${eventEditor.replace ? "イベントを編集" : "イベントを登録"}</div><div class="card-b">
+    <div class="ie-grid2" style="grid-template-columns:1fr 160px;"><div><label>イベント名</label><input value="${esc(d.name)}" oninput="evField('name',this.value)" placeholder="例：全社技術コンテスト"/></div>
+      <div><label>日付</label><input type="date" value="${esc(d.date)}" oninput="evField('date',this.value)"/></div></div>
+    <label>メモ（任意）</label><input value="${esc(d.memo)}" oninput="evField('memo',this.value)" placeholder="例：優勝5万円・準優勝3万円"/>
+    <label>参加者（加点は月次の点数に足す点で0〜${evalData.maxEventBonus}、報酬は円）</label>
+    <div class="scroll"><table><tr><th class="l">氏名</th><th class="l">結果</th><th>加点</th><th>報酬</th><th></th></tr>${rows || '<tr><td colspan="5" class="l muted">下から参加者を追加してください</td></tr>'}</table></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center;">
+      <select id="evPerson" class="pick" style="width:auto;margin:0;">${people.map((p) => `<option value="${esc(p.key)}">${esc(p.name)}（${esc(p.grade)}）</option>`).join("")}</select>
+      <button class="chip" onclick="evAdd([document.getElementById('evPerson').value])">＋ 追加</button>
+      <select id="evClinic" class="pick" style="width:auto;margin:0;">${clinics.map((c) => `<option>${esc(c)}</option>`).join("")}</select>
+      <button class="chip" onclick="evAdd((evalData.allPeople||[]).filter((p)=>(p.clinics||[]).includes(document.getElementById('evClinic').value)).map((p)=>p.key))">＋ この院の全員</button>
+      <button class="chip" onclick="evAdd((evalData.allPeople||[]).map((p)=>p.key))">＋ 全員</button>
+    </div>
+  </div>
+  <div class="sticky-total"><div id="evTotal" class="small">報酬合計 ${yen(t.reward)}（社保込み ${yen(t.cost)}）</div><button class="btn btn-blue" style="width:auto;padding:10px 24px;" onclick="saveEvent()">保存する</button></div></div>`;
+}
+
+async function saveEvent() {
+  const d = eventEditor.draft;
+  if (!d.name.trim()) return alert("イベント名を入れてください");
+  if (!d.entries.length) return alert("参加者を追加してください");
+  root.innerHTML = `<div class="center">保存中...</div>`;
+  try {
+    const json = await evalFetch("POST", { action: "saveEvent", month: evalMonth, ...d, replace: eventEditor.replace || null });
+    if (json) { evalData = json; eventEditor = { mode: "list" }; }
+  } catch (e) { alert(e.message); }
+  render();
+}
+
+load();
+</script>
+</body>
+</html>

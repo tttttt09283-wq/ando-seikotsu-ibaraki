@@ -5,5 +5,8 @@
   "type": "module",
   "dependencies": {
     "qrcode": "^1.5.3"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
   }
 }
