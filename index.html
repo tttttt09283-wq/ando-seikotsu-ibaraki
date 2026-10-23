@@ -10830,10 +10830,107 @@ function ActionEditModal({item,meetings,onSave,onDelete,onClose}){
 }
 
 // 会議の記録：議事メモ＋決定事項（＝行動計画）をまとめて登録する
+// ===== 院内ミーティングの写真（ホワイトボード・資料など） =====
+// 院内の情報なので非公開のバケット（meeting-photos・スタッフのみ）に保存し、見るときは1時間だけ有効なURLを作る。
+// meetings.photos に保存場所（パス）の一覧を持つ
+const MEETING_PHOTO_BUCKET="meeting-photos";
+// 写真をJPEG（長い辺1600px）にそろえる。iPhoneのHEICはJPEGに変換してから
+async function prepareMeetingPhoto(file){
+  let blob=file;
+  if(/\.(heic|heif)$/i.test(file.name||"")||/image\/hei[cf]/i.test(file.type||"")){
+    if(typeof window.heic2any!=="function") throw new Error("HEIC形式の写真を変換できませんでした（JPEGで書き出すか、スマホで直接撮影してください）");
+    const out=await window.heic2any({blob:file,toType:"image/jpeg",quality:0.85}); blob=Array.isArray(out)?out[0]:out;
+  }
+  const url=URL.createObjectURL(blob);
+  try{
+    const img=await new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=()=>rej(new Error("画像を読み込めませんでした")); i.src=url; });
+    const scale=Math.min(1,1600/Math.max(img.naturalWidth,img.naturalHeight));
+    const c=document.createElement("canvas"); c.width=Math.max(1,Math.round(img.naturalWidth*scale)); c.height=Math.max(1,Math.round(img.naturalHeight*scale));
+    c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+    return await new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(new Error("画像の変換に失敗しました")),"image/jpeg",0.85));
+  }finally{ URL.revokeObjectURL(url); }
+}
+async function uploadMeetingPhotos(meetingId,files){
+  const paths=[];
+  for(let i=0;i<files.length;i++){
+    const blob=await prepareMeetingPhoto(files[i]);
+    const path=`${meetingId}/${Date.now()}_${i}_${Math.random().toString(36).slice(2,7)}.jpg`;
+    const {error}=await supabaseClient.storage.from(MEETING_PHOTO_BUCKET).upload(path,blob,{contentType:"image/jpeg",upsert:false});
+    if(error) throw new Error(error.message||"写真の保存に失敗しました");
+    paths.push(path);
+  }
+  return paths;
+}
+async function signedMeetingPhotoUrls(paths){
+  if(!paths||!paths.length) return {};
+  try{
+    const {data,error}=await supabaseClient.storage.from(MEETING_PHOTO_BUCKET).createSignedUrls(paths,3600);
+    if(error||!Array.isArray(data)) return {};
+    return Object.fromEntries(data.filter(d=>d&&d.signedUrl).map(d=>[d.path,d.signedUrl]));
+  }catch(e){ return {}; }
+}
+// 会議を開いたときの写真（一覧・拡大・追加・削除）
+function MeetingPhotos({meeting,onChanged}){
+  const paths=Array.isArray(meeting.photos)?meeting.photos:[];
+  const [urls,setUrls]=React.useState({});
+  const [big,setBig]=React.useState(null);
+  const [busy,setBusy]=React.useState(false);
+  const key=paths.join("|");
+  React.useEffect(()=>{ let alive=true; signedMeetingPhotoUrls(paths).then(u=>{ if(alive) setUrls(u); }); return()=>{alive=false;}; },[key]);
+  async function savePhotos(next){
+    const res=await sb.update("meetings",meeting.id,{photos:next});
+    if(!Array.isArray(res)||!res[0]) throw new Error("保存できませんでした");
+    onChanged(res[0]);
+  }
+  async function add(e){
+    const files=[...(e.target.files||[])]; e.target.value="";
+    if(!files.length) return;
+    setBusy(true);
+    try{ const added=await uploadMeetingPhotos(meeting.id,files); await savePhotos([...paths,...added]); }
+    catch(err){ alert("写真を追加できませんでした："+err.message); }
+    setBusy(false);
+  }
+  async function remove(path){
+    if(!window.confirm("この写真を削除しますか？（元に戻せません）")) return;
+    setBusy(true);
+    try{ await savePhotos(paths.filter(p=>p!==path)); await supabaseClient.storage.from(MEETING_PHOTO_BUCKET).remove([path]).catch(()=>{}); setBig(null); }
+    catch(err){ alert("削除できませんでした："+err.message); }
+    setBusy(false);
+  }
+  return(
+    <div style={{marginBottom:12}}>
+      <div style={{fontSize:13,fontWeight:800,color:"#334155",marginBottom:6}}>📷 写真（{paths.length}枚）</div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+        {paths.map(pth=>(
+          <button key={pth} onClick={()=>setBig(pth)} aria-label="写真を大きく見る" style={{width:96,height:96,padding:0,border:"1px solid #e2e8f0",borderRadius:10,overflow:"hidden",background:"#f1f5f9",cursor:"pointer"}}>
+            {urls[pth]?<img src={urls[pth]} alt="会議の写真" style={{width:"100%",height:"100%",objectFit:"cover",display:"block"}}/>:<span style={{fontSize:11,color:"#94a3b8"}}>読み込み中</span>}
+          </button>
+        ))}
+        <label style={{width:96,height:96,border:"1.5px dashed #94a3b8",borderRadius:10,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:busy?"wait":"pointer",color:"#475569",fontSize:12,fontWeight:700,background:"white",opacity:busy?.6:1}}>
+          <span style={{fontSize:22}}>＋</span>{busy?"保存中...":"写真を追加"}
+          <input type="file" accept="image/*" multiple disabled={busy} onChange={add} style={{display:"none"}} aria-label="会議に写真を追加"/>
+        </label>
+      </div>
+      {big&&(
+        <div onClick={()=>setBig(null)} style={{position:"fixed",inset:0,background:"rgba(15,23,42,.85)",zIndex:500,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:16}}>
+          {urls[big]&&<img src={urls[big]} alt="会議の写真（拡大）" onClick={e=>e.stopPropagation()} style={{maxWidth:"100%",maxHeight:"80vh",borderRadius:8,boxShadow:"0 10px 40px rgba(0,0,0,.5)"}}/>}
+          <div style={{display:"flex",gap:10,marginTop:14}} onClick={e=>e.stopPropagation()}>
+            {urls[big]&&<a href={urls[big]} target="_blank" rel="noreferrer" style={{padding:"9px 16px",borderRadius:8,background:"white",color:"#1e3a5f",fontWeight:800,textDecoration:"none"}}>別のタブで開く</a>}
+            <button onClick={()=>remove(big)} disabled={busy} style={{padding:"9px 16px",borderRadius:8,border:"none",background:"#dc2626",color:"white",fontWeight:800,cursor:"pointer"}}>🗑 削除</button>
+            <button onClick={()=>setBig(null)} style={{padding:"9px 16px",borderRadius:8,border:"none",background:"#475569",color:"white",fontWeight:800,cursor:"pointer"}}>閉じる</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MeetingEditor({todayStr,user,onSaved,onCancel}){
   const [m,setM]=React.useState({held_on:todayStr,title:"院内ミーティング",notes:""});
   const [rows,setRows]=React.useState([{title:"",owner:"",due:dashAddDays(todayStr,7),priority:"mid"}]);
   const [saving,setSaving]=React.useState(false);
+  const [photos,setPhotos]=React.useState([]); // {file,url}（保存するときにまとめてアップロード）
+  function pickPhotos(e){ const fs=[...(e.target.files||[])]; e.target.value=""; setPhotos(ps=>[...ps,...fs.map(f=>({file:f,url:/hei[cf]/i.test(f.type||f.name)?null:URL.createObjectURL(f)}))]); }
   const inp={width:"100%",padding:"9px 10px",border:"1px solid #cbd5e1",borderRadius:8,fontSize:15,boxSizing:"border-box"};
   async function save(){
     const items=rows.filter(r=>r.title.trim());
@@ -10845,6 +10942,12 @@ function MeetingEditor({todayStr,user,onSaved,onCancel}){
       if(!meetingId) throw new Error("meeting not created");
       if(items.length>0){
         await sb.insert("action_items",items.map(r=>({title:r.title.trim(),owner_staff_id:r.owner===""?null:Number(r.owner),due_date:r.due||null,priority:r.priority,meeting_id:meetingId,source:"meeting",created_by:user?user.id:null})));
+      }
+      if(photos.length>0){
+        try{
+          const paths=await uploadMeetingPhotos(meetingId,photos.map(x=>x.file));
+          await sb.update("meetings",meetingId,{photos:paths});
+        }catch(pe){ alert("会議は保存しましたが、写真の保存に失敗しました："+pe.message+"\n会議を開いて「写真を追加」からもう一度入れてください。"); }
       }
       onSaved();
     }catch(e){alert("保存に失敗しました。通信状況を確認してもう一度お試しください。");}
@@ -10860,6 +10963,19 @@ function MeetingEditor({todayStr,user,onSaved,onCancel}){
       <label style={{display:"block",fontSize:13,fontWeight:700,marginTop:12}}>議事メモ（話し合った内容・数字の振り返り）
         <textarea style={{...inp,marginTop:4,minHeight:110}} value={m.notes} onChange={e=>setM({...m,notes:e.target.value})} placeholder={"例：\n・今月の新規は目標12人に対して見込み9人\n・初診の再来率が55%と低い"}/>
       </label>
+      <div style={{fontSize:13,fontWeight:700,marginTop:12,marginBottom:6}}>📷 写真（ホワイトボード・資料など。任意・複数可）</div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+        {photos.map((x,i)=>(
+          <div key={i} style={{position:"relative",width:84,height:84,borderRadius:10,overflow:"hidden",border:"1px solid #e2e8f0",background:"#f1f5f9",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:"#64748b"}}>
+            {x.url?<img src={x.url} alt="追加する写真" style={{width:"100%",height:"100%",objectFit:"cover"}}/>:"HEIC写真"}
+            <button aria-label="この写真を外す" onClick={()=>setPhotos(ps=>ps.filter((_,j)=>j!==i))} style={{position:"absolute",top:2,right:2,width:22,height:22,borderRadius:"50%",border:"none",background:"rgba(15,23,42,.7)",color:"white",fontSize:12,cursor:"pointer"}}>✕</button>
+          </div>
+        ))}
+        <label style={{width:84,height:84,border:"1.5px dashed #94a3b8",borderRadius:10,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer",color:"#475569",fontSize:11.5,fontWeight:700}}>
+          <span style={{fontSize:20}}>＋</span>写真を選ぶ
+          <input type="file" accept="image/*" multiple onChange={pickPhotos} style={{display:"none"}} aria-label="会議の写真を選ぶ"/>
+        </label>
+      </div>
       <div style={{fontSize:14,fontWeight:800,marginTop:16,marginBottom:8}}>✅ 決定事項（行動計画）— 誰が・いつまでに・何をする</div>
       <div style={{display:"flex",flexDirection:"column",gap:8}}>
         {rows.map((r,i)=>(
@@ -11008,12 +11124,13 @@ function ActionPanel({user,isAdmin,todayStr}){
                   return(
                     <DashCard key={m.id} style={{padding:0}}>
                       <button onClick={()=>setOpenMeetingId(isOpen?null:m.id)} style={{width:"100%",textAlign:"left",background:"none",border:"none",padding:"14px 16px",cursor:"pointer",display:"flex",justifyContent:"space-between",gap:10,alignItems:"center"}}>
-                        <div style={{minWidth:0}}><div style={{fontSize:12,color:"#64748b",fontWeight:700}}>{m.held_on}</div><div style={{fontSize:16,fontWeight:800,color:"#0f172a",overflowWrap:"anywhere"}}>{m.title}</div></div>
+                        <div style={{minWidth:0}}><div style={{fontSize:12,color:"#64748b",fontWeight:700}}>{m.held_on}{Array.isArray(m.photos)&&m.photos.length>0&&<span style={{marginLeft:8,color:"#2563eb"}}>📷 {m.photos.length}枚</span>}</div><div style={{fontSize:16,fontWeight:800,color:"#0f172a",overflowWrap:"anywhere"}}>{m.title}</div></div>
                         <div style={{textAlign:"right",flexShrink:0}}><div style={{fontSize:13,fontWeight:800,color:its.length&&done===its.length?"#047857":"#334155"}}>行動計画 {done}/{its.length} 完了</div><div style={{height:6,width:120,background:"#f1f5f9",borderRadius:99,marginTop:4,overflow:"hidden"}}><div style={{height:"100%",width:(its.length?done/its.length*100:0)+"%",background:"#10b981"}}/></div></div>
                       </button>
                       {isOpen&&(
                         <div style={{padding:"0 16px 16px"}}>
                           {m.notes&&<div style={{whiteSpace:"pre-wrap",fontSize:14,lineHeight:1.7,color:"#334155",background:"#f8fafc",borderRadius:10,padding:12,marginBottom:12,overflowWrap:"anywhere"}}>{m.notes}</div>}
+                          <MeetingPhotos meeting={m} onChanged={nm=>setMeetings(ms=>ms.map(x=>x.id===nm.id?nm:x))}/>
                           <div style={{display:"flex",flexDirection:"column",gap:8}}>{its.map(i=><ActionItemRow key={i.id} item={i} todayStr={todayStr} onChange={updateItem} onEdit={setEditing}/>)}</div>
                           <button onClick={()=>setEditing({meeting_id:m.id,due_date:dashAddDays(todayStr,7)})} style={{marginTop:10,padding:"8px 12px",borderRadius:8,border:"1px dashed #94a3b8",background:"white",fontWeight:700,cursor:"pointer"}}>＋ この会議に行動を追加</button>
                         </div>
