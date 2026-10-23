@@ -10958,6 +10958,57 @@ async function signedMeetingPhotoUrls(paths){
     return Object.fromEntries(data.filter(d=>d&&d.signedUrl).map(d=>[d.path,d.signedUrl]));
   }catch(e){ return {}; }
 }
+// 文章の中のURL（http:// か https:// で始まるもの）を、押すとそのページが新しいタブで開くリンクにする
+function linkifyText(text){
+  const parts=String(text||"").split(/(https?:\/\/[^\s<>"'「」（）()、。]+)/g);
+  return parts.map((part,i)=>/^https?:\/\//.test(part)
+    ?<a key={i} href={part} target="_blank" rel="noopener noreferrer" style={{color:"#2563eb",textDecoration:"underline",wordBreak:"break-all"}}>{part}</a>
+    :<React.Fragment key={i}>{part}</React.Fragment>);
+}
+// 会議の内容（開催日・会議名・議事メモ）の編集
+function MeetingInfoEditor({meeting,onSaved,onCancel,onDeleted}){
+  const [f,setF]=React.useState({held_on:meeting.held_on||"",title:meeting.title||"",notes:meeting.notes||""});
+  const [saving,setSaving]=React.useState(false);
+  const inp={width:"100%",padding:"9px 10px",border:"1px solid #cbd5e1",borderRadius:8,fontSize:15,boxSizing:"border-box",fontFamily:"inherit"};
+  async function save(){
+    if(!f.title.trim()){ alert("会議名を入力してください"); return; }
+    setSaving(true);
+    try{
+      const res=await sb.update("meetings",meeting.id,{held_on:f.held_on||meeting.held_on,title:f.title.trim(),notes:f.notes.trim()?f.notes:null});
+      if(!Array.isArray(res)||!res[0]) throw new Error("保存できませんでした");
+      onSaved(res[0]);
+    }catch(e){ alert("保存に失敗しました。通信状況を確認してもう一度お試しください。"); }
+    setSaving(false);
+  }
+  async function del(){
+    if(!window.confirm(`「${meeting.title}」（${meeting.held_on}）の会議の記録を削除しますか？\n\n※この会議で決めた行動計画（タスク）は消えずに残ります。写真は削除されます。`)) return;
+    setSaving(true);
+    try{
+      await sb.delete("meetings",meeting.id);
+      const photos=Array.isArray(meeting.photos)?meeting.photos:[];
+      if(photos.length) await supabaseClient.storage.from(MEETING_PHOTO_BUCKET).remove(photos).catch(()=>{});
+      onDeleted(meeting.id);
+    }catch(e){ alert("削除に失敗しました"); setSaving(false); }
+  }
+  return(
+    <div style={{background:"#f8fafc",border:"1.5px solid #cbd5e1",borderRadius:10,padding:12,marginBottom:12}}>
+      <div style={{fontSize:13,fontWeight:800,color:"#1e3a5f",marginBottom:8}}>✏️ 会議の内容を編集</div>
+      <div style={{display:"grid",gridTemplateColumns:"160px 1fr",gap:10}}>
+        <label style={{fontSize:13,fontWeight:700}}>開催日<input type="date" style={{...inp,marginTop:4}} value={f.held_on} onChange={e=>setF({...f,held_on:e.target.value})}/></label>
+        <label style={{fontSize:13,fontWeight:700}}>会議名<input style={{...inp,marginTop:4}} value={f.title} onChange={e=>setF({...f,title:e.target.value})}/></label>
+      </div>
+      <label style={{display:"block",fontSize:13,fontWeight:700,marginTop:10}}>議事メモ<span style={{fontWeight:400,color:"#64748b",fontSize:12,marginLeft:6}}>（URLを貼ると、押してそのページに飛べるリンクになります）</span>
+        <textarea style={{...inp,marginTop:4,minHeight:140}} value={f.notes} onChange={e=>setF({...f,notes:e.target.value})}/>
+      </label>
+      <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
+        <button className="btn btn-primary" disabled={saving} onClick={save} style={{padding:"9px 16px"}}>{saving?"保存中...":"保存する"}</button>
+        <button className="btn" disabled={saving} onClick={onCancel} style={{padding:"9px 16px"}}>やめる</button>
+        <button disabled={saving} onClick={del} style={{marginLeft:"auto",padding:"9px 14px",borderRadius:8,border:"1px solid #fecaca",background:"#fef2f2",color:"#dc2626",fontWeight:700,cursor:"pointer"}}>🗑 この会議を削除</button>
+      </div>
+    </div>
+  );
+}
+
 // 会議を開いたときの写真（一覧・拡大・追加・削除）
 function MeetingPhotos({meeting,onChanged}){
   const paths=Array.isArray(meeting.photos)?meeting.photos:[];
@@ -11050,7 +11101,7 @@ function MeetingEditor({todayStr,user,onSaved,onCancel}){
         <label style={{fontSize:13,fontWeight:700}}>会議名<input style={{...inp,marginTop:4}} value={m.title} onChange={e=>setM({...m,title:e.target.value})}/></label>
       </div>
       <label style={{display:"block",fontSize:13,fontWeight:700,marginTop:12}}>議事メモ（話し合った内容・数字の振り返り）
-        <textarea style={{...inp,marginTop:4,minHeight:110}} value={m.notes} onChange={e=>setM({...m,notes:e.target.value})} placeholder={"例：\n・今月の新規は目標12人に対して見込み9人\n・初診の再来率が55%と低い"}/>
+        <textarea style={{...inp,marginTop:4,minHeight:110}} value={m.notes} onChange={e=>setM({...m,notes:e.target.value})} placeholder={"例：\n・今月の新規は目標12人に対して見込み9人\n・初診の再来率が55%と低い\n・資料：https://...（URLを貼るとリンクになります）"}/>
       </label>
       <div style={{fontSize:13,fontWeight:700,marginTop:12,marginBottom:6}}>📷 写真（ホワイトボード・資料など。任意・複数可）</div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
@@ -11096,6 +11147,7 @@ function ActionPanel({user,isAdmin,todayStr}){
   const [staffFilter,setStaffFilter]=React.useState("all");
   const [showDone,setShowDone]=React.useState(false);
   const [openMeetingId,setOpenMeetingId]=React.useState(null);
+  const [editingMeetingId,setEditingMeetingId]=React.useState(null);
   const [err,setErr]=React.useState("");
 
   async function load(){
@@ -11218,7 +11270,16 @@ function ActionPanel({user,isAdmin,todayStr}){
                       </button>
                       {isOpen&&(
                         <div style={{padding:"0 16px 16px"}}>
-                          {m.notes&&<div style={{whiteSpace:"pre-wrap",fontSize:14,lineHeight:1.7,color:"#334155",background:"#f8fafc",borderRadius:10,padding:12,marginBottom:12,overflowWrap:"anywhere"}}>{m.notes}</div>}
+                          {editingMeetingId===m.id
+                            ?<MeetingInfoEditor meeting={m} onCancel={()=>setEditingMeetingId(null)}
+                                onSaved={nm=>{ setMeetings(ms=>ms.map(x=>x.id===nm.id?nm:x).sort((a,b)=>String(b.held_on).localeCompare(String(a.held_on))||b.id-a.id)); setEditingMeetingId(null); }}
+                                onDeleted={id=>{ setMeetings(ms=>ms.filter(x=>x.id!==id)); setItems(list=>list.map(i=>i.meeting_id===id?{...i,meeting_id:null}:i)); setEditingMeetingId(null); setOpenMeetingId(null); }}/>
+                            :<>
+                              <div style={{display:"flex",justifyContent:"flex-end",marginBottom:6}}>
+                                <button onClick={()=>setEditingMeetingId(m.id)} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #cbd5e1",background:"white",fontWeight:700,fontSize:13,cursor:"pointer"}}>✏️ 内容を編集</button>
+                              </div>
+                              {m.notes&&<div style={{whiteSpace:"pre-wrap",fontSize:14,lineHeight:1.7,color:"#334155",background:"#f8fafc",borderRadius:10,padding:12,marginBottom:12,overflowWrap:"anywhere"}}>{linkifyText(m.notes)}</div>}
+                            </>}
                           <MeetingPhotos meeting={m} onChanged={nm=>setMeetings(ms=>ms.map(x=>x.id===nm.id?nm:x))}/>
                           <div style={{display:"flex",flexDirection:"column",gap:8}}>{its.map(i=><ActionItemRow key={i.id} item={i} todayStr={todayStr} onChange={updateItem} onEdit={setEditing}/>)}</div>
                           <button onClick={()=>setEditing({meeting_id:m.id,due_date:dashAddDays(todayStr,7)})} style={{marginTop:10,padding:"8px 12px",borderRadius:8,border:"1px dashed #94a3b8",background:"white",fontWeight:700,cursor:"pointer"}}>＋ この会議に行動を追加</button>
