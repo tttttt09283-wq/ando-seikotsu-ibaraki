@@ -11095,7 +11095,7 @@ function MeetingEditor({todayStr,user,onSaved,onCancel,agenda}){
   const [pickedAgenda,setPickedAgenda]=React.useState(()=>new Set()); // 議題ストックのうち、この会議で話したもの（最初は何も選ばない）
   function toggleAgenda(id){ setPickedAgenda(prev=>{ const n=new Set(prev); n.has(id)?n.delete(id):n.add(id); return n; }); }
   function addAgendaToNotes(){
-    const lines=openAgenda.filter(a=>pickedAgenda.has(a.id)).map(a=>"・"+a.title+(a.detail?"（"+a.detail+"）":""));
+    const lines=openAgenda.filter(a=>pickedAgenda.has(a.id)).map(a=>"・"+a.title+(a.detail?"\n"+String(a.detail).trim().split(/\n+/).map(l=>"　"+l).join("\n"):""));
     if(!lines.length) return;
     setM(prev=>({...prev,notes:(prev.notes?prev.notes.replace(/\s+$/,"")+"\n\n":"")+"【議題】\n"+lines.join("\n")+"\n"}));
   }
@@ -11138,7 +11138,7 @@ function MeetingEditor({todayStr,user,onSaved,onCancel,agenda}){
           {openAgenda.map(a=>(
             <label key={a.id} style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:14,padding:"3px 0",cursor:"pointer"}}>
               <input type="checkbox" checked={pickedAgenda.has(a.id)} onChange={()=>toggleAgenda(a.id)} style={{marginTop:4}}/>
-              <span><b>{a.title}</b>{a.detail&&<span style={{color:"#64748b",fontSize:12.5,marginLeft:6}}>{a.detail}</span>}<span style={{color:"#94a3b8",fontSize:11.5,marginLeft:6}}>{a.created_by_name||""}</span></span>
+              <span><b>{a.title}</b>{a.detail&&<span style={{color:"#64748b",fontSize:12.5,marginLeft:6,whiteSpace:"pre-wrap"}}>{a.detail}</span>}<span style={{color:"#94a3b8",fontSize:11.5,marginLeft:6}}>{a.created_by_name||""}</span></span>
             </label>
           ))}
           <div style={{display:"flex",gap:8,alignItems:"center",marginTop:6,flexWrap:"wrap"}}>
@@ -11197,6 +11197,7 @@ function ActionPanel({user,isAdmin,todayStr}){
   const [editingMeetingId,setEditingMeetingId]=React.useState(null);
   const [agenda,setAgenda]=React.useState([]);
   const [agendaForm,setAgendaForm]=React.useState({title:"",detail:""});
+  const [agendaEdit,setAgendaEdit]=React.useState(null); // 編集中の議題 {id,title,detail}
   const [me,setMe]=React.useState(()=>teamMeId(user));
   const [err,setErr]=React.useState("");
 
@@ -11326,7 +11327,7 @@ function ActionPanel({user,isAdmin,todayStr}){
                     <TeamMePicker me={me} onChange={setMe}/>
                   </div>
                   <input aria-label="議題" value={agendaForm.title} onChange={e=>setAgendaForm({...agendaForm,title:e.target.value})} placeholder="例：年末年始の営業時間をどうするか" style={{width:"100%",padding:"10px 12px",border:"1px solid #cbd5e1",borderRadius:8,fontSize:15,boxSizing:"border-box"}}/>
-                  <input aria-label="議題の補足" value={agendaForm.detail} onChange={e=>setAgendaForm({...agendaForm,detail:e.target.value})} placeholder="補足（任意）：背景・数字・URLなど" style={{width:"100%",padding:"8px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:14,marginTop:6,boxSizing:"border-box"}}/>
+                  <textarea aria-label="議題の補足" value={agendaForm.detail} onChange={e=>setAgendaForm({...agendaForm,detail:e.target.value})} placeholder={"補足（任意）：背景・数字・URLなど。改行もできます"} rows={3} style={{width:"100%",padding:"8px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:14,marginTop:6,boxSizing:"border-box",fontFamily:"inherit",resize:"vertical"}}/>
                   <button className="btn btn-primary" disabled={!agendaForm.title.trim()} style={{marginTop:8,padding:"9px 16px"}}>＋ 議題をストック</button>
                   <span style={{fontSize:12,color:"#64748b",marginLeft:10}}>会議を記録するときに、ここから選んで議事メモに入れられます</span>
                 </form>
@@ -11335,13 +11336,25 @@ function ActionPanel({user,isAdmin,todayStr}){
               {open.length===0?<DashCard><div style={{fontSize:14,color:"#64748b"}}>ストックされた議題はありません。</div></DashCard>:
                 <div style={{display:"flex",flexDirection:"column",gap:8}}>{open.map(a=>(
                   <div key={a.id} data-agenda-id={a.id} style={{background:"white",border:"1px solid #fde68a",borderLeft:"4px solid #f59e0b",borderRadius:10,padding:"10px 12px",display:"flex",gap:10,alignItems:"flex-start"}}>
+                    {agendaEdit&&agendaEdit.id===a.id?(
+                    <div style={{flex:1,minWidth:0}}>
+                      <input aria-label="議題の編集" value={agendaEdit.title} onChange={e=>setAgendaEdit({...agendaEdit,title:e.target.value})} style={{width:"100%",padding:"8px 10px",border:"1px solid #cbd5e1",borderRadius:8,fontSize:15,fontWeight:700,boxSizing:"border-box"}}/>
+                      <textarea aria-label="補足の編集" value={agendaEdit.detail} onChange={e=>setAgendaEdit({...agendaEdit,detail:e.target.value})} rows={4} placeholder="補足（改行できます）" style={{width:"100%",padding:"8px 10px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:14,marginTop:6,boxSizing:"border-box",fontFamily:"inherit",resize:"vertical"}}/>
+                      <div style={{display:"flex",gap:8,marginTop:6}}>
+                        <button className="btn btn-primary" disabled={!agendaEdit.title.trim()} onClick={async()=>{ await patchAgenda(a,{title:agendaEdit.title.trim(),detail:agendaEdit.detail.trim()?agendaEdit.detail:null}); setAgendaEdit(null); }} style={{padding:"6px 14px"}}>保存</button>
+                        <button className="btn" onClick={()=>setAgendaEdit(null)} style={{padding:"6px 14px"}}>やめる</button>
+                      </div>
+                    </div>
+                    ):(<>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:15,fontWeight:800,color:"#0f172a",overflowWrap:"anywhere"}}>{a.title}</div>
                       {a.detail&&<div style={{fontSize:13,color:"#475569",marginTop:2,whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{linkifyText(a.detail)}</div>}
                       <div style={{fontSize:11.5,color:"#94a3b8",marginTop:4}}>{a.created_by_name||""}　{String(a.created_at||"").slice(5,10).replace("-","/")}</div>
                     </div>
+                    <button onClick={()=>setAgendaEdit({id:a.id,title:a.title||"",detail:a.detail||""})} style={{padding:"6px 10px",borderRadius:8,border:"1px solid #cbd5e1",background:"white",color:"#334155",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✏️ 編集</button>
                     <button onClick={()=>patchAgenda(a,{status:"done",done_at:new Date().toISOString()})} style={{padding:"6px 10px",borderRadius:8,border:"1px solid #86efac",background:"#f0fdf4",color:"#047857",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✓ 話した</button>
                     <button aria-label="この議題を消す" onClick={()=>delAgenda(a)} style={{border:"none",background:"none",fontSize:16,color:"#94a3b8",cursor:"pointer"}}>✕</button>
+                    </>)}
                   </div>))}
                 </div>}
               {done.length>0&&<details style={{marginTop:14}}>
