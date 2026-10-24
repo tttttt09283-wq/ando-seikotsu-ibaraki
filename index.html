@@ -12545,7 +12545,102 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
     </div>
   );
 }
-function PassHoldersPanel({payments,bookings,trainingMode,onOpenPatient}){
+// 回数券・FPを買った方の来院フォロー：購入後まだ来ていない方／前回の来院から日が空いている方を一覧にする
+// 来院＝キャンセルしていない今日までの予約。患者様は電話番号か、空白を除いた名前で同じ人とみなす
+function PassFollowCard({passes,bookings,refunds,trainingMode,nameCell,loading}){
+  const [gapDays,setGapDays]=React.useState(14);
+  const [includeBooked,setIncludeBooked]=React.useState(false);
+  const today=fmtDate(new Date());
+  const nm=s=>String(s||"").replace(/[\s　]/g,"");
+  const dayDiff=(a,b)=>Math.round((new Date(b+"T00:00:00")-new Date(a+"T00:00:00"))/86400000);
+  const rows=React.useMemo(()=>{
+    const byName={},byPhone={};
+    (bookings||[]).forEach(b=>{
+      if(b.cancelled||!b.date||!!b.is_training!==!!trainingMode) return;
+      const k=nm(b.patient_name);if(k)(byName[k]=byName[k]||[]).push(b.date);
+      if(b.phone)(byPhone[b.phone]=byPhone[b.phone]||[]).push(b.date);
+    });
+    // 返金済みなのにパスが「使用中」のまま残っているもの（同じ方・同じ金額の返金がある）
+    const refunded=new Set((refunds||[]).filter(r=>!r.voided&&!!r.is_training===!!trainingMode).map(r=>nm(r.patient_name)+"_"+(parseInt(r.amount)||0)));
+    const valid=(passes||[]).filter(p=>p.active!==false&&!!p.is_training===!!trainingMode&&(!p.expiry_date||p.expiry_date>=today)&&
+      ((p.pass_type||"").includes("フリーパス")||(p.remaining_count||0)>0));
+    const byPatient={};
+    valid.forEach(p=>{
+      const k=p.phone||nm(p.patient_name);
+      const e=byPatient[k]=byPatient[k]||{name:p.patient_name,phone:p.phone,passes:[],keyName:nm(p.patient_name)};
+      e.passes.push(p);if(!e.phone&&p.phone)e.phone=p.phone;
+    });
+    return Object.values(byPatient).map(e=>{
+      const dates=[...new Set([...(byName[e.keyName]||[]),...(e.phone?(byPhone[e.phone]||[]):[])])].sort();
+      const firstBuy=e.passes.map(p=>p.purchased_date||"").filter(Boolean).sort()[0]||"";
+      const past=dates.filter(d=>d<=today);
+      const last=past[past.length-1]||null;
+      const next=dates.find(d=>d>today)||null;
+      const visitsAfterBuy=firstBuy?past.filter(d=>d>firstBuy).length:past.length;
+      const gap=last?dayDiff(last,today):null;
+      const isRefunded=e.passes.some(p=>refunded.has(e.keyName+"_"+(parseInt(p.amount)||0)));
+      return {...e,firstBuy,last,next,gap,noVisit:visitsAfterBuy===0,isRefunded};
+    }).sort((a,b)=>(b.gap==null?9999:b.gap)-(a.gap==null?9999:a.gap));
+  },[passes,bookings,refunds,trainingMode,today]);
+  const target=rows.filter(r=>!r.isRefunded&&(r.gap==null||r.gap>=gapDays||(r.noVisit&&r.gap>=7))&&(includeBooked||!r.next));
+  const noVisitN=target.filter(r=>r.noVisit).length;
+  const refundedRows=rows.filter(r=>r.isRefunded);
+  const th={padding:"8px 10px",textAlign:"left",fontWeight:800,color:"#64748b",whiteSpace:"nowrap"};
+  const td={padding:"8px 10px",whiteSpace:"nowrap"};
+  return(
+    <div className="card" style={{marginBottom:14}}>
+      <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9"}}>
+        <div style={{fontWeight:800,fontSize:15,color:"#b91c1c",marginBottom:4}}>🚨 来院フォロー（回数券・FP）</div>
+        <div style={{fontSize:11,color:"#64748b",lineHeight:1.6,marginBottom:8}}>
+          使用中の回数券・フリーパスがある方で、<b>前回の来院から{gapDays}日以上空いている方</b>と、<b>購入後まだ来院がない方</b>（購入から7日以上）を表示します。
+        </div>
+        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+          {[7,14,21,30].map(d=>(
+            <button key={d} onClick={()=>setGapDays(d)} style={{padding:"5px 12px",borderRadius:16,border:"1.5px solid "+(gapDays===d?"#dc2626":"#e2e8f0"),background:gapDays===d?"#fef2f2":"white",color:gapDays===d?"#b91c1c":"#475569",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>{d}日以上</button>
+          ))}
+          <label style={{fontSize:12,fontWeight:700,color:"#475569",display:"flex",alignItems:"center",gap:4,marginLeft:6,cursor:"pointer"}}>
+            <input type="checkbox" checked={includeBooked} onChange={e=>setIncludeBooked(e.target.checked)}/>次回予約がある方も表示
+          </label>
+        </div>
+        <div style={{display:"flex",gap:10,marginTop:10,flexWrap:"wrap"}}>
+          <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:800,color:"#991b1b"}}>フォロー対象 <span style={{fontSize:20}}>{target.length}</span> 名</div>
+          <div style={{background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:800,color:"#9a3412"}}>うち購入後 来院なし <span style={{fontSize:20}}>{noVisitN}</span> 名</div>
+        </div>
+      </div>
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:760}}>
+          <thead><tr style={{background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}>
+            {["状況","患者名","パス","購入日","最終来院","空き","次回予約","電話番号"].map(h=><th key={h} style={th}>{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {loading?(<tr><td colSpan={8} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>読み込み中...</td></tr>)
+            :target.length===0?(<tr><td colSpan={8} style={{padding:20,textAlign:"center",color:"#059669",fontWeight:700}}>✅ フォローが必要な方はいません</td></tr>)
+            :target.map(r=>(
+              <tr key={r.phone||r.keyName} style={{borderBottom:"1px solid #f1f5f9"}}>
+                <td style={td}>{r.noVisit
+                  ?<span style={{background:"#ffedd5",color:"#9a3412",borderRadius:6,padding:"2px 8px",fontWeight:800}}>購入後 来院なし</span>
+                  :<span style={{background:"#fee2e2",color:"#b91c1c",borderRadius:6,padding:"2px 8px",fontWeight:800}}>{r.gap}日空き</span>}</td>
+                <td style={{...td,fontWeight:700}}>{nameCell(r.name)}</td>
+                <td style={{padding:"8px 10px"}}>{r.passes.map(p=><div key={p.id}>{p.pass_type}{(p.pass_type||"").includes("フリーパス")?(p.expiry_date?`（〜${p.expiry_date}）`:""):`（残${p.remaining_count}/${p.total_count}）`}</div>)}</td>
+                <td style={td}>{r.firstBuy||"—"}</td>
+                <td style={td}>{r.last||"—"}</td>
+                <td style={{...td,fontWeight:800,color:(r.gap||0)>=gapDays?"#dc2626":"#1e293b"}}>{r.gap!=null?r.gap+"日":"—"}</td>
+                <td style={{...td,color:r.next?"#059669":"#94a3b8",fontWeight:700}}>{r.next||"なし"}</td>
+                <td style={{...td,color:"#64748b"}}>{r.phone||"—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {refundedRows.length>0&&(
+        <div style={{padding:"10px 16px",borderTop:"1px solid #f1f5f9",fontSize:11,color:"#64748b",lineHeight:1.6}}>
+          ※ 返金済みのため対象外にした方：{refundedRows.map(r=>r.name).join("、")}（パスが「使用中」のまま残っています。不要なら使用終了にしてください）
+        </div>
+      )}
+    </div>
+  );
+}
+function PassHoldersPanel({payments,bookings,refunds,trainingMode,onOpenPatient}){
   // 患者様の名前を押すと、患者管理のその方の画面を開く
   const nameCell=name=>onOpenPatient?(
     <button onClick={()=>onOpenPatient(name)} title="患者情報を開く" style={{border:"none",background:"none",padding:0,color:"#2563eb",fontWeight:700,fontSize:"inherit",cursor:"pointer",textDecoration:"underline",fontFamily:"inherit",textAlign:"left"}}>{name}</button>
@@ -12602,6 +12697,7 @@ function PassHoldersPanel({payments,bookings,trainingMode,onOpenPatient}){
   }
   return(
     <div style={{maxWidth:1000,margin:"0 auto"}}>
+      <PassFollowCard passes={passes} bookings={bookings} refunds={refunds} trainingMode={trainingMode} nameCell={nameCell} loading={loading}/>
       <div className="card" style={{marginBottom:14,padding:"14px 16px"}}>
         <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:10}}>🎫 パス・保険サマリー</div>
         <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)}
@@ -14634,6 +14730,7 @@ function Dashboard({user,onLogout}){
     ]},
     {id:"marketing",label:"集客・フォロー",color:"#0891b2",items:[
       {id:"churn_alert",label:"離反防止アラート",icon:"bell",special:""},
+      {id:"pass_holders",label:"回数券・FP 来院フォロー",icon:"receipt",special:""},
       {id:"referral_mgmt",label:"紹介キャンペーン管理",icon:"users",special:""},
       {id:"reviews",label:"口コミの推移・近隣店舗",icon:"trending",special:""},
     ]},
@@ -14654,7 +14751,6 @@ function Dashboard({user,onLogout}){
       {id:"patient_merge",label:"患者名の統合",icon:"users",special:""},
       {id:"bulk_receipt",label:"まとめレシート発行",icon:"receipt",special:""},
       {id:"karte_list",label:"カルテ番号一覧（保険請求）",icon:"clipboard-list",special:""},
-      {id:"pass_holders",label:"回数券・FP対象者",icon:"receipt",special:""},
       {id:"line_link_check",label:"LINE連携チェック",icon:"link",special:""},
       {id:"preopen_stats",label:"イベント期間集計",icon:"bar-chart",special:""},
       {id:"launch_roi",label:"開業の費用対効果",icon:"trending",special:""},
@@ -15271,7 +15367,7 @@ function Dashboard({user,onLogout}){
           {view==="churn_alert"&&<ChurnAlertPanel bookings={bookings} todayStr={todayStr}/>}
                     {view==="line_link_check"&&<LineLinkCheckPanel bookings={bookings}/>}
                              {view==="staff_kpi"&&<StaffKPIPanel onOpenPatient={openPatientByName} bookings={bookings} payments={paymentsNet} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr} trainingMode={trainingMode}/>}
-                             {view==="pass_holders"&&<PassHoldersPanel payments={payments} bookings={bookings} trainingMode={trainingMode} onOpenPatient={openPatientByName}/>}
+                             {view==="pass_holders"&&<PassHoldersPanel payments={payments} bookings={bookings} refunds={refunds} trainingMode={trainingMode} onOpenPatient={openPatientByName}/>}
                              {view==="referral_mgmt"&&<ReferralMgmtPanel bookings={bookings} payments={payments}/>}
                     {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} todayStr={todayStr} onRestore={restoreBooking} onDelete={deleteCancelledBooking}/>}
                            {view==="staff_off_conflicts"&&<StaffOffConflictsPanel bookings={bookings} weeklyShifts={weeklyShifts} dateOverrides={dateOverrides} storeStaff={storeStaff} onReassign={reassignStaffForBooking} onReschedule={rescheduleBooking} todayStr={todayStr}/>}
