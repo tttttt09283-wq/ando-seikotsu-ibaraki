@@ -12662,6 +12662,60 @@ function PassHoldersPanel({payments,bookings,refunds,trainingMode,onOpenPatient}
   const fpPatientCount=new Set(fpPasses.map(p=>p.patient_name)).size;
   const ticketLowCount=ticketPasses.filter(p=>(p.remaining_count||0)<=2).length;
   const fpExpiringSoonCount=fpPasses.filter(p=>{const d=daysUntil(p.expiry_date);return d!=null&&d<=7&&d>=0;}).length;
+  // 購入時の支払方法：購入日と同じ日の、その方の会計（電話番号か空白を除いた名前で照合）のうち自費がいちばん大きいものを購入の会計とみなす。
+  // 現金以外は記録された金額、現金は「合計−現金以外」（お預かり額ではなく実際の売上）。
+  // パスの金額を現金以外の1つで払っていればその方法、現金以外がなければ「現金」、それ以外は「併用」
+  const payOf=React.useMemo(()=>{
+    const nm=x=>String(x||"").replace(/[\s　]/g,"");
+    const bk={};(bookings||[]).forEach(b=>{bk[b.id]=b;});
+    const byDay={};
+    (payments||[]).forEach(p=>{if(!p.is_refund&&p.payment_date)(byDay[p.payment_date]=byDay[p.payment_date]||[]).push(p);});
+    const out={};
+    activePasses.forEach(ps=>{
+      const cands=(byDay[ps.purchased_date]||[]).filter(p=>{
+        const b=bk[p.booking_id]||{};
+        return nm(b.patient_name||p.patient_name)===nm(ps.patient_name)||(ps.phone&&b.phone===ps.phone);
+      }).sort((a,b)=>(parseInt(b.jifee_amount)||0)-(parseInt(a.jifee_amount)||0));
+      const p=cands[0];
+      if(!p||!(parseInt(p.total_amount)>0)){out[ps.id]=null;return;}
+      const parts=[];let nonCash=0;
+      String(p.payment_method||"").split("・").forEach(part=>{
+        const k=part.indexOf(":");if(k<0)return;
+        const m=part.slice(0,k).trim();const a=parseInt(part.slice(k+1).replace(/[^\d]/g,""))||0;
+        if(m&&m!=="現金"&&a>0){nonCash+=a;parts.push({m,a});}
+      });
+      const cash=Math.max(0,(parseInt(p.total_amount)||0)-nonCash);
+      if(cash>0) parts.push({m:"現金",a:cash});
+      const amt=parseInt(ps.amount)||0;
+      const one=parts.find(x=>x.m!=="現金"&&x.a>=amt);
+      const method=one?one.m:(nonCash===0?"現金":"併用");
+      out[ps.id]={method,parts,total:parseInt(p.total_amount)||0,paymentId:p.id};
+    });
+    return out;
+  },[payments,bookings,passes,trainingMode]);
+  const METHOD_COLORS={"現金":["#ecfdf5","#047857"],"カード":["#eff6ff","#1d4ed8"],"PayPay":["#fef2f2","#dc2626"],"併用":["#f5f3ff","#6d28d9"]};
+  const methodBadge=ps=>{
+    const info=payOf[ps.id];
+    if(!info) return <span style={{color:"#94a3b8"}}>不明</span>;
+    const [bg,fg]=METHOD_COLORS[info.method]||["#f1f5f9","#334155"];
+    return(<div>
+      <span style={{background:bg,color:fg,borderRadius:6,padding:"2px 8px",fontWeight:800,whiteSpace:"nowrap"}}>{info.method}</span>
+      {info.parts.length>1&&<div style={{fontSize:10,color:"#64748b",marginTop:2,whiteSpace:"nowrap"}}>{info.parts.map(x=>`${x.m}¥${x.a.toLocaleString()}`).join("＋")}</div>}
+    </div>);
+  };
+  // 支払方法別の集計（回数券・FPそれぞれの人数と金額）
+  const methodSummary=(()=>{
+    const rows={};
+    [["回数券",ticketPasses],["フリーパス",fpPasses]].forEach(([kind,list])=>list.forEach(ps=>{
+      const m=(payOf[ps.id]||{}).method||"不明";
+      const r=rows[m]=rows[m]||{m,回数券:{n:0,amt:0},フリーパス:{n:0,amt:0}};
+      r[kind].n++;r[kind].amt+=parseInt(ps.amount)||0;
+    }));
+    const order=["現金","カード","PayPay","併用","不明"];
+    return Object.values(rows).sort((a,b)=>(order.indexOf(a.m)<0?9:order.indexOf(a.m))-(order.indexOf(b.m)<0?9:order.indexOf(b.m)));
+  })();
+  const [methodFilter,setMethodFilter]=React.useState("");
+  const byMethodFilter=ps=>!methodFilter||((payOf[ps.id]||{}).method||"不明")===methodFilter;
   // 保険のみ患者数（選択した月・全店舗合算）：その月に会計があった患者のうち、自費金額が一切発生していない人数
   const insuranceOnlyCount=(()=>{
     const inRange=d=>!!d&&d.slice(0,7)===selMonth;
@@ -12688,10 +12742,11 @@ function PassHoldersPanel({payments,bookings,refunds,trainingMode,onOpenPatient}
     document.body.removeChild(a);URL.revokeObjectURL(url);
   }
   function exportPassesCSV(){
-    const headers=["区分","患者名","電話番号","種類","金額","残数","残日数","有効期限","購入日"];
+    const headers=["区分","患者名","電話番号","種類","金額","支払方法","残数","残日数","有効期限","購入日"];
+    const pm=p=>{const i=payOf[p.id];return i?i.method+(i.parts.length>1?"（"+i.parts.map(x=>x.m+x.a).join("＋")+"）":""):"不明";};
     const rows=[
-      ...ticketPasses.map(p=>["回数券",p.patient_name,p.phone||"",p.pass_type,p.amount||0,(p.remaining_count||0)+"/"+(p.total_count||0),"",p.expiry_date||"",p.purchased_date||""]),
-      ...fpPasses.map(p=>["フリーパス",p.patient_name,p.phone||"",p.pass_type,p.amount||0,"",daysUntil(p.expiry_date)!=null?daysUntil(p.expiry_date):"",p.expiry_date||"",p.purchased_date||""]),
+      ...ticketPasses.map(p=>["回数券",p.patient_name,p.phone||"",p.pass_type,p.amount||0,pm(p),(p.remaining_count||0)+"/"+(p.total_count||0),"",p.expiry_date||"",p.purchased_date||""]),
+      ...fpPasses.map(p=>["フリーパス",p.patient_name,p.phone||"",p.pass_type,p.amount||0,pm(p),"",daysUntil(p.expiry_date)!=null?daysUntil(p.expiry_date):"",p.expiry_date||"",p.purchased_date||""]),
     ];
     downloadCSV("回数券・フリーパス対象者一覧.csv",toCSV(rows,headers));
   }
@@ -12727,6 +12782,33 @@ function PassHoldersPanel({payments,bookings,refunds,trainingMode,onOpenPatient}
           </div>
         </div>
       </div>
+      <div className="card" style={{marginBottom:14,padding:"14px 16px"}}>
+        <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:4}}>💳 購入時の支払方法</div>
+        <div style={{fontSize:11,color:"#64748b",marginBottom:10}}>使用中の回数券・フリーパスを、買ったときの支払方法で分けています（購入日のその方の会計から判定）。行を押すと下の一覧をその支払方法だけにします。</div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:420}}>
+            <thead><tr style={{background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}>
+              {["支払方法","回数券","フリーパス","合計"].map(h=><th key={h} style={{padding:"8px 10px",textAlign:h==="支払方法"?"left":"right",fontWeight:800,color:"#64748b"}}>{h}</th>)}
+            </tr></thead>
+            <tbody>
+              {methodSummary.map(r=>{
+                const [bg,fg]=METHOD_COLORS[r.m]||["#f1f5f9","#334155"];
+                const on=methodFilter===r.m;
+                const cell=x=>`${x.n}名／${x.amt.toLocaleString()}円`;
+                return(
+                  <tr key={r.m} onClick={()=>setMethodFilter(on?"":r.m)} style={{borderBottom:"1px solid #f1f5f9",cursor:"pointer",background:on?"#fffbeb":"white"}}>
+                    <td style={{padding:"8px 10px"}}><span style={{background:bg,color:fg,borderRadius:6,padding:"2px 8px",fontWeight:800}}>{r.m}</span>{on&&<span style={{marginLeft:6,fontSize:10,color:"#b45309",fontWeight:800}}>絞り込み中</span>}</td>
+                    <td style={{padding:"8px 10px",textAlign:"right"}}>{cell(r["回数券"])}</td>
+                    <td style={{padding:"8px 10px",textAlign:"right"}}>{cell(r["フリーパス"])}</td>
+                    <td style={{padding:"8px 10px",textAlign:"right",fontWeight:800}}>{r["回数券"].n+r["フリーパス"].n}名／{(r["回数券"].amt+r["フリーパス"].amt).toLocaleString()}円</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {methodFilter&&<button onClick={()=>setMethodFilter("")} style={{marginTop:8,padding:"5px 12px",borderRadius:8,border:"1.5px solid #e2e8f0",background:"white",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>✕ 絞り込みを解除</button>}
+      </div>
       <div className="card">
         <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
           <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f"}}>🎫 回数券・フリーパス対象者一覧（{ticketPasses.length+fpPasses.length}名／合計{(ticketPasses.reduce((s,p)=>s+(p.amount||0),0)+fpPasses.reduce((s,p)=>s+(p.amount||0),0)).toLocaleString()}円）</div>
@@ -12736,26 +12818,27 @@ function PassHoldersPanel({payments,bookings,refunds,trainingMode,onOpenPatient}
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:680}}>
             <thead>
               <tr style={{background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}>
-                {["区分","患者名","電話番号","種類","金額","残数／期限"].map(h=>(<th key={h} style={{padding:"8px 10px",textAlign:"left",fontWeight:800,color:"#64748b"}}>{h}</th>))}
+                {["区分","患者名","電話番号","種類","金額","支払方法","残数／期限"].map(h=>(<th key={h} style={{padding:"8px 10px",textAlign:"left",fontWeight:800,color:"#64748b"}}>{h}</th>))}
               </tr>
             </thead>
             <tbody>
               {loading?(
-                <tr><td colSpan={6} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>読み込み中...</td></tr>
+                <tr><td colSpan={7} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>読み込み中...</td></tr>
               ):ticketPasses.length===0&&fpPasses.length===0?(
-                <tr><td colSpan={6} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>対象者はいません</td></tr>
+                <tr><td colSpan={7} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>対象者はいません</td></tr>
               ):(<>
-                {ticketPasses.map(p=>(
+                {ticketPasses.filter(byMethodFilter).map(p=>(
                   <tr key={"t"+p.id} style={{borderBottom:"1px solid #f1f5f9"}}>
                     <td style={{padding:"8px 10px"}}><span className="badge badge-orange">回数券</span></td>
                     <td style={{padding:"8px 10px",fontWeight:700}}>{nameCell(p.patient_name)}</td>
                     <td style={{padding:"8px 10px",color:"#64748b"}}>{p.phone||"—"}</td>
                     <td style={{padding:"8px 10px"}}>{p.pass_type}</td>
                     <td style={{padding:"8px 10px",fontWeight:700,color:"#1e293b"}}>{(p.amount||0).toLocaleString()}円</td>
+                    <td style={{padding:"8px 10px"}}>{methodBadge(p)}</td>
                     <td style={{padding:"8px 10px",fontWeight:700,color:(p.remaining_count||0)<=2?"#dc2626":"#1e293b"}}>{p.remaining_count}/{p.total_count}枚</td>
                   </tr>
                 ))}
-                {fpPasses.map(p=>{
+                {fpPasses.filter(byMethodFilter).map(p=>{
                   const d=daysUntil(p.expiry_date);
                   return(
                     <tr key={"f"+p.id} style={{borderBottom:"1px solid #f1f5f9"}}>
@@ -12764,6 +12847,7 @@ function PassHoldersPanel({payments,bookings,refunds,trainingMode,onOpenPatient}
                       <td style={{padding:"8px 10px",color:"#64748b"}}>{p.phone||"—"}</td>
                       <td style={{padding:"8px 10px"}}>{p.pass_type}</td>
                       <td style={{padding:"8px 10px",fontWeight:700,color:"#1e293b"}}>{(p.amount||0).toLocaleString()}円</td>
+                      <td style={{padding:"8px 10px"}}>{methodBadge(p)}</td>
                       <td style={{padding:"8px 10px",fontWeight:700,color:d!=null&&d<=7?"#dc2626":"#1e293b"}}>{p.expiry_date||"—"}{d!=null?`（残り${d}日）`:""}</td>
                     </tr>
                   );
