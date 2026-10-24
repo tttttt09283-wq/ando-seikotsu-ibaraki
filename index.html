@@ -10852,6 +10852,25 @@ function actionStaffName(id){
   const s=STAFF_ACCOUNTS.find(x=>x.id===id);return s?s.name:"未割当";
 }
 function actionStaffOptions(){return STAFF_ACCOUNTS.filter(s=>!s.eventOnly);}
+// この端末を使っている人（共有アカウントでログインしていても、議題・TEAM LINK の投稿や既読は「誰が」を残したいので端末ごとに選んでもらう）
+const TEAM_ME_KEY="ando_team_me";
+function teamMeId(user){
+  try{ const v=Number(localStorage.getItem(TEAM_ME_KEY)); if(v&&actionStaffOptions().some(s=>s.id===v)) return v; }catch(e){}
+  return user&&actionStaffOptions().some(s=>s.id===user.id)?user.id:null;
+}
+function setTeamMeId(id){ try{ id?localStorage.setItem(TEAM_ME_KEY,String(id)):localStorage.removeItem(TEAM_ME_KEY); }catch(e){} window.dispatchEvent(new Event("ando-team-changed")); }
+// 「あなたは？」の選択
+function TeamMePicker({me,onChange}){
+  return(
+    <label style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:13,fontWeight:700,color:"#475569"}}>
+      あなたは
+      <select aria-label="あなたは" value={me||""} onChange={e=>{ const v=Number(e.target.value)||null; setTeamMeId(v); onChange(v); }} style={{padding:"6px 8px",borderRadius:8,border:`1.5px solid ${me?"#cbd5e1":"#f59e0b"}`,fontSize:14,background:me?"white":"#fffbeb"}}>
+        <option value="">選んでください</option>
+        {actionStaffOptions().map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+      </select>
+    </label>
+  );
+}
 
 function ActionItemRow({item,todayStr,onChange,onEdit,compact}){
   const overdue=item.status!=="done"&&item.due_date&&item.due_date<todayStr;
@@ -11067,11 +11086,19 @@ function MeetingPhotos({meeting,onChanged}){
   );
 }
 
-function MeetingEditor({todayStr,user,onSaved,onCancel}){
+function MeetingEditor({todayStr,user,onSaved,onCancel,agenda}){
   const [m,setM]=React.useState({held_on:todayStr,title:"院内ミーティング",notes:""});
   const [rows,setRows]=React.useState([{title:"",owner:"",due:dashAddDays(todayStr,7),priority:"mid"}]);
   const [saving,setSaving]=React.useState(false);
   const [photos,setPhotos]=React.useState([]); // {file,url}（保存するときにまとめてアップロード）
+  const openAgenda=(agenda||[]).filter(a=>a.status==="open");
+  const [pickedAgenda,setPickedAgenda]=React.useState(()=>new Set()); // 議題ストックのうち、この会議で話したもの（最初は何も選ばない）
+  function toggleAgenda(id){ setPickedAgenda(prev=>{ const n=new Set(prev); n.has(id)?n.delete(id):n.add(id); return n; }); }
+  function addAgendaToNotes(){
+    const lines=openAgenda.filter(a=>pickedAgenda.has(a.id)).map(a=>"・"+a.title+(a.detail?"（"+a.detail+"）":""));
+    if(!lines.length) return;
+    setM(prev=>({...prev,notes:(prev.notes?prev.notes.replace(/\s+$/,"")+"\n\n":"")+"【議題】\n"+lines.join("\n")+"\n"}));
+  }
   function pickPhotos(e){ const fs=[...(e.target.files||[])]; e.target.value=""; setPhotos(ps=>[...ps,...fs.map(f=>({file:f,url:/hei[cf]/i.test(f.type||f.name)?null:URL.createObjectURL(f)}))]); }
   const inp={width:"100%",padding:"9px 10px",border:"1px solid #cbd5e1",borderRadius:8,fontSize:15,boxSizing:"border-box"};
   async function save(){
@@ -11085,6 +11112,9 @@ function MeetingEditor({todayStr,user,onSaved,onCancel}){
       if(items.length>0){
         await sb.insert("action_items",items.map(r=>({title:r.title.trim(),owner_staff_id:r.owner===""?null:Number(r.owner),due_date:r.due||null,priority:r.priority,meeting_id:meetingId,source:"meeting",created_by:user?user.id:null})));
       }
+      // 話した議題は「済」にして、この会議に結びつける
+      const doneAgenda=openAgenda.filter(a=>pickedAgenda.has(a.id));
+      for(const a of doneAgenda){ try{ await sb.update("agenda_items",a.id,{status:"done",meeting_id:meetingId,done_at:new Date().toISOString()}); }catch(e){} }
       if(photos.length>0){
         try{
           const paths=await uploadMeetingPhotos(meetingId,photos.map(x=>x.file));
@@ -11102,6 +11132,21 @@ function MeetingEditor({todayStr,user,onSaved,onCancel}){
         <label style={{fontSize:13,fontWeight:700}}>開催日<input type="date" style={{...inp,marginTop:4}} value={m.held_on} onChange={e=>setM({...m,held_on:e.target.value})}/></label>
         <label style={{fontSize:13,fontWeight:700}}>会議名<input style={{...inp,marginTop:4}} value={m.title} onChange={e=>setM({...m,title:e.target.value})}/></label>
       </div>
+      {openAgenda.length>0&&(
+        <div style={{marginTop:12,background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"10px 12px"}}>
+          <div style={{fontSize:13,fontWeight:800,color:"#92400e",marginBottom:6}}>💡 議題ストック（{openAgenda.length}件）— この会議で話したものにチェック</div>
+          {openAgenda.map(a=>(
+            <label key={a.id} style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:14,padding:"3px 0",cursor:"pointer"}}>
+              <input type="checkbox" checked={pickedAgenda.has(a.id)} onChange={()=>toggleAgenda(a.id)} style={{marginTop:4}}/>
+              <span><b>{a.title}</b>{a.detail&&<span style={{color:"#64748b",fontSize:12.5,marginLeft:6}}>{a.detail}</span>}<span style={{color:"#94a3b8",fontSize:11.5,marginLeft:6}}>{a.created_by_name||""}</span></span>
+            </label>
+          ))}
+          <div style={{display:"flex",gap:8,alignItems:"center",marginTop:6,flexWrap:"wrap"}}>
+            <button type="button" onClick={addAgendaToNotes} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #f59e0b",background:"white",color:"#92400e",fontWeight:700,cursor:"pointer"}}>↓ チェックした議題を議事メモに入れる</button>
+            <span style={{fontSize:11.5,color:"#92400e"}}>保存すると、チェックした議題は「話し合い済み」になります</span>
+          </div>
+        </div>
+      )}
       <label style={{display:"block",fontSize:13,fontWeight:700,marginTop:12}}>議事メモ（話し合った内容・数字の振り返り）
         <textarea style={{...inp,marginTop:4,minHeight:110}} value={m.notes} onChange={e=>setM({...m,notes:e.target.value})} placeholder={"例：\n・今月の新規は目標12人に対して見込み9人\n・初診の再来率が55%と低い\n・資料：https://...（URLを貼るとリンクになります）"}/>
       </label>
@@ -11150,6 +11195,9 @@ function ActionPanel({user,isAdmin,todayStr}){
   const [showDone,setShowDone]=React.useState(false);
   const [openMeetingId,setOpenMeetingId]=React.useState(null);
   const [editingMeetingId,setEditingMeetingId]=React.useState(null);
+  const [agenda,setAgenda]=React.useState([]);
+  const [agendaForm,setAgendaForm]=React.useState({title:"",detail:""});
+  const [me,setMe]=React.useState(()=>teamMeId(user));
   const [err,setErr]=React.useState("");
 
   async function load(){
@@ -11157,6 +11205,7 @@ function ActionPanel({user,isAdmin,todayStr}){
       const [a,m]=await Promise.all([sb.select("action_items","?order=due_date.asc.nullslast,id.desc"),sb.select("meetings","?order=held_on.desc,id.desc&limit=50")]);
       if(!Array.isArray(a)||!Array.isArray(m)) throw new Error("load");
       setItems(a);setMeetings(m);setErr("");
+      sb.select("agenda_items","?order=created_at.desc&limit=300").then(r=>{ if(Array.isArray(r)) setAgenda(r); }).catch(()=>{});
     }catch(e){setErr("読み込みに失敗しました。ログインし直すか、通信状況を確認してください。");}
     setLoading(false);
   }
@@ -11225,6 +11274,7 @@ function ActionPanel({user,isAdmin,todayStr}){
         {tabBtn("mine","自分のタスク",myOverdue)}
         {tabBtn("team","全員の進捗",open.filter(i=>i.due_date&&i.due_date<todayStr).length)}
         {tabBtn("meetings","会議・行動計画",0)}
+        {tabBtn("agenda","💡 議題ストック",agenda.filter(a=>a.status==="open").length)}
         <label style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6,fontSize:13,fontWeight:700,color:"#475569"}}><input type="checkbox" checked={showDone} onChange={e=>setShowDone(e.target.checked)}/>完了も表示</label>
       </div>
 
@@ -11254,9 +11304,61 @@ function ActionPanel({user,isAdmin,todayStr}){
             </>
           )}
 
+          {tab==="agenda"&&(()=>{
+            const open=agenda.filter(a=>a.status==="open"), done=agenda.filter(a=>a.status==="done");
+            const meName=(actionStaffOptions().find(s=>s.id===me)||{}).name||(user&&user.name)||"";
+            async function addAgenda(e){
+              e.preventDefault(); const title=agendaForm.title.trim(); if(!title) return;
+              try{
+                const r=await sb.insert("agenda_items",{title,detail:agendaForm.detail.trim()||null,created_by:me||(user&&user.id)||null,created_by_name:meName||null});
+                if(!Array.isArray(r)||!r[0]) throw new Error("x");
+                setAgenda(list=>[r[0],...list]); setAgendaForm({title:"",detail:""});
+              }catch(err){ alert("保存に失敗しました"); }
+            }
+            async function patchAgenda(a,patch){ try{ const r=await sb.update("agenda_items",a.id,patch); if(Array.isArray(r)&&r[0]) setAgenda(list=>list.map(x=>x.id===a.id?r[0]:x)); }catch(e){ alert("保存に失敗しました"); } }
+            async function delAgenda(a){ if(!window.confirm(`「${a.title}」を消しますか？`)) return; try{ await sb.delete("agenda_items",a.id); setAgenda(list=>list.filter(x=>x.id!==a.id)); }catch(e){ alert("削除に失敗しました"); } }
+            const meetingTitle=id=>{ const mt=meetings.find(x=>x.id===id); return mt?`${mt.held_on} ${mt.title}`:""; };
+            return(<>
+              <DashCard>
+                <form onSubmit={addAgenda}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+                    <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>💡 思いついた議題をストック</div>
+                    <TeamMePicker me={me} onChange={setMe}/>
+                  </div>
+                  <input aria-label="議題" value={agendaForm.title} onChange={e=>setAgendaForm({...agendaForm,title:e.target.value})} placeholder="例：年末年始の営業時間をどうするか" style={{width:"100%",padding:"10px 12px",border:"1px solid #cbd5e1",borderRadius:8,fontSize:15,boxSizing:"border-box"}}/>
+                  <input aria-label="議題の補足" value={agendaForm.detail} onChange={e=>setAgendaForm({...agendaForm,detail:e.target.value})} placeholder="補足（任意）：背景・数字・URLなど" style={{width:"100%",padding:"8px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:14,marginTop:6,boxSizing:"border-box"}}/>
+                  <button className="btn btn-primary" disabled={!agendaForm.title.trim()} style={{marginTop:8,padding:"9px 16px"}}>＋ 議題をストック</button>
+                  <span style={{fontSize:12,color:"#64748b",marginLeft:10}}>会議を記録するときに、ここから選んで議事メモに入れられます</span>
+                </form>
+              </DashCard>
+              <div style={{fontSize:14,fontWeight:800,color:"#334155",margin:"14px 0 8px"}}>次の会議で話すこと（{open.length}）</div>
+              {open.length===0?<DashCard><div style={{fontSize:14,color:"#64748b"}}>ストックされた議題はありません。</div></DashCard>:
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>{open.map(a=>(
+                  <div key={a.id} data-agenda-id={a.id} style={{background:"white",border:"1px solid #fde68a",borderLeft:"4px solid #f59e0b",borderRadius:10,padding:"10px 12px",display:"flex",gap:10,alignItems:"flex-start"}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:15,fontWeight:800,color:"#0f172a",overflowWrap:"anywhere"}}>{a.title}</div>
+                      {a.detail&&<div style={{fontSize:13,color:"#475569",marginTop:2,whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{linkifyText(a.detail)}</div>}
+                      <div style={{fontSize:11.5,color:"#94a3b8",marginTop:4}}>{a.created_by_name||""}　{String(a.created_at||"").slice(5,10).replace("-","/")}</div>
+                    </div>
+                    <button onClick={()=>patchAgenda(a,{status:"done",done_at:new Date().toISOString()})} style={{padding:"6px 10px",borderRadius:8,border:"1px solid #86efac",background:"#f0fdf4",color:"#047857",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>✓ 話した</button>
+                    <button aria-label="この議題を消す" onClick={()=>delAgenda(a)} style={{border:"none",background:"none",fontSize:16,color:"#94a3b8",cursor:"pointer"}}>✕</button>
+                  </div>))}
+                </div>}
+              {done.length>0&&<details style={{marginTop:14}}>
+                <summary style={{fontSize:13,fontWeight:700,color:"#64748b",cursor:"pointer"}}>話し合い済みの議題（{done.length}）</summary>
+                <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:8}}>{done.map(a=>(
+                  <div key={a.id} style={{background:"#f8fafc",borderRadius:8,padding:"8px 12px",fontSize:13,color:"#475569",display:"flex",gap:8,alignItems:"center"}}>
+                    <span style={{flex:1}}>✓ {a.title}{a.meeting_id&&<span style={{color:"#94a3b8",marginLeft:8}}>→ {meetingTitle(a.meeting_id)}</span>}</span>
+                    <button onClick={()=>patchAgenda(a,{status:"open",done_at:null,meeting_id:null})} style={{padding:"4px 8px",borderRadius:6,border:"1px solid #cbd5e1",background:"white",fontSize:12,cursor:"pointer"}}>戻す</button>
+                  </div>))}
+                </div>
+              </details>}
+            </>);
+          })()}
+
           {tab==="meetings"&&(
             <>
-              {newMeeting?<div style={{marginBottom:14}}><MeetingEditor todayStr={todayStr} user={user} onSaved={()=>{setNewMeeting(false);load();}} onCancel={()=>setNewMeeting(false)}/></div>
+              {newMeeting?<div style={{marginBottom:14}}><MeetingEditor todayStr={todayStr} user={user} agenda={agenda} onSaved={()=>{setNewMeeting(false);load();}} onCancel={()=>setNewMeeting(false)}/></div>
                 :<button className="btn btn-primary" onClick={()=>setNewMeeting(true)} style={{marginBottom:14,padding:"10px 16px"}}>＋ 会議を記録する</button>}
               {meetings.length===0&&!newMeeting&&<DashCard><div style={{fontSize:14,color:"#64748b"}}>まだ会議の記録がありません。</div></DashCard>}
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
@@ -11296,6 +11398,125 @@ function ActionPanel({user,isAdmin,todayStr}){
         </>
       )}
       {editing&&<ActionEditModal item={editing} meetings={meetings} onSave={saveEdit} onDelete={deleteItem} onClose={()=>setEditing(null)}/>}
+    </div>
+  );
+}
+
+// ===== TEAM LINK（スタッフ間の連絡事項・申し送り） =====
+// 投稿（重要・ピン留め）と既読。URLはリンクになる。誰が書いた・読んだかは「あなたは」で選んだ人で残す
+function teamUnreadCount(posts,reads,me){
+  if(!me) return 0;
+  const readSet=new Set((reads||[]).filter(r=>r.staff_id===me).map(r=>r.post_id));
+  return (posts||[]).filter(p=>p.created_by!==me&&!readSet.has(p.id)).length;
+}
+function TeamLinkPanel({user,isAdmin,onUnreadChange}){
+  const [posts,setPosts]=React.useState([]);
+  const [reads,setReads]=React.useState([]);
+  const [loading,setLoading]=React.useState(true);
+  const [me,setMe]=React.useState(()=>teamMeId(user));
+  const [form,setForm]=React.useState({body:"",important:false,pinned:false});
+  const [filter,setFilter]=React.useState("all");
+  const [editing,setEditing]=React.useState(null); // {id,body}
+  const [saving,setSaving]=React.useState(false);
+  async function load(){
+    try{
+      const [p,r]=await Promise.all([sb.select("team_posts","?order=created_at.desc&limit=200"),sb.select("team_post_reads","?select=post_id,staff_id,read_at")]);
+      if(Array.isArray(p)) setPosts(p); if(Array.isArray(r)) setReads(r);
+    }catch(e){}
+    setLoading(false);
+  }
+  React.useEffect(()=>{ load(); const t=setInterval(load,60000); return()=>clearInterval(t); },[]);
+  React.useEffect(()=>{ if(onUnreadChange) onUnreadChange(teamUnreadCount(posts,reads,me)); },[posts,reads,me]);
+  const nameOf=id=>(STAFF_ACCOUNTS.find(s=>s.id===id)||{}).name||"";
+  const canEdit=p=>isAdmin||(me&&p.created_by===me);
+  async function post(e){
+    e.preventDefault();
+    if(!form.body.trim()) return;
+    if(!me){ alert("先に「あなたは」で自分の名前を選んでください"); return; }
+    setSaving(true);
+    try{
+      const r=await sb.insert("team_posts",{body:form.body.trim(),important:form.important,pinned:form.pinned,created_by:me,created_by_name:nameOf(me)});
+      if(!Array.isArray(r)||!r[0]) throw new Error("x");
+      setPosts(list=>[r[0],...list]); setForm({body:"",important:false,pinned:false});
+    }catch(err){ alert("投稿できませんでした。通信状況を確認してください。"); }
+    setSaving(false);
+  }
+  async function markRead(p){
+    if(!me){ alert("先に「あなたは」で自分の名前を選んでください"); return; }
+    try{ await sb.insert("team_post_reads",{post_id:p.id,staff_id:me}); }catch(e){}
+    setReads(list=>list.some(r=>r.post_id===p.id&&r.staff_id===me)?list:[...list,{post_id:p.id,staff_id:me,read_at:new Date().toISOString()}]);
+  }
+  async function patch(p,data){
+    try{ const r=await sb.update("team_posts",p.id,{...data,updated_at:new Date().toISOString()}); if(Array.isArray(r)&&r[0]) setPosts(list=>list.map(x=>x.id===p.id?r[0]:x)); }
+    catch(e){ alert("保存に失敗しました"); }
+  }
+  async function del(p){
+    if(!window.confirm("この投稿を削除しますか？")) return;
+    try{ await sb.delete("team_posts",p.id); setPosts(list=>list.filter(x=>x.id!==p.id)); }catch(e){ alert("削除に失敗しました"); }
+  }
+  const readersOf=id=>reads.filter(r=>r.post_id===id);
+  const isRead=p=>p.created_by===me||readersOf(p.id).some(r=>r.staff_id===me);
+  const list=posts.filter(p=>filter==="all"||(filter==="unread"&&!isRead(p))||(filter==="important"&&p.important))
+    .sort((a,b)=>(b.pinned?1:0)-(a.pinned?1:0)||String(b.created_at).localeCompare(String(a.created_at)));
+  const unread=teamUnreadCount(posts,reads,me);
+  const fmtAt=t=>{ const d=new Date(t); return isNaN(d)?"":`${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`; };
+  const staffCount=actionStaffOptions().length;
+  return(
+    <div style={{padding:"16px 16px 48px",maxWidth:860,margin:"0 auto"}}>
+      <div style={{background:"linear-gradient(135deg,#0f172a,#1e3a5f 55%,#0e7490)",borderRadius:16,padding:"18px 20px",color:"white",marginBottom:14}}>
+        <div style={{fontSize:24,fontWeight:900,letterSpacing:1}}>📡 TEAM LINK</div>
+        <div style={{fontSize:13,opacity:.85,marginTop:2}}>連絡事項・申し送りをチームで共有。読んだら「既読」を押してください</div>
+        <div style={{display:"flex",gap:10,alignItems:"center",marginTop:12,flexWrap:"wrap"}}>
+          <div style={{background:"white",borderRadius:10,padding:"4px 10px"}}><TeamMePicker me={me} onChange={setMe}/></div>
+          {me&&<span style={{fontSize:13,fontWeight:800,background:unread?"#f59e0b":"rgba(255,255,255,.18)",color:unread?"#1f2937":"white",borderRadius:20,padding:"4px 12px"}}>{unread?`未読 ${unread}件`:"すべて既読 ✓"}</span>}
+        </div>
+      </div>
+      <form onSubmit={post} className="card" style={{padding:14,marginBottom:14}}>
+        <textarea aria-label="連絡事項" value={form.body} onChange={e=>setForm({...form,body:e.target.value})} placeholder={"例：明日10時から院長不在です。電話は◯◯が対応します\n（URLを貼るとリンクになります）"} style={{width:"100%",minHeight:90,padding:"10px 12px",border:"1px solid #cbd5e1",borderRadius:10,fontSize:15,boxSizing:"border-box",fontFamily:"inherit"}}/>
+        <div style={{display:"flex",gap:14,alignItems:"center",marginTop:8,flexWrap:"wrap"}}>
+          <label style={{display:"flex",alignItems:"center",gap:5,fontSize:13,fontWeight:700,color:"#b91c1c"}}><input type="checkbox" checked={form.important} onChange={e=>setForm({...form,important:e.target.checked})}/>❗ 重要</label>
+          <label style={{display:"flex",alignItems:"center",gap:5,fontSize:13,fontWeight:700,color:"#1d4ed8"}}><input type="checkbox" checked={form.pinned} onChange={e=>setForm({...form,pinned:e.target.checked})}/>📌 いちばん上に固定</label>
+          <button className="btn btn-primary" disabled={saving||!form.body.trim()} style={{marginLeft:"auto",padding:"9px 18px"}}>{saving?"投稿中...":"投稿する"}</button>
+        </div>
+      </form>
+      <div style={{display:"flex",gap:6,marginBottom:10}}>
+        {[["all","すべて"],["unread",`未読${unread?`（${unread}）`:""}`],["important","❗ 重要"]].map(([k,l])=><button key={k} onClick={()=>setFilter(k)} style={{padding:"7px 14px",borderRadius:20,border:`1.5px solid ${filter===k?"#1e3a5f":"#e2e8f0"}`,background:filter===k?"#1e3a5f":"white",color:filter===k?"white":"#334155",fontWeight:700,fontSize:13,cursor:"pointer"}}>{l}</button>)}
+      </div>
+      {loading?<div style={{padding:30,textAlign:"center",color:"#64748b"}}>読み込み中...</div>:list.length===0?<div className="card" style={{padding:20,textAlign:"center",color:"#64748b"}}>{filter==="unread"?"未読の連絡はありません 🎉":"まだ投稿がありません"}</div>:
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>{list.map(p=>{
+          const rs=readersOf(p.id), read=isRead(p);
+          return(
+            <div key={p.id} data-post-id={p.id} className="card" style={{padding:"12px 14px",borderLeft:`5px solid ${p.important?"#dc2626":p.pinned?"#2563eb":"#cbd5e1"}`,background:read?"white":"#fffbeb"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
+                {p.pinned&&<span style={{fontSize:12,fontWeight:800,color:"#1d4ed8"}}>📌 固定</span>}
+                {p.important&&<span style={{fontSize:11.5,fontWeight:800,color:"white",background:"#dc2626",borderRadius:10,padding:"1px 8px"}}>重要</span>}
+                {!read&&<span style={{fontSize:11.5,fontWeight:800,color:"#92400e",background:"#fde68a",borderRadius:10,padding:"1px 8px"}}>未読</span>}
+                <span style={{fontWeight:800,color:"#0f172a"}}>{p.created_by_name||nameOf(p.created_by)||"不明"}</span>
+                <span style={{fontSize:12,color:"#94a3b8"}}>{fmtAt(p.created_at)}{p.updated_at&&p.updated_at!==p.created_at&&new Date(p.updated_at)-new Date(p.created_at)>60000?"（編集済み）":""}</span>
+                {canEdit(p)&&editing?.id!==p.id&&<span style={{marginLeft:"auto",display:"flex",gap:4}}>
+                  <button onClick={()=>patch(p,{pinned:!p.pinned})} style={{border:"1px solid #e2e8f0",background:"white",borderRadius:6,fontSize:12,padding:"3px 8px",cursor:"pointer"}}>{p.pinned?"固定をはずす":"📌 固定"}</button>
+                  <button onClick={()=>setEditing({id:p.id,body:p.body,important:p.important})} style={{border:"1px solid #e2e8f0",background:"white",borderRadius:6,fontSize:12,padding:"3px 8px",cursor:"pointer"}}>✏️ 編集</button>
+                  <button onClick={()=>del(p)} style={{border:"1px solid #fecaca",background:"#fef2f2",color:"#dc2626",borderRadius:6,fontSize:12,padding:"3px 8px",cursor:"pointer"}}>削除</button>
+                </span>}
+              </div>
+              {editing?.id===p.id?(<div>
+                <textarea aria-label="投稿の編集" value={editing.body} onChange={e=>setEditing({...editing,body:e.target.value})} style={{width:"100%",minHeight:80,padding:"8px 10px",border:"1px solid #cbd5e1",borderRadius:8,fontSize:15,boxSizing:"border-box",fontFamily:"inherit"}}/>
+                <div style={{display:"flex",gap:8,alignItems:"center",marginTop:6}}>
+                  <label style={{display:"flex",alignItems:"center",gap:4,fontSize:13,fontWeight:700,color:"#b91c1c"}}><input type="checkbox" checked={!!editing.important} onChange={e=>setEditing({...editing,important:e.target.checked})}/>重要</label>
+                  <button className="btn btn-primary" disabled={!editing.body.trim()} onClick={async()=>{ await patch(p,{body:editing.body.trim(),important:!!editing.important}); setEditing(null); }} style={{marginLeft:"auto",padding:"6px 14px"}}>保存</button>
+                  <button className="btn" onClick={()=>setEditing(null)} style={{padding:"6px 14px"}}>やめる</button>
+                </div>
+              </div>):(
+                <div style={{whiteSpace:"pre-wrap",fontSize:15,lineHeight:1.7,color:"#1e293b",overflowWrap:"anywhere"}}>{linkifyText(p.body)}</div>
+              )}
+              <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:8,paddingTop:8,borderTop:"1px solid #f1f5f9"}}>
+                <span style={{fontSize:12,color:"#64748b",fontWeight:700}}>既読 {rs.length}/{Math.max(staffCount-(p.created_by?1:0),rs.length)}</span>
+                {rs.map(r=><span key={r.staff_id} style={{fontSize:11.5,background:"#f1f5f9",borderRadius:10,padding:"1px 8px",color:"#475569"}}>{nameOf(r.staff_id)}</span>)}
+                {!read&&<button onClick={()=>markRead(p)} style={{marginLeft:"auto",padding:"6px 14px",borderRadius:20,border:"none",background:"#059669",color:"white",fontWeight:800,cursor:"pointer"}}>✓ 既読にする</button>}
+              </div>
+            </div>
+          );
+        })}</div>}
     </div>
   );
 }
@@ -13363,6 +13584,19 @@ function Dashboard({user,onLogout}){
   const [showBreakModal,setShowBreakModal]=React.useState(false);
   const [viewIntake,setViewIntake]=React.useState(null);
   const [bookingPopup,setBookingPopup]=React.useState(null); // {booking, x, y}
+  const [teamUnread,setTeamUnread]=React.useState(0); // TEAM LINK の未読件数（メニューのバッジ）
+  React.useEffect(()=>{
+    let alive=true;
+    async function count(){
+      try{
+        const [p,r]=await Promise.all([sb.select("team_posts","?select=id,created_by&limit=200&order=created_at.desc"),sb.select("team_post_reads","?select=post_id,staff_id")]);
+        if(alive&&Array.isArray(p)&&Array.isArray(r)) setTeamUnread(teamUnreadCount(p,r,teamMeId(user)));
+      }catch(e){}
+    }
+    // 「あなたは」を選び直したときや、既読・投稿をしたときはすぐ数え直す
+    count(); const t=setInterval(count,120000); window.addEventListener("ando-team-changed",count);
+    return()=>{ alive=false; clearInterval(t); window.removeEventListener("ando-team-changed",count); };
+  },[]);
   const [holdModal,setHoldModal]=React.useState(null); // 不在枠・新患仮枠の登録 {kind:"away"|"newpt", date, time, staffId}
   const [holdPopup,setHoldPopup]=React.useState(null); // カレンダー上の休憩・不在・仮枠をタップしたとき {br, x, y}
   const [breakNotes,setBreakNotes]=React.useState({}); // 新患仮枠のメモ（break_id → {patient_name, phone, menu, memo}）
@@ -14516,12 +14750,12 @@ function Dashboard({user,onLogout}){
             >
               📅 カレンダー
             </button>
-            {[{id:"dashboard",label:"📊 経営ダッシュボード"},{id:"actions",label:"✅ 行動管理（タスク・会議）"}].map(p=>(
+            {[{id:"dashboard",label:"📊 経営ダッシュボード"},{id:"actions",label:"✅ 行動管理（タスク・会議）"},{id:"team_link",label:"📡 TEAM LINK（連絡・申し送り）",badge:teamUnread}].map(p=>(
               <button key={p.id}
                 className={`sidebar-btn ${view===p.id?"active":""}`}
                 onClick={()=>setView(p.id)}
-                style={{background:view===p.id?"#e8f0fe":"#f8fafc",border:"1.5px solid "+(view===p.id?"#1e3a5f":"#e5e7eb"),borderRadius:10,fontWeight:800,marginBottom:8,boxShadow:"0 1px 2px rgba(0,0,0,.04)"}}
-              >{p.label}</button>
+                style={{background:view===p.id?"#e8f0fe":"#f8fafc",border:"1.5px solid "+(view===p.id?"#1e3a5f":"#e5e7eb"),borderRadius:10,fontWeight:800,marginBottom:8,boxShadow:"0 1px 2px rgba(0,0,0,.04)",display:"flex",alignItems:"center",gap:6}}
+              ><span style={{flex:1,textAlign:"left"}}>{p.label}</span>{p.badge>0&&<span style={{background:"#dc2626",color:"white",borderRadius:10,padding:"0 7px",fontSize:12}}>{p.badge}</span>}</button>
             ))}
             {SIDEBAR_GROUPS.map(group=>{
               const isCollapsed = collapsedGroups[group.id]!==undefined ? !!collapsedGroups[group.id] : !!group.defaultCollapsed;
@@ -15018,6 +15252,7 @@ function Dashboard({user,onLogout}){
           {view==="dashboard"&&<DashboardPanel bookings={bookings} payments={paymentsNet} stores={stores} todayStr={todayStr} onOpenView={setView} user={user} isAdmin={isAdmin}/>}
           {/* 行動管理 */}
           {view==="actions"&&<ActionPanel user={user} isAdmin={isAdmin} todayStr={todayStr}/>}
+          {view==="team_link"&&<TeamLinkPanel user={user} isAdmin={isAdmin} onUnreadChange={setTeamUnread}/>}
 
           {/* 離反防止アラート */}
           {view==="churn_alert"&&<ChurnAlertPanel bookings={bookings} todayStr={todayStr}/>}
