@@ -626,6 +626,14 @@ function calcChange(){
   if(!cashPay) return 0;
   return (parseInt(cashPay.amount)||0)-Math.max(0,total-nonCash);
 }
+// 現金以外（カード・PayPayなど）はお釣りが出ないので、請求額より多い金額は打ち間違い（例：合計¥7,450にPayPay¥10,000）
+function paymentAmountError(){
+  const total=calcTotal();
+  const nonCashList=state.payments.filter(p=>p.method!=="現金");
+  const nonCash=nonCashList.reduce((s,p)=>s+(parseInt(p.amount)||0),0);
+  if(nonCash<=total) return null;
+  return `${nonCashList.map(p=>p.method).join("・")}の金額（${fmt(nonCash)}）が請求額（${fmt(total)}）より多くなっています。\nカード・PayPayなどはお釣りが出ないので、請求額と同じか少ない金額にしてください。`;
+}
 function addPayment(method){if(state.payments.find(p=>p.method===method)) return;state.payments.push({method,amount:Math.max(0,calcRemaining())});render();}
 function removePayment(i){state.payments.splice(i,1);render();}
 function updatePaymentAmount(i,val){state.payments[i].amount=parseInt(val)||0;renderSummary();}
@@ -676,6 +684,7 @@ function renderSummaryHtml(){
       <div style="margin-top:8px;padding-top:8px;border-top:1px dashed #e5e7eb;">
         ${state.payments.map(p=>`<div class="summary-row"><span style="color:#7c3aed;">${p.method}</span><span style="color:#7c3aed;font-weight:700;">${fmt(p.amount)}</span></div>`).join("")}
         ${remaining>0?`<div class="remaining-box"><span style="font-size:13px;font-weight:700;color:#ef4444;">残り</span><span style="font-size:20px;font-weight:800;color:#ef4444;">${fmt(remaining)}</span></div>`:""}
+        ${paymentAmountError()?`<div style="margin-top:8px;padding:10px 12px;border-radius:10px;background:#fef2f2;border:1.5px solid #ef4444;color:#b91c1c;font-size:12px;font-weight:700;line-height:1.6;white-space:pre-line;">⚠️ ${paymentAmountError()}</div>`:""}
         ${change>0?`<div class="change-box"><span style="font-size:13px;font-weight:700;color:#059669;">現金お釣り</span><span style="font-size:22px;font-weight:800;color:#059669;">${fmt(change)}</span></div>`:""}
       </div>`:""}
   `;
@@ -1491,6 +1500,7 @@ async function saveFix(){
   const before=state.fixing;
   const total=calcTotal();const paid=calcPaid();
   if(state.payments.length===0){alert("支払方法を追加してください");return;}
+  {const err=paymentAmountError();if(err){alert("⚠️ "+err);return;}}
   if(paid<total&&!confirm(`支払合計(${fmt(paid)})が請求額(${fmt(total)})より少ないですが保存しますか？`)) return;
   const after={
     insurance_amount:parseInt(state.insuranceAmount)||0,
@@ -1534,6 +1544,7 @@ async function save(){
   if(state.fixing) return saveFix();
   const total=calcTotal();const paid=calcPaid();
   if(state.payments.length===0){alert("支払方法を追加してください");return;}
+  {const err=paymentAmountError();if(err){alert("⚠️ "+err);return;}}
   if(paid<total&&!confirm(`支払合計(${fmt(paid)})が請求額(${fmt(total)})より少ないですが確定しますか？`)) return;
   // 今日ではない日の予約を会計しようとしていないか（10/20に来院した方の会計を、10/23の次回予約から確定してしまう等の間違い防止）。
   // 会計はその予約の日の売上になるため、日付を間違えると売上・日計表がずれる
