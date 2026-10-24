@@ -2455,6 +2455,47 @@ function ReviewTrackerPanel({stores,user,todayStr}){
   );
 }
 
+// ===== 支払方法の見分け（会計明細で色分けする） =====
+// 現金以外は記録された金額、現金は「合計−現金以外」（お預かり・お釣りは含めない）。2つ以上で払った会計は「併用」
+const PAY_KIND_ORDER=["現金","カード","PayPay","併用","その他","0円"];
+const PAY_KIND_COLOR={"現金":{bg:"#ecfdf5",fg:"#047857",bd:"#10b981"},"カード":{bg:"#eff6ff",fg:"#1d4ed8",bd:"#3b82f6"},"PayPay":{bg:"#fef2f2",fg:"#dc2626",bd:"#ef4444"},"併用":{bg:"#f5f3ff",fg:"#6d28d9",bd:"#8b5cf6"},"その他":{bg:"#fff7ed",fg:"#c2410c",bd:"#f97316"},"0円":{bg:"#f1f5f9",fg:"#64748b",bd:"#cbd5e1"}};
+function paymentKind(p){
+  const num=v=>parseInt(String(v).replace(/[^\d-]/g,""),10)||0;
+  const total=num(p.total_amount);
+  const parts=[];let nonCash=0;
+  String(p.payment_method||"").split("・").forEach(part=>{
+    const i=part.indexOf(":");if(i<0)return;
+    const m=part.slice(0,i).trim();const a=num(part.slice(i+1));
+    if(m&&m!=="現金"&&a>0){nonCash+=a;parts.push({m,a});}
+  });
+  const cash=Math.max(0,total-nonCash);
+  if(cash>0) parts.unshift({m:"現金",a:cash});
+  if(total<=0) return {kind:"0円",parts:[]};
+  if(parts.length>1) return {kind:"併用",parts};
+  const m=parts[0]?parts[0].m:"現金";
+  return {kind:PAY_KIND_COLOR[m]?m:"その他",parts};
+}
+function PayKindBadge({kind,size}){
+  const c=PAY_KIND_COLOR[kind]||PAY_KIND_COLOR["その他"];
+  return <span style={{background:c.bg,color:c.fg,border:"1px solid "+c.bd,borderRadius:6,padding:size==="lg"?"2px 10px":"1px 7px",fontSize:size==="lg"?12:11,fontWeight:800,whiteSpace:"nowrap"}}>{kind==="現金"?"💴 ":kind==="カード"?"💳 ":kind==="PayPay"?"📱 ":""}{kind}</span>;
+}
+// 支払方法ごとの件数・金額のボタン（押すとその支払方法だけ表示）
+function PayKindFilter({list,value,onChange}){
+  const sum={};list.forEach(x=>{const k=x.kind;sum[k]=sum[k]||{n:0,amt:0};sum[k].n++;sum[k].amt+=x.amount;});
+  const btn=(k,label,n,amt)=>{
+    const c=PAY_KIND_COLOR[k]||{bg:"#f8fafc",fg:"#1e3a5f",bd:"#94a3b8"};const on=value===k;
+    return <button key={k||"all"} onClick={()=>onChange(on&&k?"":k)} style={{flex:"1 1 110px",minWidth:0,textAlign:"left",padding:"8px 10px",borderRadius:10,border:"2px solid "+(on?c.bd:"#e2e8f0"),background:on?c.bg:"white",cursor:"pointer",fontFamily:"inherit"}}>
+      <div style={{fontSize:12,fontWeight:800,color:c.fg}}>{label}</div>
+      <div style={{fontSize:16,fontWeight:800,color:"#1e293b"}}>¥{amt.toLocaleString()}</div>
+      <div style={{fontSize:11,color:"#64748b"}}>{n}件</div>
+    </button>;
+  };
+  return <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+    {btn("","すべて",list.length,list.reduce((a,x)=>a+x.amount,0))}
+    {PAY_KIND_ORDER.filter(k=>sum[k]).map(k=>btn(k,(k==="現金"?"💴 ":k==="カード"?"💳 ":k==="PayPay"?"📱 ":"")+k,sum[k].n,sum[k].amt))}
+  </div>;
+}
+
 // ===== その日の会計明細（日計表・金額計算の両方で使う） =====
 function DayPaymentDetail({bookings,payments,refunds,storeId,firstStoreId,date,onOpenPos,onOpenRefund}){
   const fmt=v=>(Number(v)<0?"−":"")+"¥"+Math.abs(Math.round(Number(v)||0)).toLocaleString();
@@ -2484,7 +2525,7 @@ function DayPaymentDetail({bookings,payments,refunds,storeId,firstStoreId,date,o
       const cashPaid=methods.filter(x=>x.m==="現金").reduce((s2,x)=>s2+x.a,0);
       const cashSale=Math.max(0,n(p.total_amount)-nonCash);
       const refs=refByPay[p.id]||[];
-      return {p,b,time:b?b.time:"",staff:b?((STAFF_ACCOUNTS.find(s2=>s2.id===b.staff_id)||{}).name||""):"",items,methods,cashSale,change:cashPaid>0?Math.max(0,cashPaid-cashSale):0,refs,refundSum:refs.reduce((s2,r)=>s2+n(r.amount),0)};
+      return {p,b,kind:paymentKind(p).kind,amount:n(p.total_amount),time:b?b.time:"",staff:b?((STAFF_ACCOUNTS.find(s2=>s2.id===b.staff_id)||{}).name||""):"",items,methods,cashSale,change:cashPaid>0?Math.max(0,cashPaid-cashSale):0,refs,refundSum:refs.reduce((s2,r)=>s2+n(r.amount),0)};
     }).sort((a,b2)=>String(a.time).localeCompare(String(b2.time))||a.p.id-b2.p.id);
     // その日に登録された返金（元の会計が別の日のものも含む）
     const dayRefunds=(refunds||[]).filter(r=>r.refund_date===dDate&&(r.store_id||firstStoreId)===storeId);
@@ -2499,6 +2540,8 @@ function DayPaymentDetail({bookings,payments,refunds,storeId,firstStoreId,date,o
     return {rows,dayRefunds,unpaid,total,cash,byM,refundSum,refundCash,paidN:rows.filter(r=>n(r.p.total_amount)>0).length};
   },[bookings,payments,refunds,dDate,storeId,firstStoreId]);
 
+  const [kindFilter,setKindFilter]=React.useState("");
+  const shownRows=kindFilter?day.rows.filter(r=>r.kind===kindFilter):day.rows;
   return(<>
         <div style={card}>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -2511,14 +2554,15 @@ function DayPaymentDetail({bookings,payments,refunds,storeId,firstStoreId,date,o
         </div>
         <div style={card}>
           <div style={h}>会計の明細（{day.rows.length}件）</div>
+          {day.rows.length>0&&<PayKindFilter list={day.rows} value={kindFilter} onChange={setKindFilter}/>}
           {day.rows.length===0?<div style={{fontSize:13,color:"#94a3b8"}}>この日の会計はありません</div>:
-          day.rows.map(r=>(
-            <div key={r.p.id} style={{borderTop:"1px solid #f1f5f9",padding:"10px 2px"}}>
+          shownRows.map(r=>(
+            <div key={r.p.id} style={{borderTop:"1px solid #f1f5f9",borderLeft:"5px solid "+(PAY_KIND_COLOR[r.kind]||PAY_KIND_COLOR["その他"]).bd,background:(PAY_KIND_COLOR[r.kind]||PAY_KIND_COLOR["その他"]).bg+"80",borderRadius:6,marginBottom:4,padding:"10px 8px"}}>
               <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
                 <span style={{fontSize:12,color:"#64748b",minWidth:40}}>{r.time||"--:--"}</span>
                 <b style={{fontSize:14}}>{r.p.patient_name||(r.b&&r.b.patient_name)||"-"} 様</b>
                 {r.staff&&<span style={{fontSize:11,color:"#64748b"}}>担当：{r.staff}</span>}
-                <span style={{marginLeft:"auto",fontSize:16,fontWeight:800,color:n(r.p.total_amount)>0?"#1e293b":"#94a3b8"}}>{fmt(r.p.total_amount)}</span>
+                <span style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}><PayKindBadge kind={r.kind} size="lg"/><span style={{fontSize:16,fontWeight:800,color:n(r.p.total_amount)>0?"#1e293b":"#94a3b8"}}>{fmt(r.p.total_amount)}</span></span>
               </div>
               <div style={{marginLeft:48,marginTop:4}}>
                 {r.items.length===0?<div style={{fontSize:12,color:"#94a3b8"}}>{r.p.memo||"（0円の会計）"}</div>:
@@ -2603,17 +2647,24 @@ function MoneyCalcPanel({bookings,payments,refunds,stores,todayStr,user,training
         const sname=(STAFF_ACCOUNTS.find(s=>s.id===x.staffId)||{}).name||"不明";
         byStaff[sname]=byStaff[sname]||{n:0,total:0};byStaff[sname].n++;byStaff[sname].total+=x.total;
       });
-      const d=p.payment_date;byDay[d]=byDay[d]||{n:0,paid:0,total:0,ins:0,jifee:0,refund:0};
+      const d=p.payment_date;byDay[d]=byDay[d]||{n:0,paid:0,total:0,ins:0,jifee:0,refund:0,m:{}};
       byDay[d].n++;if(tot>0)byDay[d].paid++;byDay[d].total+=tot;byDay[d].ins+=n(p.insurance_amount);byDay[d].jifee+=n(p.jifee_amount);
+      paymentKind(p).parts.forEach(x=>{const k=x.m==="現金"||x.m==="カード"||x.m==="PayPay"?x.m:"その他";byDay[d].m[k]=(byDay[d].m[k]||0)+x.a;});
     });
+    // 期間内の会計一覧（支払方法で色分け・絞り込み）
+    const list=pays.filter(p=>n(p.total_amount)>0).map(p=>{const b=bk[p.booking_id];const k=paymentKind(p);return {p,b,kind:k.kind,parts:k.parts,amount:n(p.total_amount),time:b?b.time:""};})
+      .sort((a,b2)=>String(b2.p.payment_date).localeCompare(String(a.p.payment_date))||String(a.time).localeCompare(String(b2.time))||a.p.id-b2.p.id);
     const refs=(refunds||[]).filter(r=>r.refund_date>=start&&r.refund_date<=end&&(r.store_id||firstStoreId)===storeId);
     let refund=0;
     const refList=[...refs].sort((a,b)=>String(a.refund_date).localeCompare(String(b.refund_date))||a.id-b.id);
     refs.forEach(r=>{const a=n(r.amount);refund+=a;const m=r.refund_method||"その他";byMethod[m]=(byMethod[m]||0)-a;
-      const d=r.refund_date;byDay[d]=byDay[d]||{n:0,paid:0,total:0,ins:0,jifee:0,refund:0};byDay[d].refund+=a;});
-    return {count:pays.length,paidN,total,ins,jifee,refund,refList,net:total-refund,byMethod,byStaff,byDay};
+      const d=r.refund_date;byDay[d]=byDay[d]||{n:0,paid:0,total:0,ins:0,jifee:0,refund:0,m:{}};byDay[d].refund+=a;
+      const mk=m==="現金"||m==="カード"||m==="PayPay"?m:"その他";byDay[d].m[mk]=(byDay[d].m[mk]||0)-a;});
+    return {count:pays.length,paidN,total,ins,jifee,refund,refList,net:total-refund,byMethod,byStaff,byDay,list};
   },[bookings,payments,refunds,start,end,storeId,firstStoreId]);
 
+  const [salesKind,setSalesKind]=React.useState("");
+  const [listOpen,setListOpen]=React.useState(true);
   // ===== 当日の会計明細（中身は DayPaymentDetail。日計表でも同じものを使う） =====
   const [dDate,setDDate]=React.useState(todayStr);
   function shiftDay(delta){const d=new Date(dDate+"T00:00:00");d.setDate(d.getDate()+delta);setDDate(ymd(d));}
@@ -2735,10 +2786,38 @@ function MoneyCalcPanel({bookings,payments,refunds,stores,todayStr,user,training
           <div style={h}>支払方法別（返金を差し引いた金額）</div>
           {Object.keys(sales.byMethod).length===0?<div style={{fontSize:13,color:"#94a3b8"}}>この期間の会計はありません</div>:
           <table style={{width:"100%",borderCollapse:"collapse"}}><tbody>
-            {Object.entries(sales.byMethod).sort((a,b)=>b[1]-a[1]).map(([m,v])=><tr key={m}><td style={{...td,textAlign:"left",fontWeight:700}}>{m}</td><td style={td}>{fmt(v)}</td></tr>)}
+            {Object.entries(sales.byMethod).sort((a,b)=>b[1]-a[1]).map(([m,v])=><tr key={m}><td style={{...td,textAlign:"left",fontWeight:700}}><PayKindBadge kind={PAY_KIND_COLOR[m]?m:"その他"} size="lg"/>{PAY_KIND_COLOR[m]?"":<span style={{marginLeft:6}}>{m}</span>}</td><td style={td}>{fmt(v)}</td></tr>)}
             <tr><td style={{...td,textAlign:"left",fontWeight:800}}>合計</td><td style={{...td,fontWeight:800}}>{fmt(Object.values(sales.byMethod).reduce((s,v)=>s+v,0))}</td></tr>
           </tbody></table>}
           <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>現金は「会計の合計−現金以外」で計算しています（お預かり・お釣りは含めません）。</div>
+        </div>
+        <div style={card}>
+          <div style={{...h,display:"flex",alignItems:"center",gap:8}}>
+            <span style={{flex:1}}>🧾 会計の一覧（{start}〜{end}・支払方法で色分け）</span>
+            <button onClick={()=>setListOpen(!listOpen)} style={{padding:"4px 10px",borderRadius:8,border:"1.5px solid #e2e8f0",background:"white",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{listOpen?"閉じる":"開く"}</button>
+          </div>
+          {sales.list.length===0?<div style={{fontSize:13,color:"#94a3b8"}}>この期間の会計はありません</div>:<>
+            <PayKindFilter list={sales.list} value={salesKind} onChange={setSalesKind}/>
+            {listOpen&&<div style={{overflowX:"auto",maxHeight:520,overflowY:"auto",border:"1px solid #f1f5f9",borderRadius:8}}>
+              <table style={{width:"100%",borderCollapse:"collapse",minWidth:560}}>
+                <thead><tr>{["日付","時間","患者様","支払方法","内訳","金額"].map(t=><th key={t} style={{...th,position:"sticky",top:0,textAlign:t==="金額"?"right":"left"}}>{t}</th>)}</tr></thead>
+                <tbody>
+                  {sales.list.filter(r=>!salesKind||r.kind===salesKind).map(r=>{
+                    const c=PAY_KIND_COLOR[r.kind]||PAY_KIND_COLOR["その他"];
+                    return <tr key={r.p.id} style={{background:c.bg+"80"}}>
+                      <td style={{...td,textAlign:"left",borderLeft:"5px solid "+c.bd}}>{String(r.p.payment_date).slice(5).replace("-","/")}</td>
+                      <td style={{...td,textAlign:"left",color:"#64748b"}}>{r.time||"-"}</td>
+                      <td style={{...td,textAlign:"left",fontWeight:700}}>{r.p.patient_name||(r.b&&r.b.patient_name)||"-"}</td>
+                      <td style={{...td,textAlign:"left"}}><PayKindBadge kind={r.kind}/></td>
+                      <td style={{...td,textAlign:"left",fontSize:11,color:"#64748b"}}>{r.parts.length>1?r.parts.map(x=>`${x.m}${fmt(x.a)}`).join("＋"):""}</td>
+                      <td style={{...td,fontWeight:800}}>{fmt(r.amount)}</td>
+                    </tr>;
+                  })}
+                </tbody>
+              </table>
+            </div>}
+            <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>ボタンを押すと、その支払方法の会計だけ表示します（0円の会計は除く）。2つ以上の方法で払った会計は「併用」に入るため、上の「支払方法別」の金額（併用の内訳も含む）とは一致しません。金額は会計時の金額で、返金は差し引いていません。</div>
+          </>}
         </div>
         <div style={card}>
           <div style={h}>現金の流れ（小口へ移した分を含む）</div>
@@ -2773,8 +2852,8 @@ function MoneyCalcPanel({bookings,payments,refunds,stores,todayStr,user,training
         <div style={card}>
           <div style={h}>日別</div>
           <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:520}}><thead><tr>
-            {["日付","会計","有料","保険","自費","返金","売上"].map(t=><th key={t} style={{...th,textAlign:t==="日付"?"left":"right"}}>{t}</th>)}</tr></thead><tbody>
-            {days.map(d=>{const v=sales.byDay[d];return <tr key={d}><td style={{...td,textAlign:"left"}}>{d.slice(5).replace("-","/")}</td><td style={td}>{v.n}</td><td style={td}>{v.paid}</td><td style={td}>{fmt(v.ins)}</td><td style={td}>{fmt(v.jifee)}</td><td style={{...td,color:v.refund?"#dc2626":"#94a3b8"}}>{v.refund?fmt(-v.refund):"-"}</td><td style={{...td,fontWeight:800}}>{fmt(v.total-v.refund)}</td></tr>;})}
+            {["日付","会計","有料","保険","自費","返金","💴 現金","💳 カード","📱 PayPay","売上"].map(t=><th key={t} style={{...th,textAlign:t==="日付"?"left":"right",color:t.includes("現金")?"#047857":t.includes("カード")?"#1d4ed8":t.includes("PayPay")?"#dc2626":th.color}}>{t}</th>)}</tr></thead><tbody>
+            {days.map(d=>{const v=sales.byDay[d];const mc=(k,c)=><td style={{...td,color:v.m[k]?c:"#cbd5e1",fontWeight:700}}>{v.m[k]?fmt(v.m[k]):"-"}</td>;return <tr key={d}><td style={{...td,textAlign:"left"}}>{d.slice(5).replace("-","/")}</td><td style={td}>{v.n}</td><td style={td}>{v.paid}</td><td style={td}>{fmt(v.ins)}</td><td style={td}>{fmt(v.jifee)}</td><td style={{...td,color:v.refund?"#dc2626":"#94a3b8"}}>{v.refund?fmt(-v.refund):"-"}</td>{mc("現金","#047857")}{mc("カード","#1d4ed8")}{mc("PayPay","#dc2626")}<td style={{...td,fontWeight:800}}>{fmt(v.total-v.refund)}</td></tr>;})}
           </tbody></table></div>
         </div>
       </>)}
