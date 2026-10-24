@@ -4685,7 +4685,7 @@ function StatsPanel({bookings,payments,stores,todayStr,workMinutesOf}){
 
   // ===== スタッフ別の対応数（1枠＝20分で換算）と、勤務時間に対する対応可能枠数 =====
   // 対応人数＝会計が済んだ来院の数（予約の担当で数える）。対応枠数＝施術時間÷20分（切り上げ。60分の新規なら3枠）
-  // 保険対応＝柔整の保険（手技療法など）／鍼保対応＝鍼灸の保険（鍼灸併用・鍼灸のみ）
+  // 保険対応＝会計で保険の負担金があった来院（柔整）／鍼保対応＝そのうち会計の保険区分が鍼灸（鍼灸併用・鍼灸のみ）
   // 勤務枠数＝期間内（今日まで）のシフトの勤務時間（営業時間の内側・休憩や不在枠を除く）÷20分
   const SLOT_MIN=20;
   const workload=React.useMemo(()=>{
@@ -4703,10 +4703,12 @@ function StatsPanel({bookings,payments,stores,todayStr,workMinutesOf}){
       const r=rowOf(b.staff_id||0);
       r.people++; r.patients.add(b.patient_name);
       r.slots+=Math.max(1,Math.ceil((Number(b.duration)||SLOT_MIN)/SLOT_MIN));
-      const menu=String((Array.isArray(b.menus)&&b.menus.length?b.menus.join("・"):b.menu)||"");
-      const isShinkyu=[...types].some(t=>/鍼灸/.test(t))||/鍼灸(併用|のみ)|鍼灸.*割/.test(menu);
-      if(isShinkyu) r.shinkyu++;
-      else if(ins>0||[...types].length>0||/\d割/.test(menu)) r.hoken++;
+      // 予約のメニュー名は初期値（鍼灸併用 3割 初診）のまま残っていることが多いので使わず、会計で実際に保険の負担金があった来院だけを数える。
+      // 会計の保険区分が鍼灸（鍼灸併用・鍼灸のみ）なら鍼保、それ以外の保険は保険（柔整）
+      if(ins>0){
+        if([...types].some(t=>/鍼灸/.test(t))) r.shinkyu++;
+        else r.hoken++;
+      }
     });
     // 勤務枠数：期間の初日〜（今日か期間の最終日の早いほう）
     if(typeof workMinutesOf==="function"){
@@ -4993,7 +4995,7 @@ function StatsPanel({bookings,payments,stores,todayStr,workMinutesOf}){
                 </table>
                 <div style={{fontSize:10.5,color:"#94a3b8",marginTop:6,lineHeight:1.7}}>
                   ・対応人数＝会計が済んだ来院の数（予約の担当）／対応数＝施術時間を20分＝1枠で数えたもの（60分の新規は3枠、20分は1枠）<br/>
-                  ・保険対応＝保険施術（柔整）、鍼保対応＝鍼灸の保険（鍼灸併用・鍼灸のみ）の来院数<br/>
+                  ・保険対応＝会計で保険の負担金があった来院（柔整）、鍼保対応＝会計の保険区分が「鍼灸併用」「鍼灸のみ」の来院（予約のメニュー名では数えません）<br/>
                   ・勤務時間の枠数＝期間内（今日まで）のシフトの勤務時間を20分で割った数（営業時間の内側・休憩や不在枠は除く）／稼働率＝対応数÷勤務時間の枠数
                 </div>
               </div>
