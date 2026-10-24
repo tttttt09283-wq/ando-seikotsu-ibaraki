@@ -20,7 +20,7 @@ import { resolveViewer, filterModelForViewer, canSeeLabor, canSeeCompany, clinic
 import { CAREER_SHEET_ID, loadModel, invalidateModel, loadNewPatients, authenticate, viewerNotFound } from "../lib/incentive-data.js";
 import { EVENT_SHEET, EVENT_HEADER, MAX_EVENT_BONUS, eventBonusMap, groupEvents, normDate } from "../lib/events.js";
 import {
-  ITEM_SHEET, RECORD_SHEET, RECORD_HEADER, DEFAULT_ITEMS, COMMON_GRADE,
+  ITEM_SHEET, RECORD_SHEET, RECORD_HEADER, DEFAULT_ITEMS, ADDED_DEFAULT_ITEMS, COMMON_GRADE,
   STAFF_SHEET, STAFF_HEADER, parseStaffSettings, DIST_SHEET, parseDist, distRows, validateDist, distFor, deptPointsFor, DEPT_PREFIX, DEFAULT_DEPARTMENTS, departmentNames, deptMembership, canSetCandidate, gradeRank, itemSheetRows, parseItemSheet, parseRecords,
   scoreMonth, rankOf, itemsFor, validateItems, GRADE_LABELS, AUTO_OPTIONS, parseMonthKey, monthKeyOf, halfMonthKeys, autoValues, superiorOf, canEvaluate, buildRecordRows,
 } from "../lib/evaluation.js";
@@ -62,7 +62,7 @@ async function loadSheets() {
     itemRowCount: itemRows ? itemRows.length : 0,
     setupNeeded: !hasItems || !hasRecords,
     hasItems, hasRecords,
-    items: withDefaultDepartments(parseItemSheet(itemRows) || DEFAULT_ITEMS),
+    items: withAddedDefaults(withDefaultDepartments(parseItemSheet(itemRows) || DEFAULT_ITEMS)),
     // 「社会人としての基本（共通）」が無い＝初期の版で作ったシート
     legacyItems: hasItems && !(parseItemSheet(itemRows) || {})[COMMON_GRADE],
     records: parseRecords(recordRows),
@@ -83,6 +83,18 @@ function maskLabor(items, cur, allowed) {
     });
   }
   return { values, auto, hidden, scores: cur.scores };
+}
+
+// 後から増えた初期項目（患者対応チェック・平均通院回数）を、まだ持っていない評価項目シートに足す。
+// どのクラスにも同じIDの項目が無いときだけ（設定画面で消したクラスにまた出てこないように）
+function withAddedDefaults(items) {
+  const has = (id) => Object.values(items).some((list) => list.some((it) => it.id === id));
+  const out = { ...items };
+  for (const [g, add] of Object.entries(ADDED_DEFAULT_ITEMS)) {
+    const missing = add.filter((it) => !has(it.id));
+    if (missing.length && out[g]) out[g] = [...out[g], ...missing];
+  }
+  return out;
 }
 
 // 部門ができる前に作った評価項目シートには部門の行が無いので、その場合は既定の部門の項目を使う
@@ -191,6 +203,8 @@ function buildPayload({ model, np, viewer, isAdmin, sheets, monthKey }) {
     legacyItems: sheets.legacyItems, hasRecords: sheets.records.size > 0,
     newPatientError: np && np.error ? np.error : null,
     newPatientUnmatched: isAdmin && np ? np.unmatched : [],
+    patientCareError: np && np.patientCareError ? np.patientCareError : null,
+    patientCareUnmatched: isAdmin && np && np.patientCare ? np.patientCare.unmatched : [],
   };
 }
 

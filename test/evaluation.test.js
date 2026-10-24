@@ -9,7 +9,7 @@ import {
 test("every grade's items (incl. common basics) total 100 points, PC is required from G4 up", () => {
   for (const grade of EVALUATED_GRADES) {
     const items = itemsFor(DEFAULT_ITEMS, grade);
-    assert.equal(items.reduce((a, i) => a + i.points, 0), 100, grade);
+    assert.equal(Math.round(items.reduce((a, i) => a + i.points, 0) * 1e6) / 1e6, 100, grade);
     assert.equal(items.filter((i) => i.kind === "基本").reduce((a, i) => a + i.points, 0), 15, grade);
     const pc = items.find((i) => i.id === "pc");
     assert.ok(pc, `${grade} has PC item`);
@@ -33,7 +33,7 @@ test("number points: 以上 is capped ratio, 以下 drops to 0 at target+10", ()
 
 test("scoreMonth: behavior = points x score/5, rank only when complete, required flag", () => {
   const items = itemsFor(DEFAULT_ITEMS, "G4");
-  const values = { clinic_budget: 100, clinic_labor: 40, new_count: 10, new_close: 70, new_sales: 200000, clinic_continue_rate: 75 };
+  const values = { clinic_budget: 100, clinic_labor: 40, new_count: 10, new_close: 70, new_sales: 200000, clinic_continue_rate: 75, clinic_patient_care: 85, avg_visits: 6 };
   const scores = { pl: 5, shift: 5, claim: 5, develop: 5, pc: 2,
     basic_greeting: 5, basic_appearance: 5, basic_punctual: 2, basic_hourensou: 5, basic_rules: 5 };
   const r = scoreMonth(items, values, scores);
