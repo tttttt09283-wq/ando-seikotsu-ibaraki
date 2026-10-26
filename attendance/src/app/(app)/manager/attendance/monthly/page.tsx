@@ -3,29 +3,14 @@ import { createSupabaseServer } from "@/lib/supabase/server";
 import { ActionForm } from "@/components/ActionForm";
 import { Badge, Card, EmptyState, Input, PageHeader, Table, Td } from "@/components/ui";
 import { selectableClinics } from "@/lib/shifts/load";
-import { CLOSING_STATUS_LABELS, fixedOvertimeExcess, hm } from "@/lib/attendance/labels";
+import Link from "next/link";
+import { CLOSING_STATUS_LABELS, hm } from "@/lib/attendance/labels";
+import { summarizeMonth, type MonthlyDailyRow } from "@/lib/attendance/monthly";
 import { isActiveOn, staffName, type ContractRow, type StaffRow } from "@/lib/data/types";
 import { addMonths, isValidMonth, monthDates, todayJst } from "@/lib/time/jst";
 import { AttendanceToolbar } from "../AttendanceToolbar";
 import { confirmAttendance, recalcAttendance } from "../actions";
 import { confirmMonth, unconfirmMonth } from "@/app/(app)/hq/closings/actions";
-
-interface DailyRow {
-  staff_id: string;
-  work_date: string;
-  worked_minutes: number;
-  overtime_statutory_minutes: number;
-  overtime_non_statutory_minutes: number;
-  late_night_minutes: number;
-  legal_holiday_minutes: number;
-  scheduled_holiday_minutes: number;
-  late_minutes: number;
-  early_leave_minutes: number;
-  is_absent: boolean;
-  has_missing_punch: boolean;
-  needs_recalc: boolean;
-  status: string;
-}
 
 /**
  * 月次集計（主所属スタッフ）。法定時間外のうち、みなし残業（固定残業）を超えた分は別途支給が必要。
@@ -50,7 +35,7 @@ export default async function AttendanceMonthlyPage({ searchParams }: { searchPa
     .eq("home_clinic_id", clinicId)
     .gte("work_date", from)
     .lte("work_date", to);
-  const rows = (dailyData ?? []) as DailyRow[];
+  const rows = (dailyData ?? []) as MonthlyDailyRow[];
   const [{ data: closingData }, { data: issueData }] = await Promise.all([
     supabase.from("monthly_closings").select("status, manager_confirmed_at, closed_at").eq("clinic_id", clinicId).eq("year_month", from).maybeSingle(),
     supabase.rpc("closing_issues", { p_clinic_id: clinicId, p_month: from }),
@@ -69,32 +54,10 @@ export default async function AttendanceMonthlyPage({ searchParams }: { searchPa
   const contracts = (contractData ?? []) as ContractRow[];
 
   const summary = staff.map((s) => {
-    const mine = rows.filter((r) => r.staff_id === s.staff_id);
-    const sum = (k: keyof DailyRow) => mine.reduce((acc, r) => acc + (r[k] as number), 0);
     // みなし残業は月末時点の勤務条件で判定
     const contract = contracts.find((c) => c.staff_id === s.staff_id && isActiveOn(c, to));
-    const statutory = sum("overtime_statutory_minutes");
-    const fixed = contract?.fixed_overtime_minutes ?? 0;
-    return {
-      staff: s,
-      days: mine.filter((r) => r.worked_minutes > 0).length,
-      worked: sum("worked_minutes"),
-      statutory,
-      nonStatutory: sum("overtime_non_statutory_minutes"),
-      fixed,
-      excess: fixedOvertimeExcess(statutory, fixed),
-      night: sum("late_night_minutes"),
-      legal: sum("legal_holiday_minutes"),
-      scheduledHoliday: sum("scheduled_holiday_minutes"),
-      lateCount: mine.filter((r) => r.late_minutes > 0).length,
-      lateMinutes: sum("late_minutes"),
-      earlyCount: mine.filter((r) => r.early_leave_minutes > 0).length,
-      absent: mine.filter((r) => r.is_absent).length,
-      missing: mine.filter((r) => r.has_missing_punch).length,
-      unconfirmed: mine.filter((r) => r.status === "open" && r.work_date < todayJst()).length,
-      recalc: mine.filter((r) => r.needs_recalc).length,
-      hasContract: Boolean(contract),
-    };
+    const mine = rows.filter((r) => r.staff_id === s.staff_id);
+    return { staff: s, ...summarizeMonth(mine, contract ? contract.fixed_overtime_minutes : null, todayJst()) };
   });
 
   return (
@@ -161,7 +124,9 @@ export default async function AttendanceMonthlyPage({ searchParams }: { searchPa
             {summary.map((r) => (
               <tr key={r.staff.staff_id}>
                 <Td>
-                  <div className="font-medium">{staffName(r.staff)}</div>
+                  <Link href={`/manager/attendance/monthly/${r.staff.staff_id}?clinic=${clinicId}&month=${month}`} className="font-medium text-brand-700 underline">
+                    {staffName(r.staff)}
+                  </Link>
                   <div className="text-xs text-slate-500">{r.staff.staff_code}</div>
                 </Td>
                 <Td>{r.days}日</Td>
@@ -189,6 +154,7 @@ export default async function AttendanceMonthlyPage({ searchParams }: { searchPa
         )}
       </Card>
       <p className="mt-2 text-xs text-slate-500">
+        スタッフ名を押すと、その人の1か月の詳細（日ごとのシフト・打刻・労働時間）を表示します。
         法定時間外＝1日8時間超＋週40時間超（法定休日の労働は除く）。みなし超過＝法定時間外 − みなし残業時間（月）。深夜・休日の割増は別途計算します。
       </p>
     </>

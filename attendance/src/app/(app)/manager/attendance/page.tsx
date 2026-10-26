@@ -7,6 +7,7 @@ import { shiftLabel, toShiftView, type ShiftRow } from "@/lib/shifts/model";
 import { ANOMALY_LABELS, ATTENDANCE_STATUS_LABELS, DAY_TYPE_LABELS, hm, PUNCH_TYPE_LABELS } from "@/lib/attendance/labels";
 import { isActiveOn, staffName, type AssignmentRow, type StaffRow } from "@/lib/data/types";
 import { addDays, formatJstDateTime, isValidDateString, todayJst } from "@/lib/time/jst";
+import { punchesOfDay } from "@/lib/attendance/punches";
 import { AttendanceToolbar } from "./AttendanceToolbar";
 import { confirmAttendance, recalcAttendance, requestAdjustment } from "./actions";
 
@@ -42,22 +43,6 @@ interface PunchRow {
   is_void: boolean;
   void_of_event_id: string | null;
   is_delayed_submission: boolean;
-}
-
-/**
- * その日の勤務の打刻だけを返す。翌日（正午まで）の打刻は、日跨ぎの勤務が終わっていない場合だけ含め、
- * 翌日の出勤打刻以降（翌日の勤務）は含めない。
- */
-function punchesOfDay(sorted: PunchRow[], nextDayStart: number): PunchRow[] {
-  const sameDay = sorted.filter((p) => Date.parse(p.punched_at) < nextDayStart);
-  if (sameDay.length === 0 || sameDay[sameDay.length - 1].punch_type === "clock_out") return sameDay;
-  const out = [...sameDay];
-  for (const p of sorted.filter((x) => Date.parse(x.punched_at) >= nextDayStart)) {
-    if (p.punch_type === "clock_in") break;
-    out.push(p);
-    if (p.punch_type === "clock_out") break;
-  }
-  return out;
 }
 
 const timeFmt = new Intl.DateTimeFormat("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit", hour12: false });
