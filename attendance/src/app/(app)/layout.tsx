@@ -32,6 +32,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           { href: "/admin/staff", label: "スタッフ" },
           { href: "/admin/users", label: "アカウント・権限" },
           { href: "/admin/kiosks", label: "共用端末" },
+          { href: "/admin/kits", label: "使い始めセット" },
         ]
       : []),
     { href: "/me", label: "マイページ" },

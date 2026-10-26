@@ -548,6 +548,16 @@ function Setup({ onRegistered }: { onRegistered: () => void }) {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // 使い始めセットの QR コード（/kiosk#code=XXXXXXXX）から開いた場合は、登録コードを入れておく。
+  // # 以降はサーバーに送られないため、コードがアクセス記録に残らない。読み取ったらアドレスからは消す
+  useEffect(() => {
+    const fromHash = new URLSearchParams(window.location.hash.slice(1)).get("code");
+    if (!fromHash) return;
+    const normalized = fromHash.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+    if (normalized.length === 8) setCode(`${normalized.slice(0, 4)}-${normalized.slice(4)}`);
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+  }, []);
+
   async function register() {
     setBusy(true);
     setMessage(null);
