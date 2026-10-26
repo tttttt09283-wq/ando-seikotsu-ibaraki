@@ -428,6 +428,12 @@ function overallFromScore(score){
   if(score>=55) return{label:"中等度の歪みあり",color:"#ea580c",icon:"⚠️"};
   return{label:"歪みが大きく要注意",color:"#dc2626",icon:"🔴"};
 }
+// AI姿勢分析（横向き・正面）の点数は画面に出さない（内部の記録・総合評価の計算には使う）。代わりに「良好／軽度の歪みあり…」で表示する
+const HIDDEN_SCORE_AXES=["posture","balance"];
+function axisScoreText(a){
+  if(a.score==null) return "未測定";
+  return HIDDEN_SCORE_AXES.includes(a.key)?overallFromScore(a.score).label:a.score+"点";
+}
 
 function computeSideAnalysis(lm){
   const leftVis=(lm[7].visibility+lm[11].visibility+lm[23].visibility+lm[25].visibility+lm[27].visibility)/5;
@@ -814,7 +820,7 @@ function radarSvg(axes,size){
   [25,50,75,100].forEach(v=>{ g+=`<polygon points="${axes.map((_,i)=>pt(i,v).join(",")).join(" ")}" fill="none" stroke="#e2e8f0" stroke-width="1"/>`; });
   axes.forEach((a,i)=>{ const [x,y]=pt(i,100); g+=`<line x1="${c}" y1="${c}" x2="${x}" y2="${y}" stroke="#e2e8f0"/>`;
     const [lx,ly]=pt(i,128); g+=`<text x="${lx}" y="${ly}" font-size="10.5" font-weight="700" fill="#475569" text-anchor="middle" dominant-baseline="middle">${esc(a.label.replace(/（.*）/,""))}</text>`;
-    g+=`<text x="${lx}" y="${ly+13}" font-size="11" font-weight="800" fill="${a.score==null?"#94a3b8":scoreColor(a.score)}" text-anchor="middle">${a.score==null?"未測定":a.score+"点"}</text>`; });
+    g+=`<text x="${lx}" y="${ly+13}" font-size="11" font-weight="800" fill="${a.score==null?"#94a3b8":scoreColor(a.score)}" text-anchor="middle">${esc(axisScoreText(a))}</text>`; });
   const poly=axes.map((a,i)=>pt(i,a.score==null?0:a.score).join(",")).join(" ");
   g+=`<polygon points="${poly}" fill="rgba(45,106,159,.22)" stroke="#2d6a9f" stroke-width="2"/>`;
   return `<svg viewBox="-56 -8 ${size+112} ${size+20}" width="100%" style="max-width:${size+150}px;display:block;margin:0 auto;">${g}</svg>`;
@@ -1161,6 +1167,12 @@ function scoreBlock(score,grade,sub){
   return `<div class="score-hero"><div class="score-num" style="color:${scoreColor(score)};">${score}<span style="font-size:20px;">点</span></div><div class="score-label">100点満点</div></div>
     <div style="text-align:center;"><span class="pill" style="background:${grade.color}15;border:1.5px solid ${grade.color}55;color:${grade.color};">${grade.icon} ${esc(grade.label)}</span>${sub?`<div style="font-size:12.5px;color:#475569;font-weight:700;margin-top:8px;">${esc(sub)}</div>`:""}</div>`;
 }
+// AI姿勢分析の結果（点数は出さず、判定と姿勢タイプだけを大きく表示）
+function postureGradeBlock(grade,sub){
+  return `<div style="text-align:center;padding:14px 0 6px;"><div style="font-size:12px;color:#94a3b8;font-weight:700;">判定</div>
+    <div style="font-size:26px;font-weight:800;color:${grade.color};margin-top:4px;">${grade.icon} ${esc(grade.label)}</div>
+    ${sub?`<div style="font-size:12.5px;color:#475569;font-weight:700;margin-top:8px;">${esc(sub)}</div>`:""}</div>`;
+}
 function notesAndSave(kind,onSave,canSave){
   return `<div class="form-group" style="margin-top:14px;"><label class="form-label">コメント・所見（任意）</label><textarea class="form-input" rows="2" data-notes="${kind}" placeholder="気になる点・アドバイスなど">${esc(state.notes[kind])}</textarea></div>
     <button class="btn btn-green" onclick="${onSave}()" ${(!canSave||state.saving)?"disabled":""}>${state.saving?"保存中...":state.saved[kind]?"✅ 保存済み（もう一度保存）":"💾 この結果を保存する"}</button>
@@ -1178,7 +1190,7 @@ function patientCard(){
 }
 function renderHome(){
   const done=k=>k==="posture"?(state.posture.side||state.saved.posture):(state[k]||state.saved[k]);
-  const last=k=>{ if(k==="posture"){ const pr=state.history&&state.history.posture[0]; return pr?`<span class="done-chip" style="background:#eef2ff;color:#3730a3;">前回 ${esc(String(pr.recorded_date).slice(5).replace("-","/"))}${pr.posture_score!=null?" "+Math.round(pr.posture_score)+"点":""}</span>`:""; }
+  const last=k=>{ if(k==="posture"){ const pr=state.history&&state.history.posture[0]; return pr?`<span class="done-chip" style="background:#eef2ff;color:#3730a3;">前回 ${esc(String(pr.recorded_date).slice(5).replace("-","/"))}${pr.overall_side?" "+esc(pr.overall_side):""}</span>`:""; }
     const a=latestAssessment(k); return a?`<span class="done-chip" style="background:#eef2ff;color:#3730a3;">前回 ${esc(a.recorded_date.slice(5).replace("-","/"))}${a.score!=null?" "+Math.round(a.score)+"点":a.result_type?" "+esc(a.result_type):""}</span>`:""; };
   const card=(screen,icon,bg,title,desc,kind)=>`<button class="menu-card" onclick="go('${screen}')"><div class="icon" style="background:${bg};">${icon}</div><div style="flex:1;"><div class="t">${title}${done(kind)?`<span class="done-chip">今回済み</span>`:""}${last(kind)}</div><div class="d">${desc}</div></div><div style="color:#94a3b8;font-size:20px;">›</div></button>`;
   return patientCard()+`
@@ -1201,7 +1213,7 @@ function renderPosture(){
     const a=rec.analysis, ov=a.overall||gradeFromScore(a.score);
     return `<div class="card"${view==="side"?' id="resultTop"':""}><div class="card-header">${title}の結果</div><div class="card-body">
       <div class="captured-wrap" id="cv_posture_${view}"></div>
-      ${scoreBlock(a.score,{label:ov.label,color:ov.color,icon:ov.icon},a.type)}
+      ${postureGradeBlock({label:ov.label,color:ov.color,icon:ov.icon},a.type)}
       ${a.quickChecks?`<div style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:10px;">${a.quickChecks.map(c=>`<span style="font-size:11.5px;font-weight:800;padding:4px 10px;border-radius:14px;${c.bad?"background:#fef2f2;color:#991b1b;":"background:#f0fdf4;color:#065f46;"}">${c.bad?"⚠️":"✅"} ${esc(c.label)}</span>`).join("")}</div>`:""}
       ${findingsHtml(a.findings)}
       <button class="btn btn-outline" style="margin-top:12px;" onclick="shootPosture('${view}',false)">撮り直す</button>
@@ -1354,7 +1366,7 @@ function renderTotal(){
     <div style="margin-top:10px;">${radarSvg(t.axes)}</div>
     ${src.face&&FACE_TYPES[src.face.key]?`<div class="tip"><b>顔タイプ：</b>${esc(src.face.label)}　${esc(FACE_TYPES[src.face.key].care)}</div>`:""}
     ${src.skeleton?`<div class="tip"><b>骨格タイプ：</b>${esc(src.skeleton.label)}　${esc(SKELETON_TYPES[src.skeleton.main]?SKELETON_TYPES[src.skeleton.main].care:"")}</div>`:""}
-    ${t.weak.length?`<div style="font-weight:800;font-size:13px;color:#1e3a5f;margin-top:14px;">🎯 改善ポイント</div>${t.weak.map((a,i)=>`<div class="finding bad"><span style="font-weight:800;color:#991b1b;">${i+1}</span><div><div class="ft" style="color:#991b1b;">${esc(a.label)}　${a.score}点</div><div class="fd">${esc(a.advice)}</div></div></div>`).join("")}`
+    ${t.weak.length?`<div style="font-weight:800;font-size:13px;color:#1e3a5f;margin-top:14px;">🎯 改善ポイント</div>${t.weak.map((a,i)=>`<div class="finding bad"><span style="font-weight:800;color:#991b1b;">${i+1}</span><div><div class="ft" style="color:#991b1b;">${esc(a.label)}　${esc(axisScoreText(a))}</div><div class="fd">${esc(a.advice)}</div></div></div>`).join("")}`
       :`<div class="finding ok"><span>✅</span><div class="fd">すべての項目が良好です。今の状態を保つために、月1回のメンテナンスがおすすめです。</div></div>`}
     <div class="tip" style="margin-top:12px;"><b>おすすめのケア：</b>${t.menus.length?t.menus.map(esc).join("・"):"メンテナンス（月1回）"}</div>
     ${notesAndSave("total","saveTotal",true)}

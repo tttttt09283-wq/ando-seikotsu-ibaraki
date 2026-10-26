@@ -9779,7 +9779,7 @@ function BodyCheckRecordsPanel({bookings}){
                   </div>
                   {open&&(
                     <div style={{fontSize:12,color:"#374151",lineHeight:1.7,background:"#f8fafc",borderRadius:8,padding:"8px 12px",marginTop:6}}>
-                      {k.kind==="total"&&Array.isArray(d.axes)&&<div>{d.axes.map(a=>`${a.label}：${a.score==null?"未測定":a.score+"点"}`).join("　")}{d.menus&&d.menus.length?<div>おすすめ：{d.menus.join("・")}</div>:null}</div>}
+                      {k.kind==="total"&&Array.isArray(d.axes)&&<div>{d.axes.map(a=>`${a.label}：${a.score==null?"未測定":(a.key==="posture"||a.key==="balance")?postureGradeLabel(a.score):a.score+"点"}`).join("　")}{d.menus&&d.menus.length?<div>おすすめ：{d.menus.join("・")}</div>:null}</div>}
                       {k.kind==="rom"&&Array.isArray(d.tests)&&d.tests.map(t=>(<div key={t.key}>{t.name}：{(t.sides||[]).map(s=>(s.lab?s.lab+" ":"")+s.deg+"°").join("／")}（目安{t.ref}°）{t.reach?"・指先："+t.reach:""}　{t.score}点</div>))}
                       {k.kind==="legs"&&<div>ひざの角度 左{d.devL}°／右{d.devR}°（＋O脚・−X脚）　骨盤の傾き {d.pelvisTilt}°{d.pelvisHighSide?`（${d.pelvisHighSide}が高い）`:""}　肩の傾き {d.shoulderTilt}°</div>}
                       {k.kind==="face"&&d.key&&<div>{d.ageScore<0?"子供顔":"大人顔"}（{d.ageScore}）・曲線↔直線 {d.lineScore}{d.photo?`　顔の縦横比 ${d.photo.aspect}`:""}</div>}
@@ -9847,7 +9847,7 @@ function PostureRecordsPanel({bookings}){
       <div className="card" style={{marginBottom:14}}>
         <div style={{padding:"14px 16px",borderBottom:"1px solid #f1f5f9",background:"linear-gradient(135deg,#1e3a5f,#2d6a9f)"}}>
           <div style={{color:"white",fontWeight:800,fontSize:15}}>🧍 姿勢の経過記録</div>
-          <div style={{color:"rgba(255,255,255,.75)",fontSize:12,marginTop:2}}>患者様ごとに、来院時の姿勢写真とスコアの推移を記録できます</div>
+          <div style={{color:"rgba(255,255,255,.75)",fontSize:12,marginTop:2}}>患者様ごとに、来院時の姿勢写真と判定の推移を記録できます</div>
         </div>
         <div style={{padding:16}}>
           <label className="form-label">患者様を検索</label>
@@ -9890,30 +9890,6 @@ function PostureRecordsPanel({bookings}){
               )}
             </div>
 
-            {/* スコア推移（2件以上あれば表示） */}
-            {records.filter(r=>r.posture_score!=null).length>=2&&(
-              <div className="card" style={{padding:16}}>
-                <div style={{fontWeight:800,fontSize:13,color:"#1e3a5f",marginBottom:12}}>スコアの推移</div>
-                {(()=>{
-                  const scored=[...records].filter(r=>r.posture_score!=null).sort((a,b)=>a.recorded_date.localeCompare(b.recorded_date));
-                  const max=Math.max(...scored.map(r=>Number(r.posture_score)),1);
-                  return(
-                    <div style={{display:"flex",alignItems:"flex-end",gap:6,height:100,padding:"0 2px"}}>
-                      {scored.map(r=>{
-                        const pct=Math.round(Number(r.posture_score)/max*100);
-                        return(
-                          <div key={r.id} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
-                            <div style={{fontSize:11,fontWeight:800,color:"#374151"}}>{r.posture_score}</div>
-                            <div style={{width:"100%",height:`${Math.max(pct,4)}%`,background:"#1e3a5f",borderRadius:"4px 4px 0 0",minHeight:4}}/>
-                            <div style={{fontSize:9,color:"#94a3b8",whiteSpace:"nowrap"}}>{r.recorded_date.slice(5)}</div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
           </div>
 
           <div className="card">
@@ -9933,7 +9909,8 @@ function PostureRecordsPanel({bookings}){
                   <div style={{flex:1}}>
                     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
                       <span style={{fontWeight:800,fontSize:13,color:"#1e293b"}}>{r.recorded_date}</span>
-                      {r.posture_score!=null&&<span style={{fontSize:11,fontWeight:800,color:"white",background:"#1e3a5f",borderRadius:4,padding:"1px 8px"}}>スコア {r.posture_score}</span>}
+                      {r.overall_side&&<span style={{fontSize:11,fontWeight:800,color:"white",background:"#1e3a5f",borderRadius:4,padding:"1px 8px"}}>横：{r.overall_side}</span>}
+                      {r.overall_front&&<span style={{fontSize:11,fontWeight:800,color:"white",background:"#0e7490",borderRadius:4,padding:"1px 8px"}}>正面：{r.overall_front}</span>}
                       {r.posture_type&&<span style={{fontSize:11,fontWeight:700,color:"#7c3aed",background:"#ede9fe",borderRadius:4,padding:"1px 8px"}}>{r.posture_type}</span>}
                     </div>
                     {r.notes&&<div style={{fontSize:12,color:"#64748b",lineHeight:1.6}}>{r.notes}</div>}
@@ -9948,6 +9925,11 @@ function PostureRecordsPanel({bookings}){
   );
 }
 
+// AI姿勢分析の点数は画面に出さない。点数の代わりに判定（体のチェックの判定と同じ区切り）で表示する
+function postureGradeLabel(score){
+  const s=Number(score);
+  return s>=90?"良好":s>=75?"軽度の歪みあり":s>=55?"中等度の歪みあり":"歪みが大きく要注意";
+}
 function PostureRecordAddForm({patient,onSaved}){
   const [date,setDate]=React.useState(new Date().toISOString().split("T")[0]);
   const [staffId,setStaffId]=React.useState(STAFF_ACCOUNTS[0]?.id||1);
@@ -10040,11 +10022,7 @@ function PostureRecordAddForm({patient,onSaved}){
         {converting&&<div style={{marginTop:6,fontSize:12,color:"#d97706",fontWeight:700}}>HEIC写真をJPEGに変換中...</div>}
         {preview&&<img src={preview} alt="プレビュー" style={{marginTop:8,width:120,height:120,objectFit:"cover",borderRadius:8,border:"1px solid #e2e8f0"}}/>}
       </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:14,marginBottom:14}}>
-        <div>
-          <label className="form-label">姿勢スコア</label>
-          <input type="number" className="form-input" value={score} onChange={e=>setScore(e.target.value)} placeholder="例：72"/>
-        </div>
+      <div style={{marginBottom:14}}>
         <div>
           <label className="form-label">分類（姿勢分析システムの結果）</label>
           <input className="form-input" value={type} onChange={e=>setType(e.target.value)} placeholder="例：猫背傾向、反り腰傾向 など"/>
