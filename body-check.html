@@ -355,56 +355,103 @@ function legsAnalysis(lm,w,h){
   return {score,grade:gradeFromScore(score),legType,legSeverity,devL,devR,avgDev,pelvisTilt,shoulderTilt,kneeHeightDiff,shift,pelvisHighSide,shoulderHighSide,findings};
 }
 
-// ---------- AI姿勢分析（旧 posture-analysis.html の判定をそのまま移したもの。横向き・正面） ----------
-function drawResultCanvas(srcCanvas,landmarks,view){
+// ---------- AI姿勢分析（横向き・正面）。基準は「センターライン」 ----------
+// 横から：耳の穴・肩の先端・太ももの突起（大転子）・膝関節・くるぶしの少し前 が一直線
+// 正面　：眉間・鎖骨の付け根・みぞおち・恥骨・両膝の中点・両足首の中点 が一直線
+function drawResultCanvas(srcCanvas,landmarks,view,analysis){
   const canvas=document.createElement("canvas");
   canvas.width=srcCanvas.width;canvas.height=srcCanvas.height;
   const ctx=canvas.getContext("2d");
   ctx.drawImage(srcCanvas,0,0);
-  // 基準線（正しい姿勢の目安）を先に描き、その上に検出した骨格を重ねる
-  if(view==="side"){
-    const leftVis=(landmarks[7].visibility+landmarks[11].visibility+landmarks[23].visibility+landmarks[25].visibility+landmarks[27].visibility)/5;
-    const rightVis=(landmarks[8].visibility+landmarks[12].visibility+landmarks[24].visibility+landmarks[26].visibility+landmarks[28].visibility)/5;
-    const ankle=leftVis>=rightVis?landmarks[27]:landmarks[28];
-    drawSideReferenceLine(ctx,canvas,ankle.x);
-  }else if(view==="front"){
-    drawFrontReferenceLines(ctx,canvas,landmarks);
-  }
+  // 検出した骨格は薄めに描き、その上にセンターライン（基準）と各ポイントを重ねる
   if(window.drawConnectors&&window.POSE_CONNECTIONS){
-    window.drawConnectors(ctx,landmarks,window.POSE_CONNECTIONS,{color:"#22d3ee",lineWidth:3});
+    window.drawConnectors(ctx,landmarks,window.POSE_CONNECTIONS,{color:"rgba(34,211,238,0.55)",lineWidth:2});
   }
-  if(window.drawLandmarks){
-    window.drawLandmarks(ctx,landmarks,{color:"#f97316",lineWidth:1,radius:3});
-  }
+  if(view==="front") drawFrontLevelLines(ctx,canvas,landmarks);
+  const cl=analysis&&analysis.centerline||(view==="side"?sideCenterline(landmarks):frontCenterline(landmarks));
+  drawCenterline(ctx,canvas,cl);
   return canvas;
 }
 
-// 横向き用：正しい姿勢の目安となる垂直の基準線（くるぶしを通る鉛直線）
-function drawSideReferenceLine(ctx,canvas,ankleXNorm){
-  const x=ankleXNorm*canvas.width;
+// センターライン（ピンクの縦線）と、線の上の理想の位置（白丸）、実際の位置（緑＝線の上／赤＝ズレ）を描く
+function drawCenterline(ctx,canvas,cl){
+  const W=canvas.width,H=canvas.height,X=cl.lineX*W;
+  const lw=Math.max(3,W*0.006), r=Math.max(6,W*0.013), fs=Math.max(12,Math.round(W*0.028));
+  const ys=cl.points.map(p=>p.y*H);
+  const top=Math.max(0,Math.min(...ys)-r*3), bottom=Math.min(H,Math.max(...ys)+r*3);
   ctx.save();
-  ctx.strokeStyle="rgba(250,204,21,0.95)";
-  ctx.lineWidth=Math.max(2,canvas.width*0.003);
-  ctx.setLineDash([canvas.width*0.015,canvas.width*0.01]);
-  ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,canvas.height);ctx.stroke();
+  ctx.lineCap="round";
+  ctx.strokeStyle="#e6007e"; ctx.lineWidth=lw;
+  ctx.beginPath(); ctx.moveTo(X,top); ctx.lineTo(X,bottom); ctx.stroke();
+  const labelRight=X<W*0.55; // 線の右側に余白が多ければ右に、少なければ左に名前を書く
+  ctx.font=`bold ${fs}px sans-serif`; ctx.textBaseline="middle";
+  cl.points.forEach(p=>{
+    const px=p.x*W, py=p.y*H, col=p.ok?"#10b981":"#ef4444";
+    if(Math.abs(px-X)>r*0.4){
+      ctx.strokeStyle=col; ctx.lineWidth=lw*0.8;
+      ctx.beginPath(); ctx.moveTo(X,py); ctx.lineTo(px,py); ctx.stroke();
+      ctx.fillStyle=col; ctx.beginPath(); ctx.arc(px,py,r*0.75,0,Math.PI*2); ctx.fill();
+    }
+    ctx.fillStyle="#ffffff"; ctx.strokeStyle="#e6007e"; ctx.lineWidth=lw*0.8;
+    ctx.beginPath(); ctx.arc(X,py,r,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    const text=(p.ok?"✓ ":"! ")+p.label, tw=ctx.measureText(text).width, pad=fs*0.35;
+    const far=Math.max(Math.abs(px-X),r)+r*1.6;
+    let tx=labelRight?X+far:X-far-tw-pad*2;
+    tx=Math.max(2,Math.min(W-tw-pad*2-2,tx));
+    ctx.fillStyle="rgba(255,255,255,0.88)";
+    ctx.fillRect(tx,py-fs*0.75,tw+pad*2,fs*1.5);
+    ctx.fillStyle=p.ok?"#065f46":"#b91c1c";
+    ctx.fillText(text,tx+pad,py);
+  });
   ctx.restore();
 }
 
-// 正面用：身体中心の垂直基準線＋肩・骨盤の水平ライン（左右差が一目でわかるように）
-function drawFrontReferenceLines(ctx,canvas,lm){
+// 正面用：肩・骨盤の水平ライン（左右の高さの差が一目でわかるように）
+function drawFrontLevelLines(ctx,canvas,lm){
   const ls=lm[11],rs=lm[12],lh=lm[23],rh=lm[24];
-  const hipMidX=((lh.x+rh.x)/2)*canvas.width;
   ctx.save();
-  ctx.strokeStyle="rgba(250,204,21,0.95)";
+  ctx.strokeStyle="rgba(56,189,248,0.9)";
   ctx.lineWidth=Math.max(2,canvas.width*0.003);
-  ctx.setLineDash([canvas.width*0.015,canvas.width*0.01]);
-  ctx.beginPath();ctx.moveTo(hipMidX,0);ctx.lineTo(hipMidX,canvas.height);ctx.stroke();
-
-  ctx.setLineDash([]);
-  ctx.strokeStyle="rgba(56,189,248,0.95)";
   ctx.beginPath();ctx.moveTo(ls.x*canvas.width,ls.y*canvas.height);ctx.lineTo(rs.x*canvas.width,rs.y*canvas.height);ctx.stroke();
   ctx.beginPath();ctx.moveTo(lh.x*canvas.width,lh.y*canvas.height);ctx.lineTo(rh.x*canvas.width,rh.y*canvas.height);ctx.stroke();
   ctx.restore();
+}
+
+// 横向きのセンターライン：くるぶしの少し前（足の長さの約1割、つま先側）を通る垂直線
+// 体の向き（どちらが前か）は、つま先とかかとの位置から決める（足が写っていないときは鼻と耳から）
+function sideCenterline(lm){
+  const v=i=>(lm[i]&&lm[i].visibility!=null)?lm[i].visibility:0;
+  const leftVis=(v(7)+v(11)+v(23)+v(25)+v(27))/5, rightVis=(v(8)+v(12)+v(24)+v(26)+v(28))/5;
+  const useLeft=leftVis>=rightVis;
+  const ear=useLeft?lm[7]:lm[8], shoulder=useLeft?lm[11]:lm[12], hip=useLeft?lm[23]:lm[24];
+  const knee=useLeft?lm[25]:lm[26], ankle=useLeft?lm[27]:lm[28];
+  const heel=useLeft?lm[29]:lm[30], toe=useLeft?lm[31]:lm[32];
+  const nose=lm[0];
+  const torsoLen=Math.max(Math.abs(hip.y-shoulder.y),0.05); // 正規化の基準（肩〜股関節の縦の長さ）
+  const footDx=heel&&toe?toe.x-heel.x:0;
+  const footSeen=heel&&toe&&(heel.visibility==null||heel.visibility>0.5)&&(toe.visibility==null||toe.visibility>0.5)&&Math.abs(footDx)>torsoLen*0.15;
+  const facing=footSeen?Math.sign(footDx):((nose.x-ear.x)>=0?1:-1); // 前方向を＋にそろえる
+  const footLen=footSeen?Math.abs(footDx):torsoLen*0.5;
+  const lineX=ankle.x+facing*footLen*0.1;
+  return {useLeft,ear,shoulder,hip,knee,ankle,torsoLen,facing,lineX,
+    points:[{label:"耳の穴",x:ear.x,y:ear.y,ok:true},{label:"肩の先端",x:shoulder.x,y:shoulder.y,ok:true},
+      {label:"大転子（太ももの突起）",x:hip.x,y:hip.y,ok:true},{label:"膝関節",x:knee.x,y:knee.y,ok:true},
+      {label:"くるぶしの少し前",x:lineX,y:ankle.y,ok:true}]};
+}
+// 正面のセンターライン：両足首の中点を通る垂直線
+function frontCenterline(lm){
+  const mid=(a,b)=>({x:(a.x+b.x)/2,y:(a.y+b.y)/2});
+  const ls=lm[11],rs=lm[12],lh=lm[23],rh=lm[24];
+  const glabella=mid(lm[2],lm[5]);                    // 眉間（両目の間）
+  const sternal=mid(ls,rs);                           // 鎖骨の付け根（左右の肩の中点）
+  const pubis=mid(lh,rh);                             // 恥骨（左右の股関節の中点）
+  const solar={x:sternal.x+(pubis.x-sternal.x)*0.38,y:sternal.y+(pubis.y-sternal.y)*0.38}; // みぞおち（胸と骨盤の間のやや上）
+  const kneeMid=mid(lm[25],lm[26]), ankleMid=mid(lm[27],lm[28]);
+  const shoulderWidth=Math.max(Math.abs(rs.x-ls.x),0.05);
+  const leftDir=Math.sign(ls.x-rs.x)||1; // 写真の中で「本人の左」がどちら向きか（鏡に映した写真でも左右を正しく言うため）
+  return {glabella,sternal,solar,pubis,kneeMid,ankleMid,shoulderWidth,leftDir,lineX:ankleMid.x,
+    points:[{label:"眉間",...glabella,ok:true},{label:"鎖骨の付け根",...sternal,ok:true},{label:"みぞおち",...solar,ok:true},
+      {label:"恥骨",...pubis,ok:true},{label:"両膝の中点",...kneeMid,ok:true},{label:"両足首の中点",...ankleMid,ok:true}]};
 }
 
 // ===== 姿勢の判定ロジック（横向き） =====
@@ -436,27 +483,14 @@ function axisScoreText(a){
 }
 
 function computeSideAnalysis(lm){
-  const leftVis=(lm[7].visibility+lm[11].visibility+lm[23].visibility+lm[25].visibility+lm[27].visibility)/5;
-  const rightVis=(lm[8].visibility+lm[12].visibility+lm[24].visibility+lm[26].visibility+lm[28].visibility)/5;
-  const useLeft=leftVis>=rightVis;
-  const ear=useLeft?lm[7]:lm[8];
-  const shoulder=useLeft?lm[11]:lm[12];
-  const hip=useLeft?lm[23]:lm[24];
-  const knee=useLeft?lm[25]:lm[26];
-  const ankle=useLeft?lm[27]:lm[28];
-  const nose=lm[0];
-
-  const torsoLen=Math.max(Math.abs(hip.y-shoulder.y),0.05); // 正規化の基準（肩〜股関節の縦の長さ）
-  // 身体が向いている方向（鼻が耳よりどちら側にあるか）を基準に、前方向をプラスに揃える
-  const facingSign=(nose.x-ear.x)>=0?1:-1;
-
-  function offsetFromAnkle(pt){
-    return((pt.x-ankle.x)/torsoLen)*facingSign;
-  }
-  const headOffset=offsetFromAnkle(ear);
-  const shoulderOffset=offsetFromAnkle(shoulder);
-  const hipOffset=offsetFromAnkle(hip);
-  const kneeOffset=offsetFromAnkle(knee);
+  // センターライン（くるぶしの少し前を通る垂直線）から、耳の穴・肩の先端・大転子・膝関節が前後にどれだけズレているか
+  const cl=sideCenterline(lm);
+  const {useLeft,ear,shoulder,hip,knee,torsoLen,facing,lineX}=cl;
+  const offset=pt=>((pt.x-lineX)/torsoLen)*facing; // ＋＝前、－＝後ろ
+  const headOffset=offset(ear);
+  const shoulderOffset=offset(shoulder);
+  const hipOffset=offset(hip);
+  const kneeOffset=offset(knee);
 
   // ===== 判定基準（かなり厳しめ）=====
   // 許容範囲（tolerance）を従来より狭め、超えた分の重み（weight）を大きくすることで、
@@ -479,7 +513,8 @@ function computeSideAnalysis(lm){
   const shoulderForward=shoulderOffset>TOL_SHOULDER;
   const hipForward=hipOffset>TOL_HIP;
   const hipBackward=hipOffset<-TOL_HIP;
-  const kneeHyperextended=kneeOffset>TOL_KNEE;
+  const kneeHyperextended=kneeOffset<-TOL_KNEE; // 膝がセンターラインより後ろ＝膝が反っている
+  const kneeBent=kneeOffset>TOL_KNEE;            // 膝がセンターラインより前＝膝が曲がっている
 
   let type="良好姿勢（バランス良好）";
   if(headForward&&shoulderForward&&hipForward){
@@ -505,6 +540,8 @@ function computeSideAnalysis(lm){
   }
   if(kneeHyperextended){
     type+="／膝の過伸展あり";
+  }else if(kneeBent){
+    type+="／膝が曲がり気味";
   }
 
   // ===== 部位ごとの所見：どこが、理想の位置からどうズレていて、身体にどんな負担がかかるか =====
@@ -513,24 +550,24 @@ function computeSideAnalysis(lm){
     const sev=severityLabel(Math.max(0,headOffset),TOL_HEAD); // 前に出ている場合だけ問題として扱う（後ろに残るのは稀かつ問題になりにくいため）
     if(headOffset>0&&sev){
       findings.push({part:"頭部（頭部前方位／ストレートネック傾向）",ok:false,severity:sev,
-        desc:"頭が理想の位置（くるぶしの真上）より前に出ています（頭部前方位）。",
+        desc:"耳の穴がセンターラインより前に出ています（頭部前方位）。",
         impact:"首や肩の筋肉が常に頭の重さを支え続けることになり、負担が蓄積しやすい状態です。",
         muscles:["僧帽筋（上部）","肩甲挙筋","後頭下筋群"],
         symptoms:["肩こり","首の張り","緊張型頭痛","眼精疲労"]});
     }else{
-      findings.push({part:"頭部",ok:true,desc:"くるぶしの真上に近く、理想的な位置に収まっています。"});
+      findings.push({part:"頭部",ok:true,desc:"耳の穴がセンターライン上に近く、理想的な位置に収まっています。"});
     }
   }
   {
     const sev=severityLabel(Math.max(0,shoulderOffset),TOL_SHOULDER);
     if(shoulderOffset>0&&sev){
       findings.push({part:"肩（巻き肩）",ok:false,severity:sev,
-        desc:"肩が理想の位置より前に出ています（巻き肩）。",
+        desc:"肩の先端がセンターラインより前に出ています（巻き肩）。",
         impact:"胸の筋肉が縮こまり、背中側の筋肉が引き伸ばされた状態が続きます。",
         muscles:["大胸筋・小胸筋（縮こまる）","僧帽筋（中部・下部）・菱形筋（伸びて弱くなる）"],
         symptoms:["猫背の助長","呼吸が浅くなる","肩甲骨まわりのこり","肩の可動域低下"]});
     }else{
-      findings.push({part:"肩（巻き肩）",ok:true,desc:"理想的な位置に近く、良好な範囲内です。"});
+      findings.push({part:"肩（巻き肩）",ok:true,desc:"肩の先端がセンターライン上に近く、良好な範囲内です。"});
     }
   }
   {
@@ -538,30 +575,37 @@ function computeSideAnalysis(lm){
     const sevB=severityLabel(Math.max(0,-hipOffset),TOL_HIP);
     if(hipOffset>0&&sevF){
       findings.push({part:"骨盤（反り腰）",ok:false,severity:sevF,
-        desc:"骨盤が前に傾いています（反り腰）。",
+        desc:"大転子（太ももの付け根の突起）がセンターラインより前に出ています（骨盤が前に傾いた反り腰の傾向）。",
         impact:"腰の反りが強くなることで腰椎まわりに負担が集中しやすい状態です。",
         muscles:["腸腰筋・大腿直筋（縮こまる）","腹筋群・大殿筋（伸びて弱くなる）"],
         symptoms:["腰痛","反り腰による疲労感","股関節前面の張り"]});
     }else if(hipOffset<0&&sevB){
       findings.push({part:"骨盤（後傾）",ok:false,severity:sevB,
-        desc:"骨盤が後ろに傾いています（骨盤後傾）。",
+        desc:"大転子（太ももの付け根の突起）がセンターラインより後ろにあります（骨盤後傾の傾向）。",
         impact:"腰全体が丸まりやすく、お尻や太もも裏に負担が集中しやすい状態です。",
         muscles:["ハムストリングス（縮こまる）","腸腰筋（伸びて弱くなる）"],
         symptoms:["お尻・太もも裏の張り","猫背の助長","腰の重だるさ"]});
     }else{
-      findings.push({part:"骨盤（反り腰／後傾）",ok:true,desc:"前後の傾きは理想的な範囲内です。"});
+      findings.push({part:"骨盤（反り腰／後傾）",ok:true,desc:"大転子がセンターライン上に近く、前後の傾きは理想的な範囲内です。"});
     }
   }
   {
-    const sev=severityLabel(Math.max(0,kneeOffset),TOL_KNEE);
-    if(kneeOffset>0&&sev){
-      findings.push({part:"膝（過伸展）",ok:false,severity:sev,
-        desc:"膝が伸びきった状態（過伸展）になっています。",
+    const sevH=severityLabel(Math.max(0,-kneeOffset),TOL_KNEE);
+    const sevB=severityLabel(Math.max(0,kneeOffset),TOL_KNEE);
+    if(kneeOffset<0&&sevH){
+      findings.push({part:"膝（過伸展）",ok:false,severity:sevH,
+        desc:"膝関節がセンターラインより後ろにあり、膝が反った状態（過伸展）になっています。",
         impact:"膝の関節や靭帯に体重の負担が集中しやすい状態です。",
         muscles:["大腿四頭筋","下腿三頭筋（ふくらはぎ）"],
         symptoms:["膝の疲労感・違和感","立ち仕事での膝の痛み","膝関節への負担蓄積"]});
+    }else if(kneeOffset>0&&sevB){
+      findings.push({part:"膝（曲がり）",ok:false,severity:sevB,
+        desc:"膝関節がセンターラインより前にあり、膝が曲がった状態で立っています。",
+        impact:"太ももの前側が休めず、膝やすねに負担がかかりやすい状態です。",
+        muscles:["大腿四頭筋","ハムストリングス（縮こまる）"],
+        symptoms:["太ももの前の張り","膝の疲れやすさ","猫背・骨盤後傾の助長"]});
     }else{
-      findings.push({part:"膝（過伸展）",ok:true,desc:"適度な角度で、理想的な範囲内です。"});
+      findings.push({part:"膝",ok:true,desc:"膝関節がセンターライン上に近く、理想的な範囲内です。"});
     }
   }
 
@@ -572,16 +616,23 @@ function computeSideAnalysis(lm){
     {label:"反り腰",bad:hipForward},
     {label:"骨盤後傾",bad:hipBackward},
     {label:"膝の過伸展",bad:kneeHyperextended},
+    {label:"膝の曲がり",bad:kneeBent},
   ];
+  // 画面に描くポイントの良し悪し（緑＝センターライン上／赤＝ズレ）
+  cl.points[0].ok=!headForward;
+  cl.points[1].ok=!shoulderForward;
+  cl.points[2].ok=!(hipForward||hipBackward);
+  cl.points[3].ok=!(kneeHyperextended||kneeBent);
 
   return{
     score,type,overall:overallFromScore(score),findings,quickChecks,
     side:useLeft?"左側面":"右側面",
+    centerline:{lineX:cl.lineX,points:cl.points},
     details:[
       {label:"頭部の前方位",value:headOffset,color:headForward?"#ef4444":"#059669"},
       {label:"肩の前方位（巻き肩）",value:shoulderOffset,color:shoulderForward?"#ef4444":"#059669"},
       {label:"骨盤の前後位置",value:hipOffset,color:(hipForward||hipBackward)?"#ef4444":"#059669"},
-      {label:"膝の位置",value:kneeOffset,color:kneeHyperextended?"#ef4444":"#059669"},
+      {label:"膝の位置",value:kneeOffset,color:(kneeHyperextended||kneeBent)?"#ef4444":"#059669"},
     ],
   };
 }
@@ -591,18 +642,25 @@ function computeFrontAnalysis(lm){
   const ls=lm[11],rs=lm[12]; // 肩（左右）
   const lh=lm[23],rh=lm[24]; // 股関節（左右）
   const leftEye=lm[2],rightEye=lm[5];
-  const nose=lm[0];
-
-  const shoulderWidth=Math.max(Math.abs(rs.x-ls.x),0.05); // 正規化の基準
+  // センターライン（両足首の中点を通る垂直線）
+  const cl=frontCenterline(lm);
+  const shoulderWidth=cl.shoulderWidth; // 正規化の基準
 
   const shoulderTilt=(rs.y-ls.y)/shoulderWidth; // 正の値＝右肩が下がっている
   const hipTilt=(rh.y-lh.y)/shoulderWidth;      // 正の値＝骨盤が右下がり
   const headTilt=(rightEye.y-leftEye.y)/shoulderWidth; // 正の値＝頭部が右に傾いている
-  const hipMidX=(lh.x+rh.x)/2;
-  const bodyShift=(nose.x-hipMidX)/shoulderWidth; // 正の値＝体幹が右寄り
+  // センターラインからの左右のズレ（＋＝本人の左、－＝本人の右）
+  const axisShift=pt=>((pt.x-cl.lineX)/shoulderWidth)*cl.leftDir;
+  const AXIS=[
+    {key:"glabella",label:"眉間",pt:cl.glabella,tol:0.06,weight:200,cap:20},
+    {key:"sternal",label:"鎖骨の付け根",pt:cl.sternal,tol:0.05,weight:220,cap:20},
+    {key:"solar",label:"みぞおち",pt:cl.solar,tol:0.05,weight:160,cap:12},
+    {key:"pubis",label:"恥骨",pt:cl.pubis,tol:0.05,weight:220,cap:20},
+    {key:"knee",label:"両膝の中点",pt:cl.kneeMid,tol:0.05,weight:150,cap:10},
+  ].map(a=>({...a,shift:axisShift(a.pt)}));
 
   // ===== 判定基準（かなり厳しめ） =====
-  const TOL_SHOULDER=0.03, TOL_HIP=0.03, TOL_HEAD=0.035, TOL_BODY=0.05;
+  const TOL_SHOULDER=0.03, TOL_HIP=0.03, TOL_HEAD=0.035;
 
   function deduction(value,tolerance,weight,cap){
     const over=Math.max(0,Math.abs(value)-tolerance);
@@ -612,19 +670,23 @@ function computeFrontAnalysis(lm){
   score-=deduction(shoulderTilt,TOL_SHOULDER,280,35);
   score-=deduction(hipTilt,TOL_HIP,280,30);
   score-=deduction(headTilt,TOL_HEAD,260,25);
-  score-=deduction(bodyShift,TOL_BODY,220,25);
+  AXIS.forEach(a=>{ score-=deduction(a.shift,a.tol,a.weight,a.cap); });
   score=Math.max(0,Math.round(score));
 
   const shoulderAsym=Math.abs(shoulderTilt)>TOL_SHOULDER;
   const hipAsym=Math.abs(hipTilt)>TOL_HIP;
   const headAsym=Math.abs(headTilt)>TOL_HEAD;
-  const bodyAsym=Math.abs(bodyShift)>TOL_BODY;
+  const offAxis=AXIS.filter(a=>Math.abs(a.shift)>a.tol);
+  const bodyAsym=offAxis.length>0;
+  // いちばん大きくズレているポイントの向きで「右寄り／左寄り」をまとめる
+  const worst=offAxis.slice().sort((a,b)=>Math.abs(b.shift)/b.tol-Math.abs(a.shift)/a.tol)[0];
+  const sideWord=x=>x>0?"左":"右";
 
   const parts=[];
   if(shoulderAsym) parts.push(shoulderTilt>0?"右肩下がり":"左肩下がり");
   if(hipAsym) parts.push(hipTilt>0?"骨盤右下がり":"骨盤左下がり");
   if(headAsym) parts.push(headTilt>0?"頭部が右に傾き":"頭部が左に傾き");
-  if(bodyAsym) parts.push(bodyShift>0?"体幹が右寄り":"体幹が左寄り");
+  if(bodyAsym) parts.push(`体の軸が${sideWord(worst.shift)}寄り`);
 
   const type=parts.length>0?parts.join("／"):"良好（左右バランス良好）";
 
@@ -670,16 +732,15 @@ function computeFrontAnalysis(lm){
     }
   }
   {
-    const sev=severityLabel(Math.abs(bodyShift),TOL_BODY);
-    if(sev){
-      const dir=bodyShift>0?"体幹（上半身）が右に寄っています":"体幹（上半身）が左に寄っています";
-      findings.push({part:"体幹バランス",ok:false,severity:sev,
-        desc:`${dir}。`,
-        impact:"姿勢を支える筋肉に左右で偏った負担がかかり続けやすい状態です。",
-        muscles:["腹斜筋群","脊柱起立筋"],
+    if(bodyAsym){
+      const sev=severityLabel(Math.abs(worst.shift),worst.tol);
+      findings.push({part:"体の軸（センターライン）",ok:false,severity:sev,
+        desc:`両足首の中点から真上に引いたセンターラインに対して、${offAxis.map(a=>`${a.label}が${sideWord(a.shift)}`).join("、")}にズレています。`,
+        impact:"体の重心が片側に寄り、姿勢を支える筋肉に左右で偏った負担がかかり続けやすい状態です。",
+        muscles:["腹斜筋群","脊柱起立筋","中殿筋"],
         symptoms:["疲労・張りの左右差","姿勢の崩れやすさ","バランスの取りにくさ"]});
     }else{
-      findings.push({part:"体幹バランス",ok:true,desc:"中心が骨盤の真上に近く、良好な範囲内です。"});
+      findings.push({part:"体の軸（センターライン）",ok:true,desc:"眉間・鎖骨の付け根・みぞおち・恥骨・両膝の中点が、両足首の中点の真上に近く、良好な範囲内です。"});
     }
   }
 
@@ -688,16 +749,18 @@ function computeFrontAnalysis(lm){
     {label:"肩の左右差",bad:shoulderAsym},
     {label:"骨盤の左右差",bad:hipAsym},
     {label:"頭部の傾き",bad:headAsym},
-    {label:"体幹の左右バランス",bad:bodyAsym},
+    {label:"体の軸のズレ",bad:bodyAsym},
   ];
+  // 画面に描くポイントの良し悪し（緑＝センターライン上／赤＝ズレ）。眉間〜両膝の5点（両足首の中点は基準そのもの）
+  AXIS.forEach((a,i)=>{ cl.points[i].ok=Math.abs(a.shift)<=a.tol; });
 
   return{
-    score,type,overall:overallFromScore(score),findings,quickChecks,
+    score,type,overall:overallFromScore(score),findings,quickChecks,centerline:{lineX:cl.lineX,points:cl.points},
     details:[
       {label:"肩の高さの左右差",value:shoulderTilt,color:shoulderAsym?"#ef4444":"#059669"},
       {label:"骨盤の高さの左右差",value:hipTilt,color:hipAsym?"#ef4444":"#059669"},
       {label:"頭部の傾き",value:headTilt,color:headAsym?"#ef4444":"#059669"},
-      {label:"体幹の左右バランス",value:bodyShift,color:bodyAsym?"#ef4444":"#059669"},
+      {label:"体の軸のズレ（最大）",value:worst?worst.shift:0,color:bodyAsym?"#ef4444":"#059669"},
     ],
   };
 }
@@ -1002,7 +1065,7 @@ function shootPosture(view,chain){
     hint:view==="side"?"横向きに立ち、頭から足先まで入るように":"正面を向いて、肩の高さが均等に映るように",
     onShot:(canvas,lm)=>{
       const analysis=view==="side"?computeSideAnalysis(lm):computeFrontAnalysis(lm);
-      state.posture[view]={canvas:drawResultCanvas(canvas,lm,view),analysis}; state.saved.posture=false;
+      state.posture[view]={canvas:drawResultCanvas(canvas,lm,view,analysis),analysis}; state.saved.posture=false;
       if(chain&&view==="side"&&!state.posture.front) setTimeout(()=>shootPosture("front"),0); // 続けて正面へ
     }});
 }
@@ -1220,7 +1283,7 @@ function renderPosture(){
     </div></div>`;
   };
   return `<button class="back" onclick="go('home')">← メニューへ</button>
-    <div class="tip" style="margin:0 0 12px;">🧍 <b>AI姿勢分析</b>：横向き→正面の順に撮影すると、頭・肩・骨盤の位置のズレと、左右のバランスを判定します。</div>
+    <div class="tip" style="margin:0 0 12px;">🧍 <b>AI姿勢分析</b>：横向き→正面の順に撮影すると、<b>センターライン</b>（ピンクの線）からのズレを判定します。<br/>横から：耳の穴・肩の先端・大転子・膝関節が「くるぶしの少し前」の真上に並ぶのが理想／正面：眉間・鎖骨の付け根・みぞおち・恥骨・両膝の中点が「両足首の中点」の真上に並ぶのが理想。<br/>写真の<span style="color:#059669;font-weight:800;">緑</span>はセンターライン上、<span style="color:#dc2626;font-weight:800;">赤</span>はズレているポイントです。</div>
     ${card("side","① 横向き")}${card("front","② 正面")}
     ${ps.side?`<div class="card"><div class="card-body">${notesAndSave("posture","savePosture",true)}<div class="disclaimer">※ 保存すると「姿勢の経過記録」とマイページにも反映されます。</div></div></div>`:""}`;
 }
