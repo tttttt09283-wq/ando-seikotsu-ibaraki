@@ -12,10 +12,10 @@ export const BOOKING_SOURCE_PARAM = "src";
 export const BOOKING_SOURCE_VALUE = "body-check";
 export const BOOKING_SUMMARY_PARAM = "bc";
 
-/** 例：「カラダ年齢 50代レベル／スコア68点・Bランク」 */
-export function buildBodyCheckSummary(result: ScoreResult, bodyAge: BodyAgeResult | null): string {
+/** 例：「姿勢・体幹年齢 52歳（実年齢47歳）／スコア68点・Bランク」 */
+export function buildBodyCheckSummary(result: ScoreResult, bodyAge: BodyAgeResult | null, actualAge: number | null = null): string {
   const parts: string[] = [];
-  if (bodyAge) parts.push(`カラダ年齢 ${bodyAge.band.label}レベル`);
+  if (bodyAge) parts.push(`姿勢・体幹年齢 ${bodyAge.age}歳${actualAge !== null ? `（実年齢${actualAge}歳）` : ""}`);
   if (result.total !== null) {
     const rank = RANKS.find((r) => r.id === result.rank);
     parts.push(`スコア${result.total}点${rank ? `・${rank.title}` : ""}`);

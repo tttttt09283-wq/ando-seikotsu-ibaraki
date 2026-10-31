@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * 5項目のレーダーチャート（Recharts というグラフ用ライブラリを使用）
+ * 4項目のレーダーチャート（Recharts というグラフ用ライブラリを使用）
  * 未測定の項目は 0 として描画しつつ、軸ラベルに「未測定」と明記します。
  */
 import { PolarAngleAxis, PolarGrid, PolarRadiusAxis, Radar, RadarChart, ResponsiveContainer } from "recharts";

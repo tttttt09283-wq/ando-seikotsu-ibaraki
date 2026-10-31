@@ -4,7 +4,7 @@ import { QrImage } from "@/components/sales/Personalize";
 import { buttonStyles, cx } from "@/components/styles";
 
 const MENUS = [
-  { icon: "🧍", title: "カラダ年齢チェック", time: "約3分", text: "片足立ち・椅子立ち上がりなど5項目で「〇〇代レベル」を判定。スコア・ランク・レーダーチャート付き。" },
+  { icon: "🧍", title: "カラダ年齢チェック", time: "約3分", text: "片足立ち・プランク・前屈・スクワットの4項目で「姿勢・体幹年齢 〇〇歳」を判定。項目ごとの年齢・スコア・レーダーチャート付き。" },
   { icon: "📸", title: "AI姿勢チェック", time: "約2分", text: "横向き・正面の写真をAIが解析。猫背・反り腰・肩や骨盤の傾きを点数と所見で表示します。" },
   { icon: "🧬", title: "骨格タイプチェック", time: "約2分", text: "10の質問でストレート／ウェーブ／ナチュラルを判定。美容・ボディメイク系の集客にも。" },
   { icon: "💪", title: "体幹チェック", time: "約5分", text: "プランク・サイドプランクなど4つのテストで、体を支える力と左右差を点数化。セルフケア付き。" },
@@ -19,13 +19,13 @@ const PAINS = [
 const FLOW = [
   { icon: "📱", title: "LINE・QRから開く", text: "リッチメニューや店頭のQRコードから、登録・ログインなしですぐに始められます。" },
   { icon: "🧍", title: "選べるセルフチェック", text: "カラダ年齢・AI姿勢・骨格タイプ・体幹の4メニューから、気になるものを選んで2〜5分。" },
-  { icon: "📊", title: "結果で見える化", text: "カラダ年齢・姿勢の点数・骨格タイプ・体幹スコアなど、今の身体の状態を分かりやすく表示。" },
+  { icon: "📊", title: "結果で見える化", text: "姿勢・体幹年齢・姿勢の点数・骨格タイプ・体幹スコアなど、今の身体の状態を分かりやすく表示。" },
   { icon: "📅", title: "結果を持ってWEB予約", text: "気になる点と結果が予約フォームに引き継がれ、院は来院前に「何を見てほしいか」が分かります。" },
 ];
 
 const FEATURES = [
   { icon: "⏱️", title: "約3分・登録不要", text: "名前やメールアドレスは聞きません。気軽に試せるので、新しい方との最初の接点に。" },
-  { icon: "🎯", title: "カラダ年齢で“自分ごと化”", text: "30秒椅子立ち上がりの回数を、日本人の性別・年代別の標準値と比べて表示します。" },
+  { icon: "🎯", title: "年齢で“自分ごと化”", text: "4つの記録を年齢ごとの目安と比べて「〇〇歳」で表示。実年齢との差がひと目で分かります。" },
   { icon: "🤝", title: "結果から相談・予約へ", text: "結果に合わせて「専門スタッフが詳しく確認したいこと」を表示し、自然に予約へつなげます。" },
   { icon: "🧘", title: "セルフケア付き", text: "結果に合わせたセルフケアを最大3つ提案。予約しない方にも価値を届けます。" },
   { icon: "🛡️", title: "安全への配慮", text: "チェック前の安全確認、痛みがある場合の中止案内、医療診断ではない旨の表示を標準で搭載。" },
@@ -95,9 +95,9 @@ export default function ForClinicsPage() {
           <div>
             <p className="inline-block rounded-full bg-white/20 px-3 py-1 text-xs font-bold">整骨院・治療院向け 集客ツール</p>
             <h1 className="mt-4 text-3xl font-black leading-tight sm:text-5xl">
-              「あなたのカラダ、
+              「あなたの姿勢・体幹は
               <br />
-              <span className="text-sun-300">何歳レベル？</span>」
+              <span className="text-sun-300">何歳？</span>」
             </h1>
             <p className="mt-4 text-base font-bold leading-relaxed sm:text-lg">
               LINEから選べる4つのセルフ身体チェックで、

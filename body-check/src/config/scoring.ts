@@ -6,7 +6,7 @@
 import type { RankId } from "@/types";
 
 export const SCORING_CONFIG = {
-  /** この数より回答済み項目が少ないと「参考情報が不足しています」と表示（5項目中） */
+  /** この数より回答済み項目が少ないと「参考情報が不足しています」と表示（4項目中） */
   minAnsweredForReliable: 3,
   /** この点数（20点満点）以上を「得意な項目」とする */
   strengthMinPoints: 16,
