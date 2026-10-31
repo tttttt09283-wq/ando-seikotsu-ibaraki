@@ -7,10 +7,11 @@
  * プライベートブラウズ等で使えない場合もあるので、失敗してもアプリが止まらないようにしています。
  */
 import { SEX_OPTIONS } from "@/config/bodyAge";
-import { AGE_GROUPS, CHECK_ORDER, SYMPTOMS } from "@/config/checks";
+import { AGE_GROUPS, AGE_INPUT, ageGroupOf, CHECK_ORDER, SYMPTOMS } from "@/config/checks";
 import type { Answers, CheckAnswer, Profile } from "@/types";
 
-const STORAGE_KEY = "ando-body-check:v1";
+// v2：チェックを4項目（バランス力・体幹・柔軟性・瞬発力）に変えたため、以前の途中データとは分ける
+const STORAGE_KEY = "ando-body-check:v2";
 /** この時間を過ぎた途中データは破棄（24時間） */
 const DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
 /** 結果は7日間だけ見返せるようにする */
@@ -41,7 +42,7 @@ function newSessionId(): string {
 export function createInitialState(): CheckState {
   return {
     sessionId: newSessionId(),
-    profile: { ageGroup: null, sex: null, symptoms: [] },
+    profile: { age: null, ageGroup: null, sex: null, symptoms: [] },
     answers: {},
     safetyAgreed: false,
     consent: null,
@@ -72,8 +73,17 @@ export function sanitizeState(raw: unknown, now: number = Date.now()): CheckStat
 
   const ageIds = AGE_GROUPS.map((a) => a.id) as string[];
   const symptomIds = SYMPTOMS.map((s) => s.id) as string[];
+  const rawAge = r.profile?.age;
+  const age =
+    typeof rawAge === "number" && Number.isInteger(rawAge) && rawAge >= AGE_INPUT.min && rawAge <= AGE_INPUT.max ? rawAge : null;
   const profile: Profile = {
-    ageGroup: ageIds.includes(r.profile?.ageGroup as string) ? (r.profile!.ageGroup as Profile["ageGroup"]) : null,
+    age,
+    ageGroup:
+      age !== null
+        ? ageGroupOf(age)
+        : ageIds.includes(r.profile?.ageGroup as string)
+          ? (r.profile!.ageGroup as Profile["ageGroup"])
+          : null,
     sex: SEX_OPTIONS.some((o) => o.id === r.profile?.sex) ? (r.profile!.sex as Profile["sex"]) : null,
     symptoms: Array.isArray(r.profile?.symptoms)
       ? (r.profile!.symptoms.filter((s) => symptomIds.includes(s)) as Profile["symptoms"])
@@ -134,5 +144,5 @@ export function clearState(): void {
 
 /** 途中まで回答していて、まだ結果が出ていない状態か */
 export function hasDraft(state: CheckState | null): boolean {
-  return !!state && !state.completedAt && (state.step > 0 || state.profile.ageGroup !== null);
+  return !!state && !state.completedAt && (state.step > 0 || state.profile.age !== null);
 }

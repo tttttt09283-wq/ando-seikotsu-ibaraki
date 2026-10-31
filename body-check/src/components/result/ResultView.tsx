@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AGE_GROUPS, CHECK_META, MAX_POINTS_PER_CHECK, SYMPTOMS } from "@/config/checks";
+import { CHECK_META, CHECK_ORDER, MAX_POINTS_PER_CHECK, SYMPTOMS } from "@/config/checks";
 import { RANKS, SCORING_CONFIG } from "@/config/scoring";
 import { siteConfig } from "@/config/site";
 import { CheckIllustration } from "@/components/Illustrations";
@@ -66,19 +66,13 @@ export function ResultView() {
     );
   }
 
-  const legs = state.answers.legs;
-  const bodyAge = legs?.status === "answered" ? estimateBodyAge(legs.value, state.profile.sex, state.profile.ageGroup) : null;
-  const bodyAgeUnavailableReason =
-    legs?.status !== "answered"
-      ? "CHECK 2（30秒椅子立ち上がり）を測定すると、カラダ年齢が表示されます"
-      : !state.profile.sex
-        ? "性別が未入力のため判定できませんでした。もう一度チェックするとカラダ年齢が表示されます"
-        : null;
+  const bodyAge = estimateBodyAge(state.answers, state.profile.sex, state.profile.age);
+  const bodyAgeUnavailableReason = bodyAge ? null : "4つのチェックのうち1つ以上を測定すると、姿勢・体幹年齢が表示されます";
 
-  const feedback = buildDetailedFeedback(result, state.answers);
+  const feedback = buildDetailedFeedback(result);
   // デモ中は実在の院の予約ページへは進ませない（代わりに導入の案内を出す）
   const bookingUrl = !demo && siteConfig.bookingUrl
-    ? buildBookingUrl(siteConfig.bookingUrl, buildBodyCheckSummary(result, bodyAge))
+    ? buildBookingUrl(siteConfig.bookingUrl, buildBodyCheckSummary(result, bodyAge, state.profile.age))
     : null;
   const symptomLabels = state.profile.symptoms
     .filter((s) => s !== "none" && s !== "other")
@@ -105,7 +99,7 @@ export function ResultView() {
           bodyAge={bodyAge}
           bodyAgeUnavailableReason={bodyAgeUnavailableReason}
           date={formatDate(state.completedAt)}
-          ageLabel={AGE_GROUPS.find((a) => a.id === state.profile.ageGroup)?.label}
+          ageLabel={state.profile.age !== null ? `${state.profile.age}歳` : undefined}
         />
         <Messages result={result} />
         <StrengthsAndImprovements result={result} />
@@ -160,30 +154,48 @@ function ScoreGauge({ total }: { total: number }) {
   );
 }
 
-/** スクリーンショットしたくなる、メインの結果カード */
+/** スクリーンショットしたくなる、メインの結果カード（姿勢・体幹年齢） */
 function BodyAgeBlock({ bodyAge, unavailableReason }: { bodyAge: BodyAgeResult | null; unavailableReason: string | null }) {
   if (!bodyAge) {
     return (
       <div className="relative mt-4 rounded-3xl bg-white/15 p-4 text-center">
         <h1 id="score-heading" className="text-sm font-bold">
-          カラダ年齢（下半身）
+          あなたの姿勢・体幹年齢
         </h1>
         <p className="mt-1 text-xs leading-relaxed">{unavailableReason}</p>
       </div>
     );
   }
+  const tone = bodyAge.comparison === "younger" ? "text-brand-600" : bodyAge.comparison === "older" ? "text-navy-700" : "text-brand-600";
   return (
     <div className="relative mt-4 rounded-3xl bg-white px-4 py-5 text-center text-navy-900 shadow-lg">
       <h1 id="score-heading" className="whitespace-nowrap text-[13px] font-bold text-brand-700">
-        あなたのカラダ年齢（下半身）
+        あなたの姿勢・体幹年齢は
       </h1>
       <p className="mt-2 font-black leading-none">
-        <span className="animate-pop-in inline-block whitespace-nowrap text-[2.75rem] text-brand-600">{bodyAge.band.label}</span>
-        <span className="mt-1 block text-xl">レベル</span>
+        <span className={cx("animate-pop-in inline-block whitespace-nowrap text-[3.5rem] tabular-nums", tone)}>{bodyAge.age}</span>
+        <span className="ml-1 text-2xl">歳</span>
       </p>
-      {bodyAge.belowAllBands && <p className="mt-2 text-xs text-slate-600">（標準値の範囲より少ない回数でした）</p>}
+      {bodyAge.diff !== null && bodyAge.comparison !== "same" && (
+        <p className={cx("mt-2 inline-block rounded-full px-3 py-1 text-sm font-black", bodyAge.comparison === "younger" ? "bg-brand-100 text-brand-800" : "bg-sun-100 text-navy-900")}>
+          実年齢より {Math.abs(bodyAge.diff)}歳 {bodyAge.comparison === "younger" ? "若い" : "上"}
+        </p>
+      )}
       <p className="mt-3 text-sm font-bold leading-relaxed">{bodyAgeMessage(bodyAge)}</p>
-      <p className="mt-2 text-[10px] leading-snug text-slate-500">30秒椅子立ち上がりの回数を日本人の性別・年代別標準値と比べた目安です</p>
+      <ul className="mt-3 grid grid-cols-2 gap-2 text-left" aria-label="項目ごとの年齢">
+        {CHECK_ORDER.map((id) => {
+          const item = bodyAge.items.find((i) => i.id === id);
+          return (
+            <li key={id} className="rounded-2xl bg-brand-50 px-3 py-2">
+              <p className="text-[11px] font-bold text-brand-700">
+                {CHECK_META[id].emoji} {CHECK_META[id].shortName}
+              </p>
+              <p className="text-lg font-black tabular-nums">{item ? `${item.age}歳` : <span className="text-sm text-slate-500">未測定</span>}</p>
+            </li>
+          );
+        })}
+      </ul>
+      <p className="mt-2 text-[10px] leading-snug text-slate-500">4つのチェックの記録を、年齢ごとの目安と比べた結果です</p>
     </div>
   );
 }
@@ -245,7 +257,7 @@ function ScoreCard({
         <p role="note" className="relative mt-4 rounded-2xl bg-white/15 p-3 text-center text-sm font-bold">
           ⚠️ 参考情報が不足しています
           <span className="block text-xs font-medium">
-            （測定できた項目：5項目中{result.answeredCount}項目。{SCORING_CONFIG.minAnsweredForReliable}項目以上の測定で、より参考になる結果になります）
+            （測定できた項目：{CHECK_ORDER.length}項目中{result.answeredCount}項目。{SCORING_CONFIG.minAnsweredForReliable}項目以上の測定で、より参考になる結果になります）
           </span>
         </p>
       )}
@@ -403,7 +415,6 @@ function ConsultSection({
       ) : (
         <p className="mt-3 text-[15px] leading-relaxed">{feedback.allGoodMessage}</p>
       )}
-      {feedback.painNote && <p className="mt-3 rounded-2xl bg-white/15 p-3 text-sm font-bold">{feedback.painNote}</p>}
       {url && (
         <>
           <BookingButton url={url} onClick={onClick} label="この内容で相談・予約する" />
@@ -492,7 +503,7 @@ function DemoResultCta() {
         WEB予約へ進みます
       </h2>
       <p className="mt-3 text-sm leading-relaxed text-slate-700">
-        結果（カラダ年齢・スコア）は予約フォームに自動で引き継がれ、院のスタッフは「どこを詳しく見てほしいか」を事前に把握できます。
+        結果（姿勢・体幹年齢・スコア）は予約フォームに自動で引き継がれ、院のスタッフは「どこを詳しく見てほしいか」を事前に把握できます。
       </p>
       <Link href="/for-clinics" className={cx(buttonStyles.accent, "mt-5")}>
         導入について見る
@@ -532,7 +543,7 @@ function BookingSection({ url, onClick }: { url: string | null; onClick: () => v
       )}
       {url && (
         <p className="mt-3 text-xs leading-relaxed text-slate-600">
-          予約フォームには、今回のチェック結果（カラダ年齢・スコア）が引き継がれ、当日の施術の参考にさせていただきます。
+          予約フォームには、今回のチェック結果（姿勢・体幹年齢・スコア）が引き継がれ、当日の施術の参考にさせていただきます。
         </p>
       )}
       <p className="mt-2 text-xs text-slate-600">ご予約は任意です。セルフケアだけでも、ぜひ続けてみてください。</p>
@@ -548,7 +559,7 @@ function ScoreDisclaimer() {
         ※スコアとランクは「あんど式」独自の参考指標です。医学的に検証された基準ではなく、疾病のリスクや健康状態を判定するものではありません。
       </p>
       <p>
-        ※カラダ年齢は、30秒椅子立ち上がりの回数が、日本人の性別・年代別標準値（{BODY_AGE_SOURCE}）のどの年代の「普通」の範囲に届いているかで判定した、下半身の筋持久力の目安です。実際の年齢や健康状態を示すものではありません。
+        ※姿勢・体幹年齢は、4つのチェックの記録を年齢ごとの目安の値と比べ、項目ごとの年齢を平均したものです。瞬発力（30秒スクワット）は日本人の性別・年代別標準値（{BODY_AGE_SOURCE}）をもとにしています。バランス力・体幹の強さ・柔軟性は「あんど式」独自の目安です。実際の年齢や健康状態を示すものではありません。
       </p>
       <p>※結果はお使いのスマホの中だけで計算・保存されています（7日間）。</p>
     </div>

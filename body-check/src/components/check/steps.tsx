@@ -6,19 +6,18 @@
  */
 import { useCallback, useState } from "react";
 import {
-  AGE_GROUPS,
+  AGE_INPUT,
+  ageGroupOf,
   BALANCE_OPTIONS,
-  CONDITION_OPTIONS,
-  CONDITION_QUESTIONS,
   FLEXIBILITY_OPTIONS,
   LEGS_INPUT,
-  SHOULDER_OPTIONS,
+  PLANK_INPUT,
   SYMPTOMS,
 } from "@/config/checks";
 import { SEX_OPTIONS, type SexId } from "@/config/bodyAge";
-import { balanceOptionIdForSeconds, isValidLegsCount, parseCount } from "@/lib/scoring";
-import { Card, cx, OptionCard } from "@/components/ui";
-import type { AgeGroupId, BalanceValue, CheckAnswer, ConditionValue, Profile, SymptomId } from "@/types";
+import { balanceOptionIdForSeconds, isValidLegsCount, isValidPlankSeconds, parseCount } from "@/lib/scoring";
+import { Card, OptionCard } from "@/components/ui";
+import type { BalanceValue, CheckAnswer, Profile, SymptomId } from "@/types";
 import { Stopwatch } from "./Stopwatch";
 
 /** 各ステップから親に渡す「次へ」処理。検証エラーなら文字列を返す */
@@ -48,7 +47,7 @@ function Fieldset({ legend, hint, children }: { legend: string; hint?: string; c
 // ---------------------------------------------------------------------------
 
 export function ProfileStep({ initial, onSubmit, render }: StepRenderProps<Profile>) {
-  const [ageGroup, setAgeGroup] = useState<AgeGroupId | null>(initial?.ageGroup ?? null);
+  const [ageText, setAgeText] = useState(initial?.age != null ? String(initial.age) : "");
   const [sex, setSex] = useState<SexId | null>(initial?.sex ?? null);
   const [symptoms, setSymptoms] = useState<SymptomId[]>(initial?.symptoms ?? []);
 
@@ -63,32 +62,38 @@ export function ProfileStep({ initial, onSubmit, render }: StepRenderProps<Profi
   };
 
   const tryNext = () => {
-    if (!ageGroup) return "年代を選んでください";
+    const age = parseCount(ageText);
+    if (ageText.trim() === "") return "年齢を入力してください";
+    if (age === null || age < AGE_INPUT.min || age > AGE_INPUT.max) return `年齢は${AGE_INPUT.min}〜${AGE_INPUT.max}の数字で入力してください`;
     if (!sex) return "性別を選んでください（「回答しない」も選べます）";
     if (symptoms.length === 0) return "気になる症状を1つ以上選んでください（ない場合は「特になし」）";
-    onSubmit({ ageGroup, sex, symptoms });
+    onSubmit({ age, ageGroup: ageGroupOf(age), sex, symptoms });
     return null;
   };
 
   return render(
     <div className="space-y-6">
       <Card>
-        <Fieldset legend="年代">
-          <div className="grid grid-cols-2 gap-2">
-            {AGE_GROUPS.map((a) => (
-              <OptionCard
-                key={a.id}
-                type="radio"
-                name="ageGroup"
-                value={a.id}
-                label={a.label}
-                checked={ageGroup === a.id}
-                onChange={(v) => setAgeGroup(v as AgeGroupId)}
-                compact
-              />
-            ))}
-          </div>
-        </Fieldset>
+        <label htmlFor="age" className="mb-2 block text-lg font-black">
+          年齢
+        </label>
+        <div className="flex items-end justify-center gap-1">
+          <input
+            id="age"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete="off"
+            maxLength={2}
+            value={ageText}
+            onChange={(e) => setAgeText(e.target.value)}
+            placeholder="45"
+            aria-describedby="age-hint"
+            className="h-16 w-24 rounded-2xl border-2 border-slate-300 bg-white text-center text-4xl font-black tabular-nums focus:border-brand-500 focus:outline-none"
+          />
+          <span className="pb-2 text-lg font-bold">歳</span>
+        </div>
+        <p id="age-hint" className="mt-2 text-center text-xs text-slate-600">結果の「姿勢・体幹年齢」と、実年齢を比べるために使います。</p>
       </Card>
       <Card>
         <Fieldset legend="性別">
@@ -106,7 +111,7 @@ export function ProfileStep({ initial, onSubmit, render }: StepRenderProps<Profi
               />
             ))}
           </div>
-          <p className="text-xs text-slate-600">カラダ年齢の判定で、性別ごとの標準値と比べるために使います。</p>
+          <p className="text-xs text-slate-600">姿勢・体幹年齢の判定で、性別ごとの目安と比べるために使います。</p>
         </Fieldset>
       </Card>
       <Card>
@@ -134,7 +139,7 @@ export function ProfileStep({ initial, onSubmit, render }: StepRenderProps<Profi
 }
 
 // ---------------------------------------------------------------------------
-// CHECK 1：バランス
+// CHECK 1：バランス力（片足立ち）
 // ---------------------------------------------------------------------------
 
 const NOT_DONE = "not_done";
@@ -168,9 +173,9 @@ export function BalanceStep({ initial, onSubmit, render }: StepRenderProps<Check
     <div className="space-y-5">
       <HowTo
         steps={[
-          "壁や椅子など、すぐに支えられる場所の近くに立ちます。",
+          "壁や椅子など、すぐに支えられる場所の近くに立ちます（目は開けたまま）。",
           "両手を腰に当て、片足を床から5cmほど浮かせます。",
-          "足が床についたり、支えにつかまったら終了です。",
+          "足が床についたり、支えにつかまったら終了です（最大60秒）。左右それぞれ測ります。",
         ]}
       />
       <Stopwatch mode="countup" seconds={60} onStop={onStop}>
@@ -221,7 +226,7 @@ export function BalanceStep({ initial, onSubmit, render }: StepRenderProps<Check
 }
 
 // ---------------------------------------------------------------------------
-// CHECK 2：下半身
+// CHECK 4：瞬発力（30秒スクワット・椅子を使って）
 // ---------------------------------------------------------------------------
 
 export function LegsStep({ initial, onSubmit, render }: StepRenderProps<CheckAnswer<number>>) {
@@ -234,7 +239,7 @@ export function LegsStep({ initial, onSubmit, render }: StepRenderProps<CheckAns
   };
 
   const tryNext = () => {
-    if (text.trim() === "") return "立ち上がれた回数を入力してください";
+    if (text.trim() === "") return "スクワットできた回数を入力してください";
     const count = parseCount(text);
     if (count === null || !isValidLegsCount(count)) {
       return `回数は${LEGS_INPUT.min}〜${LEGS_INPUT.max}の数字で入力してください`;
@@ -247,16 +252,16 @@ export function LegsStep({ initial, onSubmit, render }: StepRenderProps<CheckAns
     <div className="space-y-5">
       <HowTo
         steps={[
-          "壁につけるなどして動かないようにした、安定した椅子に座ります。",
+          "壁につけるなどして動かないようにした、安定した椅子の前に立ちます。",
           "腕を胸の前で組みます（不安な方は膝に手を添えてもOK）。",
-          "「スタート」を押して、30秒間で何回立ち上がれるか数えます。",
-          "しっかり立ち上がって、しっかり座るまでを1回と数えます。",
+          "「スタート」を押して、椅子にお尻が軽く触れるまでしゃがみ、まっすぐ立ち上がります。",
+          "しゃがんで立つまでを1回とし、30秒間で何回できるか数えます。",
         ]}
       />
       <Stopwatch mode="countdown" seconds={LEGS_INPUT.durationSeconds} />
       <Card>
         <label htmlFor="legs-count" className="block text-center text-lg font-black">
-          立ち上がれた回数
+          スクワットできた回数
         </label>
         <div className="mt-3 flex items-center justify-center gap-3">
           <button
@@ -302,7 +307,63 @@ export function LegsStep({ initial, onSubmit, render }: StepRenderProps<CheckAns
 }
 
 // ---------------------------------------------------------------------------
-// CHECK 3・4：選択式（柔軟性・肩の動き）
+// CHECK 2：体幹の強さ（プランク）
+// ---------------------------------------------------------------------------
+
+export function PlankStep({ initial, onSubmit, render }: StepRenderProps<CheckAnswer<number>>) {
+  const [text, setText] = useState(initial?.status === "answered" ? String(initial.value) : "");
+  const onStop = useCallback((sec: number) => setText(String(Math.floor(sec))), []);
+
+  const tryNext = () => {
+    if (text.trim() === "") return "キープできた秒数を入力してください（ストップウォッチを止めると自動で入ります）";
+    const sec = parseCount(text);
+    if (sec === null || !isValidPlankSeconds(sec)) return `秒数は${PLANK_INPUT.min}〜${PLANK_INPUT.max}の数字で入力してください`;
+    onSubmit({ status: "answered", value: sec });
+    return null;
+  };
+
+  return render(
+    <div className="space-y-5">
+      <HowTo
+        steps={[
+          "うつ伏せになり、両ひじを肩の真下について、つま先を立てます。",
+          "お尻を持ち上げて、頭からかかとまでを一直線にします。",
+          "「スタート」を押してキープ。腰が落ちる・お尻が上がる・ひざがついたら「ストップ」。",
+          "腰や肩に痛みが出たら、すぐにやめてください。",
+        ]}
+      />
+      <Stopwatch mode="countup" seconds={PLANK_INPUT.stopwatchMax} onStop={onStop} />
+      <Card>
+        <label htmlFor="plank-sec" className="block text-center text-lg font-black">
+          キープできた秒数
+        </label>
+        <div className="mt-3 flex items-end justify-center gap-1">
+          <input
+            id="plank-sec"
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            autoComplete="off"
+            maxLength={3}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="0"
+            aria-describedby="plank-sec-hint"
+            className="h-16 w-28 rounded-2xl border-2 border-slate-300 bg-white text-center text-4xl font-black tabular-nums focus:border-brand-500 focus:outline-none"
+          />
+          <span className="pb-2 text-lg font-bold">秒</span>
+        </div>
+        <p id="plank-sec-hint" className="mt-2 text-center text-sm text-slate-600">
+          ストップウォッチを止めると自動で入ります（手で入力してもOK）
+        </p>
+      </Card>
+    </div>,
+    tryNext,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CHECK 3：選択式（柔軟性）
 // ---------------------------------------------------------------------------
 
 function ChoiceStep({
@@ -353,81 +414,6 @@ export function FlexibilityStep(props: StepRenderProps<CheckAnswer<string>>) {
         "反動はつけず、痛みのない範囲で止めましょう。",
       ]}
     />
-  );
-}
-
-export function ShoulderStep(props: StepRenderProps<CheckAnswer<string>>) {
-  return (
-    <ChoiceStep
-      {...props}
-      name="shoulder"
-      legend="両腕を上げてみてどうでしたか？"
-      options={SHOULDER_OPTIONS}
-      howTo={[
-        "背すじを伸ばして、立つか椅子に座ります。",
-        "手のひらを内側に向け、両腕を前からゆっくりバンザイします。",
-        "耳の横まで無理なく上がるか、左右差がないかを確かめます。",
-      ]}
-    />
-  );
-}
-
-// ---------------------------------------------------------------------------
-// CHECK 5：コンディション
-// ---------------------------------------------------------------------------
-
-export function ConditionStep({ initial, onSubmit, render }: StepRenderProps<CheckAnswer<ConditionValue>>) {
-  const [values, setValues] = useState<ConditionValue>(initial?.status === "answered" ? initial.value : {});
-  const unanswered = CONDITION_QUESTIONS.filter((q) => !values[q.id]);
-
-  const tryNext = () => {
-    if (unanswered.length > 0) {
-      const numbers = unanswered.map((q) => `Q${CONDITION_QUESTIONS.indexOf(q) + 1}`).join("・");
-      return `${numbers} が未回答です`;
-    }
-    onSubmit({ status: "answered", value: values });
-    return null;
-  };
-
-  return render(
-    <div className="space-y-4">
-      {CONDITION_QUESTIONS.map((q, index) => (
-        <Card key={q.id}>
-          <fieldset>
-            <legend className="mb-3 text-base font-black leading-snug">
-              <span className="mr-1 text-brand-600">Q{index + 1}.</span>
-              {q.text}
-            </legend>
-            <div className="grid grid-cols-3 gap-2">
-              {CONDITION_OPTIONS.map((o) => {
-                const checked = values[q.id] === o.id;
-                return (
-                  <label
-                    key={o.id}
-                    className={cx(
-                      "flex min-h-14 cursor-pointer items-center justify-center rounded-2xl border-2 px-1 text-center text-sm font-bold leading-tight transition",
-                      "has-[:focus-visible]:outline has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-sun-500",
-                      checked ? "border-brand-500 bg-brand-500 text-white" : "border-slate-200 bg-white",
-                    )}
-                  >
-                    <input
-                      type="radio"
-                      name={q.id}
-                      value={o.id}
-                      checked={checked}
-                      onChange={() => setValues((prev) => ({ ...prev, [q.id]: o.id }))}
-                      className="sr-only"
-                    />
-                    {o.label}
-                  </label>
-                );
-              })}
-            </div>
-          </fieldset>
-        </Card>
-      ))}
-    </div>,
-    tryNext,
   );
 }
 

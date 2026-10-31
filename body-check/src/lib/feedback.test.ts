@@ -6,11 +6,10 @@ import { FEEDBACK } from "@/config/feedback";
 import type { Answers } from "@/types";
 
 const allGood: Answers = {
-  balance: { status: "answered", value: { left: "30plus", right: "30plus" } },
-  legs: { status: "answered", value: 30 },
+  balance: { status: "answered", value: { left: "60plus", right: "60plus" } },
+  plank: { status: "answered", value: 120 },
   flexibility: { status: "answered", value: "palm" },
-  shoulder: { status: "answered", value: "smooth" },
-  condition: { status: "answered", value: { q1: "rarely", q2: "rarely", q3: "rarely", q4: "rarely", q5: "rarely" } },
+  legs: { status: "answered", value: 30 },
 };
 
 describe("getFeedbackLevel", () => {
@@ -28,8 +27,8 @@ describe("getFeedbackLevel", () => {
 
 describe("buildDetailedFeedback", () => {
   it("全項目良好なら相談ポイントはなく、メンテナンスの一文を出す", () => {
-    const f = buildDetailedFeedback(calculateResult(allGood), allGood);
-    expect(f.items).toHaveLength(5);
+    const f = buildDetailedFeedback(calculateResult(allGood));
+    expect(f.items).toHaveLength(4);
     expect(f.items.every((i) => i.level === "good")).toBe(true);
     expect(f.consultPoints).toEqual([]);
     expect(f.allGoodMessage).not.toBeNull();
@@ -41,22 +40,16 @@ describe("buildDetailedFeedback", () => {
       legs: { status: "answered", value: 5 }, // 4点 → low
       flexibility: { status: "answered", value: "ankle" }, // 12点 → fair
     };
-    const f = buildDetailedFeedback(calculateResult(answers), answers);
+    const f = buildDetailedFeedback(calculateResult(answers));
     expect(f.consultPoints.map((c) => c.id)).toEqual(["legs", "flexibility"]);
     expect(f.allGoodMessage).toBeNull();
     expect(f.items.find((i) => i.id === "legs")?.level).toBe("low");
   });
 
   it("スキップした項目は解説に含めない", () => {
-    const answers: Answers = { ...allGood, shoulder: { status: "skipped" } };
-    const f = buildDetailedFeedback(calculateResult(answers), answers);
-    expect(f.items.map((i) => i.id)).not.toContain("shoulder");
-  });
-
-  it("肩に痛みがある場合は注意書きを付ける", () => {
-    const answers: Answers = { ...allGood, shoulder: { status: "answered", value: "pain" } };
-    const f = buildDetailedFeedback(calculateResult(answers), answers);
-    expect(f.painNote).toContain("早めにご相談");
+    const answers: Answers = { ...allGood, plank: { status: "skipped" } };
+    const f = buildDetailedFeedback(calculateResult(answers));
+    expect(f.items.map((i) => i.id)).not.toContain("plank");
   });
 
   it("全項目・全レベルの文章がそろっている（まずまず・要チェックには整骨院で確認できることが必須）", () => {

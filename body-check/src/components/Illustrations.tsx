@@ -76,29 +76,16 @@ export function FlexibilityIllustration({ className }: { className?: string }) {
   );
 }
 
-export function ShoulderIllustration({ className }: { className?: string }) {
+export function PlankIllustration({ className }: { className?: string }) {
   return (
     <Frame className={className}>
-      <path d="M60 58 L60 80" stroke={SHIRT} strokeWidth="16" strokeLinecap="round" />
-      <path d="M53 56 L46 20" {...arm} />
-      <path d="M67 56 L74 20" {...arm} />
-      <path d="M56 82 L54 106" {...limb} />
-      <path d="M64 82 L66 106" {...limb} />
-      <Face x={60} y={42} />
-      <path d="M32 30 q-6 8 0 16 M88 30 q6 8 0 16" stroke="#f5b301" strokeWidth="3" fill="none" strokeLinecap="round" />
-    </Frame>
-  );
-}
-
-export function ConditionIllustration({ className }: { className?: string }) {
-  return (
-    <Frame className={className}>
-      <circle cx="54" cy="52" r="18" fill="#ffd866" />
-      <g stroke="#f5b301" strokeWidth="4" strokeLinecap="round">
-        <path d="M54 24 v-6 M54 86 v-6 M26 52 h-6 M88 52 h-6 M34 32 l-4 -4 M74 32 l4 -4" />
-      </g>
-      <path d="M50 92 a14 14 0 0 1 4 -27 a18 18 0 0 1 34 4 a11 11 0 0 1 2 23 z" fill="#ffffff" />
-      <path d="M70 80 c-4 -6 -12 -2 -8 4 l8 7 l8 -7 c4 -6 -4 -10 -8 -4" fill="#ff8a80" />
+      {/* 両ひじとつま先で支えて、頭からかかとまで一直線 */}
+      <path d="M38 66 L84 76" stroke={SHIRT} strokeWidth="14" strokeLinecap="round" />
+      <path d="M86 77 L102 82" {...limb} />
+      <path d="M40 68 L40 86 L54 86" {...arm} />
+      <Face x={30} y={58} />
+      <path d="M22 90 h84" stroke="#63cbd5" strokeWidth="3" strokeLinecap="round" />
+      <path d="M58 52 h20" stroke="#f5b301" strokeWidth="3" strokeLinecap="round" strokeDasharray="4 4" />
     </Frame>
   );
 }
@@ -107,14 +94,12 @@ export function CheckIllustration({ id, className }: { id: CheckId; className?: 
   switch (id) {
     case "balance":
       return <BalanceIllustration className={className} />;
-    case "legs":
-      return <LegsIllustration className={className} />;
+    case "plank":
+      return <PlankIllustration className={className} />;
     case "flexibility":
       return <FlexibilityIllustration className={className} />;
-    case "shoulder":
-      return <ShoulderIllustration className={className} />;
-    case "condition":
-      return <ConditionIllustration className={className} />;
+    case "legs":
+      return <LegsIllustration className={className} />;
   }
 }
 

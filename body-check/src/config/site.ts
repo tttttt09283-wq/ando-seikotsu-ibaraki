@@ -20,7 +20,7 @@ function readBookingUrl(raw: string | undefined): string | null {
 export const siteConfig = {
   serviceName: "あんど式 カラダ年齢チェック",
   clinicName: "あんど整骨院 香里園院",
-  catchCopy: "あなたのカラダ、何歳レベル？",
+  catchCopy: "あなたの姿勢・体幹は何歳？",
   /**
    * WEB予約URL。環境変数 NEXT_PUBLIC_BOOKING_URL で設定します。
    * 未設定の場合は null になり、予約ボタンは無効化されます（仮URLは使いません）。
