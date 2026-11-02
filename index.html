@@ -12134,11 +12134,16 @@ function bulkPaymentItems(p){
   return items;
 }
 // 印刷する行（{text,center,bold}）を作る
-function buildBulkReceiptLines({store,patientName,label,payments}){
+// 返金（refunds）は元の会計に結びつけて、その来院日の下にマイナスで載せ、小計・合計から差し引く
+function buildBulkReceiptLines({store,patientName,label,payments,refunds=[]}){
   const W=BULK_RECEIPT_W, DAYS=["日","月","火","水","木","金","土"];
   const sorted=[...payments].sort((a,b)=>(a.payment_date||"").localeCompare(b.payment_date||"")||a.id-b.id);
-  const ins=sorted.reduce((a,p)=>a+(p.insurance_amount||0),0);
-  const total=sorted.reduce((a,p)=>a+(p.total_amount||0),0);
+  const refByPay={};
+  refunds.forEach(rf=>{ (refByPay[rf.payment_id]=refByPay[rf.payment_id]||[]).push(rf); });
+  const refundAll=refunds.reduce((a,rf)=>a+(rf.amount||0),0);
+  const refundSelf=refunds.filter(rf=>rf.target==="自費").reduce((a,rf)=>a+(rf.amount||0),0);
+  const ins=sorted.reduce((a,p)=>a+(p.insurance_amount||0),0)-(refundAll-refundSelf);
+  const total=sorted.reduce((a,p)=>a+(p.total_amount||0),0)-refundAll;
   const self=total-ins;
   const now=new Date();
   const lines=[];
@@ -12161,8 +12166,13 @@ function buildBulkReceiptLines({store,patientName,label,payments}){
       lines.push({text:bulkPadRow(head,bulkYen(p.total_amount))});
       items.forEach(i=>lines.push({text:bulkPadRow("  "+i.label,bulkYen(i.amount))}));
     }
+    (refByPay[p.id]||[]).forEach(rf=>{
+      const rd=String(rf.refund_date||"").slice(5).replace("-","/").replace(/^0/,"").replace("/0","/");
+      lines.push({text:bulkPadRow(`  返金（${rd}）`,"-"+bulkYen(rf.amount))});
+    });
   });
   lines.push({text:"-".repeat(W)});
+  if(refundAll>0) lines.push({text:bulkPadRow("返金 合計","-"+bulkYen(refundAll))});
   if(ins>0) lines.push({text:bulkPadRow("保険分 小計",bulkYen(ins))});
   if(self>0) lines.push({text:bulkPadRow("自費分 小計（税込）",bulkYen(self))});
   if(self>0) lines.push({text:bulkPadRow("（内消費税10%）",bulkYen(Math.round(self*10/110)))});
@@ -12209,7 +12219,7 @@ function printBulkReceiptPreview(lines){
   setTimeout(()=>{ try{ f.contentWindow.focus(); f.contentWindow.print(); }catch(e){} setTimeout(()=>f.remove(),60000); },300);
 }
 
-function BulkReceiptPanel({payments,bookings,stores}){
+function BulkReceiptPanel({payments,bookings,stores,refunds=[]}){
   const [freqFilter,setFreqFilter]=React.useState("月ごと"); // "月ごと" | "年ごと"
   const [prefs,setPrefs]=React.useState([]);
   const [loading,setLoading]=React.useState(true);
@@ -12251,14 +12261,17 @@ function BulkReceiptPanel({payments,bookings,stores}){
   const range=getRangeForSelected();
   const selBookingIds=selPhone?new Set((bookingByPhone[selPhone]||[]).filter(b=>b.date>=range.start&&b.date<=range.end).map(b=>b.id)):new Set();
   const selPayments=selPhone?payments.filter(p=>selBookingIds.has(p.booking_id)):[];
-  const total=selPayments.reduce((s,p)=>s+(p.total_amount||0),0);
+  // この期間の会計に対する返金（取消されたものは除かれている）。返金日が翌月以降でも、元の会計の月に差し引く
+  const selPayIds=new Set(selPayments.map(p=>p.id));
+  const selRefunds=refunds.filter(rf=>selPayIds.has(rf.payment_id));
+  const total=selPayments.reduce((s,p)=>s+(p.total_amount||0),0)-selRefunds.reduce((s,rf)=>s+(rf.amount||0),0);
   // 会計した院の情報（住所・電話）をレシートに載せる
   const selStore=React.useMemo(()=>{
     const b=(bookingByPhone[selPhone]||[]).find(x=>selBookingIds.has(x.id));
     const id=(b&&b.store_id)||1;
     return (stores||[]).find(s=>s.id===id)||null;
   },[selPhone,stores,bookingByPhone,range.start,range.end]);
-  const receiptLines=selPatient&&selPayments.length?buildBulkReceiptLines({store:selStore,patientName:selPatient.patient_name,label:range.label,payments:selPayments}):[];
+  const receiptLines=selPatient&&selPayments.length?buildBulkReceiptLines({store:selStore,patientName:selPatient.patient_name,label:range.label,payments:selPayments,refunds:selRefunds}):[];
   const [printing,setPrinting]=React.useState(false);
   const [printMsg,setPrintMsg]=React.useState(null); // {ok, text}
   React.useEffect(()=>{ setPrintMsg(null); },[selPhone,freqFilter,period]);
@@ -15665,7 +15678,7 @@ function Dashboard({user,onLogout}){
                              {view==="referral_mgmt"&&<ReferralMgmtPanel bookings={bookings} payments={payments}/>}
                     {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} todayStr={todayStr} onRestore={restoreBooking} onDelete={deleteCancelledBooking}/>}
                            {view==="staff_off_conflicts"&&<StaffOffConflictsPanel bookings={bookings} weeklyShifts={weeklyShifts} dateOverrides={dateOverrides} storeStaff={storeStaff} onReassign={reassignStaffForBooking} onReschedule={rescheduleBooking} todayStr={todayStr}/>}
-          {view==="bulk_receipt"&&<BulkReceiptPanel payments={payments} bookings={bookings} stores={stores}/>}
+          {view==="bulk_receipt"&&<BulkReceiptPanel payments={payments} bookings={bookings} stores={stores} refunds={refunds}/>}
           {/* キャンセル一覧 */}
 
           {view==="posture_records"&&<PostureRecordsPanel bookings={bookings}/>}
