@@ -497,7 +497,29 @@ const sb = {
     });
     const text=await res.text();return text?JSON.parse(text):[];
   },
-  select:(t,f="")=>sb.query(t,"GET",null,f),
+  // Supabaseは1回に1000件までしか返さないため、件数指定（limit）の無い読み込みは1000件ずつに分けて全件取る。
+  // 予約が1000件を超えたとき、新しい予約がカレンダーに出なくなっていた（重複チェックには引っかかる）のを防ぐ
+  async select(t,f=""){
+    if(/[?&]limit=/.test(f)) return sb.query(t,"GET",null,f);
+    const PAGE=1000;
+    const sep=f?"&":"?";
+    const first=await sb.query(t,"GET",null,`${f}${sep}limit=${PAGE}`);
+    if(!Array.isArray(first)||first.length<PAGE) return first;
+    // 2ページ目以降も読むときは、同じ日時の行が抜けたり重なったりしないよう id で並びを固定する
+    let base=f;
+    if(first[0]&&first[0].id!==undefined){
+      const m=f.match(/([?&])order=([^&]*)/);
+      if(!m) base=`${f}${sep}order=id.asc`;
+      else if(!m[2].split(",").some(o=>o.split(".")[0]==="id")) base=f.replace(m[0],`${m[1]}order=${m[2]},id.asc`);
+    }
+    const out=[];
+    for(let offset=0;;offset+=PAGE){
+      const rows=await sb.query(t,"GET",null,`${base}${base?"&":"?"}limit=${PAGE}&offset=${offset}`);
+      if(!Array.isArray(rows)) return offset===0?rows:out;
+      out.push(...rows);
+      if(rows.length<PAGE) return out;
+    }
+  },
   insert:(t,d)=>sb.query(t,"POST",d),
   update:(t,id,d)=>sb.query(t,"PATCH",d,`?id=eq.${id}`),
   delete:(t,id)=>sb.query(t,"DELETE",null,`?id=eq.${id}`),
