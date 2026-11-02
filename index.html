@@ -13309,12 +13309,13 @@ function AttendancePunchPanel({currentUser,isAdmin}){
     document.body.removeChild(a);URL.revokeObjectURL(url);
   }
   function exportCSV(){
-    const headers=["スタッフ","日付","出勤","退勤","休憩(時間)","実働(時間)"];
+    const headers=["スタッフ","日付","出勤","退勤","休憩の時刻","休憩(時間)","実働(時間)"];
     const sorted=[...monthRecords].sort((a,b)=>a.date.localeCompare(b.date)||(a.staff_id-b.staff_id));
     const rows=sorted.map(r=>{
       const s=STAFF_ACCOUNTS.find(x=>x.id===r.staff_id)||{name:"不明"};
       const h=hoursOf(r);
-      return[s.name,r.date,fmtTime(r.clock_in),fmtTime(r.clock_out),breakHoursOf(r).toFixed(2),h!=null?h.toFixed(2):""];
+      const breakTimes=breaksOf(r).map(b=>`${fmtTime(b.start)}〜${b.end?fmtTime(b.end):"休憩中"}`).join(" / ");
+      return[s.name,r.date,fmtTime(r.clock_in),fmtTime(r.clock_out),breakTimes,breakHoursOf(r).toFixed(2),h!=null?h.toFixed(2):""];
     });
     downloadCSV("勤怠記録_"+selMonth+".csv",toCSV(rows,headers));
   }
@@ -13436,7 +13437,14 @@ function AttendancePunchPanel({currentUser,isAdmin}){
                     <td style={{padding:"8px 10px"}}>{r.date}</td>
                     <td style={{padding:"8px 10px"}}>{fmtTime(r.clock_in)}</td>
                     <td style={{padding:"8px 10px"}}>{r.clock_out?fmtTime(r.clock_out):<span style={{color:"#d97706",fontWeight:700}}>勤務中</span>}</td>
-                    <td style={{padding:"8px 10px",color:"#92400e"}}>{breaksOf(r).length>0?fmtHM(bh):"—"}</td>
+                    <td style={{padding:"8px 10px",color:"#92400e"}}>{breaksOf(r).length>0?(
+                      <div style={{display:"flex",flexDirection:"column",gap:2}}>
+                        {breaksOf(r).map((b,i)=>(
+                          <span key={i} style={{whiteSpace:"nowrap",fontWeight:700}}>☕ {fmtTime(b.start)}〜{b.end?fmtTime(b.end):<span style={{color:"#d97706"}}>休憩中</span>}</span>
+                        ))}
+                        <span style={{fontSize:11,color:"#a16207"}}>合計 {fmtHM(bh)}</span>
+                      </div>
+                    ):"—"}</td>
                     <td style={{padding:"8px 10px",fontWeight:700}}>{h!=null?h.toFixed(2)+"時間":"—"}</td>
                     <td style={{padding:"8px 10px"}}>
                       <button onClick={()=>openEdit(r)} style={{padding:"4px 12px",borderRadius:6,border:"1.5px solid #cbd5e1",background:"white",color:"#334155",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>編集</button>
