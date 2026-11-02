@@ -12099,7 +12099,117 @@ function CareerWeightPanel({bookings,payments,storeStaff,selStoreId,todayStr}){
     </div>
   );
 }
-function BulkReceiptPanel({payments,bookings}){
+// ===== まとめレシートをレジのレシートプリンター（EPSON TM-m30III-H）で印刷する =====
+// プリンターのIPアドレスは会計画面（pos.html）の🖨️設定と同じもの（この端末のブラウザに保存）を使う
+const BULK_RECEIPT_W=32; // 会計画面のレシートと同じ幅（半角32文字）
+function bulkDisplayWidth(s){
+  let w=0;
+  for(const ch of String(s)){
+    const c=ch.codePointAt(0);
+    const full=(c>=0x1100&&c<=0x115F)||(c>=0x2E80&&c<=0xA4CF)||(c>=0xAC00&&c<=0xD7A3)||(c>=0xF900&&c<=0xFAFF)||(c>=0xFF00&&c<=0xFF60)||(c>=0xFFE0&&c<=0xFFE6)||(c>=0x20000&&c<=0x3FFFD);
+    w+=full?2:1;
+  }
+  return w;
+}
+// 左の文字が長いときは右の金額が入る幅まで切り詰める（折り返して金額がずれないように）
+function bulkPadRow(left,right,width=BULK_RECEIPT_W){
+  left=String(left);right=String(right);
+  const max=width-bulkDisplayWidth(right)-1;
+  let l="";
+  for(const ch of left){ if(bulkDisplayWidth(l+ch)>max) break; l+=ch; }
+  return l+" ".repeat(Math.max(1,width-bulkDisplayWidth(l)-bulkDisplayWidth(right)))+right;
+}
+const bulkYen=n=>Number(n||0).toLocaleString()+"円";
+const BULK_INSURANCE_LABEL={"手技療法":"保険診療","鍼灸併用":"鍼灸保険（併用）","鍼灸のみ":"鍼灸保険（のみ）"};
+// 1回の会計の内訳（保険と自費の項目）
+function bulkPaymentItems(p){
+  const items=[];
+  if((p.insurance_amount||0)>0) items.push({label:BULK_INSURANCE_LABEL[p.insurance_type]||"保険窓口負担",amount:p.insurance_amount});
+  (Array.isArray(p.jifee_items)?p.jifee_items:[]).forEach(i=>{ if(i&&(i.amount||i.label)) items.push({label:i.label||"自費",amount:Number(i.amount)||0}); });
+  const known=items.reduce((a,i)=>a+i.amount,0);
+  if(!items.length||known!==(p.total_amount||0)){ // 内訳が無い・合わない古い会計は合計だけ
+    if(!items.length) items.push({label:p.memo||"施術",amount:p.total_amount||0});
+    else if((p.total_amount||0)-known>0) items.push({label:"その他",amount:(p.total_amount||0)-known});
+  }
+  return items;
+}
+// 印刷する行（{text,center,bold}）を作る
+function buildBulkReceiptLines({store,patientName,label,payments}){
+  const W=BULK_RECEIPT_W, DAYS=["日","月","火","水","木","金","土"];
+  const sorted=[...payments].sort((a,b)=>(a.payment_date||"").localeCompare(b.payment_date||"")||a.id-b.id);
+  const ins=sorted.reduce((a,p)=>a+(p.insurance_amount||0),0);
+  const total=sorted.reduce((a,p)=>a+(p.total_amount||0),0);
+  const self=total-ins;
+  const now=new Date();
+  const lines=[];
+  lines.push({center:true,bold:true,text:(store&&store.name)||CLINIC_NAME});
+  if(store&&store.address) lines.push({center:true,text:store.address});
+  if(store&&store.tel) lines.push({center:true,text:"TEL："+store.tel});
+  lines.push({text:""});
+  lines.push({center:true,bold:true,text:"まとめレシート（領収書）"});
+  lines.push({center:true,text:label});
+  lines.push({text:"-".repeat(W)});
+  lines.push({text:patientName+" 様"});
+  lines.push({text:padBulk("ご来院",sorted.length+"回")});
+  lines.push({text:"-".repeat(W)});
+  sorted.forEach(p=>{
+    const d=new Date((p.payment_date||"")+"T00:00:00");
+    const head=isNaN(d)?(p.payment_date||""):`${d.getMonth()+1}/${d.getDate()}（${DAYS[d.getDay()]}）`;
+    const items=bulkPaymentItems(p);
+    if(items.length===1) lines.push({text:bulkPadRow(head+" "+items[0].label,bulkYen(items[0].amount))});
+    else{
+      lines.push({text:bulkPadRow(head,bulkYen(p.total_amount))});
+      items.forEach(i=>lines.push({text:bulkPadRow("  "+i.label,bulkYen(i.amount))}));
+    }
+  });
+  lines.push({text:"-".repeat(W)});
+  if(ins>0) lines.push({text:bulkPadRow("保険分 小計",bulkYen(ins))});
+  if(self>0) lines.push({text:bulkPadRow("自費分 小計（税込）",bulkYen(self))});
+  if(self>0) lines.push({text:bulkPadRow("（内消費税10%）",bulkYen(Math.round(self*10/110)))});
+  lines.push({text:"=".repeat(W)});
+  lines.push({bold:true,text:bulkPadRow("合計",bulkYen(total))});
+  lines.push({text:"-".repeat(W)});
+  lines.push({center:true,text:`${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日 ${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")} 発行`});
+  lines.push({center:true,text:"上記の金額を領収いたしました"});
+  lines.push({center:true,text:"ご来院ありがとうございました"});
+  return lines;
+  function padBulk(a,b){ return bulkPadRow(a,b); }
+}
+function bulkEscapeXml(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+// レシートプリンターへ送る。成功で true、失敗は Error
+async function printBulkReceiptToEpson(lines){
+  const ip=(localStorage.getItem("epsonPrinterIP")||"").trim();
+  if(!ip) throw new Error("この端末にはプリンターのIPアドレスが登録されていません（会計画面の🖨️設定で登録してください）");
+  let cmds=`<text lang="ja"/>`, align=null, bold=null;
+  lines.forEach(l=>{
+    const a=l.center?"center":"left", b=!!l.bold;
+    if(a!==align){ cmds+=`<text align="${a}"/>`; align=a; }
+    if(b!==bold){ cmds+=`<text em="${b}"/>`; bold=b; }
+    cmds+=`<text>${bulkEscapeXml(l.text)}\n</text>`;
+  });
+  cmds+=`<feed line="3"/><cut type="feed"/>`;
+  const body=`<?xml version="1.0" encoding="utf-8"?>\n<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">\n<soap:Body><epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">\n${cmds}\n</epos-print></soap:Body></soap:Envelope>`;
+  const res=await fetch(`https://${ip}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`,{
+    method:"POST",headers:{"Content-Type":"text/xml; charset=utf-8","If-Modified-Since":"Thu, 01 Jan 1970 00:00:00 GMT"},body,
+  });
+  const text=await res.text();
+  if(text.indexOf('success="true"')<0) throw new Error("プリンターからエラー応答がありました（用紙切れ・カバー開き等をご確認ください）");
+  return true;
+}
+// プリンターが使えない端末用：レシートの部分だけを印刷する（画面全体を印刷しない）
+function printBulkReceiptPreview(lines){
+  const html=lines.map(l=>`<div style="text-align:${l.center?"center":"left"};font-weight:${l.bold?800:400};white-space:pre;">${bulkEscapeXml(l.text)||"&nbsp;"}</div>`).join("");
+  const f=document.createElement("iframe");
+  f.style.cssText="position:fixed;right:0;bottom:0;width:0;height:0;border:0;";
+  document.body.appendChild(f);
+  const doc=f.contentDocument;
+  doc.open();
+  doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>まとめレシート</title><style>@page{size:80mm auto;margin:4mm}body{font-family:'MS Gothic','Osaka-Mono',monospace;font-size:12px;width:72mm;margin:0}</style></head><body>${html}</body></html>`);
+  doc.close();
+  setTimeout(()=>{ try{ f.contentWindow.focus(); f.contentWindow.print(); }catch(e){} setTimeout(()=>f.remove(),60000); },300);
+}
+
+function BulkReceiptPanel({payments,bookings,stores}){
   const [freqFilter,setFreqFilter]=React.useState("月ごと"); // "月ごと" | "年ごと"
   const [prefs,setPrefs]=React.useState([]);
   const [loading,setLoading]=React.useState(true);
@@ -12142,6 +12252,22 @@ function BulkReceiptPanel({payments,bookings}){
   const selBookingIds=selPhone?new Set((bookingByPhone[selPhone]||[]).filter(b=>b.date>=range.start&&b.date<=range.end).map(b=>b.id)):new Set();
   const selPayments=selPhone?payments.filter(p=>selBookingIds.has(p.booking_id)):[];
   const total=selPayments.reduce((s,p)=>s+(p.total_amount||0),0);
+  // 会計した院の情報（住所・電話）をレシートに載せる
+  const selStore=React.useMemo(()=>{
+    const b=(bookingByPhone[selPhone]||[]).find(x=>selBookingIds.has(x.id));
+    const id=(b&&b.store_id)||1;
+    return (stores||[]).find(s=>s.id===id)||null;
+  },[selPhone,stores,bookingByPhone,range.start,range.end]);
+  const receiptLines=selPatient&&selPayments.length?buildBulkReceiptLines({store:selStore,patientName:selPatient.patient_name,label:range.label,payments:selPayments}):[];
+  const [printing,setPrinting]=React.useState(false);
+  const [printMsg,setPrintMsg]=React.useState(null); // {ok, text}
+  React.useEffect(()=>{ setPrintMsg(null); },[selPhone,freqFilter,period]);
+  async function printToPrinter(){
+    setPrinting(true); setPrintMsg({ok:true,text:"🖨️ プリンターへ送信中…"});
+    try{ await printBulkReceiptToEpson(receiptLines); setPrintMsg({ok:true,text:"🖨️ 印刷しました"}); }
+    catch(e){ setPrintMsg({ok:false,text:"❌ 印刷に失敗しました："+e.message}); }
+    setPrinting(false);
+  }
 
   function fmt(n){return"¥"+Number(n||0).toLocaleString();}
 
@@ -12195,28 +12321,25 @@ function BulkReceiptPanel({payments,bookings}){
                   <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f"}}>{selPatient.patient_name} 様</div>
                   <div style={{fontSize:12,color:"#94a3b8"}}>{range.label}　対象{selPayments.length}件</div>
                 </div>
-                <button onClick={()=>window.print()} disabled={selPayments.length===0}
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                <button onClick={printToPrinter} disabled={selPayments.length===0||printing}
                   style={{padding:"9px 18px",background:selPayments.length===0?"#e2e8f0":"linear-gradient(135deg,#7c3aed,#6d28d9)",color:"white",border:"none",borderRadius:8,fontSize:13,fontWeight:800,cursor:selPayments.length===0?"not-allowed":"pointer",fontFamily:"inherit"}}>
-                  🖨️ 印刷する
+                  {printing?"送信中…":"🖨️ レシートプリンターで印刷"}
                 </button>
+                <button onClick={()=>printBulkReceiptPreview(receiptLines)} disabled={selPayments.length===0}
+                  style={{padding:"9px 14px",background:"white",color:"#6d28d9",border:"1.5px solid #c4b5fd",borderRadius:8,fontSize:12,fontWeight:800,cursor:selPayments.length===0?"not-allowed":"pointer",fontFamily:"inherit"}}>
+                  🖨 通常のプリンター
+                </button>
+                </div>
               </div>
+              {printMsg&&<div style={{marginBottom:10,padding:"8px 12px",borderRadius:8,fontSize:12,fontWeight:700,background:printMsg.ok?"#f5f3ff":"#fef2f2",color:printMsg.ok?"#5b21b6":"#b91c1c"}}>{printMsg.text}</div>}
               {selPayments.length===0?(
                 <div style={{textAlign:"center",padding:30,color:"#94a3b8",fontSize:13}}>この期間の会計データはありません</div>
               ):(
-                <div id="bulkReceiptPrintArea" style={{border:"1px solid #e2e8f0",borderRadius:10,padding:20,fontFamily:"'MS Gothic','Osaka-Mono','Courier New',monospace"}}>
-                  <div style={{textAlign:"center",fontWeight:800,fontSize:16,letterSpacing:4,marginBottom:6}}>ま と め レ シ ー ト</div>
-                  <div style={{textAlign:"center",fontSize:12,color:"#64748b",marginBottom:14}}>{range.label}　{selPatient.patient_name} 様</div>
-                  <div style={{borderTop:"1px dashed #999",marginBottom:8}}/>
-                  {selPayments.sort((a,b)=>(a.payment_date||"").localeCompare(b.payment_date||"")).map(p=>(
-                    <div key={p.id} style={{display:"flex",justifyContent:"space-between",fontSize:13,padding:"4px 0"}}>
-                      <span>{p.payment_date}　{p.memo||"施術"}</span>
-                      <span>{fmt(p.total_amount)}</span>
-                    </div>
+                <div id="bulkReceiptPrintArea" style={{border:"1px solid #e2e8f0",borderRadius:10,padding:"16px 12px",background:"#fffef9",maxWidth:380,margin:"0 auto",fontFamily:"'MS Gothic','Osaka-Mono','Courier New',monospace",fontSize:13,lineHeight:1.5}}>
+                  {receiptLines.map((l,i)=>(
+                    <div key={i} style={{textAlign:l.center?"center":"left",fontWeight:l.bold?800:400,whiteSpace:"pre",overflow:"hidden"}}>{l.text||"\u00a0"}</div>
                   ))}
-                  <div style={{borderTop:"3px double #333",marginTop:10,paddingTop:10,display:"flex",justifyContent:"space-between",fontWeight:800,fontSize:15}}>
-                    <span>合　計</span>
-                    <span>{fmt(total)}</span>
-                  </div>
                 </div>
               )}
             </div>
@@ -15542,7 +15665,7 @@ function Dashboard({user,onLogout}){
                              {view==="referral_mgmt"&&<ReferralMgmtPanel bookings={bookings} payments={payments}/>}
                     {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} todayStr={todayStr} onRestore={restoreBooking} onDelete={deleteCancelledBooking}/>}
                            {view==="staff_off_conflicts"&&<StaffOffConflictsPanel bookings={bookings} weeklyShifts={weeklyShifts} dateOverrides={dateOverrides} storeStaff={storeStaff} onReassign={reassignStaffForBooking} onReschedule={rescheduleBooking} todayStr={todayStr}/>}
-          {view==="bulk_receipt"&&<BulkReceiptPanel payments={payments} bookings={bookings}/>}
+          {view==="bulk_receipt"&&<BulkReceiptPanel payments={payments} bookings={bookings} stores={stores}/>}
           {/* キャンセル一覧 */}
 
           {view==="posture_records"&&<PostureRecordsPanel bookings={bookings}/>}
