@@ -15,6 +15,7 @@
 //
 // 評価項目は台帳の「評価項目」シートを直接編集すれば変更できる（配点・目標値・採点基準など）。
 
+import { mandalaHandler } from "../lib/mandala-api.js";
 import { batchGet, batchUpdate, getSheetTitles, addSheets, appendRows } from "../lib/google-sheets.js";
 import { resolveViewer, filterModelForViewer, canSeeLabor, canSeeCompany, clinicsAt, evalGradeAt, evalAsAt } from "../lib/incentive-calc.js";
 import { CAREER_SHEET_ID, loadModel, invalidateModel, loadNewPatients, authenticate, viewerNotFound } from "../lib/incentive-data.js";
@@ -507,6 +508,8 @@ async function save({ model, np, viewer, isAdmin, staff, body }) {
 }
 
 export default async function handler(req, res) {
+  // /api/mandala もこの関数で受ける（Vercelの無料プランは関数が12個までのため。vercel.json で振り替え）
+  if (req.query && req.query.__mandala) return mandalaHandler(req, res);
   if (req.method !== "GET" && req.method !== "POST") {
     res.status(405).json({ error: "GET・POSTのみ対応しています" });
     return;

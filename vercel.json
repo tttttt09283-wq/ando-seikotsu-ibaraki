@@ -7,6 +7,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/mandala",
+      "destination": "/api/evaluation?__mandala=1"
+    },
+    {
       "source": "/beauty",
       "destination": "/beauty.html"
     },
