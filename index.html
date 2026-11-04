@@ -13484,7 +13484,8 @@ function ReferralMgmtPanel({bookings,payments}){
 function AttendancePunchPanel({currentUser,isAdmin}){
   const [records,setRecords]=React.useState([]);
   const [loading,setLoading]=React.useState(true);
-  const [selMonth,setSelMonth]=React.useState(()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});
+  const [selMonth,setSelMonth]=React.useState(()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;}); // 集計の開始月
+  const [endMonth,setEndMonth]=React.useState(()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;});   // 集計の終了月
   const [saving,setSaving]=React.useState(false);
   const [selectedStaffId,setSelectedStaffId]=React.useState(currentUser.id); // 打刻する対象スタッフ（誰でも選べる）
   const [editing,setEditing]=React.useState(null); // 編集中の記録（新規追加の場合は id:null）
@@ -13565,11 +13566,21 @@ function AttendancePunchPanel({currentUser,isAdmin}){
   }
   function fmtHM(h){ const m=Math.round(h*60); return `${Math.floor(m/60)}:${String(m%60).padStart(2,"0")}`; }
 
-  const monthRecords=records.filter(r=>r.date&&r.date.slice(0,7)===selMonth);
+  // 集計する期間（開始月〜終了月。逆に選んだ場合は入れ替える）
+  const fromM=selMonth<=endMonth?selMonth:endMonth, toM=selMonth<=endMonth?endMonth:selMonth;
+  const rangeMonths=(()=>{ const out=[]; let [y,m]=fromM.split("-").map(Number); const [ty,tm]=toM.split("-").map(Number); while((y<ty||(y===ty&&m<=tm))&&out.length<60){ out.push(`${y}-${String(m).padStart(2,"0")}`); m++; if(m>12){m=1;y++;} } return out; })();
+  const rangeLabel=fromM===toM?`${Number(fromM.slice(0,4))}年${Number(fromM.slice(5))}月`:`${Number(fromM.slice(0,4))}年${Number(fromM.slice(5))}月〜${Number(toM.slice(0,4))}年${Number(toM.slice(5))}月`;
+  const ymNow=(off)=>{ const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()+off); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
+  const setRange=(f,t)=>{ setSelMonth(f); setEndMonth(t); };
+  const monthRecords=records.filter(r=>r.date&&r.date.slice(0,7)>=fromM&&r.date.slice(0,7)<=toM);
 
   // スタッフ別の月間合計時間
   const totalsByStaff={};
+  const byStaffMonth={}; // {スタッフID: {"YYYY-MM": 時間}}（複数月を選んだときの月別の内訳）
+  const daysByStaff={};  // 出勤した日数
   monthRecords.forEach(r=>{
+    { const hh=hoursOf(r); if(hh!=null){ byStaffMonth[r.staff_id]=byStaffMonth[r.staff_id]||{}; byStaffMonth[r.staff_id][r.date.slice(0,7)]=(byStaffMonth[r.staff_id][r.date.slice(0,7)]||0)+hh; }
+      daysByStaff[r.staff_id]=daysByStaff[r.staff_id]||new Set(); daysByStaff[r.staff_id].add(r.date); }
     const h=hoursOf(r);
     if(h==null) return;
     if(!totalsByStaff[r.staff_id]) totalsByStaff[r.staff_id]=0;
@@ -13642,7 +13653,7 @@ function AttendancePunchPanel({currentUser,isAdmin}){
       const breakTimes=breaksOf(r).map(b=>`${fmtTime(b.start)}〜${b.end?fmtTime(b.end):"休憩中"}`).join(" / ");
       return[s.name,r.date,fmtTime(r.clock_in),fmtTime(r.clock_out),breakTimes,breakHoursOf(r).toFixed(2),h!=null?h.toFixed(2):""];
     });
-    downloadCSV("勤怠記録_"+selMonth+".csv",toCSV(rows,headers));
+    downloadCSV("勤怠記録_"+(fromM===toM?fromM:fromM+"〜"+toM)+".csv",toCSV(rows,headers));
   }
 
   const bigBtn=(bg,shadow)=>({padding:"16px 10px",flex:1,minWidth:120,background:bg,color:"white",border:"none",borderRadius:14,fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:`0 4px 14px ${shadow}`});
@@ -13721,8 +13732,17 @@ function AttendancePunchPanel({currentUser,isAdmin}){
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
           <div>
             <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:8}}>📊 月間勤務時間集計（全スタッフ・休憩を除く実働）</div>
-            <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)}
-              style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700}}/>
+            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+              <span style={{fontSize:12,fontWeight:700,color:"#64748b"}}>対象月</span>
+              <input type="month" aria-label="集計の開始月" value={selMonth} onChange={e=>e.target.value&&setSelMonth(e.target.value)}
+                style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700}}/>
+              <span style={{fontWeight:700,color:"#64748b"}}>〜</span>
+              <input type="month" aria-label="集計の終了月" value={endMonth} onChange={e=>e.target.value&&setEndMonth(e.target.value)}
+                style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700}}/>
+              {[["今月",0,0],["先月",-1,-1],["直近3か月",-2,0],["直近6か月",-5,0]].map(([l,f,t])=>{ const on=fromM===ymNow(f)&&toM===ymNow(t);
+                return <button key={l} type="button" onClick={()=>setRange(ymNow(f),ymNow(t))} style={{padding:"5px 10px",borderRadius:14,fontSize:11.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",border:"1.5px solid "+(on?"#1e3a5f":"#e2e8f0"),background:on?"#1e3a5f":"white",color:on?"white":"#475569"}}>{l}</button>; })}
+            </div>
+            <div style={{fontSize:12,color:"#64748b",marginTop:6}}>集計期間：<b style={{color:"#1e3a5f"}}>{rangeLabel}</b>（{rangeMonths.length}か月）</div>
           </div>
           <button onClick={exportCSV} style={{padding:"9px 16px",background:"#059669",color:"white",border:"none",borderRadius:8,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>⬇ CSVダウンロード</button>
         </div>
@@ -13731,9 +13751,31 @@ function AttendancePunchPanel({currentUser,isAdmin}){
             <div key={s.id} style={{background:"#f8fafc",borderRadius:10,padding:"10px 16px",minWidth:130}}>
               <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>{s.name}</div>
               <div style={{fontSize:18,fontWeight:800,color:s.color}}>{(totalsByStaff[s.id]||0).toFixed(1)}<span style={{fontSize:11,color:"#94a3b8"}}>時間</span></div>
+              <div style={{fontSize:10.5,color:"#94a3b8",fontWeight:700}}>出勤 {daysByStaff[s.id]?daysByStaff[s.id].size:0}日</div>
             </div>
           ))}
         </div>
+        {rangeMonths.length>1&&(
+          <div style={{overflowX:"auto",marginTop:14}}>
+            <table style={{borderCollapse:"collapse",fontSize:12,minWidth:"100%"}}>
+              <thead><tr style={{background:"#f8fafc"}}>
+                <th style={{padding:"6px 10px",textAlign:"left",color:"#64748b",fontWeight:800,borderBottom:"2px solid #e2e8f0"}}>スタッフ</th>
+                {rangeMonths.map(M=><th key={M} style={{padding:"6px 10px",textAlign:"right",color:"#64748b",fontWeight:800,borderBottom:"2px solid #e2e8f0",whiteSpace:"nowrap"}}>{Number(M.slice(5))}月</th>)}
+                <th style={{padding:"6px 10px",textAlign:"right",color:"#1e3a5f",fontWeight:800,borderBottom:"2px solid #e2e8f0"}}>合計</th>
+              </tr></thead>
+              <tbody>
+                {STAFF_ACCOUNTS.map(s=>(
+                  <tr key={s.id} style={{borderBottom:"1px solid #f1f5f9"}}>
+                    <td style={{padding:"6px 10px",fontWeight:700,color:s.color,whiteSpace:"nowrap"}}>{s.name}</td>
+                    {rangeMonths.map(M=>{ const v=(byStaffMonth[s.id]||{})[M]; return <td key={M} style={{padding:"6px 10px",textAlign:"right",color:v?"#1e293b":"#cbd5e1"}}>{v?v.toFixed(1):"-"}</td>; })}
+                    <td style={{padding:"6px 10px",textAlign:"right",fontWeight:800}}>{(totalsByStaff[s.id]||0).toFixed(1)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>単位：時間（休憩を除く実働）</div>
+          </div>
+        )}
       </div>
 
       <div className="card">
