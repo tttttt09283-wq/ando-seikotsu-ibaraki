@@ -892,8 +892,8 @@ async function saveReview(key) {
   render();
 }
 
-// ===== キャリアコース（マネジメント／スペシャル）・個人KDI =====
-const TRACK_STYLE = { management: ["マネジメント", "#1e3a5f", "#e0e7ff"], special: ["スペシャル", "#7c2d12", "#ffedd5"] };
+// ===== キャリアコース（マネジメント／スペシャリスト）・個人KDI =====
+const TRACK_STYLE = { management: ["マネジメント", "#1e3a5f", "#e0e7ff"], special: ["スペシャリスト", "#7c2d12", "#ffedd5"] };
 function trackChip(p) {
   if (!p.track) return "";
   const [label, color, bg] = TRACK_STYLE[p.track];
@@ -910,13 +910,13 @@ function trackCard(p) {
   return `<div class="card"><div class="card-h"><span>🧭 キャリアコース</span>${trackChip(p)}</div><div class="card-b">
     <div class="chip-row" style="margin-bottom:8px;">${btn("management")}${btn("special")}</div>
     <div class="small" style="line-height:1.7;">
-      ${p.track === "special" ? `<b>スペシャル（プレイヤー）</b>：${esc(levelName)}の段で、部下のマネジメントはせず施術・技術で評価します（${esc(sl[spName] || spName)}の項目）。配分の初期値は 定量60・定性20・KDI20。`
+      ${p.track === "special" ? `<b>スペシャリスト（プレイヤー）</b>：${esc(levelName)}の段で、部下のマネジメントはせず施術・技術で評価します（${esc(sl[spName] || spName)}の項目）。配分の初期値は 定量60・定性20・KDI20。`
         : `<b>マネジメント</b>：${esc(levelName)}として、院・チームの数字と部下育成で評価します。配分の初期値は 定量40・定性40・KDI20。`}
       ${p.canSetTrack ? "" : "<br>コースは上司・BM・GM・管理者が決めます。"}
     </div>
     ${pay ? `<div class="scroll" style="margin-top:8px;"><table><tr><th class="l">${esc(levelName)}の段</th><th>基本給</th><th>役職／技術手当</th><th>資格・固定残業</th><th>月の固定給</th></tr>
-      ${payRow("マネジメント", pay.management, p.track === "management")}${payRow("スペシャル", pay.special, p.track === "special")}</table></div>
-      <div class="small">基本給・資格手当・固定残業代は同じで、手当で マネジメント＞スペシャル になります（金額は「インセンティブ → キャリアコース・給与」で変更）。</div>` : ""}
+      ${payRow("マネジメント", pay.management, p.track === "management")}${payRow("スペシャリスト", pay.special, p.track === "special")}</table></div>
+      <div class="small">基本給・資格手当・固定残業代は同じで、手当で マネジメント＞スペシャリスト になります（金額は「インセンティブ → キャリアコース・給与」で変更）。</div>` : ""}
   </div></div>`;
 }
 async function setTrack(key, track) {
@@ -975,26 +975,26 @@ function trackSection(wantLoad) {
     return `<div class="card"><div class="card-h">🧭 キャリアコース・給与</div><div class="card-b">${evalData && evalData.error ? `<div class="err">${esc(evalData.error)}</div>` : '<div class="muted">読み込み中...</div>'}</div></div>`;
   }
   const levels = [["G3", "副院長", "S1 シニア施術者"], ["G4", "院長", "S2 エキスパート"], ["G5", "BM", "S3 マスター"], ["G6", "GM", "（なし）"]];
-  const ladder = `<div class="scroll"><table><tr><th class="l">段</th><th class="l">マネジメント</th><th class="l">スペシャル（プレイヤー）</th></tr>
+  const ladder = `<div class="scroll"><table><tr><th class="l">段</th><th class="l">マネジメント</th><th class="l">スペシャリスト（プレイヤー）</th></tr>
     <tr><td class="l">G1・G2</td><td class="l" colspan="2" style="text-align:center;">共通（新人・一般スタッフ）</td></tr>
     ${levels.map(([g, m, sp]) => `<tr><td class="l"><b>${g}</b></td><td class="l">${m}</td><td class="l">${sp}</td></tr>`).join("")}</table></div>
-    <div class="small" style="margin-top:6px;line-height:1.7;">G3（副院長）から2つのコースに分かれます。<b>マネジメント</b>は院・チームの数字と部下育成で、<b>スペシャル</b>は個人の売上・技術・患者対応で評価します。<br>
-    評価の配分（初期値）：マネジメント＝定量40・定性40・KDI20／スペシャル＝定量60・定性20・KDI20（「月次評価 → 評価項目の設定」で変更できます）。</div>`;
+    <div class="small" style="margin-top:6px;line-height:1.7;">G3（副院長）から2つのコースに分かれます。<b>マネジメント</b>は院・チームの数字と部下育成で、<b>スペシャリスト</b>は個人の売上・技術・患者対応で評価します。<br>
+    評価の配分（初期値）：マネジメント＝定量40・定性40・KDI20／スペシャリスト＝定量60・定性20・KDI20（「月次評価 → 評価項目の設定」で変更できます）。</div>`;
   let pay = "";
   if (evalData.payTable) {
     const t = payDraft || evalData.payTable;
     const cell = (g, k) => payDraft ? `<input class="num" inputmode="numeric" style="width:90px;" value="${esc(t[g][k] ?? "")}" oninput="payDraft['${g}']['${k}']=this.value"/>` : yen(t[g][k]);
     const total = (g, k) => (t[g][k] === null || t[g][k] === undefined || t[g][k] === "") ? "-" : yen(Number(t[g].base) + Number(t[g].license) + Number(t[g].overtime) + Number(t[g][k]));
     pay = `<div class="card"><div class="card-h"><span>コース別の月の固定給</span>${evalData.canEditPay && !payDraft ? `<button class="chip" onclick="payDraft=JSON.parse(JSON.stringify(evalData.payTable));render()">✏️ 金額を編集</button>` : ""}</div><div class="card-b">
-      <div class="scroll"><table><tr><th class="l">段</th><th>基本給</th><th>資格手当</th><th>固定残業代</th><th>マネジメント<br>役職手当</th><th>スペシャル<br>技術手当</th><th>マネジメント<br>月給</th><th>スペシャル<br>月給</th></tr>
+      <div class="scroll"><table><tr><th class="l">段</th><th>基本給</th><th>資格手当</th><th>固定残業代</th><th>マネジメント<br>役職手当</th><th>スペシャリスト<br>技術手当</th><th>マネジメント<br>月給</th><th>スペシャリスト<br>月給</th></tr>
       ${levels.map(([g, m]) => `<tr><td class="l"><b>${g}</b> ${m}</td><td>${cell(g, "base")}</td><td>${cell(g, "license")}</td><td>${cell(g, "overtime")}</td><td>${cell(g, "mgmt")}</td><td>${g === "G6" ? "-" : cell(g, "special")}</td><td><b>${total(g, "mgmt")}</b></td><td><b>${g === "G6" ? "-" : total(g, "special")}</b></td></tr>`).join("")}</table></div>
       ${payDraft ? `<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;"><button class="chip" onclick="payDraft=null;render()">キャンセル</button><button class="btn btn-blue" style="width:auto;padding:8px 20px;" onclick="savePayTable()">保存する</button></div>` : ""}
-      <div class="small" style="margin-top:6px;">同じ段なら基本給・資格手当・固定残業代は同じで、手当で マネジメント＞スペシャル になります（スペシャルの技術手当は役職手当以下）。初期値は台帳のキャリアラダーの給与（技術手当＝役職手当の半分）。</div>
+      <div class="small" style="margin-top:6px;">同じ段なら基本給・資格手当・固定残業代は同じで、手当で マネジメント＞スペシャリスト になります（スペシャリストの技術手当は役職手当以下）。初期値は台帳のキャリアラダーの給与（技術手当＝役職手当の半分）。</div>
     </div></div>`;
   }
   const people = evalData.people.filter((p) => p.track);
   const rows = people.map((p) => `<tr class="evrow" onclick="view='evaluation';openEval('${esc(p.key)}')"><td class="l"><b>${esc(p.name)}</b><div class="small">${esc(p.level)} ${esc(p.clinics.join("・"))}</div></td><td class="l">${trackChip(p)}</td><td class="l">${esc(p.evalGrade)}</td><td>${p.evaluated && p.savedTotal !== null ? `${p.savedTotal}%` : '<span class="small">未評価</span>'}</td></tr>`).join("");
-  return `<div class="card"><div class="card-h">🧭 キャリアコース（マネジメント／スペシャル）</div><div class="card-b">${ladder}</div></div>` + pay +
+  return `<div class="card"><div class="card-h">🧭 キャリアコース（マネジメント／スペシャリスト）</div><div class="card-b">${ladder}</div></div>` + pay +
     `<div class="card"><div class="card-h"><span>G3以上の人のコース（${esc(monthLabel(evalMonth))}）</span></div><div class="card-b">
       ${people.length ? `<div class="scroll"><table><tr><th class="l">氏名</th><th class="l">コース</th><th class="l">評価クラス</th><th>今月の評価率</th></tr>${rows}</table></div>` : '<div class="muted">表示できる人がいません。</div>'}
       <div class="small" style="margin-top:6px;">行を押すとその人の月次評価が開き、上司はそこでコースとKDIを変更できます。</div></div></div>`;

@@ -104,10 +104,11 @@ function maskLabor(items, cur, allowed) {
 function withAddedDefaults(items) {
   const has = (id) => Object.values(items).some((list) => list.some((it) => it.id === id));
   const out = { ...items };
-  // 2コース制で増えたクラス（S1〜S3 スペシャル）が評価項目シートに無ければ初期値を使う
+  // 2コース制で増えたクラス（S1〜S3 スペシャリスト）が評価項目シートに無ければ初期値を使う
   for (const g of ["S1", "S2", "S3"]) if (!out[g]) out[g] = DEFAULT_ITEMS[g];
   for (const [g, add] of Object.entries(ADDED_DEFAULT_ITEMS)) {
-    const missing = add.filter((it) => !has(it.id));
+    // そのクラスに既にある項目（初期値から入れたスペシャリストのクラスなど）は足さない
+    const missing = add.filter((it) => !has(it.id) && !(out[g] || []).some((x) => x.id === it.id));
     if (missing.length && out[g]) out[g] = [...out[g], ...missing];
   }
   return out;
@@ -148,7 +149,7 @@ function buildPayload({ model, np, viewer, isAdmin, sheets, monthKey }) {
   const people = visible.map((vp) => {
     const person = model.people.find((p) => p.key === vp.key);
     // 異動・院長候補などは月ごとに反映（その月の所属院・評価クラスで評価する）
-    // コース（マネジメント／スペシャル）：G3以上でスペシャルを選んだ人は S1〜S3 の項目で評価する
+    // コース（マネジメント／スペシャリスト）：G3以上でスペシャリストを選んだ人は S1〜S3 の項目で評価する
     const track = trackOf(sheets, person.key);
     const at = (key) => { const level = evalGradeAt(person, key); return { ...person, clinics: clinicsAt(person, key), level, grade: trackGradeFor(level, track) }; };
     const pm = at(monthKey);
