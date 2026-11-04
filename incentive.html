@@ -379,6 +379,7 @@ function render() {
     { key: "sales", icon: "📈", label: "個人売上・昇降格", html: salesCard() },
     { key: "evaluation", icon: "📊", label: "半期査定・給与改定", html: evaluationCard() },
     { key: "overall", icon: "🏆", label: "総合評価（総評）", html: overallSection(incSection === "overall" || incSection === "all") },
+    { key: "track", icon: "🧭", label: "キャリアコース・給与", html: trackSection(incSection === "track" || incSection === "all") },
     { key: "notes", icon: "⚠️", label: "データの注意", html: data.notes && data.notes.length ? `<div class="card"><div class="card-h">データについての注意</div><div class="card-b"><ul class="notes">${data.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></div></div>` : "" },
     { key: "rules", icon: "📜", label: "インセンティブ規定", html: rulesCard() },
   ].filter((x) => x.html);
@@ -644,7 +645,7 @@ function openEval(key, keepDraft) {
   if (!keepDraft || !evalDraft) {
     const items = p.items || [];
     const values = {};
-    for (const it of items) if (it.kind === "数値" && !(it.auto && p.auto[it.auto] !== undefined) && p.values[it.id] !== undefined) values[it.id] = p.values[it.id];
+    for (const it of items) if ((it.kind === "数値" || it.kind === "KDI") && !(it.auto && p.auto[it.auto] !== undefined) && p.values[it.id] !== undefined) values[it.id] = p.values[it.id];
     evalDraft = { values, scores: { ...p.scores }, comment: p.comment || "" };
     evalDirty = false;
   }
@@ -660,11 +661,11 @@ function closeEval() {
 // サーバーと同じ採点（画面上ですぐ点数を出すため）
 function clientScore(items, p, draft) {
   const max = items.reduce((a, it) => a + it.points, 0); // 満点（クラス・共通・部門すべて）
-  let earned = 0, filled = 0, num = 0, beh = 0, bas = 0;
+  let earned = 0, filled = 0, num = 0, beh = 0, bas = 0, kdi = 0;
   const pts = {};
   for (const it of items) {
     let v = null;
-    if (it.kind === "数値") {
+    if (it.kind === "数値" || it.kind === "KDI") {
       if (p.hidden && it.id in p.hidden) { // 人件費率（値は非表示・点数だけ）
         pts[it.id] = p.hidden[it.id];
         if (pts[it.id] !== null) { earned += pts[it.id]; filled++; num += pts[it.id]; }
@@ -677,13 +678,13 @@ function clientScore(items, p, draft) {
       }
     } else if (draft.scores[it.id]) v = it.points * draft.scores[it.id] / 5;
     pts[it.id] = v;
-    if (v !== null) { earned += v; filled++; if (it.dept) {} else if (it.kind === "数値") num += v; else if (it.kind === "基本") bas += v; else beh += v; }
+    if (v !== null) { earned += v; filled++; if (it.dept) {} else if (it.kind === "数値") num += v; else if (it.kind === "KDI") kdi += v; else if (it.kind === "基本") bas += v; else beh += v; }
   }
   const r1 = (v) => Math.round(v * 10) / 10;
   const t = filled && max ? r1((earned / max) * 100) : null; // 月次の点数（100点満点に換算）＝獲得点÷満点×100
   const complete = filled === items.length;
   const rank = !complete || t === null ? null : t >= 90 ? "S" : t >= 80 ? "A" : t >= 65 ? "B" : t >= 50 ? "C" : "D";
-  return { pts, total: t, rank, complete, filled, count: items.length, earned: r1(earned), max: r1(max), num: r1(num), beh: r1(beh), bas: r1(bas) };
+  return { pts, total: t, rank, complete, filled, count: items.length, earned: r1(earned), max: r1(max), num: r1(num), beh: r1(beh), bas: r1(bas), kdi: r1(kdi) };
 }
 
 function fmtVal(v, unit) {
@@ -727,7 +728,7 @@ function renderEvaluation() {
     const t = p.result;
     const status = p.evaluated ? `<b class="${rankCls(p.savedRank)}">${p.savedTotal ?? "-"}点 ${p.savedRank || ""}</b>${t.complete ? "" : `<div class="small">${t.filled}/${t.count}項目</div>`}` : `<span class="small">${p.canEdit ? "未評価" : "-"}</span>`;
     const pcScore = p.scores.pc;
-    return `<tr class="evrow" onclick="openEval('${esc(p.key)}')"><td class="l"><b>${esc(p.name)}</b>${p.candidate ? '<span class="cand">⭐院長候補</span>' : ""}${levelChip(p.career)}<div class="small">${esc(p.grade)} ${esc(p.clinics.join("・"))} ・ 評価者 ${esc(p.superior)}${p.evalAsLabel ? ` ・ <b>${esc(p.evalAsLabel)}</b>` : ""}</div></td>
+    return `<tr class="evrow" onclick="openEval('${esc(p.key)}')"><td class="l"><b>${esc(p.name)}</b>${p.candidate ? '<span class="cand">⭐院長候補</span>' : ""}${trackChip(p)}${levelChip(p.career)}<div class="small">${esc(p.grade)} ${esc(p.clinics.join("・"))} ・ 評価者 ${esc(p.superior)}${p.evalAsLabel ? ` ・ <b>${esc(p.evalAsLabel)}</b>` : ""}</div></td>
       <td>${status}</td>
       <td>${p.halfAvg !== null ? `<b class="${rankCls(rankOfClient(p.halfAvg))}">${p.halfAvg}点</b><div class="small">${p.halfMonthsEvaluated}ヶ月分</div>` : "-"}</td>
       <td>${overallCell(p.overall)}</td>
@@ -768,6 +769,8 @@ function renderEvalDetail() {
     return `<div class="item ${negClass(it, sc.pts[it.id])}" id="item_${esc(it.id)}"><div class="lbl"><b>${esc(it.label)}</b>${isAuto ? '<span class="autotag">自動</span>' : ""}<div class="d">${esc(target)}（配点${Math.round(it.points * 10) / 10}）</div></div><div class="ctrl">${input}<div class="pts" id="pts_${esc(it.id)}">${scaled(sc.pts[it.id])}</div></div></div>`;
   };
   const numItems = items.filter((it) => it.kind === "数値" && !it.dept).map(numItem).join("");
+  const kdiItems = items.filter((it) => it.kind === "KDI").map(numItem).join("");
+  const kdiMax = raw(items.filter((it) => it.kind === "KDI").reduce((a, it) => a + it.points, 0));
   const scaleItem = (it) => {
     const cur = evalDraft.scores[it.id] || 0;
     const btns = [1, 2, 3, 4, 5].map((n) => `<button class="${cur === n ? "sel" : ""}${cur === n && n <= 2 ? " low" : ""}" ${ro ? "disabled" : ""} onclick="setEvalScore('${esc(it.id)}',${n})">${n}</button>`).join("");
@@ -790,6 +793,7 @@ function renderEvalDetail() {
     <div class="small" style="margin-bottom:6px;">半期の推移（100点満点・月を押すとその月を開きます）${p.halfAvg !== null ? ` ・ 半期平均 <b class="${rankCls(rankOfClient(p.halfAvg))}">${p.halfAvg}点 ${rankOfClient(p.halfAvg)}</b>` : ""}</div>
     <div class="scroll"><table><tr>${p.trend.map((t) => `<th>${Number(t.month.split("-")[1])}月</th>`).join("")}</tr><tr>${trend}</tr></table></div>
   </div></div>
+  ${trackCard(p)}
   ${overallCard(p)}
   ${careerCard(p)}
   ${candidateCard(p)}
@@ -798,6 +802,7 @@ function renderEvalDetail() {
     ${basicIssues.length ? `<div class="banner ng">⚠️ 社会人としての基本（${basicIssues.map((it) => esc(it.label)).join("・")}）が2以下です。等級に関係なく、まず改善が必要な項目です。</div>` : ""}</div></div>
   <div class="card"><div class="card-h"><span>数値の評価</span><span class="small" id="numSum">${sc.num}点／${secMax("数値")}点</span></div><div class="card-b">${numItems || '<div class="muted">項目なし</div>'}
     <div class="small" style="margin-top:8px;">「自動」は進捗売上実績・台帳から自動で入ります。目標「以上」は達成率に応じて、「以下」は目標以下で満点（目標を10ポイント超えると0点）。</div></div></div>
+  ${kdiCard(p, kdiItems, sc.kdi, kdiMax)}
   ${depts.length ? `<div class="card"><div class="card-h"><span>部門の評価（${depts.map(esc).join("・")}）</span><span class="small">${raw(deptPts)}点／${raw(items.filter((it) => it.dept).reduce((a, it) => a + it.points, 0))}点</span></div><div class="card-b">${deptHtml}
     <div class="small" style="margin-top:8px;">担当している部門の項目です。部門の点も満点・獲得点に入れて100点満点に換算します。</div></div></div>` : ""}
   ${eventCardForPerson(p)}
@@ -809,6 +814,20 @@ function renderEvalDetail() {
 }
 
 function totalHtml(sc) {
+  return totalMainHtml(sc) + rateBreakdownHtml(sc);
+}
+// 定量（数値）・定性（行動＋基本）・KDI の達成率
+function rateBreakdownHtml(sc) {
+  const p = evalData && evalData.people.find((x) => x.key === evalSelected);
+  if (!p) return "";
+  const its = (p.items || []).filter((it) => !it.dept);
+  const mx = (f) => its.filter(f).reduce((a, it) => a + it.points, 0);
+  const pc = (e, m) => (m ? `${Math.round((e / m) * 1000) / 10}%` : "-");
+  const qm = mx((it) => it.kind === "数値"), lm = mx((it) => it.kind === "行動" || it.kind === "基本"), km = mx((it) => it.kind === "KDI");
+  const chip = (label, v, m, color) => m ? `<span style="display:inline-block;margin:4px 6px 0 0;padding:2px 10px;border-radius:12px;background:${color};font-size:12px;font-weight:800;">${label} ${v}<span style="font-weight:400;font-size:11px;">（${Math.round(m)}点分）</span></span>` : "";
+  return `<div>${chip("定量", pc(sc.num, qm), qm, "#dbeafe")}${chip("定性", pc(sc.beh + sc.bas, lm), lm, "#fef3c7")}${chip("KDI", pc(sc.kdi, km), km, "#dcfce7")}</div>`;
+}
+function totalMainHtml(sc) {
   const p = evalData && evalData.people.find((x) => x.key === evalSelected);
   const bonus = p ? p.eventBonus || 0 : 0;
   const final = sc.total === null ? null : Math.round((sc.total + bonus) * 10) / 10;
@@ -869,6 +888,121 @@ async function saveReview(key) {
   try {
     const json = await evalFetch("POST", { action: "saveReview", month: evalMonth, personKey: key, comment });
     if (json) { evalData = json; if (evalSelected) openEval(evalSelected, true); }
+  } catch (e) { alert(e.message); }
+  render();
+}
+
+// ===== キャリアコース（マネジメント／スペシャル）・個人KDI =====
+const TRACK_STYLE = { management: ["マネジメント", "#1e3a5f", "#e0e7ff"], special: ["スペシャル", "#7c2d12", "#ffedd5"] };
+function trackChip(p) {
+  if (!p.track) return "";
+  const [label, color, bg] = TRACK_STYLE[p.track];
+  return `<span style="margin-left:6px;font-size:10px;font-weight:800;border-radius:6px;padding:1px 7px;background:${bg};color:${color};vertical-align:middle;">${label}</span>`;
+}
+function trackCard(p) {
+  if (!p.track) return "";
+  const sl = (evalData.specialLabels || {});
+  const levelName = { G3: "副院長", G4: "院長", G5: "BM", G6: "GM" }[p.level] || p.level;
+  const spName = { G3: "S1", G4: "S2", G5: "S3", G6: "S3" }[p.level];
+  const btn = (t) => `<button class="chip ${p.track === t ? "sel" : ""}" ${p.canSetTrack ? `onclick="setTrack('${esc(p.key)}','${t}')"` : "disabled"}>${TRACK_STYLE[t][0]}</button>`;
+  const pay = p.pay;
+  const payRow = (label, v, cur) => v ? `<tr${cur ? ' style="background:#f8fafc;font-weight:800;"' : ""}><td class="l">${label}</td><td>${yen(v.base)}</td><td>${yen(v.allowance)}</td><td>${yen(v.license + v.overtime)}</td><td><b>${yen(v.total)}</b></td></tr>` : "";
+  return `<div class="card"><div class="card-h"><span>🧭 キャリアコース</span>${trackChip(p)}</div><div class="card-b">
+    <div class="chip-row" style="margin-bottom:8px;">${btn("management")}${btn("special")}</div>
+    <div class="small" style="line-height:1.7;">
+      ${p.track === "special" ? `<b>スペシャル（プレイヤー）</b>：${esc(levelName)}の段で、部下のマネジメントはせず施術・技術で評価します（${esc(sl[spName] || spName)}の項目）。配分の初期値は 定量60・定性20・KDI20。`
+        : `<b>マネジメント</b>：${esc(levelName)}として、院・チームの数字と部下育成で評価します。配分の初期値は 定量40・定性40・KDI20。`}
+      ${p.canSetTrack ? "" : "<br>コースは上司・BM・GM・管理者が決めます。"}
+    </div>
+    ${pay ? `<div class="scroll" style="margin-top:8px;"><table><tr><th class="l">${esc(levelName)}の段</th><th>基本給</th><th>役職／技術手当</th><th>資格・固定残業</th><th>月の固定給</th></tr>
+      ${payRow("マネジメント", pay.management, p.track === "management")}${payRow("スペシャル", pay.special, p.track === "special")}</table></div>
+      <div class="small">基本給・資格手当・固定残業代は同じで、手当で マネジメント＞スペシャル になります（金額は「インセンティブ → キャリアコース・給与」で変更）。</div>` : ""}
+  </div></div>`;
+}
+async function setTrack(key, track) {
+  const p = evalData.people.find((x) => x.key === key);
+  if (!p || p.track === track) return;
+  if (!confirm(`${p.name}さんのコースを「${TRACK_STYLE[track][0]}」にします。\n評価項目と配分が${TRACK_STYLE[track][0]}のものに変わります（保存済みの過去の点数は変わりません）。`)) return;
+  try {
+    const json = await evalFetch("POST", { action: "setTrack", month: evalMonth, personKey: key, track });
+    if (json) { evalData = json; openEval(key); return; }
+  } catch (e) { alert(e.message); }
+  render();
+}
+let kdiEditor = null; // { key, draft: [{id,label,target,unit,direction}] }
+function kdiCard(p, kdiItemsHtml, earned, max) {
+  const editing = kdiEditor && kdiEditor.key === p.key;
+  const canEdit = p.canEdit || (evalData.viewer && evalData.viewer.grade === "G6") || evalData.isAdmin;
+  const head = `<div class="card-h"><span>🎯 個人KDI（行動の目標・達成率で採点）${p.kdiPersonal ? '<span class="small" style="margin-left:6px;">この人用</span>' : '<span class="small" style="margin-left:6px;">コースの標準</span>'}</span><span class="small">${Math.round((earned || 0) * 10) / 10}点／${max}点</span></div>`;
+  if (editing) {
+    const rows = kdiEditor.draft.map((k, i) => `<tr>
+      <td class="l"><input value="${esc(k.label)}" oninput="kdiEditor.draft[${i}].label=this.value" style="width:100%;min-width:160px;"/></td>
+      <td><input class="num" inputmode="decimal" value="${esc(k.target)}" oninput="kdiEditor.draft[${i}].target=this.value" style="width:70px;"/></td>
+      <td><input value="${esc(k.unit)}" oninput="kdiEditor.draft[${i}].unit=this.value" style="width:50px;"/></td>
+      <td><select onchange="kdiEditor.draft[${i}].direction=this.value"><option ${k.direction !== "以下" ? "selected" : ""}>以上</option><option ${k.direction === "以下" ? "selected" : ""}>以下</option></select></td>
+      <td><button class="chip" onclick="kdiEditor.draft.splice(${i},1);render()">削除</button></td></tr>`).join("");
+    return `<div class="card">${head}<div class="card-b">
+      <div class="scroll"><table><tr><th class="l">KDI（行動）</th><th>月の目標</th><th>単位</th><th>向き</th><th></th></tr>${rows}</table></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+        <button class="chip" onclick="kdiEditor.draft.push({id:'',label:'',target:'',unit:'回',direction:'以上'});render()">＋ KDIを追加</button>
+        <button class="chip" onclick="saveKdi(true)">コースの標準に戻す</button>
+        <span style="flex:1"></span>
+        <button class="chip" onclick="kdiEditor=null;render()">キャンセル</button>
+        <button class="btn btn-blue" style="width:auto;padding:8px 20px;" onclick="saveKdi(false)">保存する</button>
+      </div>
+      <div class="small" style="margin-top:6px;">月ごとの行動の目標です。実績÷目標で採点し（目標以上で満点）、KDIの配点を個数で等分します。</div>
+    </div></div>`;
+  }
+  return `<div class="card">${head}<div class="card-b">${kdiItemsHtml || '<div class="muted">KDIがありません</div>'}
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;">
+      <span class="small">毎月の実績（回数・件数・時間など）を入れてください。達成率で採点します。</span>
+      ${canEdit ? `<button class="chip" onclick="kdiEditor={key:'${esc(p.key)}',draft:JSON.parse(JSON.stringify(evalData.people.find(x=>x.key==='${esc(p.key)}').kdi))};render()">✏️ この人のKDIを編集</button>` : ""}
+    </div></div></div>`;
+}
+async function saveKdi(reset) {
+  if (evalDirty && !confirm("入力中の評価は保存されません。KDIを保存しますか？")) return;
+  if (reset && !confirm("この人のKDIを、コースの標準に戻します。よろしいですか？")) return;
+  try {
+    const json = await evalFetch("POST", { action: "saveKdi", month: evalMonth, personKey: kdiEditor.key, items: kdiEditor.draft, reset });
+    if (json) { const key = kdiEditor.key; kdiEditor = null; evalData = json; openEval(key); return; }
+  } catch (e) { alert(e.message); }
+  render();
+}
+let payDraft = null; // コース別給与の編集中（社長・GM）
+function trackSection(wantLoad) {
+  if (!evalData || evalData.error) {
+    if (wantLoad && !evalLoading && !(evalData && evalData.error)) setTimeout(() => loadEval(), 0);
+    return `<div class="card"><div class="card-h">🧭 キャリアコース・給与</div><div class="card-b">${evalData && evalData.error ? `<div class="err">${esc(evalData.error)}</div>` : '<div class="muted">読み込み中...</div>'}</div></div>`;
+  }
+  const levels = [["G3", "副院長", "S1 シニア施術者"], ["G4", "院長", "S2 エキスパート"], ["G5", "BM", "S3 マスター"], ["G6", "GM", "（なし）"]];
+  const ladder = `<div class="scroll"><table><tr><th class="l">段</th><th class="l">マネジメント</th><th class="l">スペシャル（プレイヤー）</th></tr>
+    <tr><td class="l">G1・G2</td><td class="l" colspan="2" style="text-align:center;">共通（新人・一般スタッフ）</td></tr>
+    ${levels.map(([g, m, sp]) => `<tr><td class="l"><b>${g}</b></td><td class="l">${m}</td><td class="l">${sp}</td></tr>`).join("")}</table></div>
+    <div class="small" style="margin-top:6px;line-height:1.7;">G3（副院長）から2つのコースに分かれます。<b>マネジメント</b>は院・チームの数字と部下育成で、<b>スペシャル</b>は個人の売上・技術・患者対応で評価します。<br>
+    評価の配分（初期値）：マネジメント＝定量40・定性40・KDI20／スペシャル＝定量60・定性20・KDI20（「月次評価 → 評価項目の設定」で変更できます）。</div>`;
+  let pay = "";
+  if (evalData.payTable) {
+    const t = payDraft || evalData.payTable;
+    const cell = (g, k) => payDraft ? `<input class="num" inputmode="numeric" style="width:90px;" value="${esc(t[g][k] ?? "")}" oninput="payDraft['${g}']['${k}']=this.value"/>` : yen(t[g][k]);
+    const total = (g, k) => (t[g][k] === null || t[g][k] === undefined || t[g][k] === "") ? "-" : yen(Number(t[g].base) + Number(t[g].license) + Number(t[g].overtime) + Number(t[g][k]));
+    pay = `<div class="card"><div class="card-h"><span>コース別の月の固定給</span>${evalData.canEditPay && !payDraft ? `<button class="chip" onclick="payDraft=JSON.parse(JSON.stringify(evalData.payTable));render()">✏️ 金額を編集</button>` : ""}</div><div class="card-b">
+      <div class="scroll"><table><tr><th class="l">段</th><th>基本給</th><th>資格手当</th><th>固定残業代</th><th>マネジメント<br>役職手当</th><th>スペシャル<br>技術手当</th><th>マネジメント<br>月給</th><th>スペシャル<br>月給</th></tr>
+      ${levels.map(([g, m]) => `<tr><td class="l"><b>${g}</b> ${m}</td><td>${cell(g, "base")}</td><td>${cell(g, "license")}</td><td>${cell(g, "overtime")}</td><td>${cell(g, "mgmt")}</td><td>${g === "G6" ? "-" : cell(g, "special")}</td><td><b>${total(g, "mgmt")}</b></td><td><b>${g === "G6" ? "-" : total(g, "special")}</b></td></tr>`).join("")}</table></div>
+      ${payDraft ? `<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;"><button class="chip" onclick="payDraft=null;render()">キャンセル</button><button class="btn btn-blue" style="width:auto;padding:8px 20px;" onclick="savePayTable()">保存する</button></div>` : ""}
+      <div class="small" style="margin-top:6px;">同じ段なら基本給・資格手当・固定残業代は同じで、手当で マネジメント＞スペシャル になります（スペシャルの技術手当は役職手当以下）。初期値は台帳のキャリアラダーの給与（技術手当＝役職手当の半分）。</div>
+    </div></div>`;
+  }
+  const people = evalData.people.filter((p) => p.track);
+  const rows = people.map((p) => `<tr class="evrow" onclick="view='evaluation';openEval('${esc(p.key)}')"><td class="l"><b>${esc(p.name)}</b><div class="small">${esc(p.level)} ${esc(p.clinics.join("・"))}</div></td><td class="l">${trackChip(p)}</td><td class="l">${esc(p.evalGrade)}</td><td>${p.evaluated && p.savedTotal !== null ? `${p.savedTotal}%` : '<span class="small">未評価</span>'}</td></tr>`).join("");
+  return `<div class="card"><div class="card-h">🧭 キャリアコース（マネジメント／スペシャル）</div><div class="card-b">${ladder}</div></div>` + pay +
+    `<div class="card"><div class="card-h"><span>G3以上の人のコース（${esc(monthLabel(evalMonth))}）</span></div><div class="card-b">
+      ${people.length ? `<div class="scroll"><table><tr><th class="l">氏名</th><th class="l">コース</th><th class="l">評価クラス</th><th>今月の評価率</th></tr>${rows}</table></div>` : '<div class="muted">表示できる人がいません。</div>'}
+      <div class="small" style="margin-top:6px;">行を押すとその人の月次評価が開き、上司はそこでコースとKDIを変更できます。</div></div></div>`;
+}
+async function savePayTable() {
+  try {
+    const json = await evalFetch("POST", { action: "savePayTable", month: evalMonth, payTable: payDraft });
+    if (json) { evalData = json; payDraft = null; }
   } catch (e) { alert(e.message); }
   render();
 }
@@ -1060,7 +1194,7 @@ function totalsHtml() {
   const g = itemEditor.grade, d = itemEditor.dist;
   if (g === "共通") return `<span class="small">社会人としての基本の配点は、各クラスの「基本の点」をこの項目数（${itemEditor.draft.length}）で等分します。</span>`;
   if (isDept(g)) return `<span class="small">この部門</span> <b style="font-size:20px;">${Number(d.points || 0)}点</b> <span class="small">を ${itemEditor.draft.length}項目で等分（担当者の満点・獲得点に加わります）</span>`;
-  const sum = Number(d.num || 0) + Number(d.beh || 0) + Number(d.basic || 0);
+  const sum = Number(d.num || 0) + Number(d.beh || 0) + Number(d.basic || 0) + Number(d.kdi || 0);
   return `<span class="small">数値 ${Number(d.num || 0)}点 ＋ 行動 ${Number(d.beh || 0)}点 ＋ 基本 ${Number(d.basic || 0)}点 ＝ 満点</span> <b style="font-size:20px;">${sum}点</b> <span class="small">（担当部門があればその点も加わります。評価は獲得点÷満点の率）</span>`;
 }
 
@@ -1108,6 +1242,7 @@ function renderItemEditor() {
       <label>数値<input class="dist" inputmode="numeric" value="${esc(d.num)}" oninput="distField('num',this.value)"/>点</label>
       <label>行動<input class="dist" inputmode="numeric" value="${esc(d.beh)}" oninput="distField('beh',this.value)"/>点</label>
       <label>基本<input class="dist" inputmode="numeric" value="${esc(d.basic)}" oninput="distField('basic',this.value)"/>点</label>
+      <label>KDI<input class="dist" inputmode="numeric" value="${esc(d.kdi ?? 0)}" oninput="distField('kdi',this.value)"/>点</label>
       <label>必須ライン<select class="dist" onchange="distField('line',Number(this.value))">${[1, 2, 3, 4, 5].map((n) => `<option value="${n}" ${Number(d.line) === n ? "selected" : ""}>${n}以上</option>`).join("")}</select></label>
     </div>
     <div class="small">配点は「数値の点÷数値の項目数」「行動の点÷行動の項目数」で自動で決まります。基本の点は「社会人としての基本」の項目に等分します。合計は100点でなくて大丈夫です（評価は「獲得点÷満点」の率で出します）。

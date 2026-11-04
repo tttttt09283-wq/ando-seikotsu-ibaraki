@@ -3,14 +3,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DEFAULT_ITEMS, EVALUATED_GRADES, itemsFor, itemSheetRows, parseItemSheet, numberPoints, scoreMonth, parseRecords, buildRecordRows,
-  RECORD_HEADER, halfMonthKeys, parseMonthKey, superiorOf, canEvaluate,
+  RECORD_HEADER, halfMonthKeys, parseMonthKey, superiorOf, canEvaluate, DEFAULT_DIST, distFor,
 } from "../lib/evaluation.js";
 
-test("every grade's items (incl. common basics) total 100 points, PC is required from G4 up", () => {
+test("every grade's points follow the distribution (数値・行動・基本), PC is required from G4 up", () => {
   for (const grade of EVALUATED_GRADES) {
     const items = itemsFor(DEFAULT_ITEMS, grade);
-    assert.equal(Math.round(items.reduce((a, i) => a + i.points, 0) * 1e6) / 1e6, 100, grade);
-    assert.equal(items.filter((i) => i.kind === "基本").reduce((a, i) => a + i.points, 0), 15, grade);
+    const d = distFor(DEFAULT_DIST, grade);
+    const sum = (f) => Math.round(items.filter(f).reduce((a, i) => a + i.points, 0) * 1e6) / 1e6;
+    assert.equal(sum(() => true), d.num + d.beh + d.basic, grade);
+    assert.equal(sum((i) => i.kind === "基本"), d.basic, grade);
     const pc = items.find((i) => i.id === "pc");
     assert.ok(pc, `${grade} has PC item`);
     assert.equal(pc.required, ["G4", "G5", "G6"].includes(grade), grade);
@@ -32,7 +34,8 @@ test("number points: 以上 is capped ratio, 以下 drops to 0 at target+10", ()
 });
 
 test("scoreMonth: behavior = points x score/5, rank only when complete, required flag", () => {
-  const items = itemsFor(DEFAULT_ITEMS, "G4");
+  // 2コース制より前の配分（数値55・行動30・基本15・KDIなし）で、採点の仕組みを確かめる
+  const items = itemsFor(DEFAULT_ITEMS, "G4", [], { grades: { G4: { num: 55, beh: 30, basic: 15, kdi: 0, line: 3 } }, depts: {}, deptDefault: 10 });
   const values = { clinic_budget: 100, clinic_labor: 40, new_count: 10, new_close: 70, new_sales: 200000, clinic_continue_rate: 75, clinic_patient_care: 85, avg_visits: 6 };
   const scores = { pl: 5, shift: 5, claim: 5, develop: 5, pc: 2,
     basic_greeting: 5, basic_appearance: 5, basic_punctual: 2, basic_hourensou: 5, basic_rules: 5 };

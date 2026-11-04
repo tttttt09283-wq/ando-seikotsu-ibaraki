@@ -22,7 +22,7 @@ import { EVENT_SHEET, EVENT_HEADER, MAX_EVENT_BONUS, eventBonusMap, groupEvents,
 import {
   ITEM_SHEET, RECORD_SHEET, RECORD_HEADER, DEFAULT_ITEMS, ADDED_DEFAULT_ITEMS, COMMON_GRADE,
   STAFF_SHEET, STAFF_HEADER, parseStaffSettings, DIST_SHEET, parseDist, distRows, validateDist, distFor, deptPointsFor, DEPT_PREFIX, DEFAULT_DEPARTMENTS, departmentNames, deptMembership, canSetCandidate, gradeRank, itemSheetRows, parseItemSheet, parseRecords,
-  scoreMonth, rankOf, itemsFor, validateItems, GRADE_LABELS, AUTO_OPTIONS, parseMonthKey, monthKeyOf, halfMonthKeys, autoValues, superiorOf, canEvaluate, buildRecordRows,
+  scoreMonth, isNumericKind, rankOf, itemsFor, validateItems, GRADE_LABELS, AUTO_OPTIONS, parseMonthKey, monthKeyOf, halfMonthKeys, autoValues, superiorOf, canEvaluate, buildRecordRows,
 } from "../lib/evaluation.js";
 import { normName } from "../lib/incentive-calc.js";
 import { LADDER_SHEET, parseLadder, judgeCareer, maskSensitive } from "../lib/career-judgement.js";
@@ -30,6 +30,10 @@ import {
   REVIEW_SHEET, REVIEW_HEADER, OVERALL_RULE_SHEET, OVERALL_MAX, SALARY_CHOICES, POSITION_CHOICES,
   parseOverallRules, overallRuleRows, validateOverallRules, computeOverall, assessmentScore, parseReviews, halfIdOf, halfLabel,
 } from "../lib/overall.js";
+import {
+  TRACKS, TRACK_SHEET, TRACK_HEADER, KDI_SHEET, KDI_HEADER, PAY_SHEET, SPECIAL_LABELS,
+  trackGradeFor, canChooseTrack, parseTracks, parseKdi, kdiFor, validateKdi, parsePayTable, payRows, validatePayTable, monthlyPay,
+} from "../lib/career-track.js";
 
 const nowJst = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().replace("T", " ").slice(0, 16);
 
@@ -43,10 +47,14 @@ async function loadSheets() {
   const hasLadder = titles.includes(LADDER_SHEET);
   const hasDist = titles.includes(DIST_SHEET);
   if (hasLadder) ranges.push(`'${LADDER_SHEET}'!A1:L40`);
-  if (hasDist) ranges.push(`'${DIST_SHEET}'!A1:G200`);
+  if (hasDist) ranges.push(`'${DIST_SHEET}'!A1:H200`);
   const hasReviews = titles.includes(REVIEW_SHEET), hasRules = titles.includes(OVERALL_RULE_SHEET);
   if (hasReviews) ranges.push(`'${REVIEW_SHEET}'!A1:M5000`);
   if (hasRules) ranges.push(`'${OVERALL_RULE_SHEET}'!A1:E30`);
+  const hasTracks = titles.includes(TRACK_SHEET), hasKdi = titles.includes(KDI_SHEET), hasPay = titles.includes(PAY_SHEET);
+  if (hasTracks) ranges.push(`'${TRACK_SHEET}'!A1:E1000`);
+  if (hasKdi) ranges.push(`'${KDI_SHEET}'!A1:I3000`);
+  if (hasPay) ranges.push(`'${PAY_SHEET}'!A1:F20`);
   const got = ranges.length ? await batchGet(CAREER_SHEET_ID, ranges) : [];
   const itemRows = hasItems ? got.shift() : null;
   const recordRows = hasRecords ? got.shift() : null;
@@ -55,7 +63,13 @@ async function loadSheets() {
   const distSheetRows = hasDist ? got.shift() : null;
   const reviewRows = hasReviews ? got.shift() : null;
   const ruleRows = hasRules ? got.shift() : null;
+  const trackRows = hasTracks ? got.shift() : null;
+  const kdiRows = hasKdi ? got.shift() : null;
+  const paySheetRows = hasPay ? got.shift() : null;
   return {
+    hasTracks, tracks: parseTracks(trackRows),
+    hasKdi, kdiRowCount: kdiRows ? kdiRows.length : 0, kdi: parseKdi(kdiRows), kdiRawRows: kdiRows || [],
+    hasPay, payRowCount: paySheetRows ? paySheetRows.length : 0, payTable: parsePayTable(paySheetRows, ladderRows),
     hasReviews, reviews: parseReviews(reviewRows), hasRules, ruleRowCount: ruleRows ? ruleRows.length : 0, overallRules: parseOverallRules(ruleRows),
     hasStaff, staffSettings: parseStaffSettings(staffRows), ladder: parseLadder(ladderRows),
     hasDist, distRowCount: distSheetRows ? distSheetRows.length : 0, dist: parseDist(distSheetRows),
@@ -90,6 +104,8 @@ function maskLabor(items, cur, allowed) {
 function withAddedDefaults(items) {
   const has = (id) => Object.values(items).some((list) => list.some((it) => it.id === id));
   const out = { ...items };
+  // 2コース制で増えたクラス（S1〜S3 スペシャル）が評価項目シートに無ければ初期値を使う
+  for (const g of ["S1", "S2", "S3"]) if (!out[g]) out[g] = DEFAULT_ITEMS[g];
   for (const [g, add] of Object.entries(ADDED_DEFAULT_ITEMS)) {
     const missing = add.filter((it) => !has(it.id));
     if (missing.length && out[g]) out[g] = [...out[g], ...missing];
@@ -132,13 +148,16 @@ function buildPayload({ model, np, viewer, isAdmin, sheets, monthKey }) {
   const people = visible.map((vp) => {
     const person = model.people.find((p) => p.key === vp.key);
     // 異動・院長候補などは月ごとに反映（その月の所属院・評価クラスで評価する）
-    const at = (key) => ({ ...person, clinics: clinicsAt(person, key), grade: evalGradeAt(person, key) });
+    // コース（マネジメント／スペシャル）：G3以上でスペシャルを選んだ人は S1〜S3 の項目で評価する
+    const track = trackOf(sheets, person.key);
+    const at = (key) => { const level = evalGradeAt(person, key); return { ...person, clinics: clinicsAt(person, key), level, grade: trackGradeFor(level, track) }; };
     const pm = at(monthKey);
-    const items = itemsFor(sheets.items, pm.grade, deptsOf(person.key), sheets.dist);
+    const kdi = kdiFor(sheets.kdi, person.key, pm.grade);
+    const items = itemsFor(sheets.items, pm.grade, deptsOf(person.key), sheets.dist, kdi.items);
     const monthData = (key) => {
       const rec = records.get(`${key}|${person.key}`) || null;
       const pk = at(key);
-      const its = key === monthKey ? items : itemsFor(sheets.items, pk.grade, deptsOf(person.key), sheets.dist) || items;
+      const its = key === monthKey ? items : itemsFor(sheets.items, pk.grade, deptsOf(person.key), sheets.dist, kdiFor(sheets.kdi, person.key, pk.grade).items) || items;
       const auto = autoValues(model, pk, key, np);
       const values = mergedValues(its, rec, auto);
       const scores = rec ? rec.scores : {};
@@ -163,6 +182,10 @@ function buildPayload({ model, np, viewer, isAdmin, sheets, monthKey }) {
     const ea = evalAsAt(person, monthKey);
     return {
       key: person.key, name: person.name, grade: person.grade, role: person.role, clinics: pm.clinics, items, depts: deptsOf(person.key),
+      level: pm.level, track: canChooseTrack(pm.level) ? track : null, trackLabel: canChooseTrack(pm.level) ? TRACKS[track] : "共通",
+      canSetTrack: canSetTrack(model, viewer, isAdmin, { ...person, grade: pm.level }),
+      kdi: kdi.items.map(({ id, label, target, unit, direction }) => ({ id, label, target, unit, direction })), kdiPersonal: kdi.personal,
+      pay: canSeeCompany(viewer) && canChooseTrack(pm.level) ? { current: monthlyPay(sheets.payTable, pm.level, track), management: monthlyPay(sheets.payTable, pm.level, "management"), special: monthlyPay(sheets.payTable, pm.level, "special") } : null,
       evalGrade: pm.grade, evalAsLabel: ea ? (self ? `${GRADE_LABELS[ea.grade] || ea.grade}の項目で評価` : ea.label) : "",
       superior: sup ? sup.name : "管理者",
       canEdit: canEvaluate(model, viewer, isAdmin, pm),
@@ -187,6 +210,8 @@ function buildPayload({ model, np, viewer, isAdmin, sheets, monthKey }) {
   people.sort((a, b) => gradeRank(a.grade) - gradeRank(b.grade) || (a.clinics[0] || "").localeCompare(b.clinics[0] || "", "ja") || a.name.localeCompare(b.name, "ja"));
   return {
     month: monthKey, halfMonths: half, halfId, halfLabel: halfLabel(halfId),
+    tracks: TRACKS, specialLabels: SPECIAL_LABELS,
+    payTable: canSeeCompany(viewer) ? sheets.payTable : null, canEditPay: isAdmin || viewer.grade === "G6",
     overallRules: canSeeCompany(viewer) ? sheets.overallRules : sheets.overallRules.map(({ raise, ...r }) => r),
     overallMax: OVERALL_MAX, salaryChoices: SALARY_CHOICES, positionChoices: POSITION_CHOICES,
     canEditOverallRules: isAdmin || viewer.grade === "G6", items: sheets.items, people, setupNeeded: sheets.setupNeeded, viewer, isAdmin,
@@ -323,7 +348,7 @@ async function writeDist(sheets, dist) {
   if (!sheets.hasDist) await addSheets(CAREER_SHEET_ID, [DIST_SHEET]);
   const rows = distRows(dist);
   while (rows.length < sheets.distRowCount) rows.push(Array(rows[0].length).fill(""));
-  await batchUpdate(CAREER_SHEET_ID, [{ range: `'${DIST_SHEET}'!A1:G${rows.length}`, values: rows }], "RAW");
+  await batchUpdate(CAREER_SHEET_ID, [{ range: `'${DIST_SHEET}'!A1:H${rows.length}`, values: rows }], "RAW");
 }
 
 // 1クラス分の項目（と配分）を差し替えて「評価項目」「評価配分」シートを書き直す（減った行は空欄で上書き）
@@ -353,6 +378,60 @@ async function resetItems() {
   const rows = itemSheetRows(withPoints(DEFAULT_ITEMS, sheets.dist));
   while (rows.length < sheets.itemRowCount) rows.push(Array(rows[0].length).fill(""));
   await batchUpdate(CAREER_SHEET_ID, [{ range: `'${ITEM_SHEET}'!A1:K${rows.length}`, values: rows }]);
+}
+
+// ===== キャリアコース・個人KDI・コース別給与 =====
+function trackOf(sheets, key) {
+  const t = sheets.tracks && sheets.tracks.get(key);
+  return t ? t.track : "management";
+}
+// コースを決められる人：管理者・GM・BM・直属の上司（本人は不可）。G3以上の段の人だけ
+function canSetTrack(model, viewer, isAdmin, person) {
+  if (!canChooseTrack(person.grade)) return false;
+  if (isAdmin) return true;
+  if (!viewer.personKey || viewer.personKey === person.key) return false;
+  if (viewer.grade === "G6" || viewer.grade === "G5") return true;
+  const sup = superiorOf(model, person);
+  return !!sup && sup.key === viewer.personKey;
+}
+async function setTrack({ model, viewer, isAdmin, staff, body, monthKey }) {
+  const person = model.people.find((p) => p.key === normName(body.personKey));
+  if (!person) throw new Error("スタッフが見つかりません");
+  const level = evalGradeAt(person, monthKey);
+  if (!canSetTrack(model, viewer, isAdmin, { ...person, grade: level })) throw new Error("コースを決められるのは、上司・BM・GM・管理者です（G3以上の人のみ）");
+  if (!TRACKS[body.track]) throw new Error("コースが正しくありません");
+  const sheets = await loadSheets();
+  if (!sheets.hasTracks) {
+    await addSheets(CAREER_SHEET_ID, [TRACK_SHEET]);
+    await batchUpdate(CAREER_SHEET_ID, [{ range: `'${TRACK_SHEET}'!A1:E1`, values: [TRACK_HEADER] }], "RAW");
+  }
+  const row = [person.key, person.name, TRACKS[body.track], viewer.name || staff.name || "管理者", nowJst()];
+  const existing = sheets.tracks.get(person.key);
+  if (existing) await batchUpdate(CAREER_SHEET_ID, [{ range: `'${TRACK_SHEET}'!A${existing.row}:E${existing.row}`, values: [row] }], "RAW");
+  else await appendRows(CAREER_SHEET_ID, `'${TRACK_SHEET}'!A:E`, [row]);
+}
+// 個人KDIの保存（body.reset ならコースの標準に戻す）。KDIを決められるのは評価する上司・管理者・GM
+async function saveKdi({ model, viewer, isAdmin, staff, body, monthKey }) {
+  const person = model.people.find((p) => p.key === normName(body.personKey));
+  if (!person) throw new Error("スタッフが見つかりません");
+  const pm = { ...person, clinics: clinicsAt(person, monthKey), grade: evalGradeAt(person, monthKey) };
+  if (!(canEvaluate(model, viewer, isAdmin, pm) || viewer.grade === "G6")) throw new Error("KDIを決められるのは直属の上司・GM・管理者です");
+  const list = body.reset ? [] : validateKdi(body.items);
+  const sheets = await loadSheets();
+  if (!sheets.hasKdi) await addSheets(CAREER_SHEET_ID, [KDI_SHEET]);
+  // この人の行を除いて、新しい行を足して書き直す（減った行は空欄で上書き）
+  const keep = sheets.kdiRawRows.slice(1).filter((r) => normName((r && r[0]) || "") !== person.key && (r && r[0]));
+  const by = viewer.name || staff.name || "管理者", now = nowJst();
+  const rows = [KDI_HEADER, ...keep.map((r) => KDI_HEADER.map((_, i) => r[i] ?? "")),
+    ...list.map((k) => [person.key, person.name, k.id, k.label, k.target, k.unit, k.direction, by, now])];
+  while (rows.length < sheets.kdiRowCount) rows.push(Array(KDI_HEADER.length).fill(""));
+  await batchUpdate(CAREER_SHEET_ID, [{ range: `'${KDI_SHEET}'!A1:I${rows.length}`, values: rows }], "RAW");
+}
+async function savePayTable(body) {
+  const table = validatePayTable(body.payTable);
+  const sheets = await loadSheets();
+  if (!sheets.hasPay) await addSheets(CAREER_SHEET_ID, [PAY_SHEET]);
+  await batchUpdate(CAREER_SHEET_ID, [{ range: `'${PAY_SHEET}'!A1:F${payRows(table).length}`, values: payRows(table) }], "RAW");
 }
 
 // 総評（半期の総合評価＋コメント）を確定して「総評」シートに残す
@@ -393,15 +472,15 @@ async function save({ model, np, viewer, isAdmin, staff, body }) {
   if (!person) throw new Error("評価する人が見つかりません");
   const sheets = await loadSheets();
   if (sheets.setupNeeded) throw new Error("先に管理者が「評価シートを準備」を押してください");
-  const pm = { ...person, clinics: clinicsAt(person, monthKey), grade: evalGradeAt(person, monthKey) };
-  const items = itemsFor(sheets.items, pm.grade, deptMembership(model, sheets.staffSettings, sheets.items).get(person.key) || [], sheets.dist);
+  const pm = { ...person, clinics: clinicsAt(person, monthKey), grade: trackGradeFor(evalGradeAt(person, monthKey), trackOf(sheets, person.key)) };
+  const items = itemsFor(sheets.items, pm.grade, deptMembership(model, sheets.staffSettings, sheets.items).get(person.key) || [], sheets.dist, kdiFor(sheets.kdi, person.key, pm.grade).items);
   if (!items) throw new Error(`${pm.grade || "等級なし"} の評価項目がありません`);
   if (!canEvaluate(model, viewer, isAdmin, pm)) throw new Error("この人を評価できるのは直属の上司です");
 
   const auto = autoValues(model, pm, monthKey, np);
   const values = {}, scores = {};
   for (const it of items) {
-    if (it.kind === "数値") {
+    if (isNumericKind(it.kind)) {
       if (it.auto && auto[it.auto] !== undefined) { values[it.id] = auto[it.auto]; continue; }
       const raw = body.values && body.values[it.id];
       if (raw === "" || raw === null || raw === undefined) continue;
@@ -469,6 +548,13 @@ export default async function handler(req, res) {
       } else if (body.action === "saveItems") {
         if (!(isAdmin || viewer.grade === "G6")) { res.status(403).json({ error: "評価項目の編集は管理者・GMのみ可能です" }); return; }
         await saveItems(body);
+      } else if (body.action === "setTrack") {
+        await setTrack({ model, viewer, isAdmin, staff, body, monthKey });
+      } else if (body.action === "saveKdi") {
+        await saveKdi({ model, viewer, isAdmin, staff, body, monthKey });
+      } else if (body.action === "savePayTable") {
+        if (!(isAdmin || viewer.grade === "G6")) { res.status(403).json({ error: "コース別給与の変更は社長・GMのみ可能です" }); return; }
+        await savePayTable(body);
       } else if (body.action === "saveReview") {
         await saveReview({ model, np, viewer, isAdmin, staff, body, monthKey });
       } else if (body.action === "saveOverallRules") {
