@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>巻き爪 物販プラン - あんど整骨院</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="/nail-goods-logic.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#eef4f3;color:#1e293b;}
+.topbar{position:sticky;top:0;z-index:10;background:linear-gradient(135deg,#0f766e,#14b8a6);color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.topbar h1{font-size:16px;font-weight:800;}
+.topbar .sub{font-size:11px;opacity:.85;margin-top:2px;}
+.save-st{font-size:11px;background:rgba(255,255,255,.15);padding:4px 10px;border-radius:10px;}
+.btn{padding:8px 14px;border-radius:8px;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}
+.btn-main{background:#0f766e;color:white;}
+.btn-gray{background:white;color:#334155;border:1.5px solid #cbd5e1;}
+.btn-sm{padding:5px 10px;font-size:12px;}
+.btn-del{background:none;border:none;color:#dc2626;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;}
+.wrap{max-width:1100px;margin:0 auto;padding:16px;}
+.tabs{display:flex;gap:4px;margin-bottom:14px;border-bottom:2px solid #d1e3e1;flex-wrap:wrap;}
+.tab{padding:10px 14px;border:none;background:none;font-size:14px;font-weight:700;color:#64748b;cursor:pointer;font-family:inherit;border-bottom:3px solid transparent;margin-bottom:-2px;}
+.tab.sel{color:#0f766e;border-bottom-color:#0f766e;}
+.card{background:white;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:14px;overflow:hidden;}
+.card-h{padding:12px 16px;border-bottom:1px solid #f1f5f9;font-weight:800;font-size:14px;color:#134e4a;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
+.card-b{padding:14px 16px;}
+.small{font-size:11px;color:#64748b;line-height:1.6;}
+.muted{color:#94a3b8;font-size:13px;}
+.center{text-align:center;padding:40px;color:#64748b;}
+.err{background:#fef2f2;color:#b91c1c;padding:10px 12px;border-radius:8px;font-size:13px;margin-bottom:10px;}
+.note{background:#f0fdfa;border:1px solid #99f6e4;color:#115e59;padding:10px 12px;border-radius:10px;font-size:12.5px;line-height:1.7;margin-bottom:12px;}
+.warnbox{background:#fffbeb;border:1px solid #fde68a;color:#92400e;padding:10px 12px;border-radius:10px;font-size:12.5px;line-height:1.7;margin-bottom:12px;}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;}
+.kpi{border:1.5px solid #e2e8f0;border-radius:12px;padding:12px;background:white;}
+.kpi .l{font-size:12px;font-weight:700;color:#475569;}
+.kpi .v{font-size:22px;font-weight:800;margin:4px 0;font-variant-numeric:tabular-nums;}
+.kpi .t{font-size:11px;color:#64748b;}
+.kpi.ideal{border-color:#16a34a;background:#f0fdf4;} .kpi.ideal .v{color:#15803d;}
+.kpi.ok{border-color:#0d9488;} .kpi.ok .v{color:#0f766e;}
+.kpi.ng{border-color:#fca5a5;background:#fef2f2;} .kpi.ng .v{color:#b91c1c;}
+.tag{display:inline-block;padding:1px 7px;border-radius:9px;font-size:10.5px;font-weight:800;}
+.tag.ideal{background:#dcfce7;color:#166534;} .tag.ok{background:#ccfbf1;color:#115e59;} .tag.ng{background:#fee2e2;color:#991b1b;}
+.cell-ideal{color:#15803d;font-weight:800;} .cell-ok{color:#0f766e;font-weight:700;} .cell-ng{color:#b91c1c;font-weight:800;}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th{background:#f8fafc;padding:7px 6px;text-align:right;font-weight:800;color:#64748b;border-bottom:2px solid #e2e8f0;white-space:nowrap;}
+td{padding:5px 6px;text-align:right;border-bottom:1px solid #f1f5f9;white-space:nowrap;font-variant-numeric:tabular-nums;}
+th.l,td.l{text-align:left;}
+tr.sum td{background:#f8fafc;font-weight:800;}
+.scroll{overflow-x:auto;}
+input,select,textarea{padding:6px 8px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:inherit;background:white;}
+td input{width:62px;padding:4px 5px;text-align:right;font-size:12px;}
+td input.w{width:86px;}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;}
+.form-row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;}
+.form-row label{display:flex;flex-direction:column;gap:3px;font-size:11px;font-weight:700;color:#475569;}
+.scen{border:1.5px solid #e2e8f0;border-radius:12px;padding:12px;}
+.scen.base{border-color:#0d9488;background:#f0fdfa;}
+.scen .h{font-weight:800;font-size:13px;margin-bottom:6px;}
+.scen .big{font-size:20px;font-weight:800;color:#134e4a;font-variant-numeric:tabular-nums;}
+.scen .row{display:flex;justify-content:space-between;font-size:12px;padding:2px 0;}
+.bar{height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;display:flex;min-width:80px;}
+.bar>i{display:block;height:100%;}
+.big-num{font-size:26px;font-weight:800;color:#0f766e;font-variant-numeric:tabular-nums;}
+.stat{border:1.5px solid #e2e8f0;border-radius:12px;padding:12px;}
+.stat .l{font-size:12px;font-weight:700;color:#475569;}
+.stat .v{font-size:20px;font-weight:800;margin-top:3px;font-variant-numeric:tabular-nums;}
+.stat .s{font-size:11px;color:#64748b;margin-top:2px;}
+@media (max-width:760px){ .kpis{grid-template-columns:repeat(2,minmax(0,1fr));} .grid2,.grid3{grid-template-columns:1fr;} .wrap{padding:10px;} }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div><h1>🦶 巻き爪 物販プラン（インソール・室内サンダル）</h1><div class="sub" id="subLabel">巻き爪分析表の実績から、物販の見込み・提案・販売・在庫を数字で管理</div></div>
+  <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="save-st" id="saveSt">読み込み中…</span></div>
+</div>
+<div class="wrap">
+  <div class="tabs" id="tabs"></div>
+  <div id="root"><div class="center">読み込み中...</div></div>
+</div>
+<script>
+const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
+// 管理画面と同じログイン（同じタブの sessionStorage を使う）
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
+});
+const NG = window.NailGoods;
+// 保存先：app_settings の1行（key=nail_goods_v1）に JSON でまとめて保存する。ログインしていない時はこの端末だけに保存。
+const SETTINGS_KEY = "nail_goods_v1";
+const LS_KEY = "nail_goods_v1_local";
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+
+const root = document.getElementById("root");
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const yen = (v) => (v === null || v === undefined || !isFinite(v)) ? "-" : (v < 0 ? "-¥" : "¥") + Math.abs(Math.round(v)).toLocaleString("ja-JP");
+const man = (v) => (v === null || v === undefined || !isFinite(v)) ? "-" : (Math.round(v / 1000) / 10).toLocaleString("ja-JP") + "万";
+const n1 = (v) => (v === null || v === undefined || !isFinite(v)) ? "-" : (Math.round(v * 10) / 10).toLocaleString("ja-JP");
+const n0 = (v) => (v === null || v === undefined || !isFinite(v)) ? "-" : Math.round(v).toLocaleString("ja-JP");
+const pctS = (v) => (v === null || v === undefined || !isFinite(v)) ? "-" : Math.round(v) + "%";
+const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+const thisMonth = () => todayStr().slice(0, 7);
+function shiftMonth(key, d) { const [y, m] = key.split("-").map(Number); const t = new Date(y, m - 1 + d, 1); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`; }
+function monthLabel(key) { const [y, m] = key.split("-"); return `${y}年${Number(m)}月`; }
+function lastDay(ym) { const [y, m] = ym.split("-").map(Number); return `${ym}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`; }
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const SEG_COLORS = ["#0d9488", "#6366f1", "#f59e0b", "#ec4899", "#64748b"];
+const PRODUCT_COLORS = ["#0d9488", "#f59e0b", "#6366f1", "#ec4899", "#64748b"];
+
+function defaultData() {
+  return {
+    version: 1,
+    center: "門真巻き爪センター",
+    year: "2026",
+    nail: JSON.parse(JSON.stringify(NG.SEED_NAIL_2026)),
+    products: JSON.parse(JSON.stringify(NG.DEFAULT_PRODUCTS)),
+    segments: NG.segmentsFromNail(NG.nailSummary(NG.SEED_NAIL_2026)),
+    startMonth: shiftMonth(thisMonth(), 1),
+    horizon: 12,
+    targetSales: 100000,
+    storeId: "",
+    logs: [],
+    purchases: [],
+  };
+}
+let data = null, session = null, tab = lsGet("nail_goods_tab") || "nail", saveTimer = null, stores = [];
+let pos = { ym: thisMonth(), loading: false, result: null, error: null, since: null };
+
+// ===== 読み込み・保存 =====
+async function token() { const { data: { session: s } } = await supabaseClient.auth.getSession(); session = s; return s ? s.access_token : SUPABASE_ANON_KEY; }
+async function sbGet(table, q) {
+  const t = await token();
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}${q || ""}`, { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${t}` } });
+  if (!res.ok) throw new Error(`${table} の読み込みに失敗しました（HTTP ${res.status}）`);
+  return res.json();
+}
+// 1000件ずつに分けて全件取る
+async function sbGetAll(table, q) {
+  const out = [];
+  for (let off = 0; off < 50000; off += 1000) {
+    const rows = await sbGet(table, `${q}&limit=1000&offset=${off}`);
+    out.push(...rows);
+    if (rows.length < 1000) break;
+  }
+  return out;
+}
+function setSaveSt(msg) { document.getElementById("saveSt").textContent = msg; }
+async function load() {
+  let remote = null;
+  try {
+    const rows = await sbGet("app_settings", `?key=eq.${SETTINGS_KEY}&select=value,updated_at`);
+    if (rows[0] && rows[0].value) remote = JSON.parse(rows[0].value);
+  } catch (e) { console.warn(e); }
+  const local = (() => { try { return JSON.parse(lsGet(LS_KEY) || "null"); } catch (e) { return null; } })();
+  data = Object.assign(defaultData(), remote || local || {});
+  setSaveSt(session ? (remote ? "サーバーに保存済み" : "まだ保存していません") : "未ログイン：この端末だけに保存");
+  try { stores = await sbGet("stores", "?select=id,name&order=id"); } catch (e) { stores = []; }
+  render();
+}
+function save() {
+  lsSet(LS_KEY, JSON.stringify(data));
+  clearTimeout(saveTimer);
+  setSaveSt("保存中…");
+  saveTimer = setTimeout(async () => {
+    try {
+      const t = await token();
+      if (!session) { setSaveSt("未ログイン：この端末だけに保存"); return; }
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/app_settings?on_conflict=key`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${t}`, "Content-Type": "application/json", Prefer: "resolution=merge-duplicates" },
+        body: JSON.stringify({ key: SETTINGS_KEY, value: JSON.stringify(data), updated_at: new Date().toISOString() }),
+      });
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      setSaveSt("サーバーに保存済み " + new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" }));
+    } catch (e) { console.error(e); setSaveSt("⚠ サーバー保存に失敗（端末には保存済み）"); }
+  }, 700);
+}
+
+// ===== POS（会計）から実績を取る =====
+async function loadPos(from, to) {
+  const pays = await sbGetAll("payments", `?payment_date=gte.${from}&payment_date=lte.${to}&select=id,booking_id,payment_date,jifee_items,is_refund,patient_name&order=id`);
+  if (!data.storeId) return pays;
+  const bks = await sbGetAll("bookings", `?date=gte.${shiftMonth(from.slice(0, 7), -1)}-01&date=lte.${to}&select=id,store_id&order=id`);
+  const firstStore = stores[0] ? String(stores[0].id) : "1";
+  const ok = new Set(bks.filter((b) => String(b.store_id || firstStore) === String(data.storeId)).map((b) => b.id));
+  return pays.filter((p) => ok.has(p.booking_id));
+}
+async function fetchPosMonth() {
+  pos.loading = true; pos.error = null; render();
+  try {
+    const pays = await loadPos(`${pos.ym}-01`, lastDay(pos.ym));
+    pos.result = NG.aggregatePayments(pays, data.products);
+    // 在庫計算用：販売開始月から今日までの物販の販売数
+    const since = data.startMonth <= thisMonth() ? data.startMonth : thisMonth();
+    const all = since === pos.ym ? pays : await loadPos(`${since}-01`, todayStr());
+    pos.since = { from: since, agg: NG.aggregatePayments(all, data.products) };
+  } catch (e) { pos.error = e.message; }
+  pos.loading = false; render();
+}
+
+// ===== 画面 =====
+const TABS = [
+  { id: "nail", label: "📊 巻き爪の実績" },
+  { id: "forecast", label: "📈 物販の見込み" },
+  { id: "record", label: "📝 提案・販売の記録" },
+  { id: "stock", label: "📦 商品・在庫" },
+];
+function setTab(t) { tab = t; lsSet("nail_goods_tab", t); render(); if (t === "record" && !pos.result && !pos.loading) fetchPosMonth(); }
+function render() {
+  document.getElementById("tabs").innerHTML = TABS.map((t) => `<button class="tab ${tab === t.id ? "sel" : ""}" onclick="setTab('${t.id}')">${t.label}</button>`).join("");
+  document.getElementById("subLabel").textContent = `${data.center}｜巻き爪分析表の実績から、物販の見込み・提案・販売・在庫を数字で管理`;
+  root.innerHTML = tab === "nail" ? viewNail() : tab === "forecast" ? viewForecast() : tab === "record" ? viewRecord() : viewStock();
+}
+function kpiCard(k, value) {
+  const j = NG.judgeKpi(k.key, value);
+  const v = k.unit === "円" ? yen(value) : pctS(value);
+  const t = k.unit === "円" ? `指標 ${yen(k.target)}以上／優良 ${yen(k.ideal)}以上` : k.higher ? `指標 ${k.target}%以上／優良 ${k.ideal}%以上` : `指標 ${k.target}%以下／優良 ${k.ideal}%以下`;
+  return `<div class="kpi ${j || ""}"><div class="l">${k.label} ${j ? `<span class="tag ${j}">${{ ideal: "優良", ok: "指標クリア", ng: "未達" }[j]}</span>` : ""}</div><div class="v">${v}</div><div class="t">${t}</div></div>`;
+}
+const cellCls = (key, v) => { const j = NG.judgeKpi(key, v); return j ? `cell-${j}` : ""; };
+
+// ---------- 巻き爪の実績（分析表） ----------
+function viewNail() {
+  const s = NG.nailSummary(data.nail);
+  const months = Array.from({ length: 12 }, (_, i) => `${data.year}-${String(i + 1).padStart(2, "0")}`);
+  const F = NG.NAIL_FIELDS;
+  const recent = s.months.slice(-3);
+  const r3 = NG.nailSummary(Object.fromEntries(recent.map((k) => [k, data.nail[k]])));
+  return `
+  <div class="note">「R8巻き爪分析表最新.xlsx」（${esc(data.center)}）の数字を読み取って入れています。月ごとの数字はこの表に直接入力でき、計算式（2回目継続率・4箇所施術率・平均単価・離脱率）は分析表と同じです。8月以降の分析表が届いたら同じように入力してください。</div>
+  <div class="card"><div class="card-h">年間の指標（${s.count}か月分・${s.months.length ? monthLabel(s.months[0]) + "〜" + monthLabel(s.lastKey) : "データなし"}）</div><div class="card-b">
+    <div class="kpis">${NG.NAIL_KPIS.map((k) => kpiCard(k, s.metrics[k.key])).join("")}</div>
+    <div class="grid3" style="margin-top:12px;">
+      <div class="stat"><div class="l">新規数（月平均）</div><div class="v">${n1(s.avg.newCount)}人</div><div class="s">合計 ${n0(s.sum.newCount)}人（Web ${n0(s.sum.web)}・のぼり ${n0(s.sum.nobori)}・紹介 ${n0(s.sum.referral)}・店舗内 ${n0(s.sum.inStore)}・その他 ${n0(s.sum.other)}）</div></div>
+      <div class="stat"><div class="l">総人数（月平均）／継続数（直近）</div><div class="v">${n1(s.avg.total)}人 ／ ${s.last ? n0(s.last.cont) : "-"}人</div><div class="s">延べ ${n0(s.sum.total)}人・一日 ${n1(s.metrics.dailyAve)}人</div></div>
+      <div class="stat"><div class="l">巻き爪の売上（月平均）</div><div class="v">${man(s.avg.sales)}円</div><div class="s">合計 ${man(s.sum.sales)}円・目標60万円/月に対して ${pctS(s.avg.sales / 600000 * 100)}</div></div>
+    </div>
+    ${recent.length ? `<div class="small" style="margin-top:10px;">直近3か月（${recent.map(monthLabel).join("・")}）：2回目継続率 <b class="${cellCls("secondRate", r3.metrics.secondRate)}">${pctS(r3.metrics.secondRate)}</b>／4箇所施術率 <b class="${cellCls("fourRate", r3.metrics.fourRate)}">${pctS(r3.metrics.fourRate)}</b>／平均単価 <b class="${cellCls("unitPrice", r3.metrics.unitPrice)}">${yen(r3.metrics.unitPrice)}</b>／離脱率 <b class="${cellCls("dropRate", r3.metrics.dropRate)}">${pctS(r3.metrics.dropRate)}</b></div>` : ""}
+  </div></div>
+  <div class="card"><div class="card-h"><span>巻き爪分析表（${esc(data.year)}年）</span>
+    <span style="display:flex;gap:6px;align-items:center;"><input value="${esc(data.center)}" onchange="data.center=this.value;save();render()" style="width:170px;" title="センター名"/>
+    <select onchange="data.year=this.value;save();render()">${["2025", "2026", "2027"].map((y) => `<option ${y === data.year ? "selected" : ""}>${y}</option>`).join("")}</select></span></div>
+  <div class="card-b scroll"><table>
+    <tr><th class="l">月</th>${F.map((f) => `<th>${f.label}</th>`).join("")}<th>一日AVE</th><th>2回目継続率</th><th>4箇所率</th><th>平均単価</th><th>離脱率</th></tr>
+    ${months.map((ym) => {
+      const r = data.nail[ym] || {};
+      const m = NG.nailMonthMetrics(r);
+      const hasRow = Number(r.total) > 0;
+      return `<tr><td class="l"><b>${Number(ym.slice(5))}月</b></td>${F.map((f) => `<td><input class="${f.key === "sales" ? "w" : ""}" type="number" inputmode="numeric" value="${r[f.key] ?? ""}" onchange="setNail('${ym}','${f.key}',this.value)"/></td>`).join("")}
+        <td>${hasRow ? n1(m.dailyAve) : ""}</td><td class="${cellCls("secondRate", m.secondRate)}">${hasRow ? pctS(m.secondRate) : ""}</td><td class="${cellCls("fourRate", m.fourRate)}">${hasRow ? pctS(m.fourRate) : ""}</td><td class="${cellCls("unitPrice", m.unitPrice)}">${hasRow ? yen(m.unitPrice) : ""}</td><td class="${cellCls("dropRate", m.dropRate)}">${hasRow ? pctS(m.dropRate) : ""}</td></tr>`;
+    }).join("")}
+    <tr class="sum"><td class="l">合計</td>${F.map((f) => `<td>${f.key === "sales" ? yen(s.sum[f.key]) : n0(s.sum[f.key])}</td>`).join("")}<td>${n1(s.metrics.dailyAve)}</td><td>${pctS(s.metrics.secondRate)}</td><td>${pctS(s.metrics.fourRate)}</td><td>${yen(s.metrics.unitPrice)}</td><td>${pctS(s.metrics.dropRate)}</td></tr>
+    <tr class="sum"><td class="l">平均</td>${F.map((f) => `<td>${f.key === "sales" ? yen(s.avg[f.key]) : n1(s.avg[f.key])}</td>`).join("")}<td colspan="5"></td></tr>
+  </table>
+  <div class="small" style="margin-top:8px;">総人数＝新規＋再診＋継続。2回目継続は翌月以降に確定します（分析表の打込み方と同じ）。色：<span class="cell-ideal">優良</span>／<span class="cell-ok">指標クリア</span>／<span class="cell-ng">未達</span></div>
+  </div></div>`;
+}
+function setNail(ym, key, v) {
+  const r = data.nail[ym] = data.nail[ym] || {};
+  if (v === "") delete r[key]; else r[key] = Number(v);
+  if (!Object.keys(r).length) delete data.nail[ym];
+  save(); render();
+}
+
+// ---------- 物販の見込み ----------
+function viewForecast() {
+  const P = data.products, S = data.segments;
+  const fc = NG.SCENARIOS.map((sc) => ({ sc, f: NG.forecast({ products: P, segments: S, months: data.horizon, factor: sc.factor }) }));
+  const base = fc.find((x) => x.sc.id === "base").f;
+  const req = NG.requiredForTarget({ targetSales: Number(data.targetSales) || 0, products: P, segments: S });
+  const maxSales = Math.max(1, ...base.rows.map((r) => r.sales));
+  const s = NG.nailSummary(data.nail);
+  const perPatientNow = s.avg.total ? base.monthlyAvg.sales / s.avg.total : null;
+  return `
+  <div class="note">対象になる患者さんの人数 × 提案率 × 購入率 で、毎月の販売数を見込みます。人数は「巻き爪の実績」から自動で入れられます（新規＝月平均、継続中＝直近の継続数、2回目来院＝月平均）。購入率は仮の値なので、販売を始めたら「提案・販売の記録」の実際の成約率に合わせて直してください。</div>
+  <div class="card"><div class="card-h"><span>見込みの前提（対象者 × 提案率 × 購入率）</span>
+    <span style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn btn-gray btn-sm" onclick="applyNailToSegments()">巻き爪の実績から人数を反映</button><button class="btn btn-gray btn-sm" onclick="addSegment()">＋ 対象を追加</button></span></div>
+  <div class="card-b scroll"><table>
+    <tr><th class="l">対象</th><th>毎月の人数</th><th>立ち上げ時に1回</th><th>提案率</th>${P.map((p) => `<th>${esc(p.name)} 購入率</th>`).join("")}<th>月の提案数</th><th></th></tr>
+    ${S.map((g, i) => `<tr><td class="l"><input style="width:250px;text-align:left;" value="${esc(g.name)}" onchange="setSeg(${i},'name',this.value)"/></td>
+      <td><input type="number" step="0.1" value="${g.perMonth}" onchange="setSeg(${i},'perMonth',this.value)"/>人</td>
+      <td><input type="number" value="${g.once}" onchange="setSeg(${i},'once',this.value)"/>人</td>
+      <td><input type="number" value="${g.propose}" onchange="setSeg(${i},'propose',this.value)"/>%</td>
+      ${P.map((p) => `<td><input type="number" value="${(g.conv || {})[p.id] ?? 0}" onchange="setConv(${i},'${p.id}',this.value)"/>%</td>`).join("")}
+      <td>${n1(g.perMonth * g.propose / 100)}件</td>
+      <td><button class="btn-del" onclick="delSegment(${i})">削除</button></td></tr>`).join("")}
+  </table>
+  <div class="form-row" style="margin-top:10px;">
+    <label>販売開始月<input type="month" value="${data.startMonth}" onchange="data.startMonth=this.value;save();render()"/></label>
+    <label>見込みの期間<select onchange="data.horizon=Number(this.value);save();render()">${[6, 12, 24].map((m) => `<option value="${m}" ${m === data.horizon ? "selected" : ""}>${m}か月</option>`).join("")}</select></label>
+  </div></div></div>
+
+  <div class="card"><div class="card-h">シナリオ別の見込み（${data.horizon}か月・${monthLabel(data.startMonth)}開始）</div><div class="card-b">
+    <div class="grid3">${fc.map(({ sc, f }) => `<div class="scen ${sc.id === "base" ? "base" : ""}">
+      <div class="h">${sc.label}（購入率×${sc.factor}）</div>
+      <div class="big">${man(f.total.sales)}円</div>
+      <div class="row"><span>粗利</span><b>${man(f.total.gross)}円</b></div>
+      <div class="row"><span>月平均 売上／粗利</span><b>${yen(f.monthlyAvg.sales)}／${yen(f.monthlyAvg.gross)}</b></div>
+      ${P.map((p) => `<div class="row"><span>${esc(p.name)}</span><b>${n0(f.total.units[p.id])}個</b></div>`).join("")}
+      <div class="row"><span>初回仕入れ ${yen(f.initialCost)} の回収</span><b>${f.paybackMonth ? f.paybackMonth + "か月目" : "期間内は未回収"}</b></div>
+    </div>`).join("")}</div>
+    ${perPatientNow !== null ? `<div class="small" style="margin-top:10px;">標準シナリオの物販売上は、巻き爪の来院1人あたり約 <b>${yen(perPatientNow)}</b>（巻き爪の平均単価 ${yen(s.metrics.unitPrice)} に上乗せ）。巻き爪の月売上 ${man(s.avg.sales)}円 に対して <b>+${pctS(base.monthlyAvg.sales / (s.avg.sales || 1) * 100)}</b> です。</div>` : ""}
+  </div></div>
+
+  <div class="card"><div class="card-h">月別の見込み（標準）</div><div class="card-b scroll"><table>
+    <tr><th class="l">月</th><th>提案数</th>${P.map((p) => `<th>${esc(p.name)}<br><span style="font-weight:400">（うち買い替え）</span></th>`).join("")}<th>売上</th><th>粗利</th><th>累計売上</th><th>累計粗利</th><th class="l">売上の内訳</th></tr>
+    ${base.rows.map((r) => `<tr><td class="l">${monthLabel(shiftMonth(data.startMonth, r.month - 1))}</td><td>${n1(r.proposals)}</td>
+      ${P.map((p) => `<td>${n1(r.units[p.id])}個${r.repeatUnits[p.id] > 0.05 ? `（${n1(r.repeatUnits[p.id])}）` : ""}</td>`).join("")}
+      <td>${yen(r.sales)}</td><td>${yen(r.gross)}</td><td>${yen(r.cumSales)}</td><td>${yen(r.cumGross)}</td>
+      <td class="l"><div class="bar" style="width:${Math.max(4, r.sales / maxSales * 160)}px">${P.map((p, i) => `<i style="width:${r.sales ? r.units[p.id] * p.price / r.sales * 100 : 0}%;background:${PRODUCT_COLORS[i % 5]}"></i>`).join("")}</div></td></tr>`).join("")}
+    <tr class="sum"><td class="l">合計</td><td></td>${P.map((p) => `<td>${n0(base.total.units[p.id])}個</td>`).join("")}<td>${yen(base.total.sales)}</td><td>${yen(base.total.gross)}</td><td colspan="3"></td></tr>
+  </table>
+  <div class="small" style="margin-top:6px;">${P.map((p, i) => `<span style="color:${PRODUCT_COLORS[i % 5]}">■</span> ${esc(p.name)}`).join("　")}　1か月目は「立ち上げ時に1回」の人数が上乗せされます。買い替えは各商品の周期・再購入率（商品・在庫タブ）で計算。
+  ${P.map((p) => base.stockOut[p.id] ? `／${esc(p.name)}の初回仕入れ${p.lot}個は${base.stockOut[p.id]}か月目に売り切れ見込み` : "").join("")}</div>
+  </div></div>
+
+  <div class="card"><div class="card-h">目標から逆算（毎月の物販売上の目標 → 必要な人数）</div><div class="card-b">
+    <div class="form-row"><label>物販の月の売上目標<input type="number" step="10000" value="${data.targetSales}" onchange="data.targetSales=Number(this.value);save();render()"/></label></div>
+    ${req ? `<div class="grid3" style="margin-top:12px;">
+      <div class="stat"><div class="l">必要な対象患者（毎月）</div><div class="v">${n1(req.people)}人</div><div class="s">いまの前提は ${n1(req.people / req.scale)}人 → ${n1(req.scale)}倍</div></div>
+      <div class="stat"><div class="l">必要な提案数（毎月）</div><div class="v">${n1(req.proposals)}件</div><div class="s">1提案あたり ${yen(req.perProposalValue)}</div></div>
+      <div class="stat"><div class="l">必要な販売数（毎月）</div><div class="v">${n1(req.units)}個</div><div class="s">いまの前提の月売上（買い替え・立ち上げ分を除く）${yen(req.currentSales)}</div></div>
+    </div>
+    <div class="small" style="margin-top:8px;">巻き爪の患者さんだけで足りない場合は、「整骨院の患者（足・ひざ・腰の悩み）」の人数や、足の健康アンケートで「足の悩みあり」と答えた方の人数を対象に入れて試算してください。</div>` : `<div class="muted" style="margin-top:8px;">目標と、毎月の人数・提案率・購入率を入れると計算します。</div>`}
+  </div></div>`;
+}
+function setSeg(i, k, v) { const g = data.segments[i]; g[k] = k === "name" ? v : Number(v) || 0; save(); render(); }
+function setConv(i, pid, v) { const g = data.segments[i]; g.conv = g.conv || {}; g.conv[pid] = Number(v) || 0; save(); render(); }
+function addSegment() { data.segments.push({ id: uid(), name: "新しい対象", perMonth: 0, once: 0, propose: 50, conv: {} }); save(); render(); }
+function delSegment(i) { if (!confirm(`「${data.segments[i].name}」を削除しますか？`)) return; data.segments.splice(i, 1); save(); render(); }
+function applyNailToSegments() {
+  const s = NG.nailSummary(data.nail);
+  if (!s.count) { alert("巻き爪の実績が入っていません"); return; }
+  data.segments = NG.segmentsFromNail(s, data.segments);
+  save(); render();
+}
+
+// ---------- 提案・販売の記録 ----------
+let logDraft = { date: todayStr(), segment: "", product: "", result: "購入", qty: 1, reason: "", staff: "" };
+const REASONS = ["価格", "必要性を感じない", "家族と相談", "サイズ・在庫なし", "すでに持っている", "その他"];
+function viewRecord() {
+  const P = data.products, S = data.segments;
+  if (!logDraft.segment) logDraft.segment = (S[0] || {}).name || "";
+  if (!logDraft.product) logDraft.product = (P[0] || {}).id || "";
+  const ym = pos.ym;
+  const pa = NG.aggregateProposals(data.logs, ym);
+  const r = pos.result;
+  // 見込み（標準）のこの月の値
+  const base = NG.forecast({ products: P, segments: S, months: data.horizon, factor: 1 });
+  const idx = (() => { let i = 0, k = data.startMonth; while (k < ym && i < 60) { k = shiftMonth(k, 1); i++; } return k === ym ? i : -1; })();
+  const plan = idx >= 0 && idx < base.rows.length ? base.rows[idx] : null;
+  // 見込みの購入率（提案1件あたりの購入数）
+  const planRate = plan && plan.proposals > 0 ? P.reduce((s, p) => s + plan.units[p.id] - plan.repeatUnits[p.id], 0) / plan.proposals * 100 : null;
+  const logs = data.logs.filter((l) => String(l.date).startsWith(ym)).sort((a, b) => b.date.localeCompare(a.date));
+  const pName = (id) => (P.find((p) => p.id === id) || {}).name || id;
+  return `
+  <div class="note">販売はPOSの会計で「物販」ボタン（物販：インソール／物販：室内サンダル）を追加すると、ここに自動で集計されます。成約率を出すため、提案したら買わなかった方も下の「提案の記録」に入れてください。</div>
+  <div class="card"><div class="card-h"><span>${monthLabel(ym)} の実績</span>
+    <span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+      <button class="btn btn-gray btn-sm" onclick="pos.ym=shiftMonth(pos.ym,-1);fetchPosMonth()">◀</button>
+      <input type="month" value="${ym}" onchange="pos.ym=this.value;fetchPosMonth()"/>
+      <button class="btn btn-gray btn-sm" onclick="pos.ym=shiftMonth(pos.ym,1);fetchPosMonth()">▶</button>
+      <select onchange="data.storeId=this.value;save();fetchPosMonth()"><option value="">全店舗</option>${stores.map((s) => `<option value="${s.id}" ${String(s.id) === String(data.storeId) ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select>
+      <button class="btn btn-main btn-sm" onclick="fetchPosMonth()">POSから再集計</button></span></div>
+  <div class="card-b">
+    ${pos.error ? `<div class="err">${esc(pos.error)}${session ? "" : "（POSの会計を読むには管理画面からログインした状態で開いてください）"}</div>` : ""}
+    ${pos.loading ? `<div class="muted">POSの会計を集計中…</div>` : ""}
+    <div class="grid3">
+      <div class="stat"><div class="l">物販の売上（POS）</div><div class="v">${r ? yen(r.goodsSales) : "-"}</div><div class="s">${plan ? `見込み ${yen(plan.sales)} → 達成率 ${r ? pctS(r.goodsSales / (plan.sales || 1) * 100) : "-"}` : "販売開始月より前、または見込み期間外"}</div></div>
+      <div class="stat"><div class="l">販売数（POS）</div><div class="v">${r ? n0(r.goodsUnits) + "個" : "-"}</div><div class="s">${r ? P.map((p) => `${esc(p.name)} ${n0(r.goods[p.id].units)}個${plan ? `（見込み${n1(plan.units[p.id])}）` : ""}`).join("・") : ""}</div></div>
+      <div class="stat"><div class="l">提案 → 購入（記録）</div><div class="v">${pa.all.proposals}件 → ${pa.all.bought}件</div><div class="s">成約率 <b>${pctS(pa.all.rate)}</b>${planRate !== null ? `（見込み ${pctS(planRate)}）` : ""}・検討中 ${pa.all.pending}件</div></div>
+    </div>
+    ${r ? `<div class="grid3" style="margin-top:10px;">
+      <div class="stat"><div class="l">巻き爪の件数（POS）</div><div class="v">新規 ${r.makiNew}／継続 ${r.makiCont}</div><div class="s">巻き爪の売上 ${yen(r.makiSales)}</div></div>
+      <div class="stat"><div class="l">巻き爪の来院に対する物販</div><div class="v">${pctS(r.makiNew + r.makiCont ? r.buyers / (r.makiNew + r.makiCont) * 100 : null)}</div><div class="s">物販を買った会計 ${r.buyers}件 ÷ 巻き爪の会計 ${r.makiNew + r.makiCont}件</div></div>
+      <div class="stat"><div class="l">巻き爪＋物販の合計</div><div class="v">${yen(r.makiSales + r.goodsSales)}</div><div class="s">物販の上乗せ ${pctS(r.makiSales ? r.goodsSales / r.makiSales * 100 : null)}</div></div>
+    </div>` : ""}
+  </div></div>
+
+  <div class="grid2">
+  <div class="card"><div class="card-h">商品・対象ごとの成約率（${monthLabel(ym)}）</div><div class="card-b scroll">
+    <table><tr><th class="l">商品</th><th>提案</th><th>購入</th><th>成約率</th></tr>
+    ${P.map((p) => { const g = pa.byProduct[p.id] || { proposals: 0, bought: 0, rate: null }; return `<tr><td class="l">${esc(p.name)}</td><td>${g.proposals}</td><td>${g.bought}</td><td><b>${pctS(g.rate)}</b></td></tr>`; }).join("")}</table>
+    <table style="margin-top:10px;"><tr><th class="l">対象</th><th>提案</th><th>購入</th><th>成約率</th></tr>
+    ${Object.entries(pa.bySegment).map(([k, g]) => `<tr><td class="l">${esc(k)}</td><td>${g.proposals}</td><td>${g.bought}</td><td><b>${pctS(g.rate)}</b></td></tr>`).join("") || `<tr><td class="l muted" colspan="4">記録なし</td></tr>`}</table>
+    ${Object.keys(pa.reasons).length ? `<div class="small" style="margin-top:8px;">見送りの理由：${Object.entries(pa.reasons).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${esc(k)} ${v}件`).join("・")}</div>` : ""}
+  </div></div>
+  <div class="card"><div class="card-h">提案の記録を追加</div><div class="card-b">
+    <div class="form-row">
+      <label>日付<input type="date" value="${logDraft.date}" onchange="logDraft.date=this.value"/></label>
+      <label>対象<select onchange="logDraft.segment=this.value">${S.map((g) => `<option ${g.name === logDraft.segment ? "selected" : ""}>${esc(g.name)}</option>`).join("")}</select></label>
+      <label>商品<select onchange="logDraft.product=this.value">${P.map((p) => `<option value="${p.id}" ${p.id === logDraft.product ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>
+      <label>結果<select onchange="logDraft.result=this.value;render()">${["購入", "見送り", "検討中"].map((x) => `<option ${x === logDraft.result ? "selected" : ""}>${x}</option>`).join("")}</select></label>
+      ${logDraft.result === "購入" ? `<label>数量<input type="number" min="1" style="width:60px" value="${logDraft.qty}" onchange="logDraft.qty=Number(this.value)||1"/></label>` : ""}
+      ${logDraft.result === "見送り" ? `<label>理由<select onchange="logDraft.reason=this.value"><option value="">（選択）</option>${REASONS.map((x) => `<option ${x === logDraft.reason ? "selected" : ""}>${x}</option>`).join("")}</select></label>` : ""}
+      <label>担当<input style="width:90px" value="${esc(logDraft.staff)}" onchange="logDraft.staff=this.value"/></label>
+      <button class="btn btn-main" onclick="addLog()">追加</button>
+    </div>
+    <div class="small" style="margin-top:6px;">※患者さんの名前は入れず、件数だけ記録します。購入した方はPOSの会計でも「物販」を追加してください（売上・在庫はPOSの数字を使います）。</div>
+  </div></div>
+  </div>
+
+  <div class="card"><div class="card-h">${monthLabel(ym)} の提案の記録（${logs.length}件）</div><div class="card-b scroll">
+    <table><tr><th class="l">日付</th><th class="l">対象</th><th class="l">商品</th><th class="l">結果</th><th>数量</th><th class="l">理由</th><th class="l">担当</th><th></th></tr>
+    ${logs.map((l) => `<tr><td class="l">${l.date.slice(5).replace("-", "/")}</td><td class="l">${esc(l.segment)}</td><td class="l">${esc(pName(l.product))}</td><td class="l">${esc(l.result)}</td><td>${l.result === "購入" ? l.qty || 1 : ""}</td><td class="l">${esc(l.reason || "")}</td><td class="l">${esc(l.staff || "")}</td><td><button class="btn-del" onclick="delLog('${l.id}')">削除</button></td></tr>`).join("") || `<tr><td class="l muted" colspan="8">まだ記録がありません</td></tr>`}
+    </table></div></div>`;
+}
+function addLog() {
+  if (!logDraft.date) { alert("日付を入れてください"); return; }
+  data.logs.push({ id: uid(), ...logDraft, reason: logDraft.result === "見送り" ? logDraft.reason : "", qty: logDraft.result === "購入" ? logDraft.qty : 0 });
+  pos.ym = logDraft.date.slice(0, 7);
+  logDraft = { ...logDraft, reason: "", qty: 1 };
+  save(); render();
+}
+function delLog(id) { if (!confirm("この記録を削除しますか？")) return; data.logs = data.logs.filter((l) => l.id !== id); save(); render(); }
+
+// ---------- 商品・在庫 ----------
+let purDraft = { date: todayStr(), product: "", qty: 10 };
+function viewStock() {
+  const P = data.products;
+  if (!purDraft.product) purDraft.product = (P[0] || {}).id || "";
+  const sold = pos.since ? pos.since.agg : null;
+  return `
+  <div class="note">売価・原価・買い替えの周期は仮の値です。仕入れ先が決まったら直してください。商品名と売価はPOSの「物販」ボタンにも反映されます（POS側は先頭の「物販：」で判別するので、商品名だけ変えてOKです）。</div>
+  <div class="card"><div class="card-h"><span>商品</span><button class="btn btn-gray btn-sm" onclick="addProduct()">＋ 商品を追加</button></div><div class="card-b scroll">
+    <table><tr><th class="l">商品名</th><th>売価（税込）</th><th>原価</th><th>粗利率</th><th>買い替え周期</th><th>再購入率</th><th>初回仕入れ数</th><th>在庫（仕入れ−POS販売）</th><th></th></tr>
+    ${P.map((p, i) => {
+      const left = sold ? NG.stockLeft(p, data.purchases, sold.goods[p.id] ? sold.goods[p.id].units : 0) : null;
+      return `<tr><td class="l"><input style="width:140px;text-align:left;" value="${esc(p.name)}" onchange="setProd(${i},'name',this.value)"/></td>
+      <td><input class="w" type="number" value="${p.price}" onchange="setProd(${i},'price',this.value)"/></td>
+      <td><input class="w" type="number" value="${p.cost}" onchange="setProd(${i},'cost',this.value)"/></td>
+      <td>${p.price ? pctS((p.price - p.cost) / p.price * 100) : "-"}</td>
+      <td><input type="number" value="${p.cycle}" onchange="setProd(${i},'cycle',this.value)"/>か月</td>
+      <td><input type="number" value="${p.repeat}" onchange="setProd(${i},'repeat',this.value)"/>%</td>
+      <td><input type="number" value="${p.lot}" onchange="setProd(${i},'lot',this.value)"/>個</td>
+      <td class="${left !== null && left <= 3 ? "cell-ng" : ""}">${left === null ? `<button class="btn btn-gray btn-sm" onclick="fetchPosMonth()">POSから計算</button>` : left + "個"}</td>
+      <td>${P.length > 1 ? `<button class="btn-del" onclick="delProduct(${i})">削除</button>` : ""}</td></tr>`;
+    }).join("")}</table>
+    <div class="small" style="margin-top:6px;">${sold ? `POSの販売数は ${monthLabel(pos.since.from)}〜今日 の会計から集計。` : ""}在庫が3個以下になると赤く表示します。</div>
+  </div></div>
+  <div class="card"><div class="card-h">仕入れの記録</div><div class="card-b">
+    <div class="form-row">
+      <label>日付<input type="date" value="${purDraft.date}" onchange="purDraft.date=this.value"/></label>
+      <label>商品<select onchange="purDraft.product=this.value">${P.map((p) => `<option value="${p.id}" ${p.id === purDraft.product ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>
+      <label>数量<input type="number" style="width:70px" value="${purDraft.qty}" onchange="purDraft.qty=Number(this.value)||0"/></label>
+      <button class="btn btn-main" onclick="addPurchase()">追加</button>
+    </div>
+    <div class="scroll" style="margin-top:10px;"><table><tr><th class="l">日付</th><th class="l">商品</th><th>数量</th><th>仕入れ額（原価）</th><th></th></tr>
+    ${data.purchases.slice().sort((a, b) => b.date.localeCompare(a.date)).map((x) => { const p = P.find((q) => q.id === x.product) || {}; return `<tr><td class="l">${x.date}</td><td class="l">${esc(p.name || x.product)}</td><td>${x.qty}</td><td>${yen(x.qty * (x.unitCost ?? p.cost ?? 0))}</td><td><button class="btn-del" onclick="delPurchase('${x.id}')">削除</button></td></tr>`; }).join("") || `<tr><td class="l muted" colspan="5">まだ仕入れの記録がありません</td></tr>`}
+    </table></div>
+  </div></div>
+  <div class="card"><div class="card-h">データ</div><div class="card-b">
+    <div class="form-row"><button class="btn btn-gray btn-sm" onclick="exportCsv()">提案の記録をCSVで保存</button>
+    <button class="btn btn-gray btn-sm" onclick="resetSeed()">巻き爪の実績を分析表（1〜7月）に戻す</button></div>
+  </div></div>`;
+}
+function setProd(i, k, v) { const p = data.products[i]; p[k] = k === "name" ? v : Number(v) || 0; save(); render(); }
+function addProduct() { data.products.push({ id: uid(), name: "新しい商品", price: 3000, cost: 1200, cycle: 12, repeat: 20, lot: 10 }); save(); render(); }
+function delProduct(i) { if (!confirm(`「${data.products[i].name}」を削除しますか？`)) return; data.products.splice(i, 1); save(); render(); }
+function addPurchase() {
+  if (!purDraft.qty) return;
+  const p = data.products.find((x) => x.id === purDraft.product) || {};
+  data.purchases.push({ id: uid(), ...purDraft, unitCost: p.cost || 0 });
+  save(); render();
+}
+function delPurchase(id) { if (!confirm("この仕入れの記録を削除しますか？")) return; data.purchases = data.purchases.filter((x) => x.id !== id); save(); render(); }
+function resetSeed() {
+  if (!confirm("巻き爪の実績を、分析表から読み取った2026年1〜7月の数字に戻します。手で入れた8月以降の数字も消えます。よろしいですか？")) return;
+  data.nail = JSON.parse(JSON.stringify(NG.SEED_NAIL_2026)); data.year = "2026"; save(); render();
+}
+function exportCsv() {
+  const pName = (id) => (data.products.find((p) => p.id === id) || {}).name || id;
+  const rows = [["日付", "対象", "商品", "結果", "数量", "理由", "担当"], ...data.logs.map((l) => [l.date, l.segment, pName(l.product), l.result, l.qty || "", l.reason || "", l.staff || ""])];
+  const csv = "﻿" + rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  a.download = `物販提案記録_${todayStr()}.csv`; a.click();
+}
+load();
+</script>
+</body>
+</html>

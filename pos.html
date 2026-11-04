@@ -307,7 +307,28 @@ const JIFEE_CATEGORIES=[
       {label:"自賠（継続）",amount:0},
     ]
   },
+  {
+    // 巻き爪 物販プラン（/nail-goods）の「販売実績」に自動集計される。
+    // ※ラベルの先頭が「物販：」で始まることで集計側が判別するため、先頭を変えないこと。
+    //   商品名・売価は /nail-goods の「商品・在庫」で変えると、ここにも反映される（applyGoodsSettings）
+    id:"goods",label:"物販",color:"#0d9488",
+    items:[
+      {label:"物販：インソール",amount:5500},
+      {label:"物販：室内サンダル",amount:4400},
+    ]
+  },
 ];
+// /nail-goods で設定した商品名・売価を物販ボタンに反映する（読めなければ初期値のまま）
+async function applyGoodsSettings(){
+  try{
+    const rows=await sbGet("app_settings","?key=eq.nail_goods_v1&select=value");
+    const v=Array.isArray(rows)&&rows[0]?JSON.parse(rows[0].value||"{}"):null;
+    const products=v&&Array.isArray(v.products)?v.products.filter(p=>p&&p.name):null;
+    if(!products||!products.length) return;
+    const cat=JIFEE_CATEGORIES.find(c=>c.id==="goods");
+    cat.items=products.map(p=>({label:"物販："+p.name,amount:parseInt(p.price)||0}));
+  }catch(e){ console.warn("物販の商品設定を読めませんでした",e); }
+}
 
 const TIME_OPTS = (()=>{
   const opts=[];
@@ -381,7 +402,8 @@ function getJifeeCategories(){
   const fp=JIFEE_CATEGORIES.find(c=>c.id==="fp");
   const spot=JIFEE_CATEGORIES.find(c=>c.id==="spot");
   const special=JIFEE_CATEGORIES.find(c=>c.id==="special");
-  return [discount10(kaisu),discount10(fp),spot,special];
+  const goods=JIFEE_CATEGORIES.find(c=>c.id==="goods");
+  return [discount10(kaisu),discount10(fp),spot,special,goods];
 }
 
 let booking=null,treatment=null,visitCount=1,storeInfo=null;
@@ -1870,6 +1892,7 @@ async function init(){
       </div>`;
     return;
   }
+  await applyGoodsSettings();
   const params=new URLSearchParams(location.search);
   const id=params.get("id");
   if(!id){document.getElementById("root").innerHTML='<div style="text-align:center;padding:60px;color:#ef4444;">❌ 予約IDが指定されていません</div>';return;}
