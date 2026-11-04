@@ -53,7 +53,7 @@ async function loadSheets() {
   if (hasRules) ranges.push(`'${OVERALL_RULE_SHEET}'!A1:E30`);
   const hasTracks = titles.includes(TRACK_SHEET), hasKdi = titles.includes(KDI_SHEET), hasPay = titles.includes(PAY_SHEET);
   if (hasTracks) ranges.push(`'${TRACK_SHEET}'!A1:E1000`);
-  if (hasKdi) ranges.push(`'${KDI_SHEET}'!A1:I3000`);
+  if (hasKdi) ranges.push(`'${KDI_SHEET}'!A1:J3000`);
   if (hasPay) ranges.push(`'${PAY_SHEET}'!A1:F20`);
   const got = ranges.length ? await batchGet(CAREER_SHEET_ID, ranges) : [];
   const itemRows = hasItems ? got.shift() : null;
@@ -185,7 +185,7 @@ function buildPayload({ model, np, viewer, isAdmin, sheets, monthKey }) {
       key: person.key, name: person.name, grade: person.grade, role: person.role, clinics: pm.clinics, items, depts: deptsOf(person.key),
       level: pm.level, track: canChooseTrack(pm.level) ? track : null, trackLabel: canChooseTrack(pm.level) ? TRACKS[track] : "共通",
       canSetTrack: canSetTrack(model, viewer, isAdmin, { ...person, grade: pm.level }),
-      kdi: kdi.items.map(({ id, label, target, unit, direction }) => ({ id, label, target, unit, direction })), kdiPersonal: kdi.personal,
+      kdi: kdi.items.map(({ id, label, target, unit, direction, mandala }) => ({ id, label, target, unit, direction, mandala })), kdiPersonal: kdi.personal,
       pay: canSeeCompany(viewer) && canChooseTrack(pm.level) ? { current: monthlyPay(sheets.payTable, pm.level, track), management: monthlyPay(sheets.payTable, pm.level, "management"), special: monthlyPay(sheets.payTable, pm.level, "special") } : null,
       evalGrade: pm.grade, evalAsLabel: ea ? (self ? `${GRADE_LABELS[ea.grade] || ea.grade}の項目で評価` : ea.label) : "",
       superior: sup ? sup.name : "管理者",
@@ -417,16 +417,19 @@ async function saveKdi({ model, viewer, isAdmin, staff, body, monthKey }) {
   if (!person) throw new Error("スタッフが見つかりません");
   const pm = { ...person, clinics: clinicsAt(person, monthKey), grade: evalGradeAt(person, monthKey) };
   if (!(canEvaluate(model, viewer, isAdmin, pm) || viewer.grade === "G6")) throw new Error("KDIを決められるのは直属の上司・GM・管理者です");
-  const list = body.reset ? [] : validateKdi(body.items);
   const sheets = await loadSheets();
+  const list = body.reset ? [] : validateKdi(body.items);
+  // マンダラの紐づけは、送られてこなければ同じIDのKDIが前に持っていたものを引き継ぐ
+  const prev = (sheets.kdi.get(person.key) || []);
+  const mandalaOf = (k) => k.mandala || ((prev.find((x) => x.id === k.id) || {}).mandala || "");
   if (!sheets.hasKdi) await addSheets(CAREER_SHEET_ID, [KDI_SHEET]);
   // この人の行を除いて、新しい行を足して書き直す（減った行は空欄で上書き）
   const keep = sheets.kdiRawRows.slice(1).filter((r) => normName((r && r[0]) || "") !== person.key && (r && r[0]));
   const by = viewer.name || staff.name || "管理者", now = nowJst();
   const rows = [KDI_HEADER, ...keep.map((r) => KDI_HEADER.map((_, i) => r[i] ?? "")),
-    ...list.map((k) => [person.key, person.name, k.id, k.label, k.target, k.unit, k.direction, by, now])];
+    ...list.map((k) => [person.key, person.name, k.id, k.label, k.target, k.unit, k.direction, by, now, mandalaOf(k)])];
   while (rows.length < sheets.kdiRowCount) rows.push(Array(KDI_HEADER.length).fill(""));
-  await batchUpdate(CAREER_SHEET_ID, [{ range: `'${KDI_SHEET}'!A1:I${rows.length}`, values: rows }], "RAW");
+  await batchUpdate(CAREER_SHEET_ID, [{ range: `'${KDI_SHEET}'!A1:J${rows.length}`, values: rows }], "RAW");
 }
 async function savePayTable(body) {
   const table = validatePayTable(body.payTable);

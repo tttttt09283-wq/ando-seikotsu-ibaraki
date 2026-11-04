@@ -25,6 +25,10 @@
     {
       "source": "/incentive",
       "destination": "/incentive.html"
+    },
+    {
+      "source": "/mandala",
+      "destination": "/mandala.html"
     }
   ]
 }

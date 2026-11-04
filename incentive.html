@@ -302,6 +302,8 @@ async function load(refresh) {
     const body = await res.json().catch(() => ({}));
     if (res.status === 401) return renderLogin(body.error);
     if (!res.ok) throw new Error(body.error || `読み込みに失敗しました（HTTP ${res.status}）`);
+    // マンダラの画面からログインしに来た人は、ログインできたらマンダラへ戻す
+    try { if (new URLSearchParams(location.search).get("next") === "mandala") { location.replace("/mandala"); return; } } catch (e) {}
     data = body;
     if (!halfKey) {
       const cur = data.halves.find((h) => h.elapsed.length && !h.complete) || [...data.halves].reverse().find((h) => h.elapsed.length) || data.halves[0];
@@ -349,6 +351,7 @@ function render() {
   document.getElementById("subLabel").textContent =
     `${data.fiscalYear}年度 ・ ${data.latestMonth ? data.latestMonth + "月分まで反映" : "実績なし"} ・ ${v.name}さん（${SCOPE_LABEL[v.scope]}）`;
   document.getElementById("topActions").innerHTML =
+    `<a class="btn btn-outline" style="text-decoration:none;" href="/mandala">🧭 マンダラ・KDI</a>` +
     `<button class="btn btn-outline" onclick="${view === "evaluation" ? "loadEval(true)" : view === "logins" ? "loginsData=null;render()" : "load(true)"}">↻ 最新に更新</button>` +
     `<button class="btn btn-outline" onclick="logout()">ログアウト</button>`;
 
@@ -380,6 +383,7 @@ function render() {
     { key: "evaluation", icon: "📊", label: "半期査定・給与改定", html: evaluationCard() },
     { key: "overall", icon: "🏆", label: "総合評価（総評）", html: overallSection(incSection === "overall" || incSection === "all") },
     { key: "track", icon: "🧭", label: "キャリアコース・給与", html: trackSection(incSection === "track" || incSection === "all") },
+    { key: "mandala", icon: "🚨", label: "マンダラ・改善アラート", html: mandalaSection(incSection === "mandala" || incSection === "all") },
     { key: "notes", icon: "⚠️", label: "データの注意", html: data.notes && data.notes.length ? `<div class="card"><div class="card-h">データについての注意</div><div class="card-b"><ul class="notes">${data.notes.map((n) => `<li>${esc(n)}</li>`).join("")}</ul></div></div>` : "" },
     { key: "rules", icon: "📜", label: "インセンティブ規定", html: rulesCard() },
   ].filter((x) => x.html);
@@ -933,7 +937,9 @@ let kdiEditor = null; // { key, draft: [{id,label,target,unit,direction}] }
 function kdiCard(p, kdiItemsHtml, earned, max) {
   const editing = kdiEditor && kdiEditor.key === p.key;
   const canEdit = p.canEdit || (evalData.viewer && evalData.viewer.grade === "G6") || evalData.isAdmin;
-  const head = `<div class="card-h"><span>🎯 個人KDI（行動の目標・達成率で採点）${p.kdiPersonal ? '<span class="small" style="margin-left:6px;">この人用</span>' : '<span class="small" style="margin-left:6px;">コースの標準</span>'}</span><span class="small">${Math.round((earned || 0) * 10) / 10}点／${max}点</span></div>`;
+  const linked = (p.kdi || []).filter((k) => k.mandala).length;
+  const head = `<div class="card-h"><span>🎯 個人KDI（行動の目標・達成率で採点）${p.kdiPersonal ? '<span class="small" style="margin-left:6px;">この人用</span>' : '<span class="small" style="margin-left:6px;">コースの標準</span>'}</span><span class="small">${Math.round((earned || 0) * 10) / 10}点／${max}点</span></div>
+    <div style="padding:8px 16px 0;font-size:12px;" class="${linked < (p.kdi || []).length ? "warn" : "ok"}">🧭 マンダラとの紐づけ ${linked}／${(p.kdi || []).length}件 <a href="/mandala" style="margin-left:6px;">マンダラ・KDIで設定 ›</a></div>`;
   if (editing) {
     const rows = kdiEditor.draft.map((k, i) => `<tr>
       <td class="l"><input value="${esc(k.label)}" oninput="kdiEditor.draft[${i}].label=this.value" style="width:100%;min-width:160px;"/></td>
@@ -1005,6 +1011,42 @@ async function savePayTable() {
     if (json) { evalData = json; payDraft = null; }
   } catch (e) { alert(e.message); }
   render();
+}
+
+// ===== マンダラ・改善アラート（/mandala のデータをそのまま表示） =====
+let mandalaData = null, mandalaLoading = false;
+async function loadMandala() {
+  mandalaLoading = true;
+  try {
+    const auth = await authHeader();
+    const res = await fetch("/api/mandala", { headers: { Authorization: auth } });
+    const json = await res.json().catch(() => ({}));
+    mandalaData = res.ok ? json : { error: json.error || `読み込みに失敗しました（HTTP ${res.status}）` };
+  } catch (e) { mandalaData = { error: e.message }; }
+  mandalaLoading = false;
+  render();
+}
+function mandalaSection(wantLoad) {
+  if (!mandalaData) {
+    if (wantLoad && !mandalaLoading) setTimeout(loadMandala, 0);
+    return `<div class="card"><div class="card-h">🚨 マンダラ・改善アラート</div><div class="card-b"><div class="muted">読み込み中...</div></div></div>`;
+  }
+  if (mandalaData.error) return `<div class="card"><div class="card-h">🚨 マンダラ・改善アラート</div><div class="card-b"><div class="err">${esc(mandalaData.error)}</div></div></div>`;
+  const al = mandalaData.alerts || [];
+  const ng = al.filter((a) => a.level === "ng");
+  const charts = (mandalaData.charts || []).map((c) => {
+    const done = c.cells.slice(1).filter((x) => x.status === "達成").length, doing = c.cells.slice(1).filter((x) => x.status === "取組中").length;
+    const center = c.cells[0];
+    return `<tr><td class="l"><b>${esc(c.scope === "会社" ? "会社" : c.label + "院")}</b><div class="small">${esc(center.title)}</div></td>
+      <td>${c.showNumbers && center.achievement !== null ? `<b class="${center.achievement >= 100 ? "ok" : "ng"}">${center.achievement}%</b>` : "-"}</td>
+      <td>${done}／${doing}／${8 - done - doing}</td>
+      <td>${c.alerts.filter((a) => a.level === "ng").length ? `<b class="ng">🚨 ${c.alerts.filter((a) => a.level === "ng").length}</b>` : "-"}</td></tr>`;
+  }).join("");
+  return `<div class="card"><div class="card-h"><span>🚨 マンダラ・改善アラート（${esc(mandalaData.month || "")}）</span><a class="chip" style="text-decoration:none;" href="/mandala">🧭 マンダラ・KDIを開く ›</a></div><div class="card-b">
+    <div class="scroll"><table><tr><th class="l">マンダラ</th><th>KGI達成率</th><th>達成／取組中／未着手</th><th>かみ合っていない</th></tr>${charts}</table></div>
+    ${ng.length ? `<div style="margin-top:10px;">${ng.slice(0, 5).map((a) => `<div class="banner ng" style="margin:0 0 6px;">🚨 ${esc(a.label === "会社" ? "会社" : (a.label || "") + "院")}：${esc(a.text)}</div>`).join("")}${ng.length > 5 ? `<div class="small">ほか${ng.length - 5}件</div>` : ""}</div>` : '<div class="small ok" style="margin-top:8px;">KDIとKGIがかみ合っていないマスはありません。</div>'}
+    <div class="small" style="margin-top:6px;">紐づけ不足の注意 ${al.length - ng.length}件は「🧭 マンダラ・KDI」の改善アラートで確認できます。</div>
+  </div></div>`;
 }
 
 let overallRuleDraft = null; // 基準の編集中（社長・GM）
