@@ -12243,6 +12243,29 @@ function BulkReceiptPanel({payments,bookings,stores,refunds=[]}){
     bookings.forEach(b=>{ if(b.phone){ if(!map[b.phone]) map[b.phone]=[]; map[b.phone].push(b); } });
     return map;
   },[bookings]);
+  // 名前の空白（全角・半角）の違いは無視して同じ人とみなす
+  const nmKey=s=>String(s||"").replace(/[\s　]/g,"");
+  const bookingById=React.useMemo(()=>Object.fromEntries(bookings.map(b=>[b.id,b])),[bookings]);
+  // その患者様の会計：予約の電話番号が一致するもの＋会計・予約の名前が一致するもの（電話番号なしの予約も拾う）
+  function paymentsOf(pref){
+    const ids=new Set((bookingByPhone[pref.phone]||[]).map(b=>b.id));
+    const key=nmKey(pref.patient_name);
+    return payments.filter(p=>{
+      if(p.booking_id&&ids.has(p.booking_id)) return true;
+      if(nmKey(p.patient_name)===key) return true;
+      const b=p.booking_id&&bookingById[p.booking_id];
+      return !!(b&&nmKey(b.patient_name)===key);
+    });
+  }
+  // 会計日（無ければ予約日）でその期間に入るか
+  const payDate=p=>p.payment_date||((bookingById[p.booking_id]||{}).date)||"";
+  function shiftPeriod(d){
+    if(freqFilter==="月ごと"){
+      const [y,m]=period.month.split("-").map(Number);
+      const t=new Date(y,m-1+d,1);
+      setPeriod(p=>({...p,month:`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}`}));
+    }else setPeriod(p=>({...p,year:String(Number(p.year)+d)}));
+  }
 
   function getRangeForSelected(){
     if(freqFilter==="月ごと"){
@@ -12259,18 +12282,20 @@ function BulkReceiptPanel({payments,bookings,stores,refunds=[]}){
 
   const selPatient=selPhone?targetPatients.find(p=>p.phone===selPhone):null;
   const range=getRangeForSelected();
-  const selBookingIds=selPhone?new Set((bookingByPhone[selPhone]||[]).filter(b=>b.date>=range.start&&b.date<=range.end).map(b=>b.id)):new Set();
-  const selPayments=selPhone?payments.filter(p=>selBookingIds.has(p.booking_id)):[];
+  const selPayments=selPatient?paymentsOf(selPatient).filter(p=>{const d=payDate(p);return d>=range.start&&d<=range.end;}):[];
+  const selBookingIds=new Set(selPayments.map(p=>p.booking_id).filter(Boolean));
+  // 一覧に、その期間の会計件数を出す（0件の月が分かるように）
+  const countFor=pref=>paymentsOf(pref).filter(p=>{const d=payDate(p);return d>=range.start&&d<=range.end;}).length;
   // この期間の会計に対する返金（取消されたものは除かれている）。返金日が翌月以降でも、元の会計の月に差し引く
   const selPayIds=new Set(selPayments.map(p=>p.id));
   const selRefunds=refunds.filter(rf=>selPayIds.has(rf.payment_id));
   const total=selPayments.reduce((s,p)=>s+(p.total_amount||0),0)-selRefunds.reduce((s,rf)=>s+(rf.amount||0),0);
   // 会計した院の情報（住所・電話）をレシートに載せる
   const selStore=React.useMemo(()=>{
-    const b=(bookingByPhone[selPhone]||[]).find(x=>selBookingIds.has(x.id));
+    const b=[...selBookingIds].map(id=>bookingById[id]).find(Boolean);
     const id=(b&&b.store_id)||1;
     return (stores||[]).find(s=>s.id===id)||null;
-  },[selPhone,stores,bookingByPhone,range.start,range.end]);
+  },[selPhone,stores,bookingById,selPayments.length,range.start,range.end]);
   const receiptLines=selPatient&&selPayments.length?buildBulkReceiptLines({store:selStore,patientName:selPatient.patient_name,label:range.label,payments:selPayments,refunds:selRefunds}):[];
   const [printing,setPrinting]=React.useState(false);
   const [printMsg,setPrintMsg]=React.useState(null); // {ok, text}
@@ -12298,13 +12323,11 @@ function BulkReceiptPanel({payments,bookings,stores,refunds=[]}){
                 style={{padding:"7px 16px",borderRadius:8,border:"1.5px solid",borderColor:freqFilter===f?"#7c3aed":"#e2e8f0",background:freqFilter===f?"#7c3aed":"white",color:freqFilter===f?"white":"#374151",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{f}</button>
             ))}
           </div>
-          {freqFilter==="月ごと"?(
-            <input type="month" value={period.month} onChange={e=>setPeriod(p=>({...p,month:e.target.value}))}
-              style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700}}/>
-          ):(
-            <input type="number" value={period.year} onChange={e=>setPeriod(p=>({...p,year:e.target.value}))}
-              style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700,width:100}}/>
-          )}
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <button onClick={()=>shiftPeriod(-1)} style={{padding:"6px 12px",borderRadius:8,border:"1.5px solid #e2e8f0",background:"white",fontSize:14,fontWeight:800,cursor:"pointer"}}>◀</button>
+            <span style={{fontWeight:800,fontSize:15,minWidth:110,textAlign:"center"}}>{freqFilter==="月ごと"?`${Number(period.month.slice(0,4))}年${Number(period.month.slice(5))}月`:`${period.year}年`}</span>
+            <button onClick={()=>shiftPeriod(1)} style={{padding:"6px 12px",borderRadius:8,border:"1.5px solid #e2e8f0",background:"white",fontSize:14,fontWeight:800,cursor:"pointer"}}>▶</button>
+          </div>
         </div>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"320px 1fr",gap:14}}>
@@ -12319,7 +12342,7 @@ function BulkReceiptPanel({payments,bookings,stores,refunds=[]}){
               <div key={p.phone} onClick={()=>setSelPhone(p.phone)}
                 style={{padding:"10px 12px",borderRadius:8,marginBottom:4,cursor:"pointer",background:selPhone===p.phone?"#f5f3ff":"white",border:"1px solid "+(selPhone===p.phone?"#7c3aed":"#f1f5f9")}}>
                 <div style={{fontWeight:700,fontSize:13,color:"#1e293b"}}>{p.patient_name}</div>
-                <div style={{fontSize:11,color:"#94a3b8"}}>{p.phone}</div>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#94a3b8"}}><span>{p.phone}</span><span style={{fontWeight:700,color:countFor(p)?"#6d28d9":"#cbd5e1"}}>{countFor(p)}件</span></div>
               </div>
             ))}
           </div>
