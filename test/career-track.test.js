@@ -5,7 +5,7 @@ import {
 } from "../lib/career-track.js";
 import { DEFAULT_ITEMS, itemsFor, scoreMonth, parseDist, DEFAULT_DIST, distFor, DIST_HEADER } from "../lib/evaluation.js";
 
-test("コース：G3から分かれ、スペシャルは S1〜S3 の項目で評価する", () => {
+test("コース：G3から分かれ、スペシャリストは S1〜S3 の項目で評価する", () => {
   assert.equal(trackGradeFor("G3", "special"), "S1");
   assert.equal(trackGradeFor("G4", "special"), "S2");
   assert.equal(trackGradeFor("G5", "special"), "S3");
@@ -13,12 +13,12 @@ test("コース：G3から分かれ、スペシャルは S1〜S3 の項目で評
   assert.equal(trackGradeFor("G2", "special"), "G2"); // G2以下は共通
   assert.equal(canChooseTrack("G3"), true);
   assert.equal(canChooseTrack("G2"), false);
-  const t = parseTracks([["氏名key", "氏名", "コース"], ["大皿悠梨乃", "大皿 悠梨乃", "スペシャル"], ["奥田貴明", "奥田 貴明", "マネジメント"]]);
+  const t = parseTracks([["氏名key", "氏名", "コース"], ["大皿悠梨乃", "大皿 悠梨乃", "スペシャリスト"], ["奥田貴明", "奥田 貴明", "マネジメント"]]);
   assert.equal(t.get("大皿悠梨乃").track, "special");
   assert.equal(t.get("奥田貴明").track, "management");
 });
 
-test("配分：マネジメント＝定量40・定性40・KDI20、スペシャル＝定量60・定性20・KDI20", () => {
+test("配分：マネジメント＝定量40・定性40・KDI20、スペシャリスト＝定量60・定性20・KDI20", () => {
   const m = distFor(DEFAULT_DIST, "G4"), sp = distFor(DEFAULT_DIST, "S2");
   assert.deepEqual([m.num, m.beh + m.basic, m.kdi], [40, 40, 20]);
   assert.deepEqual([sp.num, sp.beh + sp.basic, sp.kdi], [60, 20, 20]);
@@ -58,7 +58,7 @@ test("個人KDI：個人の設定が無ければコースの標準、達成率�
   assert.equal(validateKdi([{ label: "面談", target: "2", unit: "回" }])[0].target, 2);
 });
 
-test("コース別給与：基本給は同じで、手当で マネジメント＞スペシャル", () => {
+test("コース別給与：基本給は同じで、手当で マネジメント＞スペシャリスト", () => {
   const ladder = [["等級", "役職", "固定支給目安", "基本給", "役職手当", "資格手当", "固定残業代"], ["G4", "院長", 350000, 230000, 60000, 30000, 30000]];
   const t = defaultPayTable(ladder);
   assert.equal(t.G4.special, 30000);
@@ -66,7 +66,7 @@ test("コース別給与：基本給は同じで、手当で マネジメント�
   assert.equal(m.base, sp.base);
   assert.ok(m.total > sp.total);
   assert.equal(m.total, 350000);
-  assert.equal(monthlyPay(t, "G6", "special"), null); // GM相当のスペシャルは無い
+  assert.equal(monthlyPay(t, "G6", "special"), null); // GM相当のスペシャリストは無い
   assert.deepEqual(parsePayTable(payRows(t), ladder), t);
-  assert.throws(() => validatePayTable({ ...t, G4: { ...t.G4, special: 70000 } }), /マネジメント＞スペシャル/);
+  assert.throws(() => validatePayTable({ ...t, G4: { ...t.G4, special: 70000 } }), /マネジメント＞スペシャリスト/);
 });
