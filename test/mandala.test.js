@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   achievement, defaultMandala, parseMandala, mandalaFor, parseRuns, validateCell, buildChart, unlinkedKdiAlerts,
-  parseAccounting, validateExpenses, companyNumbers, fiscalOf, MANDALA_HEADER, ACCOUNTING_HEADER, COMPANY,
+  companyNumbers, fiscalOf, MANDALA_HEADER, COMPANY,
 } from "../lib/mandala.js";
 
 test("達成率：以上は実績÷目標、以下は目標以下で100%", () => {
@@ -16,7 +16,7 @@ test("達成率：以上は実績÷目標、以下は目標以下で100%", () =>
 
 test("マンダラ：初期値は9マス、シートに保存したマスで上書き", () => {
   assert.equal(defaultMandala("茨木").length, 9);
-  assert.equal(defaultMandala(COMPANY)[0].metric, "op_profit");
+  assert.equal(defaultMandala(COMPANY)[0].metric, "company_sales");
   const m = parseMandala([MANDALA_HEADER, ["茨木", "2026", 0, "月商450万", "clinic_budget", 110, "%", "以上", "大皿", "", "", ""]]);
   const cells = mandalaFor(m, "茨木", "2026");
   assert.equal(cells[0].title, "月商450万");
@@ -50,13 +50,10 @@ test("改善アラート：KDIは達成なのにKGI未達／マスにKDIが無�
   assert.match(un[0].text, /1件（口コミ）/);
 });
 
-test("経理：売上・人件費は台帳から、経費は入力、営業利益を計算", () => {
-  const acc = parseAccounting([ACCOUNTING_HEADER, ["2026-09", 1200000, 300000, 150000, 120000, 50000, 0, 30000, 50000, "メモ"]]);
+test("会社の数字：売上・人件費は台帳から", () => {
   const model = { fiscalYear: 2026, clinics: [{ months: [{ month: 9, actual: 1000000, budget: 1000000 }] }], company: [{ months: [{ month: 9, sales: 20000000, labor: 10000000 }] }] };
-  const n = companyNumbers(model, acc, "2026-09");
-  assert.equal(n.expenseTotal, 1900000);
-  assert.equal(n.opProfit, 20000000 - 10000000 - 1900000);
-  assert.equal(n.values.op_margin, 40.5);
-  assert.equal(companyNumbers(model, acc, "2026-10").opProfit, null); // 経費が未入力の月は計算しない
-  assert.throws(() => validateExpenses({ rent: -1 }), /家賃/);
+  const n = companyNumbers(model, "2026-09");
+  assert.equal(n.values.company_labor, 50);
+  assert.equal(n.values.company_sales, 20000000);
+  assert.equal(companyNumbers(model, "2026-10").sales, null);
 });
