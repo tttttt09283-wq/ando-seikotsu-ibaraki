@@ -515,7 +515,8 @@ const sb = {
     const out=[];
     for(let offset=0;;offset+=PAGE){
       const rows=await sb.query(t,"GET",null,`${base}${base?"&":"?"}limit=${PAGE}&offset=${offset}`);
-      if(!Array.isArray(rows)) return offset===0?rows:out;
+      // 途中のページが失敗したら、途中までの一覧は返さない（新しい予約だけ抜けた一覧で画面を上書きしないため）
+      if(!Array.isArray(rows)) return rows&&typeof rows==="object"?rows:{message:"読み込みに失敗しました"};
       out.push(...rows);
       if(rows.length<PAGE) return out;
     }
@@ -13953,7 +13954,10 @@ function AttendancePanel({currentUser,isAdmin}){
   );
 }
 function Dashboard({user,onLogout}){
-  const [allBookings,setAllBookings]=React.useState([]);
+  const [allBookings,setAllBookingsRaw]=React.useState([]);
+  // この端末で予約を追加・変更した時刻。30秒ごとの読み直しがそれより前に始まっていたら、古い一覧で上書きしない
+  const lastLocalBookingEditRef=React.useRef(0);
+  const setAllBookings=React.useCallback(v=>{ lastLocalBookingEditRef.current=Date.now(); setAllBookingsRaw(v); },[]);
   const [breaks,setBreaks]=React.useState([]);
   const [loading,setLoading]=React.useState(true);
   // トレーニングモード：ONの間に作られた予約・会計は「練習用」として分析・KPIに一切カウントされない
@@ -14183,9 +14187,13 @@ function Dashboard({user,onLogout}){
     reloadRefunds();
     // シフト・目標などの共有設定も30秒ごとに取り込む（他の通信を止めないようawaitはしない）
     sharedSettings.pull().catch(()=>{});
+    const startedAt=Date.now();
     try{
       const [b,br,py,st,ws,cs,mn,dov]=await Promise.all([sb.select("bookings","?order=date.asc,time.asc"),sb.select("staff_breaks","?order=date.asc,time.asc"),sb.select("payments","?order=payment_date.desc"),sb.select("stores","?order=id.asc"),sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc"),sb.select("clinic_staff","?select=id,store_ids,allowed_menus,lane_count,name,email,password,role,color,initial,event_only"),sb.select("menus","?active=eq.true&order=display_order.asc,id.asc"),sb.select("staff_date_overrides","?order=date.asc")]);
-      setAllBookings(Array.isArray(b)?b:[]);setBreaks(Array.isArray(br)?br:[]);setAllPayments(Array.isArray(py)?py:[]);
+      // 読み込みに失敗した表は前の内容のまま（空にしない）。読み込み中にこの端末で予約を触った場合も上書きしない
+      if(Array.isArray(b)&&lastLocalBookingEditRef.current<startedAt) setAllBookingsRaw(b);
+      if(Array.isArray(br)) setBreaks(br);
+      if(Array.isArray(py)) setAllPayments(py);
       const storeList=Array.isArray(st)?st:[];
       setStores(storeList);
       // selStoreId===nullは「全店舗」を意味する正当な値なので、初回（まだ一度もセットされていない時）だけ
