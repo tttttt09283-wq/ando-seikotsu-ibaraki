@@ -91,6 +91,7 @@ const bar = (r) => r === null || r === undefined ? "" : `<div class="bar ${r >= 
 function monthLabel(key) { const [y, m] = key.split("-"); return `${y}年${Number(m)}月`; }
 function shiftMonth(key, d) { const [y, m] = key.split("-").map(Number); const t = new Date(y, m - 1 + d, 1); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`; }
 
+let kdiClinic = lsGet("mandala_kdi_clinic") || ""; // 個人KDIを見る院（空＝すべて）
 let data = null, month = null, view = lsGet("mandala_view") || "company", clinic = lsGet("mandala_clinic") || "", selCell = null, editing = null, expEdit = null, busy = false;
 
 async function api(method, body, refresh) {
@@ -228,17 +229,34 @@ function kdiView() {
   const opts = data.mandalaOptions;
   const optHtml = (p, cur) => `<option value="">（紐づけなし）</option>` + opts.filter((o) => o.scope === "会社" || p.clinics.includes(o.scope))
     .map((o) => `<optgroup label="${esc(o.scope === "会社" ? "会社" : o.label + "院")}">${o.cells.map((c) => `<option value="${esc(o.scope)}#${c.cell}" ${cur === `${o.scope}#${c.cell}` ? "selected" : ""}>${c.cell}. ${esc(c.title || "（未設定）")}</option>`).join("")}</optgroup>`).join("");
-  const rows = data.people.map((p) => p.kdi.map((k, i) => {
-    const rate = k.actual === null || k.actual === undefined || !k.target ? null : Math.round((k.direction === "以下" ? (k.actual <= k.target ? 1 : k.target / k.actual) : k.actual / k.target) * 1000) / 10;
+  // 院ごとに見る（兼務の人は両方の院に出る）
+  const clinicsAll = [...new Set(data.people.flatMap((p) => p.clinics))].filter(Boolean);
+  const order = data.charts.filter((c) => c.scope !== "会社").map((c) => c.scope);
+  clinicsAll.sort((a, b) => (order.indexOf(a) < 0 ? 99 : order.indexOf(a)) - (order.indexOf(b) < 0 ? 99 : order.indexOf(b)));
+  if (kdiClinic && !clinicsAll.includes(kdiClinic)) kdiClinic = "";
+  const people = kdiClinic ? data.people.filter((p) => p.clinics.includes(kdiClinic)) : data.people;
+  const rateOf = (k) => k.actual === null || k.actual === undefined || !k.target ? null : Math.round((k.direction === "以下" ? (k.actual <= k.target ? 1 : k.target / k.actual) : k.actual / k.target) * 1000) / 10;
+  const summary = (ps) => {
+    const ks = ps.flatMap((p) => p.kdi), linked = ks.filter((k) => k.mandala).length, rated = ks.map(rateOf).filter((v) => v !== null);
+    return { people: ps.length, kdi: ks.length, linked, avg: rated.length ? Math.round((rated.reduce((a, v) => a + Math.min(v, 150), 0) / rated.length) * 10) / 10 : null, filled: rated.length };
+  };
+  const chips = clinicsAll.length > 1 ? `<div class="chip-row"><button class="chip ${kdiClinic ? "" : "sel"}" onclick="setKdiClinic('')">すべて</button>${clinicsAll.map((c) => `<button class="chip ${kdiClinic === c ? "sel" : ""}" onclick="setKdiClinic('${esc(c)}')">${esc(c)}</button>`).join("")}</div>` : "";
+  const sumRows = clinicsAll.map((c) => { const s2 = summary(data.people.filter((p) => p.clinics.includes(c))); return `<tr style="cursor:pointer;${kdiClinic === c ? "background:#f0fdf4;" : ""}" onclick="setKdiClinic('${esc(c)}')"><td class="l"><b>${esc(c)}${order.includes(c) ? "院" : ""}</b></td><td>${s2.people}名</td><td>${s2.kdi}件</td><td class="${s2.linked < s2.kdi ? "warn" : "ok"}">${s2.linked}／${s2.kdi}</td><td>${s2.filled}／${s2.kdi}</td><td><b class="${pctCls(s2.avg)}">${s2.avg === null ? "-" : s2.avg + "%"}</b></td></tr>`; }).join("");
+  const rows = people.map((p) => p.kdi.map((k, i) => {
+    const rate = rateOf(k);
     return `<tr>${i === 0 ? `<td class="l" rowspan="${p.kdi.length}" style="vertical-align:top;"><b>${esc(p.name)}</b><div class="small">${esc(p.grade)} ${esc(p.clinics.join("・"))}</div></td>` : ""}
       <td class="l">${esc(k.label)}</td><td>${fmtVal(k.actual, k.unit)}</td><td>${fmtVal(k.target, k.unit)}</td><td><b class="${pctCls(rate)}">${rate === null ? "未入力" : rate + "%"}</b></td>
       <td class="l">${p.canEdit ? `<select onchange="act({action:'linkKdi',personKey:'${esc(p.key)}',kdiId:'${esc(k.id)}',mandala:this.value})" style="max-width:260px;${k.mandala ? "" : "border-color:#f59e0b;"}">${optHtml(p, k.mandala)}</select>` : esc(labelOf(k.mandala) || "（紐づけなし）")}</td></tr>`;
   }).join("")).join("");
-  return `<div class="card"><div class="card-h"><span>🎯 個人KDI（${monthLabel(month)}）</span><span class="small">KDIの項目・目標は「月次評価」の個人画面で、上司が変えられます</span></div><div class="card-b">
-    ${data.people.length ? `<div class="scroll"><table><tr><th class="l">スタッフ</th><th class="l">KDI</th><th>実績</th><th>目標</th><th>進捗</th><th class="l">マンダラのマス</th></tr>${rows}</table></div>` : '<div class="muted">表示できるスタッフがいません。</div>'}
+  return (clinicsAll.length > 1 ? `<div class="card"><div class="card-h"><span>🏥 院ごとのKDI（${monthLabel(month)}）</span><span class="small">行を押すとその院のKDIを表示</span></div><div class="card-b">
+    <div class="scroll"><table><tr><th class="l">院</th><th>スタッフ</th><th>KDI</th><th>マンダラに紐づけ</th><th>実績入力</th><th>平均進捗</th></tr>${sumRows}</table></div></div></div>` : "") +
+    `<div class="card"><div class="card-h"><span>🎯 個人KDI（${kdiClinic ? esc(kdiClinic) + (order.includes(kdiClinic) ? "院" : "") + "・" : ""}${monthLabel(month)}）</span><span class="small">KDIの項目・目標は「月次評価」の個人画面で、上司が変えられます</span></div><div class="card-b">
+    ${chips}
+    ${people.length ? `<div class="scroll"><table><tr><th class="l">スタッフ</th><th class="l">KDI</th><th>実績</th><th>目標</th><th>進捗</th><th class="l">マンダラのマス</th></tr>${rows}</table></div>` : '<div class="muted">表示できるスタッフがいません。</div>'}
     <div class="small" style="margin-top:8px;line-height:1.7;">それぞれのKDIが、会社・院のマンダラのどの取り組み（マス）につながる行動なのかを選んでください。紐づけると、マンダラのマスでKDIの進捗が見られ、KGIとかみ合っているかを判定します。</div>
   </div></div>`;
 }
+function setKdiClinic(c) { kdiClinic = c; lsSet("mandala_kdi_clinic", c); render(); }
 function labelOf(m) {
   if (!m) return "";
   const [scope, cell] = m.split("#");
