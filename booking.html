@@ -706,11 +706,23 @@ function App(){
     var ms = shiftDays.monthly.find(function(o){return o.staff_id===staffId && o.date===ds0;});
     if(ms){
       if(!ms.is_working) return false;
-      // 半日出勤（午前のみ／午後のみ）：その時間帯に施術時間がおさまる枠だけ受け付ける
-      if(ms.half&&t){
-        var w=halfDayWindow(d,ms.half,ms.times);
+      var hasTimes=Array.isArray(ms.times)&&ms.times.length===2&&ms.times[0]<ms.times[1];
+      // 半日出勤（午前のみ／午後のみ）・その日だけ時間を変えた出勤：その時間帯に施術時間がおさまる枠だけ受け付ける
+      if((ms.half||hasTimes)&&t){
+        var w=halfDayWindow(d,ms.half||"am",ms.times);
         var tm0=toMin(t);
         return tm0>=w.start && tm0+(durationMinutes||20)<=w.end;
+      }
+      // 時間を変えていない「出勤」は、曜日ごとの基本シフトの時間に従う（その曜日が休みの人を出勤にした日は営業時間内ならOK）
+      if(!ms.half&&t){
+        var fw=null;
+        for(var j=0;j<weeklyShifts.length;j++){ if(weeklyShifts[j].staff_id===staffId && weeklyShifts[j].day_of_week===d.getDay()){ fw=weeklyShifts[j]; break; } }
+        var clo0=getClosureForDate(ds0);
+        var hoursOverridden0=!!(clo0 && clo0.is_closed===false && clo0.open_time);
+        if(fw && fw.is_working!==false && !hoursOverridden0 && fw.start_time && fw.end_time){
+          var tm1=toMin(t);
+          if(tm1<toMin(fw.start_time) || tm1+(durationMinutes||20)>toMin(fw.end_time)) return false;
+        }
       }
       return true;
     }

@@ -597,14 +597,24 @@ function halfShiftWindow(val,dateStr,staffId){
   const r=halfCustomOf(staffId,dateStr)||halfStandardRange(val,dateStr), oc=dayOpenClose(dateStr);
   return {start:_mhm(Math.max(_hm(r[0]),_hm(oc.open))),end:_mhm(Math.min(_hm(r[1]),_hm(oc.close)))};
 }
-// 時間の選択肢（9:00〜20:00、10分刻み）
-const HALF_TIME_OPTIONS=(()=>{ const a=[]; for(let t=9*60;t<=20*60;t+=10) a.push(_mhm(t)); return a; })();
+// 「出勤」の日に、その日だけ勤務時間を変えたとき（例：この日だけ12:00〜17:00）の時間帯 {start,end}。
+// 半日出勤はその時間帯。時間を変えていない出勤・休みなどは null（＝週固定シフトの時間を使う）
+function dayShiftWindow(val,dateStr,staffId){
+  if(HALF_SHIFT[val]) return halfShiftWindow(val,dateStr,staffId);
+  if(val!=="出勤") return null;
+  const r=halfCustomOf(staffId,dateStr); if(!r) return null;
+  const oc=dayOpenClose(dateStr);
+  return {start:_mhm(Math.max(_hm(r[0]),_hm(oc.open))),end:_mhm(Math.min(_hm(r[1]),_hm(oc.close)))};
+}
+// 時間の選択肢（8:00〜21:00、10分刻み）
+const HALF_TIME_OPTIONS=(()=>{ const a=[]; for(let t=8*60;t<=21*60;t+=10) a.push(_mhm(t)); return a; })();
 // 「10:00〜13:30」→「10-13:30」（シフト表のマスに入る短い表記）
 function shortRange(r){ const f=t=>t.endsWith(":00")?String(Number(t.slice(0,2))):String(Number(t.slice(0,2)))+":"+t.slice(3); return f(r[0])+"-"+f(r[1]); }
 // シフト表の1マスの編集（種類を選ぶ。午前出勤・午後出勤なら、その日だけの時間も選べる）
-function ShiftCellEditor({val,types,color,dateStr,custom,onPick,onCustom,onClose}){
-  const isHalf=!!HALF_SHIFT[val];
-  const std=isHalf?halfStandardRange(val,dateStr):null;
+function ShiftCellEditor({val,types,color,dateStr,custom,onPick,onCustom,onClose,fullStd}){
+  // 午前出勤・午後出勤に加えて「出勤」も、その日だけの時間を選べる（標準＝週固定シフトの時間、無ければ営業時間）
+  const isHalf=!!HALF_SHIFT[val]||val==="出勤";
+  const std=HALF_SHIFT[val]?halfStandardRange(val,dateStr):val==="出勤"?(fullStd||(()=>{ const oc=dayOpenClose(dateStr); return [oc.open,oc.close]; })()):null;
   const cur=custom||std;
   const sel={fontSize:12,padding:"3px 4px",borderRadius:5,border:"1.5px solid #cbd5e1",fontFamily:"inherit",background:"white"};
   function setPart(i,v){ const next=[...cur]; next[i]=v; if(next[0]<next[1]) onCustom(next[0]===std[0]&&next[1]===std[1]?null:next); }
@@ -641,9 +651,9 @@ function ShiftCellEditor({val,types,color,dateStr,custom,onPick,onCustom,onClose
 function monthShiftValue(staffId,dateStr){
   try{ const raw=localStorage.getItem("shifts_"+dateStr.slice(0,7)); if(!raw) return null; const v=JSON.parse(raw)[staffId+"_"+dateStr]; return v||null; }catch(e){ return null; }
 }
-// 時間（time〜time+dur）が半日出勤の時間帯に入っているか（半日でなければ true）
+// 時間（time〜time+dur）が、半日出勤・その日だけ時間を変えた出勤の時間帯に入っているか（どちらでもなければ true）
 function withinHalfShift(staffId,dateStr,time,dur){
-  const w=halfShiftWindow(monthShiftValue(staffId,dateStr),dateStr,staffId); if(!w||!time) return true;
+  const w=dayShiftWindow(monthShiftValue(staffId,dateStr),dateStr,staffId); if(!w||!time) return true;
   const st=_hm(time); return st>=_hm(w.start)&&st+(dur||20)<=_hm(w.end);
 }
 function isSharedSettingKey(k){ return SHARED_SETTING_PREFIXES.some(p=>String(k).startsWith(p)); }
@@ -7523,68 +7533,152 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
     setSavingStore(null);
   }
 
-  // 月次シフト用
+  // 月次シフト用（表示する期間は「1か月／2か月／3か月／日付を指定」から選べる。月をまたいでもOK）
   const today=new Date();
   const todayStr=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
   const [selMonth,setSelMonth]=React.useState(todayStr.slice(0,7));
-  const [monthShifts,setMonthShifts]=React.useState({});
-  const [monthHalfCustom,setMonthHalfCustom]=React.useState({}); // 半日出勤の「その日だけ」の時間 {"スタッフID_日付":["開始","終了"]}
+  const [viewSpan,setViewSpan]=React.useState("1"); // "1"|"2"|"3"（か月）|"custom"
+  const [customFrom,setCustomFrom]=React.useState(todayStr);
+  const [customTo,setCustomTo]=React.useState(()=>{ const d=new Date(today); d.setDate(d.getDate()+27); return fmtDate(d); });
+  const [shiftsByMonth,setShiftsByMonth]=React.useState({}); // {"YYYY-MM": {"スタッフID_日付":"出勤"…}}
+  const [halfByMonth,setHalfByMonth]=React.useState({});     // {"YYYY-MM": {"スタッフID_日付":["開始","終了"]}}（その日だけの時間）
   const [monthHolidays,setMonthHolidays]=React.useState({});
   const [editingCell,setEditingCell]=React.useState(null);
+  const [dirty,setDirty]=React.useState(false);
   const SHIFT_TYPES=["出勤","午前出勤","午後出勤","休み","有休","振替","祝振替"];
   const SHIFT_COLORS={"出勤":"#2563eb","午前出勤":"#0ea5e9","午後出勤":"#6366f1","休み":"#9ca3af","有休":"#059669","振替":"#d97706","祝振替":"#7c3aed"};
   const SHIFT_ABBR={"出勤":"勤","午前出勤":"前","午後出勤":"後","休み":"休","有休":"有","振替":"振","祝振替":"祝"};
+  const MAX_VIEW_DAYS=93;
 
   const selStaff=STAFF_ACCOUNTS.find(s=>s.id===selStaffId)||null;
 
   function showToast(msg){setToast(msg);setTimeout(()=>setToast(""),2500);}
 
-  // 月次シフトのロード
+  // 表示する期間（開始日〜終了日）と、その期間の日付・月の一覧
+  const viewRange=(()=>{
+    if(viewSpan==="custom"){
+      let a=customFrom||todayStr, b=customTo||a; if(b<a){ const t=a; a=b; b=t; }
+      const lim=new Date(a+"T00:00:00"); lim.setDate(lim.getDate()+MAX_VIEW_DAYS-1);
+      return {from:a,to:b>fmtDate(lim)?fmtDate(lim):b};
+    }
+    const [yy,mm]=selMonth.split("-").map(Number);
+    return {from:`${selMonth}-01`,to:fmtDate(new Date(yy,mm-1+Number(viewSpan),0))};
+  })();
+  const dates=(()=>{ const out=[]; const d=new Date(viewRange.from+"T00:00:00"), end=new Date(viewRange.to+"T00:00:00");
+    while(d<=end){ out.push({date:fmtDate(d),day:d.getDay(),label:d.getDate(),month:d.getMonth()+1}); d.setDate(d.getDate()+1); } return out; })();
+  const viewMonths=[...new Set(dates.map(x=>x.date.slice(0,7)))];
+
+  // 表示している月のシフトを読み込む（未保存の変更があるときは読み込み直さない）
   React.useEffect(()=>{
+    if(dirty) return;
     try{
-      const s=localStorage.getItem(`shifts_${selMonth}`);
-      if(s) setMonthShifts(JSON.parse(s));
-      else setMonthShifts({});
-      setMonthHalfCustom(readHalfCustom(selMonth));
+      const sm={},hm={};
+      viewMonths.forEach(M=>{ try{ sm[M]=JSON.parse(localStorage.getItem(`shifts_${M}`)||"{}")||{}; }catch(e){ sm[M]={}; } hm[M]=readHalfCustom(M); });
+      setShiftsByMonth(sm); setHalfByMonth(hm);
       const h=localStorage.getItem("holiday_balance");
       if(h) setMonthHolidays(JSON.parse(h));
       else{const init={};STAFF_ACCOUNTS.forEach(s=>{init[s.id]={有休残:10,振替残:0,祝振替残:0};});setMonthHolidays(init);}
     }catch{}
-  },[selMonth,mode,shiftTab]);
+  },[viewMonths.join(","),mode,shiftTab]);
+
+  const shiftValOf=(key,date)=>(shiftsByMonth[date.slice(0,7)]||{})[key];
+  const customOf=(key,date)=>(halfByMonth[date.slice(0,7)]||{})[key];
 
   function saveMonthShifts(){
     try{
-      sharedSettings.set(`shifts_${selMonth}`,JSON.stringify(monthShifts));
-      sharedSettings.set(`shifthalf_${selMonth}`,JSON.stringify(monthHalfCustom));
+      viewMonths.forEach(M=>{
+        sharedSettings.set(`shifts_${M}`,JSON.stringify(shiftsByMonth[M]||{}));
+        sharedSettings.set(`shifthalf_${M}`,JSON.stringify(halfByMonth[M]||{}));
+      });
       sharedSettings.set("holiday_balance",JSON.stringify(monthHolidays));
+      setDirty(false);
       showToast("保存しました");
+      if(onShiftsSaved) onShiftsSaved();
     }catch{showToast("エラー");}
   }
 
+  // 有休・振替・祝振替の残りを、変更前→変更後に合わせて増減する
+  function adjustBalance(h,staffId,cur,val){
+    if(!h[staffId]) h[staffId]={有休残:10,振替残:0,祝振替残:0};
+    ["有休","振替","祝振替"].forEach(t=>{
+      const k=t+"残";
+      if(cur===t) h[staffId][k]=(h[staffId][k]||0)+1;
+      if(val===t) h[staffId][k]=Math.max(0,(h[staffId][k]||0)-1);
+    });
+  }
+  // 週固定シフト（その曜日が休みか）から決まる、何も変えていない日の種類
+  function defaultValOf(day){ const w=weeklyShifts.find(x=>x.day===day); return w&&!w.is_working?"休み":"出勤"; }
+  // 週固定シフトのその曜日の時間（「出勤」の日の時間変更の標準）
+  function weeklyRangeOf(day){ const w=weeklyShifts.find(x=>x.day===day); return w&&w.start_time&&w.end_time?[String(w.start_time).slice(0,5),String(w.end_time).slice(0,5)]:null; }
+
   function setShiftCell(staffId,date,val){
-    const key=`${staffId}_${date}`;
-    const cur=monthShifts[key]||"出勤";
-    const newH={...monthHolidays};
-    if(!newH[staffId]) newH[staffId]={有休残:10,振替残:0,祝振替残:0};
-    if(cur==="有休") newH[staffId].有休残=(newH[staffId].有休残||0)+1;
-    if(cur==="振替") newH[staffId].振替残=(newH[staffId].振替残||0)+1;
-    if(cur==="祝振替") newH[staffId].祝振替残=(newH[staffId].祝振替残||0)+1;
-    if(val==="有休") newH[staffId].有休残=Math.max(0,(newH[staffId].有休残||0)-1);
-    if(val==="振替") newH[staffId].振替残=Math.max(0,(newH[staffId].振替残||0)-1);
-    if(val==="祝振替") newH[staffId].祝振替残=Math.max(0,(newH[staffId].祝振替残||0)-1);
+    const key=`${staffId}_${date}`, M=date.slice(0,7);
+    const cur=shiftValOf(key,date)||defaultValOf(new Date(date+"T00:00:00").getDay());
+    const newH=JSON.parse(JSON.stringify(monthHolidays));
+    adjustBalance(newH,staffId,cur,val);
     setMonthHolidays(newH);
-    setMonthShifts(prev=>({...prev,[key]:val}));
-    // 半日出勤なら、その日の時間も選べるよう開いたままにする。半日でなくなったら「その日だけの時間」は消す
-    if(!HALF_SHIFT[val]){ setMonthHalfCustom(prev=>{ if(!prev[key]) return prev; const n={...prev}; delete n[key]; return n; }); setEditingCell(null); }
+    setShiftsByMonth(prev=>({...prev,[M]:{...(prev[M]||{}),[key]:val}}));
+    // 種類を変えたら「その日だけの時間」はリセット。時間を選べない種類（休みなど）なら閉じる
+    if(val!==cur) setHalfByMonth(prev=>{ if(!(prev[M]||{})[key]) return prev; const n={...(prev[M]||{})}; delete n[key]; return {...prev,[M]:n}; });
+    if(!HALF_SHIFT[val]&&val!=="出勤") setEditingCell(null);
+    setDirty(true);
+  }
+  function setCellCustom(staffId,date,r){
+    const key=`${staffId}_${date}`, M=date.slice(0,7);
+    // 何も変えていない日に時間を入れたら、その日を「出勤」として確定させる
+    if(r&&!shiftValOf(key,date)) setShiftsByMonth(prev=>({...prev,[M]:{...(prev[M]||{}),[key]:"出勤"}}));
+    setHalfByMonth(prev=>{ const n={...(prev[M]||{})}; if(r) n[key]=r; else delete n[key]; return {...prev,[M]:n}; });
+    setDirty(true);
   }
 
-  // 月の日付生成
-  const [y,m]=selMonth.split("-").map(Number);
-  const daysInMonth=new Date(y,m,0).getDate();
-  const dates=Array.from({length:daysInMonth},(_,i)=>{
-    const d=new Date(y,m-1,i+1);
-    return{date:`${y}-${String(m).padStart(2,"0")}-${String(i+1).padStart(2,"0")}`,day:d.getDay(),label:i+1};
-  });
+  // ===== 期間でまとめて設定（例：11/10〜11/20は休み、12/1〜12/31の土日は12:00〜17:00で出勤） =====
+  const [rangeOpen,setRangeOpen]=React.useState(false);
+  const [rangeFrom,setRangeFrom]=React.useState(todayStr);
+  const [rangeTo,setRangeTo]=React.useState(todayStr);
+  const [rangeType,setRangeType]=React.useState("休み");
+  const [rangeDays,setRangeDays]=React.useState([0,1,2,3,4,5,6]);
+  const [rangeTimeOn,setRangeTimeOn]=React.useState(false);
+  const [rangeStart,setRangeStart]=React.useState("10:00");
+  const [rangeEnd,setRangeEnd]=React.useState("18:00");
+  const rangeTimeable=rangeType==="出勤"||!!HALF_SHIFT[rangeType];
+  const rangeCount=(()=>{ if(!rangeFrom||!rangeTo||rangeTo<rangeFrom) return 0; let n=0; const d=new Date(rangeFrom+"T00:00:00"), e=new Date(rangeTo+"T00:00:00"); while(d<=e&&n<400){ if(rangeDays.includes(d.getDay())) n++; d.setDate(d.getDate()+1); } return n; })();
+  function applyRange(){
+    if(!selStaff) return;
+    if(!rangeFrom||!rangeTo||rangeTo<rangeFrom){ alert("開始日と終了日を正しく選んでください（終了日は開始日と同じか後）"); return; }
+    if(rangeCount===0){ alert("対象になる日がありません（曜日の選択を確認してください）"); return; }
+    if(rangeCount>370){ alert("一度に設定できるのは1年分までです"); return; }
+    if(rangeTimeable&&rangeTimeOn&&!(rangeStart<rangeEnd)){ alert("終了時間は開始時間より後にしてください"); return; }
+    const label=`${rangeFrom.slice(5).replace("-","/")}〜${rangeTo.slice(5).replace("-","/")}`;
+    if(!window.confirm(`${selStaff.name} の ${label}（${rangeCount}日）を「${rangeType}${rangeTimeable&&rangeTimeOn?` ${rangeStart}〜${rangeEnd}`:""}」にして保存します。よろしいですか？`)) return;
+    // 画面の未保存の変更も消えないよう、表示中の月はいまの内容をもとにする
+    const sm={...shiftsByMonth}, hm={...halfByMonth};
+    const touched=new Set();
+    const newH=JSON.parse(JSON.stringify(monthHolidays));
+    const d=new Date(rangeFrom+"T00:00:00"), e=new Date(rangeTo+"T00:00:00");
+    while(d<=e){
+      if(rangeDays.includes(d.getDay())){
+        const ds=fmtDate(d), M=ds.slice(0,7), key=`${selStaff.id}_${ds}`;
+        if(!touched.has(M)){
+          touched.add(M);
+          if(sm[M]) sm[M]={...sm[M]}; else { try{ sm[M]=JSON.parse(localStorage.getItem(`shifts_${M}`)||"{}")||{}; }catch(err){ sm[M]={}; } }
+          hm[M]=hm[M]?{...hm[M]}:readHalfCustom(M);
+        }
+        const cur=sm[M][key]||defaultValOf(d.getDay());
+        adjustBalance(newH,selStaff.id,cur,rangeType);
+        sm[M][key]=rangeType;
+        if(rangeTimeable&&rangeTimeOn) hm[M][key]=[rangeStart,rangeEnd]; else delete hm[M][key];
+      }
+      d.setDate(d.getDate()+1);
+    }
+    try{
+      new Set([...touched,...viewMonths]).forEach(M=>{ sharedSettings.set(`shifts_${M}`,JSON.stringify(sm[M]||{})); sharedSettings.set(`shifthalf_${M}`,JSON.stringify(hm[M]||{})); });
+      sharedSettings.set("holiday_balance",JSON.stringify(newH));
+    }catch(err){ alert("保存に失敗しました"); return; }
+    setShiftsByMonth(sm); setHalfByMonth(hm); setMonthHolidays(newH); setDirty(false);
+    setRangeOpen(false);
+    showToast(`${label}（${rangeCount}日）を「${rangeType}」にして保存しました`);
+    if(onShiftsSaved) onShiftsSaved();
+  }
 
   async function openShift(staff){
     setSelStaffId(staff.id);
@@ -7717,12 +7811,59 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
           {/* 月次シフト表 */}
           {shiftTab==="monthly"&&(
             <div style={{padding:"16px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,flexWrap:"wrap"}}>
-                <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)}
-                  style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontWeight:700}}/>
-                <button onClick={saveMonthShifts} className="btn btn-primary btn-sm" style={{marginLeft:"auto"}}>💾 保存する</button>
+              {/* 表示する期間 */}
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+                <span style={{fontSize:12,fontWeight:800,color:"#475569"}}>表示する期間</span>
+                {[["1","1か月"],["2","2か月"],["3","3か月"],["custom","日付を指定"]].map(([k,l])=>(
+                  <button key={k} type="button" onClick={()=>{ if(dirty&&!window.confirm("保存していない変更があります。表示する期間を変えると、その変更は消えます。よろしいですか？")) return; setDirty(false); setViewSpan(k); }}
+                    style={{padding:"5px 12px",borderRadius:16,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",border:"1.5px solid "+(viewSpan===k?"#1e3a5f":"#e2e8f0"),background:viewSpan===k?"#1e3a5f":"white",color:viewSpan===k?"white":"#374151"}}>{l}</button>
+                ))}
+                {viewSpan!=="custom"
+                  ?<input type="month" aria-label="表示する最初の月" value={selMonth} onChange={e=>{ if(!e.target.value) return; if(dirty&&!window.confirm("保存していない変更があります。表示する期間を変えると、その変更は消えます。よろしいですか？")) return; setDirty(false); setSelMonth(e.target.value); }}
+                    style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontWeight:700}}/>
+                  :<span style={{display:"inline-flex",alignItems:"center",gap:4}}>
+                    <input type="date" aria-label="表示の開始日" value={customFrom} onChange={e=>{ if(!e.target.value) return; if(dirty&&!window.confirm("保存していない変更があります。表示する期間を変えると、その変更は消えます。よろしいですか？")) return; setDirty(false); setCustomFrom(e.target.value); }} style={{padding:"5px 8px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700}}/>
+                    〜
+                    <input type="date" aria-label="表示の終了日" value={customTo} onChange={e=>{ if(!e.target.value) return; if(dirty&&!window.confirm("保存していない変更があります。表示する期間を変えると、その変更は消えます。よろしいですか？")) return; setDirty(false); setCustomTo(e.target.value); }} style={{padding:"5px 8px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700}}/>
+                  </span>}
+                <button onClick={saveMonthShifts} className="btn btn-primary btn-sm" style={{marginLeft:"auto"}}>💾 保存する{dirty?"（未保存あり）":""}</button>
               </div>
-              <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>セルをクリックするとシフト種別が切り替わります。</div>
+              <div style={{fontSize:12,color:"#64748b",marginBottom:10}}>
+                {viewRange.from.slice(5).replace("-","/")}〜{viewRange.to.slice(5).replace("-","/")}（{dates.length}日）を表示中。マスを押すと種類を選べます。「出勤」「午前出勤」「午後出勤」は、その日だけの時間も選べます。
+                {viewSpan==="custom"&&<span>（一度に表示できるのは{MAX_VIEW_DAYS}日までです）</span>}
+              </div>
+
+              {/* 期間でまとめて設定 */}
+              <div style={{border:"1.5px solid #c7d2fe",background:"#eef2ff",borderRadius:10,marginBottom:12}}>
+                <button type="button" onClick={()=>setRangeOpen(!rangeOpen)} style={{width:"100%",textAlign:"left",padding:"10px 12px",border:"none",background:"none",cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:800,color:"#3730a3"}}>
+                  📅 期間でまとめて設定する {rangeOpen?"▲":"▼"}<span style={{fontSize:11,fontWeight:600,color:"#6366f1",marginLeft:8}}>例：11/10〜11/20は休み、12月の土日は12:00〜17:00 など（月をまたいでもOK）</span>
+                </button>
+                {rangeOpen&&<div style={{padding:"0 12px 12px"}}>
+                  <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}>
+                    <label style={{fontSize:11.5,fontWeight:700,color:"#475569"}}>開始日<br/><input type="date" aria-label="まとめて設定する開始日" value={rangeFrom} onChange={e=>setRangeFrom(e.target.value)} style={{padding:"6px 8px",border:"1.5px solid #cbd5e1",borderRadius:8,fontSize:13}}/></label>
+                    <label style={{fontSize:11.5,fontWeight:700,color:"#475569"}}>終了日<br/><input type="date" aria-label="まとめて設定する終了日" value={rangeTo} onChange={e=>setRangeTo(e.target.value)} style={{padding:"6px 8px",border:"1.5px solid #cbd5e1",borderRadius:8,fontSize:13}}/></label>
+                    <label style={{fontSize:11.5,fontWeight:700,color:"#475569"}}>種類<br/><select aria-label="まとめて設定する種類" value={rangeType} onChange={e=>setRangeType(e.target.value)} style={{padding:"6px 8px",border:"1.5px solid #cbd5e1",borderRadius:8,fontSize:13,fontWeight:700,fontFamily:"inherit"}}>{SHIFT_TYPES.map(t=><option key={t}>{t}</option>)}</select></label>
+                  </div>
+                  <div style={{marginTop:8,display:"flex",gap:4,flexWrap:"wrap",alignItems:"center"}}>
+                    <span style={{fontSize:11.5,fontWeight:700,color:"#475569",marginRight:4}}>曜日</span>
+                    {DAYS_JP.map((dn,i)=>{ const on=rangeDays.includes(i); return <button key={i} type="button" aria-pressed={on} aria-label={dn+"曜日"} onClick={()=>setRangeDays(on?rangeDays.filter(x=>x!==i):[...rangeDays,i].sort())} style={{width:32,height:30,borderRadius:8,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",border:"1.5px solid "+(on?"#4338ca":"#cbd5e1"),background:on?"#4338ca":"white",color:on?"white":DAY_COLORS[i]}}>{dn}</button>; })}
+                    <button type="button" onClick={()=>setRangeDays([0,1,2,3,4,5,6])} style={{fontSize:11,border:"none",background:"none",color:"#4338ca",cursor:"pointer",fontWeight:700}}>全部</button>
+                    <button type="button" onClick={()=>setRangeDays([1,2,3,4,5])} style={{fontSize:11,border:"none",background:"none",color:"#4338ca",cursor:"pointer",fontWeight:700}}>平日</button>
+                    <button type="button" onClick={()=>setRangeDays([0,6])} style={{fontSize:11,border:"none",background:"none",color:"#4338ca",cursor:"pointer",fontWeight:700}}>土日</button>
+                  </div>
+                  {rangeTimeable&&<div style={{marginTop:8,display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+                    <label style={{fontSize:12,fontWeight:700,color:"#475569",display:"flex",alignItems:"center",gap:4}}><input type="checkbox" checked={rangeTimeOn} onChange={e=>setRangeTimeOn(e.target.checked)}/>勤務時間も指定する</label>
+                    {rangeTimeOn&&<>
+                      <select aria-label="まとめて設定する開始時間" value={rangeStart} onChange={e=>setRangeStart(e.target.value)} style={{padding:"5px 6px",border:"1.5px solid #cbd5e1",borderRadius:6,fontSize:13}}>{HALF_TIME_OPTIONS.map(t=><option key={t}>{t}</option>)}</select>〜
+                      <select aria-label="まとめて設定する終了時間" value={rangeEnd} onChange={e=>setRangeEnd(e.target.value)} style={{padding:"5px 6px",border:"1.5px solid #cbd5e1",borderRadius:6,fontSize:13}}>{HALF_TIME_OPTIONS.map(t=><option key={t}>{t}</option>)}</select>
+                    </>}
+                    {!rangeTimeOn&&<span style={{fontSize:11,color:"#64748b"}}>（指定しないときは{rangeType==="出勤"?"週固定シフトの時間":"午前・午後の標準の時間"}）</span>}
+                  </div>}
+                  <button type="button" onClick={applyRange} disabled={rangeCount===0} style={{marginTop:10,width:"100%",padding:"10px",borderRadius:8,border:"none",background:rangeCount?"#4338ca":"#cbd5e1",color:"white",fontWeight:800,fontSize:13,cursor:rangeCount?"pointer":"default",fontFamily:"inherit"}}>
+                    {rangeCount?`${rangeCount}日分を「${rangeType}」にして保存する`:"対象の日がありません"}
+                  </button>
+                </div>}
+              </div>
               <HalfShiftSplitSetting/>
               {/* 凡例 */}
               <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>
@@ -7737,10 +7878,12 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
                   <thead>
                     <tr style={{background:"#f8fafc"}}>
                       <th style={{padding:"6px 12px",textAlign:"left",fontWeight:700,color:"#64748b",borderBottom:"2px solid #e2e8f0",minWidth:80}}>スタッフ</th>
-                      {dates.map(({date,day,label})=>(
+                      {dates.map(({date,day,label,month},i)=>(
                         <th key={date} style={{padding:"4px 2px",textAlign:"center",fontWeight:700,borderBottom:"2px solid #e2e8f0",minWidth:32,
+                          borderLeft:(label===1&&i>0)?"2px solid #94a3b8":undefined,
                           color:day===0?"#ef4444":day===6?"#7c3aed":"#374151",
                           background:day===0?"#fff1f2":day===6?"#faf5ff":"#f8fafc"}}>
+                          {(i===0||label===1)&&<div style={{fontSize:9,fontWeight:800,color:"#1e3a5f",whiteSpace:"nowrap"}}>{month}月</div>}
                           <div>{label}</div>
                           <div style={{fontSize:9,fontWeight:600}}>{"日月火水木金土"[day]}</div>
                         </th>
@@ -7762,9 +7905,8 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
                           {dates.map(({date,day})=>{
                             const key=`${s.id}_${date}`;
                             // 個別に上書きされていなければ、週固定シフトの設定（出勤/休み）を初期値として使う
-                            const weeklyDefault=weeklyShifts.find(w=>w.day===day);
-                            const defaultVal=weeklyDefault&&!weeklyDefault.is_working?"休み":"出勤";
-                            const val=monthShifts[key]||defaultVal;
+                            const val=shiftValOf(key,date)||defaultValOf(day);
+                            const cust=customOf(key,date);
                             const color=SHIFT_COLORS[val];
                             const isEditing=editingCell===key;
                             return(
@@ -7774,10 +7916,11 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
                                   style={{width:28,height:26,borderRadius:6,background:color,color:"white",fontSize:10,fontWeight:800,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",margin:"auto",boxShadow:`0 1px 3px ${color}66`}}>
                                   {SHIFT_ABBR[val]}
                                 </div>
-                                {HALF_SHIFT[val]&&validHalfRange(monthHalfCustom[key])&&<div style={{fontSize:8,fontWeight:800,color:"#b45309",whiteSpace:"nowrap",marginTop:1}}>{shortRange(monthHalfCustom[key])}</div>}
-                                {isEditing&&<ShiftCellEditor val={val} types={SHIFT_TYPES} color={color} dateStr={date} custom={validHalfRange(monthHalfCustom[key])?monthHalfCustom[key]:null}
+                                {(HALF_SHIFT[val]||val==="出勤")&&validHalfRange(cust)&&<div style={{fontSize:8,fontWeight:800,color:"#b45309",whiteSpace:"nowrap",marginTop:1}}>{shortRange(cust)}</div>}
+                                {isEditing&&<ShiftCellEditor val={val} types={SHIFT_TYPES} color={color} dateStr={date} custom={validHalfRange(cust)?cust:null}
+                                  fullStd={weeklyRangeOf(day)}
                                   onPick={v=>setShiftCell(s.id,date,v)}
-                                  onCustom={r=>setMonthHalfCustom(prev=>{ const n={...prev}; if(r) n[key]=r; else delete n[key]; return n; })}
+                                  onCustom={r=>setCellCustom(s.id,date,r)}
                                   onClose={()=>setEditingCell(null)}/>}
                               </td>
                             );
@@ -14287,8 +14430,8 @@ function Dashboard({user,onLogout}){
       const hc=closures.find(x=>x.date===dStr&&x.is_closed===false&&x.open_time&&/祝日|振替休日|国民の休日/.test(x.memo||""));
       if(hc) return{start:String(hc.open_time).slice(0,5),end:String(hc.close_time||"18:00").slice(0,5)};
     }
-    const hw=halfShiftWindow(monthShiftValue(staffId,dStr),dStr,staffId);
-    if(hw) return hw; // 半日出勤（午前のみ／午後のみ）
+    const hw=dayShiftWindow(monthShiftValue(staffId,dStr),dStr,staffId);
+    if(hw) return hw; // 半日出勤（午前のみ／午後のみ）・その日だけ時間を変えた出勤
     const dow=dateObj.getDay();
     const ws=weeklyShifts.find(w=>w.staff_id===staffId&&w.day_of_week===dow);
     if(ws&&ws.start_time&&ws.end_time) return{start:ws.start_time,end:ws.end_time};
