@@ -31,6 +31,10 @@
       "destination": "/incentive.html"
     },
     {
+      "source": "/nail-goods",
+      "destination": "/nail-goods.html"
+    },
+    {
       "source": "/mandala",
       "destination": "/mandala.html"
     }
