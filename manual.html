@@ -40,6 +40,27 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 .rinen-hero{background:linear-gradient(160deg,#fff7ed,#ffedd5);border-radius:16px;padding:20px 16px;margin-bottom:14px;text-align:center;}
 .rinen-hero .big{font-size:40px;font-weight:900;letter-spacing:.2em;color:#7c2d12;}
 .rinen-hero .lead{font-size:13.5px;color:#7c2d12;margin-top:6px;line-height:1.8;}
+.stmt{background:rgba(255,255,255,.7);border-radius:12px;padding:10px 12px;margin-top:10px;text-align:left;}
+.stmt .lbl{font-size:11.5px;font-weight:900;color:#9a3412;}
+.stmt .lead{margin-top:2px;font-weight:700;}
+.toc{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;}
+.toc a{font-size:12px;font-weight:700;color:#7c2d12;background:white;border:1.5px solid #f0ebe5;border-radius:16px;padding:5px 10px;text-decoration:none;}
+details.bh{border:1.5px solid #f0ebe5;border-radius:10px;margin-bottom:8px;background:white;}
+details.bh[open]{border-color:#fdba74;}
+details.bh summary{list-style:none;cursor:pointer;padding:11px 12px;display:flex;align-items:center;gap:8px;font-weight:800;font-size:14px;}
+details.bh summary::-webkit-details-marker{display:none;}
+details.bh summary::after{content:"＋";margin-left:auto;color:#c2410c;font-weight:900;}
+details.bh[open] summary::after{content:"－";}
+.bh-body{padding:0 12px 12px;}
+.bh-sec{margin-top:8px;}
+.bh-sec h4{font-size:12px;font-weight:900;margin-bottom:4px;}
+.bh-sec ul{padding-left:18px;font-size:13px;line-height:1.75;color:#292524;}
+.bh-sec.rules{background:#fff7ed;border-radius:8px;padding:8px 10px;}
+.bh-sec.rules h4{color:#c2410c;}
+.bh-sec.think h4{color:#0f766e;}
+.bh-sec.act h4{color:#1e40af;}
+.script{background:#f0fdfa;border-left:4px solid #14b8a6;border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:13px;line-height:1.8;white-space:pre-wrap;}
+.script b{display:block;font-size:11.5px;color:#0f766e;margin-bottom:2px;}
 .rinen-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px;}
 .rinen-card{background:white;border-radius:14px;padding:14px 12px;box-shadow:0 1px 3px rgba(0,0,0,.08);position:relative;}
 .rinen-card .ch{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900;color:white;margin-bottom:8px;}
@@ -153,7 +174,7 @@ function fmtTarget(e) {
 let data = null, busy = false;
 let view = lsGet("manual_view") || "rinen";
 let grade = lsGet("manual_grade") || "";
-let personIdx = 0, query = "", showEvalMap = false, staffClinic = "";
+let personIdx = 0, query = "", showEvalMap = false, staffClinic = "", bQuery = "", bArea = "";
 
 async function api(method, body, refresh) {
   const auth = await authHeader();
@@ -204,14 +225,16 @@ function render() {
     `<button class="btn btn-outline" onclick="load(true)">↻ 更新</button>` +
     `<a class="btn btn-outline" href="/incentive">📝 評価</a><a class="btn btn-outline" href="/mandala">🧭 マンダラ</a>`;
   const others = data.people.filter((p) => p.key !== v.personKey);
-  const tabs = [["rinen", "🌸 理念・共通"], ["class", "📘 クラス別"], ["curriculum", "🎓 カリキュラム"], ["eval", "📊 評価基準"]];
+  const tabs = [["rinen", "🌸 理念・共通"], ["behavior", "📗 行動マニュアル"], ["class", "📘 クラス別"], ["curriculum", "🎓 カリキュラム"], ["eval", "📊 評価基準"]];
   if (others.length) tabs.push(["staff", "👥 スタッフ状況"]);
   if (!tabs.some(([k]) => k === view)) view = "rinen";
   let html = `<div class="tabs">${tabs.map(([k, l]) => `<button class="tab ${view === k ? "sel" : ""}" onclick="setView('${k}')">${l}</button>`).join("")}</div>`;
-  if (data.canEdit && (data.usingDefaults.manual || data.usingDefaults.curriculum)) {
-    html += `<div class="note">✏️ 今は初期値（たたき台）を表示しています。社長・GMが内容を編集・保存すると、台帳の「${data.usingDefaults.manual ? "マニュアル" : ""}${data.usingDefaults.manual && data.usingDefaults.curriculum ? "」「" : ""}${data.usingDefaults.curriculum ? "育成カリキュラム" : ""}」シートに保存され、全スタッフに反映されます。</div>`;
+  if (data.canEdit && (data.usingDefaults.manual || data.usingDefaults.curriculum || data.usingDefaults.behavior)) {
+    const names = [["manual", "マニュアル"], ["curriculum", "育成カリキュラム"], ["behavior", "行動マニュアル"]].filter(([k]) => data.usingDefaults[k]).map(([, n]) => n).join("」「");
+    html += `<div class="note">✏️ 今は初期値を表示しています。社長・GMが内容を編集・保存すると、台帳の「${names}」シートに保存され、全スタッフに反映されます。</div>`;
   }
   if (view === "rinen") html += rinenView();
+  else if (view === "behavior") html += behaviorView();
   else if (view === "class") html += classView();
   else if (view === "curriculum") html += curriculumView();
   else if (view === "eval") html += evalView();
@@ -229,7 +252,7 @@ function readBox(g) {
   if (!p) return "";
   const r = (p.reads || {})[g];
   if (!r) return "";
-  const label = g === data.common ? "全クラス共通のマニュアル" : `${gLabel(g)}のマニュアル`;
+  const label = g === data.common ? "全クラス共通のマニュアル" : g === data.behaviorRead ? "スタッフ行動マニュアル" : `${gLabel(g)}のマニュアル`;
   const msg = r.state === "確認済" ? `✅ ${label}を確認済み（${esc(r.at)}）` : r.state === "更新あり" ? `🔔 ${label}が更新されました。読み直して確認してください` : `📖 ${label}を読んだら「読みました」を押してください`;
   return `<div class="read-box read-${r.state}"><span>${msg}</span>${r.state === "確認済" ? "" : `<button class="btn btn-main btn-sm" onclick="act({action:'confirmRead',grade:'${g}'})">読みました</button>`}</div>`;
 }
@@ -271,7 +294,8 @@ function standardsBlock(g) {
 
 function rinenView() {
   const c = data.common;
-  const rinen = itemsOf(c, "理念");
+  const rinen = itemsOf(c, "理念").filter((m) => m.rinen);
+  const statements = itemsOf(c, "理念").filter((m) => !m.rinen);
   const cards = rinen.map((m) => `<div class="rinen-card"><div class="ch r-${esc(m.rinen || "心")}">${esc(m.rinen || "")}</div><div class="t">${esc(m.title)}</div><div class="b">${esc(m.body)}</div>${data.canEdit ? `<div style="margin-top:6px;">${editBtns(m)}</div>` : ""}</div>`).join("");
   const cycle = [
     ["個人の成長", "技術と人間性を磨く（カリキュラム・評価）"], ["患者様の笑顔", "改善・満足・口コミ・継続通院"], ["院の成果", "売上予算・継続率・成約率"],
@@ -279,7 +303,7 @@ function rinenView() {
   ];
   return `${readBox(c)}
   <div class="rinen-hero"><div class="small" style="color:#9a3412;font-weight:800;">あんど整骨院の理念</div><div class="big">心豊笑幸</div>
-    <div class="lead">会社に関わる全ての人が、物心ともに幸せになる。<br>そのために、一人ひとりの働きが会社の成長につながる仕組みをつくります。</div></div>
+    ${statements.length ? statements.map((m) => `<div class="stmt"><div class="lbl">${esc(m.title)}</div><div class="lead">${esc(m.body)}</div>${data.canEdit ? editBtns(m) : ""}</div>`).join("") : `<div class="lead">会社に関わる全ての人が、物心ともに幸せになる。</div>`}</div>
   <div class="rinen-grid">${cards}</div>${data.canEdit ? `<div style="margin:-6px 0 12px;">${addBtn(c, "理念")}</div>` : ""}
   <div class="card"><div class="card-h">🔄 成長と還元の循環</div><div class="card-b"><div class="cycle">${cycle.map(([t, b]) => `<div class="s"><b>${t}</b>${b}</div>`).join("")}</div>
     <div class="small" style="margin-top:10px;">クラスごとの役割（📘 クラス別）を果たし、評価基準（📊 評価基準）で成果を見える化し、成果を公平に還元する。これを全院・全クラスで同じルールで回すことで、統率の取れた組織をつくります。</div></div></div>
@@ -321,6 +345,62 @@ function classBody() {
   html += standardsBlock(g);
   html += `<div class="note">💡 全クラス共通の基準（挨拶・身だしなみ・時間厳守・報連相など）は、どのクラスでも評価の対象です。<a href="#" onclick="setView('rinen');return false;">🌸 理念・共通</a> も確認してください。${next ? `<br>次のクラス（${esc(gLabel(next))}）で求められることは <a href="#" onclick="setGrade('${next}');return false;">こちら</a>。` : ""}</div>`;
   return html;
+}
+
+// ===== スタッフ行動マニュアル =====
+function behaviorView() {
+  return `${readBox(data.behaviorRead)}
+    <input class="search" type="search" placeholder="🔍 行動マニュアルを検索（例：LINE、急患、保険、レジ）" value="${esc(bQuery)}" oninput="bQuery=this.value.trim();renderBehaviorOnly()">
+    <div class="chip-row">${[["", "すべて"], ["施術者", "🤲 施術者として"], ["社会人", "🤝 社会人として"]].map(([k, l]) => `<button class="chip ${bArea === k ? "sel" : ""}" onclick="bArea='${k}';render()">${l}</button>`).join("")}
+      ${data.canEdit ? `<button class="chip" onclick="newBehavior()">＋ 項目を追加</button>` : ""}</div>
+    <div id="behaviorBody">${behaviorBody()}</div>`;
+}
+function renderBehaviorOnly() { const el = document.getElementById("behaviorBody"); if (el) el.innerHTML = behaviorBody(); }
+function behaviorBody() {
+  const q = bQuery.toLowerCase();
+  const text = (b) => [b.title, ...b.actions, ...b.thinking, ...b.rules, ...b.scripts.flatMap((s) => [s.label, s.text])].join(" ").toLowerCase();
+  const list = data.behavior.filter((b) => (!bArea || b.area === bArea) && (!q || text(b).includes(q)));
+  if (!list.length) return `<div class="center">該当する項目がありません</div>`;
+  const chapters = data.behaviorChapters.filter((c) => list.some((b) => b.chapter === c));
+  const hq = (s) => { const t = esc(s); if (!bQuery) return t; const r = esc(bQuery).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); return t.replace(new RegExp(r, "gi"), (x) => `<span class="hl">${x}</span>`); };
+  const sec = (cls, title, items) => items.length ? `<div class="bh-sec ${cls}"><h4>${title}</h4><ul>${items.map((x) => `<li>${hq(x)}</li>`).join("")}</ul></div>` : "";
+  let html = chapters.length > 1 ? `<div class="toc">${chapters.map((c, i) => `<a href="#bch${i}">${esc(c)}</a>`).join("")}</div>` : "";
+  chapters.forEach((c, i) => {
+    const items = list.filter((b) => b.chapter === c);
+    html += `<div class="card" id="bch${i}"><div class="card-h">${esc(c)}<span class="small">${items.length}項目</span></div><div class="card-b">${items.map((b) => `
+      <details class="bh" ${q ? "open" : ""}><summary>${rinenBadge(b.rinen)}<span>${hq(b.title)}</span><span class="tag ${b.area === "施術者" ? "tag-定量" : "tag-定性"}" style="margin-left:4px;">${esc(b.area)}</span></summary><div class="bh-body">
+        ${sec("act", "▶ 行動", b.actions)}
+        ${sec("rules", "⭐ 院のルール", b.rules)}
+        ${b.scripts.length ? `<div class="bh-sec"><h4 style="color:#0f766e;">💬 トーク例</h4>${b.scripts.map((s) => `<div class="script">${s.label ? `<b>${hq(s.label)}</b>` : ""}${hq(s.text)}</div>`).join("")}</div>` : ""}
+        ${sec("think", "💡 考え方", b.thinking)}
+        ${data.canEdit ? `<div style="margin-top:8px;text-align:right;"><button class="btn-link" onclick="editBehavior('${b.id}')">編集</button><button class="btn-del" onclick="delBehavior('${b.id}')">削除</button></div>` : ""}
+      </div></details>`).join("")}</div></div>`;
+  });
+  return html;
+}
+function behaviorForm(b, originalId) {
+  openModal(originalId ? "行動マニュアルを編集" : "行動マニュアルに追加", `<div class="form-grid">
+    <label>章</label><input id="b_ch" list="b_chs" value="${esc(b.chapter)}"><datalist id="b_chs">${data.behaviorChapters.map((c) => `<option value="${esc(c)}">`).join("")}</datalist>
+    <label>タイトル</label><input id="b_title" value="${esc(b.title)}" maxlength="80">
+    <label>区分</label><select id="b_area">${opt(data.behaviorAreas, b.area)}</select>
+    <label>理念</label><select id="b_rinen">${opt(["", ...data.rinen], b.rinen, { "": "（なし）" })}</select>
+    <label>行動</label><textarea id="b_act" placeholder="1行に1つ">${esc(b.actions.join("\n"))}</textarea>
+    <label>⭐院のルール</label><textarea id="b_rules" placeholder="1行に1つ">${esc(b.rules.join("\n"))}</textarea>
+    <label>トーク例</label><textarea id="b_scripts" style="min-height:120px;" placeholder="■見出し&#10;トークの本文">${esc(b.scripts.map((s) => `■${s.label}\n${s.text}`).join("\n"))}</textarea>
+    <label>考え方</label><textarea id="b_think" placeholder="1行に1つ">${esc(b.thinking.join("\n"))}</textarea>
+    <label>項目ID</label><input id="b_id" value="${esc(b.id)}">
+    <label>並び順</label><input id="b_order" type="number" value="${esc(b.order || "")}" placeholder="空なら最後">
+  </div><div class="small" style="margin-top:8px;">行動・ルール・考え方は1行に1つ。トーク例は「■見出し」の行のあとに本文を書きます（複数可）。</div>`, async () => {
+    const item = { chapter: fv("b_ch"), title: fv("b_title"), area: fv("b_area"), rinen: fv("b_rinen"), actions: fv("b_act"), rules: fv("b_rules"), scripts: fv("b_scripts"), thinking: fv("b_think"), id: fv("b_id").trim(), order: Number(fv("b_order")) || 0 };
+    if (await act({ action: "saveBehavior", item, originalId })) closeModal();
+  });
+}
+function editBehavior(id) { const b = data.behavior.find((x) => x.id === id); if (b) behaviorForm(b, id); }
+function newBehavior() { behaviorForm({ chapter: data.behaviorChapters[0] || "", title: "", area: "社会人", rinen: "", actions: [], rules: [], scripts: [], thinking: [], id: `b_${Date.now().toString(36)}`, order: 0 }, ""); }
+async function delBehavior(id) {
+  const b = data.behavior.find((x) => x.id === id);
+  if (!b || !confirm(`「${b.title}」を削除しますか？`)) return;
+  await act({ action: "deleteBehavior", id });
 }
 
 // ===== 評価基準（評価項目との対応） =====
@@ -418,10 +498,10 @@ function staffView() {
   let html = clinics.length > 1 ? `<div class="chip-row"><button class="chip ${!staffClinic ? "sel" : ""}" onclick="staffClinic='';render()">すべて</button>${clinics.map((c) => `<button class="chip ${c === staffClinic ? "sel" : ""}" onclick="staffClinic='${esc(c)}';render()">${esc(c)}</button>`).join("")}</div>` : "";
   const unread = list.filter((p) => Object.values(p.reads).some((r) => r.state !== "確認済")).length;
   html += `<div class="note">マニュアルの確認状況と、カリキュラムの進み具合です。${unread ? `<b>${unread}名</b>がまだ確認していないか、更新後に読み直していません。` : "全員が最新のマニュアルを確認済みです。"}</div>`;
-  html += `<div class="card"><div class="scroll"><table><thead><tr><th>氏名</th><th>クラス</th><th>院</th><th>共通</th><th>クラス別</th><th>カリキュラム</th><th></th></tr></thead><tbody>${list.map((p) => {
+  html += `<div class="card"><div class="scroll"><table><thead><tr><th>氏名</th><th>クラス</th><th>院</th><th>行動</th><th>共通</th><th>クラス別</th><th>カリキュラム</th><th></th></tr></thead><tbody>${list.map((p) => {
     const i = data.people.indexOf(p);
     const s = p.summary;
-    return `<tr><td><b>${esc(p.name)}</b></td><td>${esc(p.grade)}</td><td>${esc(p.clinics.join("・"))}</td><td>${rs(p.reads[data.common])}</td><td>${rs(p.reads[p.manualGrade])}</td>
+    return `<tr><td><b>${esc(p.name)}</b></td><td>${esc(p.grade)}</td><td>${esc(p.clinics.join("・"))}</td><td>${rs(p.reads[data.behaviorRead])}</td><td>${rs(p.reads[data.common])}</td><td>${rs(p.reads[p.manualGrade])}</td>
       <td style="min-width:120px;">${s.total ? `${s.passed}/${s.total}（${s.rate}%）<div class="bar" style="margin-top:3px;"><i style="width:${s.rate}%"></i></div>` : "-"}</td>
       <td><button class="btn-link" onclick="personIdx=${i};setView('curriculum')">見る ›</button></td></tr>`;
   }).join("")}</tbody></table></div></div>`;
