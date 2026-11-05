@@ -73,7 +73,7 @@ td input.w{width:86px;}
 <body>
 <div class="topbar">
   <div><h1>🦶 巻き爪 物販プラン（インソール・室内サンダル）</h1><div class="sub" id="subLabel">巻き爪分析表の実績から、物販の見込み・提案・販売・在庫を数字で管理</div></div>
-  <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="save-st" id="saveSt">読み込み中…</span></div>
+  <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="save-st" id="saveSt">読み込み中…</span><button class="btn btn-sm" id="logoutBtn" style="display:none;background:rgba(255,255,255,.15);color:white;border:1px solid rgba(255,255,255,.4);" onclick="logout()">ログアウト</button></div>
 </div>
 <div class="wrap">
   <div class="tabs" id="tabs"></div>
@@ -147,7 +147,42 @@ async function sbGetAll(table, q) {
   return out;
 }
 function setSaveSt(msg) { document.getElementById("saveSt").textContent = msg; }
+// ===== ログイン（管理画面と同じID・パスワード。「@」が無いIDは @ando.jp を付ける） =====
+const LOGIN_ID_DOMAIN = "ando.jp";
+function renderLogin(msg) {
+  document.getElementById("tabs").innerHTML = "";
+  document.getElementById("logoutBtn").style.display = "none";
+  setSaveSt("未ログイン");
+  root.innerHTML = `<div class="card" style="max-width:400px;margin:30px auto;"><div class="card-h">ログイン</div><div class="card-b">
+    ${msg ? `<div class="err">${esc(msg)}</div>` : ""}
+    <div class="small" style="margin-bottom:12px;">予約管理（管理画面）と同じID・パスワードでログインします。</div>
+    <form onsubmit="event.preventDefault();doLogin()" style="display:flex;flex-direction:column;gap:10px;">
+      <label class="small" style="display:flex;flex-direction:column;gap:3px;font-weight:700;">ID<input id="loginId" autocomplete="username" style="font-size:15px;padding:9px;"/></label>
+      <label class="small" style="display:flex;flex-direction:column;gap:3px;font-weight:700;">パスワード<input id="loginPw" type="password" autocomplete="current-password" style="font-size:15px;padding:9px;"/></label>
+      <button class="btn btn-main" id="loginBtn" style="padding:11px;">ログイン</button>
+    </form></div></div>`;
+  setTimeout(() => { const el = document.getElementById("loginId"); if (el) el.focus(); }, 0);
+}
+async function doLogin() {
+  const id = String(document.getElementById("loginId").value || "").trim().toLowerCase();
+  const pw = document.getElementById("loginPw").value;
+  if (!id || !pw) { renderLogin("IDとパスワードを入力してください"); return; }
+  const btn = document.getElementById("loginBtn"); btn.disabled = true; btn.textContent = "ログイン中…";
+  const { error } = await supabaseClient.auth.signInWithPassword({ email: id.includes("@") ? id : id + "@" + LOGIN_ID_DOMAIN, password: pw });
+  if (error) { renderLogin("IDまたはパスワードが違います"); return; }
+  root.innerHTML = `<div class="center">読み込み中...</div>`;
+  load();
+}
+async function logout() {
+  if (!confirm("ログアウトしますか？")) return;
+  await supabaseClient.auth.signOut();
+  session = null; data = null; pos.result = null; pos.since = null;
+  renderLogin();
+}
 async function load() {
+  await token();
+  if (!session) { renderLogin(); return; }
+  document.getElementById("logoutBtn").style.display = "";
   let remote = null;
   try {
     const rows = await sbGet("app_settings", `?key=eq.${SETTINGS_KEY}&select=value,updated_at`);
