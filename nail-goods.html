@@ -73,7 +73,7 @@ td input.w{width:86px;}
 <body>
 <div class="topbar">
   <div><h1>🦶 巻き爪 物販プラン（インソール・室内サンダル）</h1><div class="sub" id="subLabel">巻き爪分析表の実績から、物販の見込み・提案・販売・在庫を数字で管理</div></div>
-  <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="save-st" id="saveSt">読み込み中…</span></div>
+  <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><span class="save-st" id="saveSt">読み込み中…</span><button class="btn btn-sm" id="logoutBtn" style="display:none;background:rgba(255,255,255,.15);color:white;border:1px solid rgba(255,255,255,.4);" onclick="logout()">ログアウト</button></div>
 </div>
 <div class="wrap">
   <div class="tabs" id="tabs"></div>
@@ -111,12 +111,12 @@ const PRODUCT_COLORS = ["#0d9488", "#f59e0b", "#6366f1", "#ec4899", "#64748b"];
 
 function defaultData() {
   return {
-    version: 1,
-    center: "門真巻き爪センター",
+    version: 2,
     year: "2026",
-    nail: JSON.parse(JSON.stringify(NG.SEED_NAIL_2026)),
+    centerId: "all", // 表示中のセンター（all＝全センター合計）
+    centers: JSON.parse(JSON.stringify(NG.SEED_CENTERS)),
     products: JSON.parse(JSON.stringify(NG.DEFAULT_PRODUCTS)),
-    segments: NG.segmentsFromNail(NG.nailSummary(NG.SEED_NAIL_2026)),
+    segments: NG.segmentsFromNail(NG.nailSummary(NG.combineCenters(NG.SEED_CENTERS), "2026")),
     startMonth: shiftMonth(thisMonth(), 1),
     horizon: 12,
     targetSales: 100000,
@@ -126,7 +126,7 @@ function defaultData() {
   };
 }
 let data = null, session = null, tab = lsGet("nail_goods_tab") || "nail", saveTimer = null, stores = [];
-let pos = { ym: thisMonth(), loading: false, result: null, error: null, since: null };
+let pos = { ym: thisMonth(), loading: false, result: null, error: null, since: null, training: false };
 
 // ===== 読み込み・保存 =====
 async function token() { const { data: { session: s } } = await supabaseClient.auth.getSession(); session = s; return s ? s.access_token : SUPABASE_ANON_KEY; }
@@ -147,14 +147,54 @@ async function sbGetAll(table, q) {
   return out;
 }
 function setSaveSt(msg) { document.getElementById("saveSt").textContent = msg; }
+// ===== ログイン（管理画面と同じID・パスワード。「@」が無いIDは @ando.jp を付ける） =====
+const LOGIN_ID_DOMAIN = "ando.jp";
+function renderLogin(msg) {
+  document.getElementById("tabs").innerHTML = "";
+  document.getElementById("logoutBtn").style.display = "none";
+  setSaveSt("未ログイン");
+  root.innerHTML = `<div class="card" style="max-width:400px;margin:30px auto;"><div class="card-h">ログイン</div><div class="card-b">
+    ${msg ? `<div class="err">${esc(msg)}</div>` : ""}
+    <div class="small" style="margin-bottom:12px;">予約管理（管理画面）と同じID・パスワードでログインします。</div>
+    <form onsubmit="event.preventDefault();doLogin()" style="display:flex;flex-direction:column;gap:10px;">
+      <label class="small" style="display:flex;flex-direction:column;gap:3px;font-weight:700;">ID<input id="loginId" autocomplete="username" style="font-size:15px;padding:9px;"/></label>
+      <label class="small" style="display:flex;flex-direction:column;gap:3px;font-weight:700;">パスワード<input id="loginPw" type="password" autocomplete="current-password" style="font-size:15px;padding:9px;"/></label>
+      <button class="btn btn-main" id="loginBtn" style="padding:11px;">ログイン</button>
+    </form></div></div>`;
+  setTimeout(() => { const el = document.getElementById("loginId"); if (el) el.focus(); }, 0);
+}
+async function doLogin() {
+  const id = String(document.getElementById("loginId").value || "").trim().toLowerCase();
+  const pw = document.getElementById("loginPw").value;
+  if (!id || !pw) { renderLogin("IDとパスワードを入力してください"); return; }
+  const btn = document.getElementById("loginBtn"); btn.disabled = true; btn.textContent = "ログイン中…";
+  const { error } = await supabaseClient.auth.signInWithPassword({ email: id.includes("@") ? id : id + "@" + LOGIN_ID_DOMAIN, password: pw });
+  if (error) { renderLogin("IDまたはパスワードが違います"); return; }
+  root.innerHTML = `<div class="center">読み込み中...</div>`;
+  load();
+}
+async function logout() {
+  if (!confirm("ログアウトしますか？")) return;
+  await supabaseClient.auth.signOut();
+  session = null; data = null; pos.result = null; pos.since = null;
+  renderLogin();
+}
 async function load() {
+  await token();
+  if (!session) { renderLogin(); return; }
+  document.getElementById("logoutBtn").style.display = "";
   let remote = null;
   try {
     const rows = await sbGet("app_settings", `?key=eq.${SETTINGS_KEY}&select=value,updated_at`);
     if (rows[0] && rows[0].value) remote = JSON.parse(rows[0].value);
   } catch (e) { console.warn(e); }
   const local = (() => { try { return JSON.parse(lsGet(LS_KEY) || "null"); } catch (e) { return null; } })();
-  data = Object.assign(defaultData(), remote || local || {});
+  const saved = remote || local || {};
+  data = Object.assign(defaultData(), saved);
+  // 以前の版（門真だけ）の保存データは、センター別の形に直す
+  data.centers = NG.migrateCenters(saved);
+  delete data.nail; delete data.center;
+  if (data.centerId !== "all" && !data.centers.some((c) => c.id === data.centerId)) data.centerId = "all";
   setSaveSt(session ? (remote ? "サーバーに保存済み" : "まだ保存していません") : "未ログイン：この端末だけに保存");
   try { stores = await sbGet("stores", "?select=id,name&order=id"); } catch (e) { stores = []; }
   render();
@@ -180,7 +220,7 @@ function save() {
 
 // ===== POS（会計）から実績を取る =====
 async function loadPos(from, to) {
-  const pays = await sbGetAll("payments", `?payment_date=gte.${from}&payment_date=lte.${to}&select=id,booking_id,payment_date,jifee_items,is_refund,patient_name&order=id`);
+  const pays = await sbGetAll("payments", `?payment_date=gte.${from}&payment_date=lte.${to}&select=id,booking_id,payment_date,jifee_items,is_refund,is_training,patient_name&order=id`);
   if (!data.storeId) return pays;
   const bks = await sbGetAll("bookings", `?date=gte.${shiftMonth(from.slice(0, 7), -1)}-01&date=lte.${to}&select=id,store_id&order=id`);
   const firstStore = stores[0] ? String(stores[0].id) : "1";
@@ -191,11 +231,11 @@ async function fetchPosMonth() {
   pos.loading = true; pos.error = null; render();
   try {
     const pays = await loadPos(`${pos.ym}-01`, lastDay(pos.ym));
-    pos.result = NG.aggregatePayments(pays, data.products);
+    pos.result = NG.aggregatePayments(pays, data.products, pos.training);
     // 在庫計算用：販売開始月から今日までの物販の販売数
     const since = data.startMonth <= thisMonth() ? data.startMonth : thisMonth();
     const all = since === pos.ym ? pays : await loadPos(`${since}-01`, todayStr());
-    pos.since = { from: since, agg: NG.aggregatePayments(all, data.products) };
+    pos.since = { from: since, agg: NG.aggregatePayments(all, data.products, pos.training) };
   } catch (e) { pos.error = e.message; }
   pos.loading = false; render();
 }
@@ -210,7 +250,7 @@ const TABS = [
 function setTab(t) { tab = t; lsSet("nail_goods_tab", t); render(); if (t === "record" && !pos.result && !pos.loading) fetchPosMonth(); }
 function render() {
   document.getElementById("tabs").innerHTML = TABS.map((t) => `<button class="tab ${tab === t.id ? "sel" : ""}" onclick="setTab('${t.id}')">${t.label}</button>`).join("");
-  document.getElementById("subLabel").textContent = `${data.center}｜巻き爪分析表の実績から、物販の見込み・提案・販売・在庫を数字で管理`;
+  document.getElementById("subLabel").textContent = `${curName()}｜巻き爪分析表の実績から、物販の見込み・提案・販売・在庫を数字で管理`;
   root.innerHTML = tab === "nail" ? viewNail() : tab === "forecast" ? viewForecast() : tab === "record" ? viewRecord() : viewStock();
 }
 function kpiCard(k, value) {
@@ -222,46 +262,98 @@ function kpiCard(k, value) {
 const cellCls = (key, v) => { const j = NG.judgeKpi(key, v); return j ? `cell-${j}` : ""; };
 
 // ---------- 巻き爪の実績（分析表） ----------
+const curCenter = () => data.centerId === "all" ? null : data.centers.find((c) => c.id === data.centerId) || null;
+const curNail = () => { const c = curCenter(); return c ? c.nail : NG.combineCenters(data.centers); };
+const curName = () => { const c = curCenter(); return c ? c.name : `全センター合計（${data.centers.length}センター）`; };
+function setCenter(id) { data.centerId = id; save(); render(); }
+function yearsOf() {
+  const ys = new Set([data.year, "2027"]);
+  data.centers.forEach((c) => Object.keys(c.nail || {}).forEach((k) => ys.add(k.slice(0, 4))));
+  return [...ys].sort();
+}
+function centerChips() {
+  return `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">
+    ${[{ id: "all", name: "全センター合計" }, ...data.centers].map((c) => `<button class="btn btn-sm ${data.centerId === c.id ? "btn-main" : "btn-gray"}" onclick="setCenter('${c.id}')">${esc(c.name.replace("巻き爪センター", ""))}${c.staff ? `<span style="font-weight:400;opacity:.8">（${esc(c.staff)}）</span>` : ""}</button>`).join("")}
+    <button class="btn btn-sm btn-gray" onclick="addCenter()">＋ センターを追加</button></div>`;
+}
+function compareCard(y) {
+  const rows = data.centers.map((c) => ({ c, s: NG.nailSummary(c.nail, y) })).filter((x) => x.s.count);
+  if (!rows.length) return "";
+  const all = NG.nailSummary(NG.combineCenters(data.centers), y);
+  const line = (name, s, id) => `<tr ${id ? `style="cursor:pointer" onclick="setCenter('${id}')"` : `class="sum"`}><td class="l">${id ? `<b style="color:#0f766e">${esc(name)}</b>` : esc(name)}</td>
+    <td>${s.count}か月</td><td>${n1(s.avg.newCount)}</td><td>${n1(s.avg.total)}</td><td>${s.last ? n0(s.last.cont) : "-"}</td>
+    <td class="${cellCls("secondRate", s.metrics.secondRate)}">${pctS(s.metrics.secondRate)}</td><td class="${cellCls("fourRate", s.metrics.fourRate)}">${pctS(s.metrics.fourRate)}</td>
+    <td class="${cellCls("unitPrice", s.metrics.unitPrice)}">${yen(s.metrics.unitPrice)}</td><td class="${cellCls("dropRate", s.metrics.dropRate)}">${pctS(s.metrics.dropRate)}</td>
+    <td>${n1(s.metrics.avgVisits)}</td><td>${man(s.avg.sales)}</td><td>${man(s.sum.sales)}</td><td>${pctS(s.metrics.yoy)}</td><td>${s.metrics.salesPerCost ? n1(s.metrics.salesPerCost) + "倍" : "-"}</td></tr>`;
+  return `<div class="card"><div class="card-h">センター比較（${esc(y)}年）</div><div class="card-b scroll"><table>
+    <tr><th class="l">センター</th><th>入力月</th><th>新規/月</th><th>総人数/月</th><th>継続数（直近）</th><th>2回目継続率</th><th>4箇所率</th><th>平均単価</th><th>離脱率</th><th>平均通院回数</th><th>売上/月</th><th>売上合計</th><th>昨対比</th><th>売上÷仕入れ広告費</th></tr>
+    ${rows.map((x) => line(`${x.c.name.replace("巻き爪センター", "")}（${x.c.staff || "-"}）`, x.s, x.c.id)).join("")}
+    ${line("全センター合計", all, null)}
+  </table><div class="small" style="margin-top:6px;">センター名を押すと、そのセンターの分析表を開きます。昨対比・売上÷仕入れ広告費は、その数字が入っている月だけで計算しています。</div></div></div>`;
+}
 function viewNail() {
-  const s = NG.nailSummary(data.nail);
-  const months = Array.from({ length: 12 }, (_, i) => `${data.year}-${String(i + 1).padStart(2, "0")}`);
+  const c = curCenter();
+  const nail = curNail();
+  const y = data.year;
+  const s = NG.nailSummary(nail, y);
+  const months = Array.from({ length: 12 }, (_, i) => `${y}-${String(i + 1).padStart(2, "0")}`);
   const F = NG.NAIL_FIELDS;
   const recent = s.months.slice(-3);
-  const r3 = NG.nailSummary(Object.fromEntries(recent.map((k) => [k, data.nail[k]])));
+  const r3 = NG.nailSummary(Object.fromEntries(recent.map((k) => [k, nail[k]])));
+  const target = 600000 * (c ? 1 : data.centers.filter((x) => NG.nailSummary(x.nail, y).count).length || 1);
+  const cellVal = (f, v) => f.yen ? yen(v) : f.agg === "avg" ? n1(v) : n0(v);
   return `
-  <div class="note">「R8巻き爪分析表最新.xlsx」（${esc(data.center)}）の数字を読み取って入れています。月ごとの数字はこの表に直接入力でき、計算式（2回目継続率・4箇所施術率・平均単価・離脱率）は分析表と同じです。8月以降の分析表が届いたら同じように入力してください。</div>
-  <div class="card"><div class="card-h">年間の指標（${s.count}か月分・${s.months.length ? monthLabel(s.months[0]) + "〜" + monthLabel(s.lastKey) : "データなし"}）</div><div class="card-b">
-    <div class="kpis">${NG.NAIL_KPIS.map((k) => kpiCard(k, s.metrics[k.key])).join("")}</div>
+  ${centerChips()}
+  <div class="note">${c ? `${esc(c.name)}（施術者 ${esc(c.staff || "-")}）の分析表（${esc(c.source || "手入力")}）の数字を読み取って入れています。月ごとの数字はこの表に直接入力できます。` : "5センター（門真・茨木・津田・交野・枚方）の分析表を足し合わせた数字です。センターごとの数字を直すときは、上のボタンでセンターを選んでください。"}計算式（2回目継続率・4箇所施術率・平均単価・離脱率）は分析表と同じです。</div>
+  ${c ? "" : compareCard(y)}
+  <div class="card"><div class="card-h"><span>${esc(curName())}の指標（${esc(y)}年・${s.count}か月分${s.months.length ? "・" + monthLabel(s.months[0]) + "〜" + monthLabel(s.lastKey) : ""}）</span>
+    <select onchange="data.year=this.value;save();render()">${yearsOf().map((v) => `<option ${v === y ? "selected" : ""}>${v}</option>`).join("")}</select></div><div class="card-b">
+    ${s.count ? `<div class="kpis">${NG.NAIL_KPIS.map((k) => kpiCard(k, s.metrics[k.key])).join("")}</div>
     <div class="grid3" style="margin-top:12px;">
-      <div class="stat"><div class="l">新規数（月平均）</div><div class="v">${n1(s.avg.newCount)}人</div><div class="s">合計 ${n0(s.sum.newCount)}人（Web ${n0(s.sum.web)}・のぼり ${n0(s.sum.nobori)}・紹介 ${n0(s.sum.referral)}・店舗内 ${n0(s.sum.inStore)}・その他 ${n0(s.sum.other)}）</div></div>
-      <div class="stat"><div class="l">総人数（月平均）／継続数（直近）</div><div class="v">${n1(s.avg.total)}人 ／ ${s.last ? n0(s.last.cont) : "-"}人</div><div class="s">延べ ${n0(s.sum.total)}人・一日 ${n1(s.metrics.dailyAve)}人</div></div>
-      <div class="stat"><div class="l">巻き爪の売上（月平均）</div><div class="v">${man(s.avg.sales)}円</div><div class="s">合計 ${man(s.sum.sales)}円・目標60万円/月に対して ${pctS(s.avg.sales / 600000 * 100)}</div></div>
+      <div class="stat"><div class="l">新規数（月平均）</div><div class="v">${n1(s.avg.newCount)}人</div><div class="s">合計 ${n0(s.sum.newCount)}人（Web ${n0(s.sum.web)}・のぼり ${n0(s.sum.nobori)}・紹介 ${n0(s.sum.referral)}・店舗内 ${n0(s.sum.inStore)}・その他 ${n0(s.sum.other)}・再診 ${n0(s.sum.revisit)}）</div></div>
+      <div class="stat"><div class="l">総人数（月平均）／継続数（直近）</div><div class="v">${n1(s.avg.total)}人 ／ ${s.last ? n0(s.last.cont) : "-"}人</div><div class="s">延べ ${n0(s.sum.total)}人・一日 ${n1(s.metrics.dailyAve)}人・治癒 ${n0(s.sum.cured)}人</div></div>
+      <div class="stat"><div class="l">巻き爪の売上（月平均）</div><div class="v">${man(s.avg.sales)}円</div><div class="s">合計 ${man(s.sum.sales)}円・月の目標${man(target)}円に対して ${pctS(s.avg.sales / target * 100)}</div></div>
+      <div class="stat"><div class="l">平均通院回数</div><div class="v">${n1(s.metrics.avgVisits)}回</div><div class="s">指標 5回／優良 6回（9か月後）。継続表の平均通院回数の月平均</div></div>
+      <div class="stat"><div class="l">昨対比</div><div class="v">${pctS(s.metrics.yoy)}</div><div class="s">昨年の売上が入っている月だけで比較</div></div>
+      <div class="stat"><div class="l">仕入れ＋広告費</div><div class="v">${s.sum.cost ? yen(s.sum.cost) : "-"}</div><div class="s">${s.metrics.salesPerCost ? `入っている月の売上は費用の ${n1(s.metrics.salesPerCost)}倍・新規1人あたり ${yen(s.metrics.costPerNew)}` : "まだ入力がありません"}</div></div>
     </div>
-    ${recent.length ? `<div class="small" style="margin-top:10px;">直近3か月（${recent.map(monthLabel).join("・")}）：2回目継続率 <b class="${cellCls("secondRate", r3.metrics.secondRate)}">${pctS(r3.metrics.secondRate)}</b>／4箇所施術率 <b class="${cellCls("fourRate", r3.metrics.fourRate)}">${pctS(r3.metrics.fourRate)}</b>／平均単価 <b class="${cellCls("unitPrice", r3.metrics.unitPrice)}">${yen(r3.metrics.unitPrice)}</b>／離脱率 <b class="${cellCls("dropRate", r3.metrics.dropRate)}">${pctS(r3.metrics.dropRate)}</b></div>` : ""}
+    ${recent.length ? `<div class="small" style="margin-top:10px;">直近3か月（${recent.map(monthLabel).join("・")}）：2回目継続率 <b class="${cellCls("secondRate", r3.metrics.secondRate)}">${pctS(r3.metrics.secondRate)}</b>／4箇所施術率 <b class="${cellCls("fourRate", r3.metrics.fourRate)}">${pctS(r3.metrics.fourRate)}</b>／平均単価 <b class="${cellCls("unitPrice", r3.metrics.unitPrice)}">${yen(r3.metrics.unitPrice)}</b>／離脱率 <b class="${cellCls("dropRate", r3.metrics.dropRate)}">${pctS(r3.metrics.dropRate)}</b></div>` : ""}` : `<div class="muted">${esc(y)}年の数字はまだありません。</div>`}
   </div></div>
-  <div class="card"><div class="card-h"><span>巻き爪分析表（${esc(data.year)}年）</span>
-    <span style="display:flex;gap:6px;align-items:center;"><input value="${esc(data.center)}" onchange="data.center=this.value;save();render()" style="width:170px;" title="センター名"/>
-    <select onchange="data.year=this.value;save();render()">${["2025", "2026", "2027"].map((y) => `<option ${y === data.year ? "selected" : ""}>${y}</option>`).join("")}</select></span></div>
+  <div class="card"><div class="card-h"><span>巻き爪分析表（${esc(curName())}・${esc(y)}年）</span>
+    ${c ? `<span style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;"><input value="${esc(c.name)}" onchange="setCenterInfo('name',this.value)" style="width:160px;" title="センター名"/><input value="${esc(c.staff || "")}" onchange="setCenterInfo('staff',this.value)" style="width:80px;" title="施術者" placeholder="施術者"/><button class="btn-del" onclick="delCenter()">センターを削除</button></span>` : `<span class="small">合計は表示のみ（センターを選ぶと入力できます）</span>`}</div>
   <div class="card-b scroll"><table>
-    <tr><th class="l">月</th>${F.map((f) => `<th>${f.label}</th>`).join("")}<th>一日AVE</th><th>2回目継続率</th><th>4箇所率</th><th>平均単価</th><th>離脱率</th></tr>
+    <tr><th class="l">月</th>${F.map((f) => `<th>${f.label}</th>`).join("")}<th>一日AVE</th><th>2回目継続率</th><th>4箇所率</th><th>平均単価</th><th>離脱率</th><th>昨対比</th></tr>
     ${months.map((ym) => {
-      const r = data.nail[ym] || {};
+      const r = nail[ym] || {};
       const m = NG.nailMonthMetrics(r);
       const hasRow = Number(r.total) > 0;
-      return `<tr><td class="l"><b>${Number(ym.slice(5))}月</b></td>${F.map((f) => `<td><input class="${f.key === "sales" ? "w" : ""}" type="number" inputmode="numeric" value="${r[f.key] ?? ""}" onchange="setNail('${ym}','${f.key}',this.value)"/></td>`).join("")}
-        <td>${hasRow ? n1(m.dailyAve) : ""}</td><td class="${cellCls("secondRate", m.secondRate)}">${hasRow ? pctS(m.secondRate) : ""}</td><td class="${cellCls("fourRate", m.fourRate)}">${hasRow ? pctS(m.fourRate) : ""}</td><td class="${cellCls("unitPrice", m.unitPrice)}">${hasRow ? yen(m.unitPrice) : ""}</td><td class="${cellCls("dropRate", m.dropRate)}">${hasRow ? pctS(m.dropRate) : ""}</td></tr>`;
+      return `<tr><td class="l"><b>${Number(ym.slice(5))}月</b></td>${F.map((f) => c ? `<td><input class="${f.yen ? "w" : ""}" type="number" step="any" inputmode="decimal" value="${r[f.key] ?? ""}" onchange="setNail('${ym}','${f.key}',this.value)"/></td>` : `<td>${r[f.key] === undefined ? "" : cellVal(f, r[f.key])}</td>`).join("")}
+        <td>${hasRow ? n1(m.dailyAve) : ""}</td><td class="${cellCls("secondRate", m.secondRate)}">${hasRow ? pctS(m.secondRate) : ""}</td><td class="${cellCls("fourRate", m.fourRate)}">${hasRow ? pctS(m.fourRate) : ""}</td><td class="${cellCls("unitPrice", m.unitPrice)}">${hasRow ? yen(m.unitPrice) : ""}</td><td class="${cellCls("dropRate", m.dropRate)}">${hasRow ? pctS(m.dropRate) : ""}</td><td>${hasRow ? pctS(m.yoy) : ""}</td></tr>`;
     }).join("")}
-    <tr class="sum"><td class="l">合計</td>${F.map((f) => `<td>${f.key === "sales" ? yen(s.sum[f.key]) : n0(s.sum[f.key])}</td>`).join("")}<td>${n1(s.metrics.dailyAve)}</td><td>${pctS(s.metrics.secondRate)}</td><td>${pctS(s.metrics.fourRate)}</td><td>${yen(s.metrics.unitPrice)}</td><td>${pctS(s.metrics.dropRate)}</td></tr>
-    <tr class="sum"><td class="l">平均</td>${F.map((f) => `<td>${f.key === "sales" ? yen(s.avg[f.key]) : n1(s.avg[f.key])}</td>`).join("")}<td colspan="5"></td></tr>
+    <tr class="sum"><td class="l">合計</td>${F.map((f) => `<td>${f.agg === "avg" ? "" : cellVal(f, s.sum[f.key])}</td>`).join("")}<td>${n1(s.metrics.dailyAve)}</td><td>${pctS(s.metrics.secondRate)}</td><td>${pctS(s.metrics.fourRate)}</td><td>${yen(s.metrics.unitPrice)}</td><td>${pctS(s.metrics.dropRate)}</td><td>${pctS(s.metrics.yoy)}</td></tr>
+    <tr class="sum"><td class="l">平均</td>${F.map((f) => `<td>${f.yen ? yen(s.avg[f.key]) : n1(s.avg[f.key])}</td>`).join("")}<td colspan="6"></td></tr>
   </table>
   <div class="small" style="margin-top:8px;">総人数＝新規＋再診＋継続。2回目継続は翌月以降に確定します（分析表の打込み方と同じ）。色：<span class="cell-ideal">優良</span>／<span class="cell-ok">指標クリア</span>／<span class="cell-ng">未達</span></div>
   </div></div>`;
 }
 function setNail(ym, key, v) {
-  const r = data.nail[ym] = data.nail[ym] || {};
+  const c = curCenter(); if (!c) return;
+  const r = c.nail[ym] = c.nail[ym] || {};
   if (v === "") delete r[key]; else r[key] = Number(v);
-  if (!Object.keys(r).length) delete data.nail[ym];
+  if (!Object.keys(r).length) delete c.nail[ym];
   save(); render();
+}
+function setCenterInfo(k, v) { const c = curCenter(); if (!c) return; c[k] = v; save(); render(); }
+function addCenter() {
+  const name = prompt("センター名（例：〇〇巻き爪センター）"); if (!name) return;
+  const staff = prompt("施術者（空欄でもOK）") || "";
+  const c = { id: uid(), name, staff, source: "手入力", nail: {} };
+  data.centers.push(c); data.centerId = c.id; save(); render();
+}
+function delCenter() {
+  const c = curCenter(); if (!c) return;
+  if (!confirm(`「${c.name}」と、その分析表の数字をすべて削除します。よろしいですか？`)) return;
+  data.centers = data.centers.filter((x) => x.id !== c.id); data.centerId = "all"; save(); render();
 }
 
 // ---------- 物販の見込み ----------
@@ -271,12 +363,12 @@ function viewForecast() {
   const base = fc.find((x) => x.sc.id === "base").f;
   const req = NG.requiredForTarget({ targetSales: Number(data.targetSales) || 0, products: P, segments: S });
   const maxSales = Math.max(1, ...base.rows.map((r) => r.sales));
-  const s = NG.nailSummary(data.nail);
+  const s = NG.nailSummary(curNail(), data.year);
   const perPatientNow = s.avg.total ? base.monthlyAvg.sales / s.avg.total : null;
   return `
-  <div class="note">対象になる患者さんの人数 × 提案率 × 購入率 で、毎月の販売数を見込みます。人数は「巻き爪の実績」から自動で入れられます（新規＝月平均、継続中＝直近の継続数、2回目来院＝月平均）。購入率は仮の値なので、販売を始めたら「提案・販売の記録」の実際の成約率に合わせて直してください。</div>
+  <div class="note">対象になる患者さんの人数 × 提案率 × 購入率 で、毎月の販売数を見込みます。人数は「巻き爪の実績」で選んでいるセンター（いまは<b>${esc(curName())}</b>）の${esc(data.year)}年の実績から自動で入れられます（新規＝月平均、継続中＝直近の継続数、2回目来院＝月平均）。購入率は仮の値なので、販売を始めたら「提案・販売の記録」の実際の成約率に合わせて直してください。</div>
   <div class="card"><div class="card-h"><span>見込みの前提（対象者 × 提案率 × 購入率）</span>
-    <span style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn btn-gray btn-sm" onclick="applyNailToSegments()">巻き爪の実績から人数を反映</button><button class="btn btn-gray btn-sm" onclick="addSegment()">＋ 対象を追加</button></span></div>
+    <span style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn btn-gray btn-sm" onclick="applyNailToSegments()">${esc(curName().replace("巻き爪センター", ""))}の実績から人数を反映</button><button class="btn btn-gray btn-sm" onclick="addSegment()">＋ 対象を追加</button></span></div>
   <div class="card-b scroll"><table>
     <tr><th class="l">対象</th><th>毎月の人数</th><th>立ち上げ時に1回</th><th>提案率</th>${P.map((p) => `<th>${esc(p.name)} 購入率</th>`).join("")}<th>月の提案数</th><th></th></tr>
     ${S.map((g, i) => `<tr><td class="l"><input style="width:250px;text-align:left;" value="${esc(g.name)}" onchange="setSeg(${i},'name',this.value)"/></td>
@@ -331,8 +423,8 @@ function setConv(i, pid, v) { const g = data.segments[i]; g.conv = g.conv || {};
 function addSegment() { data.segments.push({ id: uid(), name: "新しい対象", perMonth: 0, once: 0, propose: 50, conv: {} }); save(); render(); }
 function delSegment(i) { if (!confirm(`「${data.segments[i].name}」を削除しますか？`)) return; data.segments.splice(i, 1); save(); render(); }
 function applyNailToSegments() {
-  const s = NG.nailSummary(data.nail);
-  if (!s.count) { alert("巻き爪の実績が入っていません"); return; }
+  const s = NG.nailSummary(curNail(), data.year);
+  if (!s.count) { alert(`${curName()}の${data.year}年の実績が入っていません`); return; }
   data.segments = NG.segmentsFromNail(s, data.segments);
   save(); render();
 }
@@ -363,9 +455,11 @@ function viewRecord() {
       <input type="month" value="${ym}" onchange="pos.ym=this.value;fetchPosMonth()"/>
       <button class="btn btn-gray btn-sm" onclick="pos.ym=shiftMonth(pos.ym,1);fetchPosMonth()">▶</button>
       <select onchange="data.storeId=this.value;save();fetchPosMonth()"><option value="">全店舗</option>${stores.map((s) => `<option value="${s.id}" ${String(s.id) === String(data.storeId) ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select>
+      <label class="small" style="display:flex;align-items:center;gap:4px;"><input type="checkbox" ${pos.training ? "checked" : ""} onchange="pos.training=this.checked;fetchPosMonth()"/>練習の会計（トレーニングモード）を表示</label>
       <button class="btn btn-main btn-sm" onclick="fetchPosMonth()">POSから再集計</button></span></div>
   <div class="card-b">
     ${pos.error ? `<div class="err">${esc(pos.error)}${session ? "" : "（POSの会計を読むには管理画面からログインした状態で開いてください）"}</div>` : ""}
+    ${pos.training ? `<div class="warnbox">いまは練習（トレーニングモード）の会計だけを表示しています。本番の数字を見るときはチェックを外してください。</div>` : ""}
     ${pos.loading ? `<div class="muted">POSの会計を集計中…</div>` : ""}
     <div class="grid3">
       <div class="stat"><div class="l">物販の売上（POS）</div><div class="v">${r ? yen(r.goodsSales) : "-"}</div><div class="s">${plan ? `見込み ${yen(plan.sales)} → 達成率 ${r ? pctS(r.goodsSales / (plan.sales || 1) * 100) : "-"}` : "販売開始月より前、または見込み期間外"}</div></div>
@@ -453,7 +547,7 @@ function viewStock() {
   </div></div>
   <div class="card"><div class="card-h">データ</div><div class="card-b">
     <div class="form-row"><button class="btn btn-gray btn-sm" onclick="exportCsv()">提案の記録をCSVで保存</button>
-    <button class="btn btn-gray btn-sm" onclick="resetSeed()">巻き爪の実績を分析表（1〜7月）に戻す</button></div>
+    <button class="btn btn-gray btn-sm" onclick="resetSeed()">巻き爪の実績を、いただいた分析表の数字に戻す</button></div>
   </div></div>`;
 }
 function setProd(i, k, v) { const p = data.products[i]; p[k] = k === "name" ? v : Number(v) || 0; save(); render(); }
@@ -467,8 +561,8 @@ function addPurchase() {
 }
 function delPurchase(id) { if (!confirm("この仕入れの記録を削除しますか？")) return; data.purchases = data.purchases.filter((x) => x.id !== id); save(); render(); }
 function resetSeed() {
-  if (!confirm("巻き爪の実績を、分析表から読み取った2026年1〜7月の数字に戻します。手で入れた8月以降の数字も消えます。よろしいですか？")) return;
-  data.nail = JSON.parse(JSON.stringify(NG.SEED_NAIL_2026)); data.year = "2026"; save(); render();
+  if (!confirm("5センターの巻き爪の実績を、いただいた分析表から読み取った数字に戻します。手で入れた数字や追加したセンターは消えます。よろしいですか？")) return;
+  data.centers = JSON.parse(JSON.stringify(NG.SEED_CENTERS)); data.centerId = "all"; data.year = "2026"; save(); render();
 }
 function exportCsv() {
   const pName = (id) => (data.products.find((p) => p.id === id) || {}).name || id;
