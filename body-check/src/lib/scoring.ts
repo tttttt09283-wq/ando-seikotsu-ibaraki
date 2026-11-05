@@ -9,20 +9,16 @@ import {
   BALANCE_OPTIONS,
   CHECK_META,
   CHECK_ORDER,
-  CONDITION_OFTEN_OPTION_ID,
-  CONDITION_OPTIONS,
-  CONDITION_PAIN_QUESTION_ID,
-  CONDITION_QUESTIONS,
   FLEXIBILITY_OPTIONS,
   LEGS_INPUT,
   LEGS_THRESHOLDS,
   MAX_POINTS_PER_CHECK,
-  SHOULDER_OPTIONS,
-  SHOULDER_PAIN_OPTION_ID,
+  PLANK_INPUT,
+  PLANK_THRESHOLDS,
   type ChoiceOption,
 } from "@/config/checks";
 import { RANKS, SCORING_CONFIG } from "@/config/scoring";
-import type { Answers, BalanceValue, CheckId, CheckScore, ConditionValue, RankId, ScoreResult } from "@/types";
+import type { Answers, BalanceValue, CheckId, CheckScore, RankId, ScoreResult } from "@/types";
 
 function findOption(options: ChoiceOption[], id: string | null | undefined): ChoiceOption | undefined {
   return id ? options.find((o) => o.id === id) : undefined;
@@ -32,7 +28,18 @@ function clampPoints(points: number): number {
   return Math.max(0, Math.min(MAX_POINTS_PER_CHECK, points));
 }
 
-/** 30秒椅子立ち上がりの回数が有効な値か（0〜50の整数） */
+/** プランクの秒数が有効な値か（0〜300の整数） */
+export function isValidPlankSeconds(sec: unknown): sec is number {
+  return typeof sec === "number" && Number.isInteger(sec) && sec >= PLANK_INPUT.min && sec <= PLANK_INPUT.max;
+}
+
+export function scorePlank(sec: number): number | null {
+  if (!isValidPlankSeconds(sec)) return null;
+  const hit = PLANK_THRESHOLDS.find((t) => sec >= t.min);
+  return hit ? clampPoints(hit.points) : null;
+}
+
+/** 30秒スクワットの回数が有効な値か（0〜50の整数） */
 export function isValidLegsCount(count: unknown): count is number {
   return (
     typeof count === "number" &&
@@ -78,17 +85,6 @@ export function scoreChoice(options: ChoiceOption[], id: string): number | null 
   return opt ? clampPoints(opt.points) : null;
 }
 
-/** コンディション：全問回答で各設問の合計点。1問でも欠けていれば null */
-export function scoreCondition(value: ConditionValue): number | null {
-  let sum = 0;
-  for (const q of CONDITION_QUESTIONS) {
-    const opt = findOption(CONDITION_OPTIONS, value[q.id]);
-    if (!opt) return null;
-    sum += opt.points;
-  }
-  return clampPoints(sum);
-}
-
 /** 点数から S〜C ランクを決める */
 export function getRank(total: number): RankId {
   const hit = RANKS.find((r) => total >= r.min);
@@ -110,11 +106,11 @@ function scoreItem(id: CheckId, answers: Answers): CheckScore {
       const side = (sideId: string | null) => (sideId ? labelOf(BALANCE_OPTIONS, sideId) : "未実施");
       return { id, score, summary: `左 ${side(a.value.left)} ／ 右 ${side(a.value.right)}` };
     }
-    case "legs": {
-      const a = answers.legs;
+    case "plank": {
+      const a = answers.plank;
       if (a?.status !== "answered") return skipped;
-      const score = scoreLegs(a.value);
-      return score === null ? skipped : { id, score, summary: `30秒で ${a.value}回` };
+      const score = scorePlank(a.value);
+      return score === null ? skipped : { id, score, summary: `プランク ${a.value}秒キープ` };
     }
     case "flexibility": {
       const a = answers.flexibility;
@@ -122,19 +118,11 @@ function scoreItem(id: CheckId, answers: Answers): CheckScore {
       const score = scoreChoice(FLEXIBILITY_OPTIONS, a.value);
       return score === null ? skipped : { id, score, summary: labelOf(FLEXIBILITY_OPTIONS, a.value) };
     }
-    case "shoulder": {
-      const a = answers.shoulder;
+    case "legs": {
+      const a = answers.legs;
       if (a?.status !== "answered") return skipped;
-      const score = scoreChoice(SHOULDER_OPTIONS, a.value);
-      return score === null ? skipped : { id, score, summary: labelOf(SHOULDER_OPTIONS, a.value) };
-    }
-    case "condition": {
-      const a = answers.condition;
-      if (a?.status !== "answered") return skipped;
-      const score = scoreCondition(a.value);
-      if (score === null) return skipped;
-      const often = CONDITION_QUESTIONS.filter((q) => a.value[q.id] === CONDITION_OFTEN_OPTION_ID).length;
-      return { id, score, summary: often > 0 ? `「よくある」が${often}問` : "大きな不調は少なめ" };
+      const score = scoreLegs(a.value);
+      return score === null ? skipped : { id, score, summary: `30秒で ${a.value}回` };
     }
   }
 }
@@ -161,9 +149,6 @@ export function calculateResult(answers: Answers): ScoreResult {
     .sort((a, b) => a.score - b.score || order(a.id) - order(b.id))
     .map((i) => i.id);
 
-  const shoulder = answers.shoulder;
-  const condition = answers.condition;
-
   return {
     items,
     total,
@@ -172,16 +157,10 @@ export function calculateResult(answers: Answers): ScoreResult {
     insufficient: answered.length < SCORING_CONFIG.minAnsweredForReliable,
     strengths,
     improvements,
-    painFlags: {
-      shoulderPain: shoulder?.status === "answered" && shoulder.value === SHOULDER_PAIN_OPTION_ID,
-      dailyPainOften:
-        condition?.status === "answered" &&
-        condition.value[CONDITION_PAIN_QUESTION_ID] === CONDITION_OFTEN_OPTION_ID,
-    },
   };
 }
 
-/** 「柔軟性と下半身の筋持久力」のように、項目名を自然な日本語でつなげる */
+/** 「柔軟性と瞬発力」のように、項目名を自然な日本語でつなげる */
 export function joinCheckNames(ids: CheckId[]): string {
   const names = ids.map((id) => CHECK_META[id].resultName);
   if (names.length <= 1) return names.join("");

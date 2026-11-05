@@ -13,7 +13,7 @@ const maru = Zen_Maru_Gothic({
 
 export const metadata: Metadata = {
   title: `${siteConfig.serviceName}｜${siteConfig.clinicName}`,
-  description: "たった3分！おうちでできる無料カラダチェック。5つの簡単なチェックで、あなたの身体のコンディションを見える化します。",
+  description: "たった3分！おうちでできる無料カラダチェック。4つの簡単なチェックで、あなたの身体のコンディションを見える化します。",
   robots: { index: false, follow: false },
 };
 

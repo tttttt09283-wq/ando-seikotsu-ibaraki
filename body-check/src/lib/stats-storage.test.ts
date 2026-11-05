@@ -9,7 +9,7 @@ const validComplete = {
   ageGroup: "40s",
   sex: "female",
   symptoms: ["low_back", "posture"],
-  scores: { balance: 12, legs: null, flexibility: 8, shoulder: 20, condition: 10 },
+  scores: { balance: 11, plank: 12, flexibility: 8, legs: null },
   total: 63,
   rank: "B",
 };
@@ -60,12 +60,16 @@ describe("sanitizeState（ブラウザ内保存データの確認）", () => {
   it("不正な回答・年代は取り除く", () => {
     const s = {
       ...createInitialState(),
-      profile: { ageGroup: "999", symptoms: ["low_back", "evil"] },
+      profile: { age: 150, ageGroup: "999", symptoms: ["low_back", "evil"] },
       answers: { legs: { status: "answered", value: 10 }, hack: { status: "skipped" }, balance: "bad" },
     };
     const r = sanitizeState(s)!;
-    expect(r.profile).toEqual({ ageGroup: null, sex: null, symptoms: ["low_back"] });
+    expect(r.profile).toEqual({ age: null, ageGroup: null, sex: null, symptoms: ["low_back"] });
     expect(Object.keys(r.answers)).toEqual(["legs"]);
+  });
+  it("実年齢から年代を決め直す", () => {
+    const s = { ...createInitialState(), profile: { age: 47, ageGroup: "20s", sex: "male", symptoms: [] } };
+    expect(sanitizeState(s)!.profile).toEqual({ age: 47, ageGroup: "40s", sex: "male", symptoms: [] });
   });
 });
 

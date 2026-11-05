@@ -3,7 +3,8 @@
  * （TypeScript の「型」：データにどんな値が入るかを決めておくことで、書き間違いを防ぎます）
  */
 
-export type CheckId = "balance" | "legs" | "flexibility" | "shoulder" | "condition";
+/** 4つのチェック：バランス力（片足立ち）・体幹の強さ（プランク）・柔軟性（前屈）・瞬発力（スクワット） */
+export type CheckId = "balance" | "plank" | "flexibility" | "legs";
 
 export type AgeGroupId = "10s" | "20s" | "30s" | "40s" | "50s" | "60s" | "70plus";
 
@@ -28,21 +29,22 @@ export interface BalanceValue {
   right: string | null;
 }
 
-/** コンディション質問への回答（質問ID → 選択肢ID） */
-export type ConditionValue = Record<string, string>;
-
 export interface Answers {
   balance?: CheckAnswer<BalanceValue>;
-  legs?: CheckAnswer<number>;
+  /** プランクをキープできた秒数 */
+  plank?: CheckAnswer<number>;
   flexibility?: CheckAnswer<string>;
-  shoulder?: CheckAnswer<string>;
-  condition?: CheckAnswer<ConditionValue>;
+  /** 30秒スクワット（椅子）の回数 */
+  legs?: CheckAnswer<number>;
 }
 
 export type { SexId } from "@/config/bodyAge";
 import type { SexId } from "@/config/bodyAge";
 
 export interface Profile {
+  /** 実年齢（姿勢・体幹年齢と比べるために使用） */
+  age: number | null;
+  /** 年代（実年齢から自動で決める。匿名統計用） */
   ageGroup: AgeGroupId | null;
   /** 性別（カラダ年齢の判定に使用。「回答しない」も選べます） */
   sex: SexId | null;
@@ -71,6 +73,4 @@ export interface ScoreResult {
   strengths: CheckId[];
   /** 改善の余地がある項目（点数の低い順） */
   improvements: CheckId[];
-  /** 痛みに関する回答があるか（セルフケアの出し方を慎重にするため） */
-  painFlags: { shoulderPain: boolean; dailyPainOften: boolean };
 }

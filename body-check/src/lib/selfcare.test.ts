@@ -5,22 +5,18 @@ import { SELF_CARE_ITEMS } from "@/config/selfcare";
 import type { Answers } from "@/types";
 
 const base: Answers = {
-  balance: { status: "answered", value: { left: "30plus", right: "30plus" } },
-  legs: { status: "answered", value: 5 },
+  balance: { status: "answered", value: { left: "60plus", right: "60plus" } },
+  plank: { status: "answered", value: 10 },
   flexibility: { status: "answered", value: "shin" },
-  shoulder: { status: "answered", value: "asymmetry" },
-  condition: {
-    status: "answered",
-    value: { q1: "rarely", q2: "rarely", q3: "rarely", q4: "rarely", q5: "rarely" },
-  },
+  legs: { status: "answered", value: 12 },
 };
 
 describe("recommendSelfCare", () => {
   it("点数の低い項目から最大3つを提案する", () => {
     const rec = recommendSelfCare(calculateResult(base));
     expect(rec.items).toHaveLength(3);
-    // 下半身(4) → 柔軟性(8) → 肩(12)
-    expect(rec.items.map((i) => i.category)).toEqual(["legs", "flexibility", "shoulder"]);
+    // 体幹(4) → 柔軟性(8) → 瞬発力(8)
+    expect(rec.items.map((i) => i.category)).toEqual(["plank", "flexibility", "legs"]);
     expect(rec.notes).toEqual([]);
   });
 
@@ -29,36 +25,22 @@ describe("recommendSelfCare", () => {
     expect(rec.items.some((i) => i.category === "legs")).toBe(false);
   });
 
-  it("肩に痛みがある場合は肩の運動を提案せず、相談を案内する", () => {
-    const rec = recommendSelfCare(calculateResult({ ...base, shoulder: { status: "answered", value: "pain" } }));
-    expect(rec.items.some((i) => i.category === "shoulder")).toBe(false);
-    expect(rec.notes.join("")).toContain("肩の運動はおすすめしていません");
-  });
-
-  it("日常の痛みが「よくある」場合は軽い内容だけに絞る", () => {
-    const rec = recommendSelfCare(
-      calculateResult({
-        ...base,
-        condition: {
-          status: "answered",
-          value: { q1: "often", q2: "rarely", q3: "rarely", q4: "rarely", q5: "rarely" },
-        },
-      }),
-    );
-    expect(rec.items.length).toBeGreaterThan(0);
-    expect(rec.items.every((i) => i.gentle)).toBe(true);
-    expect(rec.notes.join("")).toContain("専門家への相談");
-  });
-
   it("項目が1つしかなくても同じ項目から補って提案する", () => {
     const rec = recommendSelfCare(calculateResult({ flexibility: { status: "answered", value: "knee" } }));
     expect(rec.items.map((i) => i.category)).toEqual(["flexibility", "flexibility"]);
   });
 
-  it("何も回答がない場合はコンディション系を提案する", () => {
+  it("何も回答がない場合は、ごく軽い体幹のケアだけを提案し、相談を案内する", () => {
     const rec = recommendSelfCare(calculateResult({}));
-    expect(rec.items.every((i) => i.category === "condition")).toBe(true);
     expect(rec.items.length).toBeGreaterThan(0);
+    expect(rec.items.every((i) => i.category === "plank" && i.gentle)).toBe(true);
+    expect(rec.notes.join("")).toContain("専門スタッフにご相談");
+  });
+
+  it("4つのチェックすべてにセルフケアが2つ以上ある", () => {
+    for (const id of ["balance", "plank", "flexibility", "legs"]) {
+      expect(SELF_CARE_ITEMS.filter((i) => i.category === id).length).toBeGreaterThanOrEqual(2);
+    }
   });
 
   it("全セルフケアに必須項目（名称・目的・方法・回数・注意点）がそろっている", () => {

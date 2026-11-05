@@ -6,16 +6,17 @@ import { calculateResult } from "./scoring";
 const BASE = "https://ando-seikotsu-kourien.vercel.app/booking.html";
 
 describe("buildBodyCheckSummary（予約フォームに渡す結果の要約）", () => {
-  it("カラダ年齢とスコア・ランクを含める", () => {
-    const result = calculateResult({
-      legs: { status: "answered", value: 22 },
+  it("姿勢・体幹年齢（実年齢）とスコア・ランクを含める", () => {
+    const answers = {
+      legs: { status: "answered", value: 27 },
       flexibility: { status: "answered", value: "shin" },
-      shoulder: { status: "answered", value: "smooth" },
-    });
-    const summary = buildBodyCheckSummary(result, estimateBodyAge(22, "male", "50s"));
-    expect(summary).toBe(`カラダ年齢 50代レベル／スコア${result.total}点・${result.rank}ランク`);
+    } as const;
+    const result = calculateResult(answers);
+    const bodyAge = estimateBodyAge(answers, "male", 50)!;
+    const summary = buildBodyCheckSummary(result, bodyAge, 50);
+    expect(summary).toBe(`姿勢・体幹年齢 ${bodyAge.age}歳（実年齢50歳）／スコア${result.total}点・${result.rank}ランク`);
   });
-  it("カラダ年齢が出ない場合はスコアだけ", () => {
+  it("姿勢・体幹年齢が出ない場合はスコアだけ", () => {
     const result = calculateResult({ flexibility: { status: "answered", value: "palm" } });
     expect(buildBodyCheckSummary(result, null)).toBe("スコア100点・Sランク");
   });
@@ -26,10 +27,10 @@ describe("buildBodyCheckSummary（予約フォームに渡す結果の要約）"
 
 describe("buildBookingUrl（予約URLに目印を付ける）", () => {
   it("src=body-check と要約を付ける", () => {
-    const url = new URL(buildBookingUrl(BASE, "カラダ年齢 20代レベル"));
+    const url = new URL(buildBookingUrl(BASE, "姿勢・体幹年齢 32歳"));
     expect(url.origin + url.pathname).toBe(BASE);
     expect(url.searchParams.get("src")).toBe("body-check");
-    expect(url.searchParams.get("bc")).toBe("カラダ年齢 20代レベル");
+    expect(url.searchParams.get("bc")).toBe("姿勢・体幹年齢 32歳");
   });
   it("元のURLにあるパラメータは残す", () => {
     const url = new URL(buildBookingUrl(`${BASE}?store=1`, "x"));

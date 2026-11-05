@@ -6,7 +6,7 @@ import { ResumeLinks } from "@/components/StartButtons";
 
 /** メニュー（色は薄い背景・濃い文字・枠の3つでチェックごとに分ける） */
 const MENU = [
-  { href: "/check", icon: "🧍", title: "カラダ年齢", time: "約3分", text: "5つの簡単な動きで、カラダが何歳レベルか分かる", badge: "いちばん人気", color: "#0b6d76", bg: "#e6f7f8", border: "#a3e1e7" },
+  { href: "/check", icon: "🧍", title: "カラダ年齢", time: "約3分", text: "片足立ち・プランク・前屈・スクワットで、姿勢・体幹年齢が分かる", badge: "いちばん人気", color: "#0b6d76", bg: "#e6f7f8", border: "#a3e1e7" },
   { href: "/posture", icon: "📸", title: "AI姿勢", time: "約2分", text: "写真からAIが猫背・反り腰・傾きを見つける", color: "#1d4ed8", bg: "#eef4ff", border: "#bfd3fb" },
   { href: "/skeleton", icon: "🧬", title: "骨格タイプ", time: "約2分", text: "10の質問で、骨格タイプとケアのポイントが分かる", color: "#7e22ce", bg: "#f6efff", border: "#dcc6f7" },
   { href: "/core", icon: "💪", title: "体幹", time: "約5分", text: "4つのテストで、体を支える力と左右差をチェック", color: "#c2410c", bg: "#fff3e8", border: "#fbd0ab" },
@@ -25,9 +25,9 @@ export default function HomePage() {
         </p>
         <p className="relative mt-3 text-center text-base font-bold">{siteConfig.serviceName}</p>
         <h1 className="relative mt-2 text-center text-[2rem] font-black leading-tight">
-          あなたのカラダ、
+          あなたの姿勢・体幹は
           <br />
-          <span className="text-sun-300">何歳レベル？</span>
+          <span className="text-sun-300">何歳？</span>
         </h1>
 
         <HeroIllustration className="relative mx-auto mt-4 w-64" />

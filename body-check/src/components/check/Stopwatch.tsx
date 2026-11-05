@@ -2,8 +2,8 @@
 
 /**
  * 計測用タイマー
- *  - countup：片足立ちの秒数を計る（ストップウォッチ）
- *  - countdown：30秒椅子立ち上がりの残り時間を表示
+ *  - countup：片足立ち・プランクの秒数を計る（ストップウォッチ）
+ *  - countdown：30秒スクワットの残り時間を表示
  */
 import { useEffect, useRef, useState } from "react";
 import { cx } from "@/components/ui";

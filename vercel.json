@@ -7,6 +7,10 @@
   ],
   "rewrites": [
     {
+      "source": "/api/mandala",
+      "destination": "/api/evaluation?__mandala=1"
+    },
+    {
       "source": "/beauty",
       "destination": "/beauty.html"
     },
@@ -25,6 +29,14 @@
     {
       "source": "/incentive",
       "destination": "/incentive.html"
+    },
+    {
+      "source": "/nail-goods",
+      "destination": "/nail-goods.html"
+    },
+    {
+      "source": "/mandala",
+      "destination": "/mandala.html"
     }
   ]
 }

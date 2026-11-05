@@ -62,7 +62,7 @@ const RECEPTION = [
   },
   {
     title: "② 待ち時間に（一緒にやるとき）",
-    text: `「お待ちの間に、カラダ年齢チェックをやってみませんか？片足立ちや椅子からの立ち上がりなど、簡単な動きだけです。痛みが出そうな項目は、無理せず“スキップ”して大丈夫ですよ。」`,
+    text: `「お待ちの間に、カラダ年齢チェックをやってみませんか？片足立ち・プランク・前屈・スクワットの簡単な動きだけです。痛みが出そうな項目は、無理せず“スキップ”して大丈夫ですよ。」`,
   },
   {
     title: "③ 新規の電話・問い合わせで迷っている方に",
@@ -70,7 +70,7 @@ const RECEPTION = [
   },
   {
     title: "④ ご家族・ご紹介",
-    text: `「ご家族やお友だちにも、よかったら教えてあげてください。“何歳レベル”か比べてみると盛り上がりますよ。」`,
+    text: `「ご家族やお友だちにも、よかったら教えてあげてください。“姿勢・体幹年齢”が何歳か比べてみると盛り上がりますよ。」`,
   },
 ];
 
@@ -134,9 +134,9 @@ export function StoreTemplates() {
           <div className="bg-brand-500 px-6 py-6 text-white">
             <p className="text-lg font-bold">{v.clinicName}</p>
             <p className="mt-2 text-4xl font-black leading-tight sm:text-5xl">
-              あなたのカラダ、
+              あなたの姿勢・体幹は
               <br />
-              <span className="text-sun-300">何歳レベル？</span>
+              <span className="text-sun-300">何歳？</span>
             </p>
           </div>
           <div className="space-y-4 px-6 py-6">
@@ -144,7 +144,7 @@ export function StoreTemplates() {
               スマホで選べる<span className="text-brand-600">4つ</span>の無料チェック
             </p>
             <p className="text-base font-bold">🧍 カラダ年齢　📸 AI姿勢　🧬 骨格タイプ　💪 体幹</p>
-            <ul className="grid grid-cols-5 gap-1">
+            <ul className="grid grid-cols-4 gap-1">
               {CHECK_ORDER.map((id) => (
                 <li key={id} className="flex flex-col items-center gap-1">
                   <CheckIllustration id={id} className="size-14" />
@@ -173,9 +173,9 @@ export function StoreTemplates() {
             <div key={i} className="rounded-2xl border-2 border-dashed border-brand-300 p-4 text-center text-navy-900">
               <p className="text-xs font-bold text-brand-700">{v.clinicName}</p>
               <p className="mt-1 text-xl font-black leading-snug">
-                あなたのカラダ
+                あなたの姿勢・体幹は
                 <br />
-                <span className="text-brand-600">何歳レベル？</span>
+                <span className="text-brand-600">何歳？</span>
               </p>
               <QrImage value={url} size={120} className="mx-auto mt-2" />
               <p className="mt-2 text-sm font-bold">待ち時間に、スマホで約3分</p>

@@ -15,16 +15,15 @@ import { isDemo } from "@/lib/demo";
 import type { Answers, CheckId } from "@/types";
 import { ConsentContent, SafetyContent, StopNotice } from "./SafetyParts";
 import { StepShell } from "./StepShell";
-import { BalanceStep, ConditionStep, FlexibilityStep, LegsStep, ProfileStep, ShoulderStep } from "./steps";
+import { BalanceStep, FlexibilityStep, LegsStep, PlankStep, ProfileStep } from "./steps";
 
 type StepKey = "profile" | "consent" | "safety" | CheckId;
 
 const CHECK_LEADS: Record<CheckId, string> = {
-  balance: "壁や椅子など、すぐに支えられる場所で片足立ちをしてみましょう",
-  legs: "安定した椅子に座り、30秒間で何回立ち上がれるか数えてください（この回数でカラダ年齢を判定します）",
+  balance: "片足で何秒キープできるか測りましょう。壁や椅子など、すぐに支えられる場所で行ってください",
+  plank: "プランクで何秒キープできるか測りましょう。床にヨガマットやタオルを敷くと安心です",
   flexibility: "立ったまま前屈をして、手がどこまで届くか確かめましょう",
-  shoulder: "両腕をゆっくり上げて、肩の動きを確かめましょう",
-  condition: "最近の身体の状態について、当てはまるものを選んでください",
+  legs: "30秒でスクワットが何回できるか数えましょう。転ばないよう、椅子を使って行います",
 };
 
 export function CheckFlow() {
@@ -40,10 +39,9 @@ export function CheckFlow() {
       ...(siteConfig.statsEnabled && !isDemo() ? (["consent"] as const) : []),
       "safety",
       "balance",
-      "legs",
+      "plank",
       "flexibility",
-      "shoulder",
-      "condition",
+      "legs",
     ],
     [],
   );
@@ -185,14 +183,12 @@ export function CheckFlow() {
       switch (id) {
         case "balance":
           return <BalanceStep key={id} initial={state.answers.balance} onSubmit={(a) => saveAnswer("balance", a)} render={render} />;
-        case "legs":
-          return <LegsStep key={id} initial={state.answers.legs} onSubmit={(a) => saveAnswer("legs", a)} render={render} />;
+        case "plank":
+          return <PlankStep key={id} initial={state.answers.plank} onSubmit={(a) => saveAnswer("plank", a)} render={render} />;
         case "flexibility":
           return <FlexibilityStep key={id} initial={state.answers.flexibility} onSubmit={(a) => saveAnswer("flexibility", a)} render={render} />;
-        case "shoulder":
-          return <ShoulderStep key={id} initial={state.answers.shoulder} onSubmit={(a) => saveAnswer("shoulder", a)} render={render} />;
-        case "condition":
-          return <ConditionStep key={id} initial={state.answers.condition} onSubmit={(a) => saveAnswer("condition", a)} render={render} />;
+        case "legs":
+          return <LegsStep key={id} initial={state.answers.legs} onSubmit={(a) => saveAnswer("legs", a)} render={render} />;
       }
     }
   }

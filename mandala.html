@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>マンダラ・KDI管理 - あんど整骨院</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#eef2f7;color:#1e293b;}
+.topbar{position:sticky;top:0;z-index:10;background:linear-gradient(135deg,#14532d,#15803d);color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.topbar h1{font-size:16px;font-weight:800;}
+.topbar .sub{font-size:11px;opacity:.8;margin-top:2px;}
+.btn{padding:8px 14px;border-radius:8px;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}
+.btn-outline{background:rgba(255,255,255,.12);color:white;border:1px solid rgba(255,255,255,.35);}
+.btn-blue{background:#15803d;color:white;}
+.btn-gray{background:white;color:#334155;border:1.5px solid #cbd5e1;}
+.wrap{max-width:1100px;margin:0 auto;padding:16px;}
+.tabs{display:flex;gap:4px;margin-bottom:14px;border-bottom:2px solid #e2e8f0;flex-wrap:wrap;}
+.tab{padding:10px 14px;border:none;background:none;font-size:14px;font-weight:700;color:#64748b;cursor:pointer;font-family:inherit;border-bottom:3px solid transparent;margin-bottom:-2px;}
+.tab.sel{color:#15803d;border-bottom-color:#15803d;}
+.tab .badge{display:inline-block;min-width:18px;padding:0 5px;border-radius:9px;background:#dc2626;color:white;font-size:11px;margin-left:4px;}
+.card{background:white;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:14px;overflow:hidden;}
+.card-h{padding:12px 16px;border-bottom:1px solid #f1f5f9;font-weight:800;font-size:14px;color:#14532d;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
+.card-b{padding:14px 16px;}
+.chip-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
+.chip{padding:6px 14px;border-radius:20px;border:1.5px solid #e2e8f0;background:white;color:#374151;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;}
+.chip.sel{background:#14532d;color:white;border-color:#14532d;}
+.small{font-size:11px;color:#64748b;}
+.muted{color:#94a3b8;font-size:13px;}
+.ok{color:#047857;} .ng{color:#b91c1c;} .warn{color:#b45309;}
+.center{text-align:center;padding:40px;color:#64748b;}
+.err{background:#fef2f2;color:#b91c1c;padding:10px 12px;border-radius:8px;font-size:13px;margin-bottom:10px;}
+.mgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;}
+.mcell{border:2px solid #e2e8f0;border-radius:12px;padding:10px;min-height:140px;cursor:pointer;background:white;display:flex;flex-direction:column;gap:6px;position:relative;}
+.mcell:hover{border-color:#86efac;}
+.mcell.sel{border-color:#15803d;box-shadow:0 0 0 3px #bbf7d0;}
+.mcell.center-cell{background:linear-gradient(160deg,#f0fdf4,#dcfce7);border-color:#16a34a;}
+.mcell .t{font-weight:800;font-size:13px;line-height:1.35;padding-right:18px;}
+.mcell .n{font-size:11px;color:#475569;}
+.bar{height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden;}
+.bar>i{display:block;height:100%;background:#f59e0b;}
+.bar.ok>i{background:#16a34a;} .bar.ng>i{background:#dc2626;}
+.st{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:800;border:none;font-family:inherit;}
+.st-未着手{background:#f1f5f9;color:#64748b;} .st-取組中{background:#fef3c7;color:#92400e;} .st-達成{background:#dcfce7;color:#166534;}
+.alert-dot{position:absolute;top:6px;right:8px;font-size:14px;}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+th{background:#f8fafc;padding:7px 8px;text-align:right;font-weight:800;color:#64748b;border-bottom:2px solid #e2e8f0;white-space:nowrap;}
+td{padding:7px 8px;text-align:right;border-bottom:1px solid #f1f5f9;white-space:nowrap;}
+th.l,td.l{text-align:left;}
+.scroll{overflow-x:auto;}
+input,select,textarea{padding:7px 9px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:14px;font-family:inherit;}
+textarea{width:100%;min-height:60px;}
+.form-grid{display:grid;grid-template-columns:110px 1fr;gap:8px 10px;align-items:center;}
+.form-grid label{font-size:12px;font-weight:700;color:#475569;}
+.alert{padding:10px 12px;border-radius:10px;font-size:13px;margin-bottom:8px;line-height:1.6;}
+.alert.ng{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;}
+.alert.warn{background:#fffbeb;border:1px solid #fde68a;color:#92400e;}
+@media (max-width:640px){ .mcell{min-height:110px;padding:7px;} .mcell .t{font-size:11.5px;} .form-grid{grid-template-columns:1fr;} .wrap{padding:10px;} }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div><h1>🧭 マンダラ・KDI管理</h1><div class="sub" id="subLabel">あんど整骨院</div></div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;" id="topActions"></div>
+</div>
+<div class="wrap" id="root"><div class="center">読み込み中...</div></div>
+<script>
+const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz";
+// /incentive と同じログイン（同じタブの sessionStorage を使う）
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
+});
+const PIN_KEY = "ando_pin_token";
+const ssGet = (k) => { try { return sessionStorage.getItem(k); } catch (e) { return null; } };
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+async function authHeader() {
+  const pin = ssGet(PIN_KEY);
+  if (pin) return `Pin ${pin}`;
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  return session ? `Bearer ${session.access_token}` : null;
+}
+const root = document.getElementById("root");
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const yen = (v) => (v === null || v === undefined || !isFinite(v)) ? "-" : (v < 0 ? "-¥" : "¥") + Math.abs(Math.round(v)).toLocaleString("ja-JP");
+const fmtVal = (v, unit) => v === null || v === undefined ? "-" : unit === "円" ? yen(v) : `${Number(v).toLocaleString("ja-JP")}${unit || ""}`;
+const pctCls = (r) => r === null || r === undefined ? "" : r >= 100 ? "ok" : r >= 80 ? "warn" : "ng";
+const bar = (r) => r === null || r === undefined ? "" : `<div class="bar ${r >= 100 ? "ok" : r < 80 ? "ng" : ""}"><i style="width:${Math.max(0, Math.min(100, r))}%"></i></div>`;
+function monthLabel(key) { const [y, m] = key.split("-"); return `${y}年${Number(m)}月`; }
+function shiftMonth(key, d) { const [y, m] = key.split("-").map(Number); const t = new Date(y, m - 1 + d, 1); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}`; }
+
+let kdiClinic = lsGet("mandala_kdi_clinic") || ""; // 個人KDIを見る院（空＝すべて）
+let data = null, month = null, view = lsGet("mandala_view") || "company", clinic = lsGet("mandala_clinic") || "", selCell = null, editing = null, busy = false;
+
+async function api(method, body, refresh) {
+  const auth = await authHeader();
+  if (!auth) { renderLogin(); return null; }
+  const url = method === "GET" ? `/api/mandala?month=${encodeURIComponent(month || "")}${refresh ? "&refresh=1" : ""}` : "/api/mandala";
+  const res = await fetch(url, { method, headers: { Authorization: auth, ...(body ? { "Content-Type": "application/json" } : {}) }, body: body ? JSON.stringify({ month, ...body }) : undefined });
+  const json = await res.json().catch(() => ({}));
+  if (res.status === 401) { renderLogin(json.error); return null; }
+  if (!res.ok) throw new Error(json.error || `読み込みに失敗しました（HTTP ${res.status}）`);
+  return json;
+}
+async function load(refresh) {
+  root.innerHTML = `<div class="center">読み込み中...</div>`;
+  try {
+    const json = await api("GET", null, refresh);
+    if (!json) return;
+    data = json; month = json.month;
+    if (!clinic || !data.charts.some((c) => c.scope === clinic)) clinic = (data.charts.find((c) => c.scope !== "会社") || {}).scope || "";
+    render();
+  } catch (e) { root.innerHTML = `<div class="card"><div class="card-b"><div class="err">${esc(e.message)}</div><button class="btn btn-blue" onclick="load(true)">もう一度読み込む</button></div></div>`; }
+}
+async function act(body) {
+  if (busy) return;
+  busy = true;
+  try { const json = await api("POST", body); if (json) data = json; return true; }
+  catch (e) { alert(e.message); return false; }
+  finally { busy = false; render(); }
+}
+function renderLogin(msg) {
+  document.getElementById("topActions").innerHTML = "";
+  root.innerHTML = `<div class="card" style="max-width:420px;margin:40px auto;"><div class="card-b" style="text-align:center;">
+    ${msg ? `<div class="err">${esc(msg)}</div>` : ""}
+    <div style="font-weight:800;margin-bottom:10px;">ログインしてください</div>
+    <div class="small" style="margin-bottom:14px;">インセンティブ・評価と同じID・PASSでログインします。</div>
+    <a class="btn btn-blue" style="display:inline-block;text-decoration:none;" href="/incentive?next=mandala">ログイン画面へ</a></div></div>`;
+}
+
+// ===== 画面 =====
+function render() {
+  if (!data) return;
+  const v = data.viewer;
+  document.getElementById("subLabel").textContent = `${monthLabel(month)}（${data.fiscalYear}年度） ・ ${v.name}さん`;
+  document.getElementById("topActions").innerHTML =
+    `<button class="btn btn-outline" onclick="month=shiftMonth(month,-1);load()">‹ 前月</button><button class="btn btn-outline" onclick="month=shiftMonth(month,1);load()">次月 ›</button>` +
+    `<button class="btn btn-outline" onclick="load(true)">↻ 更新</button><a class="btn btn-outline" style="text-decoration:none;" href="/incentive">💰 評価・インセンティブ</a>`;
+  const alertN = data.alerts.length;
+  const tabs = [["company", "🏢 会社"], ["clinic", "🏥 院"], ["kdi", "🎯 個人KDI"], ["alerts", "🚨 改善アラート"]];
+  if (!tabs.some(([k]) => k === view)) view = "company";
+  let html = `<div class="tabs">${tabs.map(([k, l]) => `<button class="tab ${view === k ? "sel" : ""}" onclick="setView('${k}')">${l}${k === "alerts" && alertN ? `<span class="badge">${alertN}</span>` : ""}</button>`).join("")}</div>`;
+  if (view === "company") html += chartView(data.charts.find((c) => c.scope === "会社"));
+  else if (view === "clinic") {
+    const cs = data.charts.filter((c) => c.scope !== "会社");
+    if (cs.length > 1) html += `<div class="chip-row">${cs.map((c) => `<button class="chip ${c.scope === clinic ? "sel" : ""}" onclick="setClinic('${esc(c.scope)}')">${esc(c.label)}${c.alerts.some((a) => a.level === "ng") ? " 🚨" : ""}</button>`).join("")}</div>`;
+    const ch = cs.find((c) => c.scope === clinic) || cs[0];
+    html += ch ? chartView(ch) : `<div class="card"><div class="card-b muted">表示できる院がありません。</div></div>`;
+  } else if (view === "kdi") html += kdiView();
+  else if (view === "alerts") html += alertsView();
+  root.innerHTML = html;
+}
+function setView(k) { view = k; selCell = null; editing = null; lsSet("mandala_view", k); render(); }
+function setClinic(c) { clinic = c; selCell = null; editing = null; lsSet("mandala_clinic", c); render(); }
+
+// 3×3のマス（中心＝マス0）。並びは 1 2 3 / 4 0 5 / 6 7 8
+const ORDER = [1, 2, 3, 4, 0, 5, 6, 7, 8];
+function chartView(ch) {
+  const alertCells = new Set(ch.alerts.map((a) => a.cell));
+  const cell = (c) => {
+    const isCenter = c.cell === 0;
+    const metric = c.metric && ch.metrics[c.metric] ? ch.metrics[c.metric].label : "";
+    const num = ch.showNumbers && c.metric ? `<div class="n">${esc(metric)}：<b>${fmtVal(c.value, c.unit)}</b>${c.target !== null ? ` ／ 目標 ${fmtVal(c.target, c.unit)}${c.direction === "以下" ? "以下" : ""}` : ""}${c.achievement !== null ? ` ・ <b class="${pctCls(c.achievement)}">${c.achievement}%</b>` : ""}</div>${bar(c.achievement)}`
+      : c.metric ? `<div class="n">${esc(metric)}${c.target !== null ? ` ／ 目標 ${fmtVal(c.target, c.unit)}` : ""}</div>` : (c.target !== null ? `<div class="n">目標 ${fmtVal(c.target, c.unit)}</div>` : "");
+    const kdi = isCenter ? "" : `<div class="n">KDI ${c.kdi.length}件${c.kdiRate !== null ? ` ・ 進捗 <b class="${pctCls(c.kdiRate)}">${c.kdiRate}%</b>` : ""}</div>${bar(c.kdiRate)}`;
+    const st = isCenter ? "" : `<div><button class="st st-${esc(c.status)}" ${ch.canEdit ? `onclick="event.stopPropagation();cycleStatus('${esc(ch.scope)}',${c.cell})"` : "disabled"}>${c.status === "達成" ? "✅ " : c.status === "取組中" ? "🔄 " : "⬜ "}${esc(c.status)}</button></div>`;
+    return `<div class="mcell ${isCenter ? "center-cell" : ""} ${selCell === c.cell ? "sel" : ""}" onclick="pickCell(${c.cell})">
+      ${alertCells.has(c.cell) ? `<span class="alert-dot" title="改善アラート">${ch.alerts.some((a) => a.cell === c.cell && a.level === "ng") ? "🚨" : "⚠️"}</span>` : ""}
+      <div class="t">${isCenter ? "🎯 " : ""}${esc(c.title) || '<span class="muted">（未設定）</span>'}</div>${num}${kdi}${st}
+      ${c.owner ? `<div class="n">担当：${esc(c.owner)}</div>` : ""}</div>`;
+  };
+  const done = ch.cells.slice(1).filter((c) => c.status === "達成").length, doing = ch.cells.slice(1).filter((c) => c.status === "取組中").length;
+  let html = `<div class="card"><div class="card-h"><span>${ch.scope === "会社" ? "🏢 会社のマンダラ" : `🏥 ${esc(ch.label)}院のマンダラ`}（${data.fiscalYear}年度）</span>
+    <span class="small">${monthLabel(month)}のチェック：達成 ${done} ・ 取組中 ${doing} ・ 未着手 ${8 - done - doing}${ch.canEdit ? " ・ マスを押すと編集できます" : ""}</span></div>
+    <div class="card-b"><div class="mgrid">${ORDER.map((i) => cell(ch.cells[i])).join("")}</div>
+    ${!ch.showNumbers ? `<div class="small" style="margin-top:8px;">${ch.scope === "会社" ? "会社の数字は社長・GMだけに表示します。" : "院の数字は院長・BM・社長・GMに表示します。"}</div>` : ""}
+    </div></div>`;
+  if (ch.alerts.length) html += `<div class="card"><div class="card-h">🚨 改善アラート（${ch.alerts.length}件）</div><div class="card-b">${ch.alerts.map((a) => `<div class="alert ${a.level}">${esc(a.text)}</div>`).join("")}</div></div>`;
+  if (selCell !== null) html += cellPanel(ch, ch.cells[selCell]);
+  return html;
+}
+function pickCell(i) { selCell = selCell === i ? null : i; editing = null; render(); }
+function cycleStatus(scope, cell) {
+  const ch = data.charts.find((c) => c.scope === scope);
+  const cur = ch.cells[cell].status;
+  const next = data.statuses[(data.statuses.indexOf(cur) + 1) % data.statuses.length];
+  act({ action: "setStatus", scope, cell, status: next, memo: ch.cells[cell].statusMemo || "" });
+}
+function cellPanel(ch, c) {
+  const isCenter = c.cell === 0;
+  const e = editing && editing.scope === ch.scope && editing.cell === c.cell ? editing : null;
+  const metricOpts = `<option value="">（手入力・数字なし）</option>` + Object.entries(ch.metrics).map(([k, m]) => `<option value="${k}" ${(e ? e.metric : c.metric) === k ? "selected" : ""}>${esc(m.label)}（${m.unit}${m.direction === "以下" ? "・以下" : ""}）</option>`).join("");
+  const form = e ? `<div class="form-grid">
+      <label>タイトル</label><input value="${esc(e.title)}" oninput="editing.title=this.value" maxlength="40"/>
+      <label>指標（自動の数字）</label><select onchange="editing.metric=this.value">${metricOpts}</select>
+      <label>目標</label><input inputmode="decimal" value="${esc(e.target ?? "")}" oninput="editing.target=this.value" placeholder="例：100"/>
+      <label>担当</label><input value="${esc(e.owner)}" oninput="editing.owner=this.value" placeholder="例：院長 大皿"/>
+      <label>メモ</label><textarea oninput="editing.memo=this.value">${esc(e.memo)}</textarea>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px;"><button class="btn btn-gray" onclick="editing=null;render()">キャンセル</button><button class="btn btn-blue" onclick="saveCell()">保存する</button></div>`
+    : `<div class="small" style="line-height:1.8;">${c.memo ? esc(c.memo) + "<br>" : ""}${c.by ? `最終更新：${esc(c.at)}（${esc(c.by)}）` : ""}</div>
+       ${ch.canEdit ? `<button class="btn btn-gray" style="margin-top:6px;" onclick="startEdit('${esc(ch.scope)}',${c.cell})">✏️ このマスを編集</button>` : ""}`;
+  const status = isCenter ? "" : `<div style="margin-top:12px;"><div class="small" style="font-weight:700;margin-bottom:4px;">${monthLabel(month)}の取り組み</div>
+    <div class="chip-row" style="margin-bottom:6px;">${data.statuses.map((s) => `<button class="chip ${c.status === s ? "sel" : ""}" ${ch.canEdit ? `onclick="act({action:'setStatus',scope:'${esc(ch.scope)}',cell:${c.cell},status:'${s}',memo:document.getElementById('stMemo').value})"` : "disabled"}>${s}</button>`).join("")}</div>
+    <input id="stMemo" style="width:100%;" value="${esc(c.statusMemo)}" placeholder="今月やったこと・次にやること（チェックと一緒に保存）" ${ch.canEdit ? "" : "disabled"}/></div>`;
+  const kdi = isCenter ? "" : `<div style="margin-top:14px;"><div class="small" style="font-weight:700;margin-bottom:4px;">紐づいた個人KDI（${monthLabel(month)}の実績・進捗）</div>
+    ${c.kdi.length ? `<div class="scroll"><table><tr><th class="l">スタッフ</th><th class="l">KDI</th><th>実績</th><th>目標</th><th>進捗</th></tr>
+      ${c.kdi.map((k) => `<tr><td class="l">${esc(k.name)}</td><td class="l">${esc(k.label)}</td><td>${fmtVal(k.actual, k.unit)}</td><td>${fmtVal(k.target, k.unit)}</td><td><b class="${pctCls(k.rate)}">${k.rate === null ? "未入力" : k.rate + "%"}</b></td></tr>`).join("")}</table></div>`
+      : `<div class="alert warn">このマスに紐づいたKDIがありません。「🎯 個人KDI」タブで、誰のどのKDIがこのマスの行動なのかを紐づけてください。</div>`}
+    <div class="small" style="margin-top:4px;">KDIの実績は、毎月の評価（💰 評価・インセンティブ → 月次評価）で入れた値です。</div></div>`;
+  return `<div class="card"><div class="card-h"><span>${isCenter ? "🎯 中心の目標（KGI）" : `マス ${c.cell}`}：${esc(c.title)}</span><button class="chip" onclick="pickCell(${c.cell})">閉じる</button></div>
+    <div class="card-b">${form}${status}${kdi}</div></div>`;
+}
+function startEdit(scope, cell) {
+  const c = data.charts.find((x) => x.scope === scope).cells[cell];
+  editing = { scope, cell, title: c.title, metric: c.metric, target: c.target, owner: c.owner, memo: c.memo };
+  render();
+}
+async function saveCell() {
+  if (await act({ action: "saveCell", ...editing })) editing = null;
+  render();
+}
+
+// ===== 個人KDI =====
+function kdiView() {
+  const opts = data.mandalaOptions;
+  const optHtml = (p, cur) => `<option value="">（紐づけなし）</option>` + opts.filter((o) => o.scope === "会社" || p.clinics.includes(o.scope))
+    .map((o) => `<optgroup label="${esc(o.scope === "会社" ? "会社" : o.label + "院")}">${o.cells.map((c) => `<option value="${esc(o.scope)}#${c.cell}" ${cur === `${o.scope}#${c.cell}` ? "selected" : ""}>${c.cell}. ${esc(c.title || "（未設定）")}</option>`).join("")}</optgroup>`).join("");
+  // 院ごとに見る（兼務の人は両方の院に出る）
+  const clinicsAll = [...new Set(data.people.flatMap((p) => p.clinics))].filter(Boolean);
+  const order = data.charts.filter((c) => c.scope !== "会社").map((c) => c.scope);
+  clinicsAll.sort((a, b) => (order.indexOf(a) < 0 ? 99 : order.indexOf(a)) - (order.indexOf(b) < 0 ? 99 : order.indexOf(b)));
+  if (kdiClinic && !clinicsAll.includes(kdiClinic)) kdiClinic = "";
+  const people = kdiClinic ? data.people.filter((p) => p.clinics.includes(kdiClinic)) : data.people;
+  const rateOf = (k) => k.actual === null || k.actual === undefined || !k.target ? null : Math.round((k.direction === "以下" ? (k.actual <= k.target ? 1 : k.target / k.actual) : k.actual / k.target) * 1000) / 10;
+  const summary = (ps) => {
+    const ks = ps.flatMap((p) => p.kdi), linked = ks.filter((k) => k.mandala).length, rated = ks.map(rateOf).filter((v) => v !== null);
+    return { people: ps.length, kdi: ks.length, linked, avg: rated.length ? Math.round((rated.reduce((a, v) => a + Math.min(v, 150), 0) / rated.length) * 10) / 10 : null, filled: rated.length };
+  };
+  const chips = clinicsAll.length > 1 ? `<div class="chip-row"><button class="chip ${kdiClinic ? "" : "sel"}" onclick="setKdiClinic('')">すべて</button>${clinicsAll.map((c) => `<button class="chip ${kdiClinic === c ? "sel" : ""}" onclick="setKdiClinic('${esc(c)}')">${esc(c)}</button>`).join("")}</div>` : "";
+  const sumRows = clinicsAll.map((c) => { const s2 = summary(data.people.filter((p) => p.clinics.includes(c))); return `<tr style="cursor:pointer;${kdiClinic === c ? "background:#f0fdf4;" : ""}" onclick="setKdiClinic('${esc(c)}')"><td class="l"><b>${esc(c)}${order.includes(c) ? "院" : ""}</b></td><td>${s2.people}名</td><td>${s2.kdi}件</td><td class="${s2.linked < s2.kdi ? "warn" : "ok"}">${s2.linked}／${s2.kdi}</td><td>${s2.filled}／${s2.kdi}</td><td><b class="${pctCls(s2.avg)}">${s2.avg === null ? "-" : s2.avg + "%"}</b></td></tr>`; }).join("");
+  const rows = people.map((p) => p.kdi.map((k, i) => {
+    const rate = rateOf(k);
+    return `<tr>${i === 0 ? `<td class="l" rowspan="${p.kdi.length}" style="vertical-align:top;"><b>${esc(p.name)}</b><div class="small">${esc(p.grade)} ${esc(p.clinics.join("・"))}</div></td>` : ""}
+      <td class="l">${esc(k.label)}</td><td>${fmtVal(k.actual, k.unit)}</td><td>${fmtVal(k.target, k.unit)}</td><td><b class="${pctCls(rate)}">${rate === null ? "未入力" : rate + "%"}</b></td>
+      <td class="l">${p.canEdit ? `<select onchange="act({action:'linkKdi',personKey:'${esc(p.key)}',kdiId:'${esc(k.id)}',mandala:this.value})" style="max-width:260px;${k.mandala ? "" : "border-color:#f59e0b;"}">${optHtml(p, k.mandala)}</select>` : esc(labelOf(k.mandala) || "（紐づけなし）")}</td></tr>`;
+  }).join("")).join("");
+  return (clinicsAll.length > 1 ? `<div class="card"><div class="card-h"><span>🏥 院ごとのKDI（${monthLabel(month)}）</span><span class="small">行を押すとその院のKDIを表示</span></div><div class="card-b">
+    <div class="scroll"><table><tr><th class="l">院</th><th>スタッフ</th><th>KDI</th><th>マンダラに紐づけ</th><th>実績入力</th><th>平均進捗</th></tr>${sumRows}</table></div></div></div>` : "") +
+    `<div class="card"><div class="card-h"><span>🎯 個人KDI（${kdiClinic ? esc(kdiClinic) + (order.includes(kdiClinic) ? "院" : "") + "・" : ""}${monthLabel(month)}）</span><span class="small">KDIの項目・目標は「月次評価」の個人画面で、上司が変えられます</span></div><div class="card-b">
+    ${chips}
+    ${people.length ? `<div class="scroll"><table><tr><th class="l">スタッフ</th><th class="l">KDI</th><th>実績</th><th>目標</th><th>進捗</th><th class="l">マンダラのマス</th></tr>${rows}</table></div>` : '<div class="muted">表示できるスタッフがいません。</div>'}
+    <div class="small" style="margin-top:8px;line-height:1.7;">それぞれのKDIが、会社・院のマンダラのどの取り組み（マス）につながる行動なのかを選んでください。紐づけると、マンダラのマスでKDIの進捗が見られ、KGIとかみ合っているかを判定します。</div>
+  </div></div>`;
+}
+function setKdiClinic(c) { kdiClinic = c; lsSet("mandala_kdi_clinic", c); render(); }
+function labelOf(m) {
+  if (!m) return "";
+  const [scope, cell] = m.split("#");
+  const o = data.mandalaOptions.find((x) => x.scope === scope);
+  const c = o && o.cells.find((x) => String(x.cell) === cell);
+  return `${scope === "会社" ? "会社" : scope + "院"} ${cell}. ${c ? c.title : ""}`;
+}
+
+// ===== 改善アラート =====
+function alertsView() {
+  if (!data.alerts.length) return `<div class="card"><div class="card-b ok" style="font-weight:800;">✅ 改善アラートはありません</div></div>`;
+  const groups = new Map();
+  for (const a of data.alerts) { const k = a.label || "個人KDI"; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(a); }
+  const ng = data.alerts.filter((a) => a.level === "ng").length;
+  return `<div class="card"><div class="card-b" style="font-size:13px;line-height:1.8;">
+      <b class="ng">🚨 かみ合っていない ${ng}件</b>：KDI（行動）は達成しているのに、数字（KGI）が未達。行動の中身・やり方を見直します。<br>
+      <b class="warn">⚠️ 紐づけ不足 ${data.alerts.length - ng}件</b>：マンダラの取り組みにKDIが無い、またはKDIがどの取り組みにもつながっていない。</div></div>` +
+    [...groups].map(([label, list]) => `<div class="card"><div class="card-h">${esc(label === "会社" ? "🏢 会社" : label === "個人KDI" ? "🎯 個人KDI" : `🏥 ${label}院`)}（${list.length}件）</div><div class="card-b">
+      ${list.sort((a, b) => (a.level === "ng" ? 0 : 1) - (b.level === "ng" ? 0 : 1)).map((a) => `<div class="alert ${a.level}">${a.level === "ng" ? "🚨 " : "⚠️ "}${esc(a.text)}</div>`).join("")}</div></div>`).join("");
+}
+
+load();
+</script>
+</body>
+</html>
