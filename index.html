@@ -11,6 +11,7 @@
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="/staff-goals-logic.js"></script>
 <script>
 //
 // StarWebPrintBuilder API
@@ -486,15 +487,38 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
   auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
 });
 
+// ===== ログイン切れの検知 =====
+// 共用アカウントを別の端末でログアウトしたときなどに、この端末のログインが切れることがある。
+// 切れたまま保存すると、サーバーに拒否されているのに「保存しました」と出てしまうため、
+// 書き込みの前にログインを確かめ、切れていたら保存せずに知らせる（画面に再ログインの案内を出す）。
+const LOGIN_EXPIRED_MESSAGE="ログインの有効期限が切れているため、保存できませんでした。もう一度ログインしてから保存してください。";
+function notifyLoginExpired(){ window.dispatchEvent(new Event("ando-login-expired")); }
+// 書き込みに使うトークン（ログインが切れていたら例外）
+async function writeToken(){
+  const {data:{session}}=await supabaseClient.auth.getSession();
+  if(!session){ notifyLoginExpired(); throw new Error(LOGIN_EXPIRED_MESSAGE); }
+  return session.access_token;
+}
+// サーバーの返事を確かめる（失敗なら例外。401はログイン切れ、403は権限なし）
+async function ensureOk(res,label="保存"){
+  if(res.ok) return res;
+  const body=await res.text().catch(()=>"");
+  if(res.status===401){ notifyLoginExpired(); throw new Error(LOGIN_EXPIRED_MESSAGE); }
+  if(res.status===403) throw new Error(`${label}する権限がありません（このアカウントがスタッフ登録と紐付いていない可能性があります。管理者に連絡してください）`);
+  throw new Error(`${label}に失敗しました（HTTP ${res.status}）${body?"\n"+body.slice(0,300):""}`);
+}
+
 const sb = {
   async query(table,method="GET",body=null,filters=""){
-    // ログイン中ならセッショントークンを、未ログインならanonキーを使う
+    // ログイン中ならセッショントークンを、未ログインならanonキーを使う（書き込みはログイン必須）
     const {data:{session}} = await supabaseClient.auth.getSession();
+    if(method!=="GET"&&!session){ notifyLoginExpired(); throw new Error(LOGIN_EXPIRED_MESSAGE); }
     const token = session ? session.access_token : SUPABASE_ANON_KEY;
     const res=await fetch(`${SUPABASE_URL}/rest/v1/${table}${filters}`,{
       method,headers:{"apikey":SUPABASE_ANON_KEY,"Authorization":`Bearer ${token}`,"Content-Type":"application/json","Prefer":"return=representation"},
       body:body?JSON.stringify(body):null,
     });
+    if(res.status===401&&method!=="GET") notifyLoginExpired();
     const text=await res.text();return text?JSON.parse(text):[];
   },
   // Supabaseは1回に1000件までしか返さないため、件数指定（limit）の無い読み込みは1000件ずつに分けて全件取る。
@@ -532,7 +556,9 @@ const sb = {
     return data;
   },
   async logout(){
-    await supabaseClient.auth.signOut();
+    // scope:"local"＝この端末だけログアウト。既定（global）だと、同じアカウントでログイン中の他の端末も
+    // すべてログアウトされ、他の端末の保存が通らなくなる（共用アカウントで「保存したのに保存されない」原因）
+    await supabaseClient.auth.signOut({scope:"local"});
   },
   async getSession(){
     const {data:{session}}=await supabaseClient.auth.getSession();
@@ -692,22 +718,40 @@ const sharedSettings={
     clearTimeout(this.timers[key]);
     this.timers[key]=setTimeout(()=>this.push(key,v),800);
   },
-  async push(key,v,onlyIfMissing){
+  async push(key,v,onlyIfMissing,quiet){
     try{
       const {data:{session}}=await supabaseClient.auth.getSession();
-      if(!session) return;
+      if(!session){
+        // 以前はここで黙って終わっていたため、ログインが切れていると保存されないまま気づけなかった
+        if(!onlyIfMissing) notifyLoginExpired();
+        return false;
+      }
       const res=await fetch(`${SUPABASE_URL}/rest/v1/app_settings?on_conflict=key`,{
         method:"POST",
         headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${session.access_token}`,"Content-Type":"application/json",
           Prefer:onlyIfMissing?"resolution=ignore-duplicates":"resolution=merge-duplicates"},
         body:JSON.stringify({key,value:v,updated_at:new Date().toISOString()}),
       });
-      if(!res.ok) throw new Error("HTTP "+res.status);
+      await ensureOk(res);
       if(this.pending[key]===v) delete this.pending[key];
+      return true;
     }catch(e){
       console.error("設定の保存に失敗しました",key,e);
-      if(!onlyIfMissing) alert("設定をサーバーに保存できませんでした（この端末には保存済み）。通信状態を確認して、もう一度保存してください。");
+      if(!onlyIfMissing&&!quiet&&e.message!==LOGIN_EXPIRED_MESSAGE) alert("設定をサーバーに保存できませんでした（この端末には保存済み）。\n"+e.message);
+      return false;
     }
+  },
+  // まとめてすぐ保存し、全部サーバーに保存できたかを返す（保存ボタン用）
+  async saveNow(entries){
+    const items=Object.entries(entries).map(([key,val])=>{
+      const v=String(val==null?"":val);
+      try{ localStorage.setItem(key,v); }catch(e){}
+      this.pending[key]=v;
+      clearTimeout(this.timers[key]);
+      return [key,v];
+    });
+    const results=await Promise.all(items.map(([key,v])=>this.push(key,v,false,true)));
+    return results.every(Boolean);
   },
 };
 // 他の端末で変えた設定が届いたら再描画するためのフック
@@ -6275,12 +6319,12 @@ function SettingsPanel(){
   async function saveSettings(){
     setSaving(true);
     try{
-      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
-      await fetch(`${SUPABASE_URL}/rest/v1/store_settings`,{
+      const token=await writeToken();
+      await ensureOk(await fetch(`${SUPABASE_URL}/rest/v1/store_settings`,{
         method:"POST",
         headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates"},
         body:JSON.stringify({store_id:selStoreId,...settings,updated_at:new Date().toISOString()})
-      });
+      }));
       showToast("設定を保存しました");
     }catch(e){alert("保存に失敗しました："+e.message);}
     setSaving(false);
@@ -6589,25 +6633,25 @@ function BusinessHoursPanel(){
   async function saveHours(){
     setSaving(true);
     try{
-      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      const token=await writeToken();
       const updatedHours=[];
       for(const h of hours){
         const payload={store_id:selStoreId,day_of_week:h.day,is_open:h.is_open,open_time:h.open_time,close_time:h.close_time,break_times:h.break_times||[]};
         if(h.id){
           // 既存行がある場合は更新（重複行を作らない）
-          await fetch(`${SUPABASE_URL}/rest/v1/business_hours?id=eq.${h.id}`,{
+          await ensureOk(await fetch(`${SUPABASE_URL}/rest/v1/business_hours?id=eq.${h.id}`,{
             method:"PATCH",
             headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
             body:JSON.stringify(payload)
-          });
+          }));
           updatedHours.push(h);
         }else{
           // 行がまだ無い場合のみ新規作成
-          const res=await fetch(`${SUPABASE_URL}/rest/v1/business_hours`,{
+          const res=await ensureOk(await fetch(`${SUPABASE_URL}/rest/v1/business_hours`,{
             method:"POST",
             headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
             body:JSON.stringify(payload)
-          });
+          }));
           const created=await res.json().catch(()=>null);
           const newId=Array.isArray(created)&&created.length>0?created[0].id:null;
           updatedHours.push({...h,id:newId});
@@ -7129,7 +7173,7 @@ function AddStaffModal({onClose,onCreated,existingIds}){
       }
 
       // ② clinic_staffテーブルへ登録
-      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      const token=await writeToken();
       const insertRes=await fetch(`${SUPABASE_URL}/rest/v1/clinic_staff`,{
         method:"POST",
         headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
@@ -7288,7 +7332,7 @@ function StaffMenuPermissionsModal({staff,onClose}){
     setErr("");
     setSaving(true);
     try{
-      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      const token=await writeToken();
       const res=await fetch(`${SUPABASE_URL}/rest/v1/clinic_staff?id=eq.${staff.id}`,{
         method:"PATCH",
         headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
@@ -7464,12 +7508,13 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
     const isOff=val==="off";
     const storeId=(!isOff&&val!=="work")?parseInt(val):null;
     const newCell={is_working:!isOff,store_id:storeId};
+    const prevCell=gridShifts[key];
     setGridShifts(prev=>({...prev,[key]:newCell}));
     setSavingCell(key);
     try{
       const existing=weeklyDefaultFor(staffId,day);
-      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
-      await fetch(`${SUPABASE_URL}/rest/v1/staff_weekly_shifts?on_conflict=staff_id,day_of_week`,{
+      const token=await writeToken();
+      await ensureOk(await fetch(`${SUPABASE_URL}/rest/v1/staff_weekly_shifts?on_conflict=staff_id,day_of_week`,{
         method:"POST",
         headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates"},
         body:JSON.stringify({
@@ -7478,10 +7523,11 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
           start_time:existing.start_time,end_time:existing.end_time,
           store_id:storeId,
         })
-      });
+      }));
       if(onShiftsSaved) onShiftsSaved(); // カレンダー画面が使っているシフトデータも更新する
     }catch(e){
-      showToast("⚠ 保存に失敗しました。もう一度お試しください");
+      setGridShifts(prev=>{const n={...prev};if(prevCell)n[key]=prevCell;else delete n[key];return n;}); // 保存できなかった変更は画面から戻す
+      showToast("⚠ "+(e.message||"保存に失敗しました。もう一度お試しください"));
     }
     setSavingCell(null);
   }
@@ -7513,7 +7559,7 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
     const next=current.indexOf(storeId)>-1?current.filter(id=>id!==storeId):[...current,storeId];
     setSavingStore(staffId);
     try{
-      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      const token=await writeToken();
       const res=await fetch(`${SUPABASE_URL}/rest/v1/clinic_staff?id=eq.${staffId}`,{
         method:"PATCH",
         headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
@@ -7545,6 +7591,8 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
   const [monthHolidays,setMonthHolidays]=React.useState({});
   const [editingCell,setEditingCell]=React.useState(null);
   const [dirty,setDirty]=React.useState(false);
+  // 他の端末で保存されたシフトが届いたら、未保存の変更が無いときだけ表示を最新にする（古い表のまま保存して上書きしないように）
+  const sharedSettingsVersion=useSharedSettingsVersion();
   const SHIFT_TYPES=["出勤","午前出勤","午後出勤","休み","有休","振替","祝振替"];
   const SHIFT_COLORS={"出勤":"#2563eb","午前出勤":"#0ea5e9","午後出勤":"#6366f1","休み":"#9ca3af","有休":"#059669","振替":"#d97706","祝振替":"#7c3aed"};
   const SHIFT_ABBR={"出勤":"勤","午前出勤":"前","午後出勤":"後","休み":"休","有休":"有","振替":"振","祝振替":"祝"};
@@ -7579,22 +7627,21 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
       if(h) setMonthHolidays(JSON.parse(h));
       else{const init={};STAFF_ACCOUNTS.forEach(s=>{init[s.id]={有休残:10,振替残:0,祝振替残:0};});setMonthHolidays(init);}
     }catch{}
-  },[viewMonths.join(","),mode,shiftTab]);
+  },[viewMonths.join(","),mode,shiftTab,sharedSettingsVersion]);
 
   const shiftValOf=(key,date)=>(shiftsByMonth[date.slice(0,7)]||{})[key];
   const customOf=(key,date)=>(halfByMonth[date.slice(0,7)]||{})[key];
 
-  function saveMonthShifts(){
-    try{
-      viewMonths.forEach(M=>{
-        sharedSettings.set(`shifts_${M}`,JSON.stringify(shiftsByMonth[M]||{}));
-        sharedSettings.set(`shifthalf_${M}`,JSON.stringify(halfByMonth[M]||{}));
-      });
-      sharedSettings.set("holiday_balance",JSON.stringify(monthHolidays));
-      setDirty(false);
-      showToast("保存しました");
-      if(onShiftsSaved) onShiftsSaved();
-    }catch{showToast("エラー");}
+  // サーバーへの保存が終わってから結果を出す（ログイン切れなどで保存できなかったときに「保存しました」と出さない）
+  async function saveMonthShifts(){
+    const entries={holiday_balance:JSON.stringify(monthHolidays)};
+    viewMonths.forEach(M=>{
+      entries[`shifts_${M}`]=JSON.stringify(shiftsByMonth[M]||{});
+      entries[`shifthalf_${M}`]=JSON.stringify(halfByMonth[M]||{});
+    });
+    const ok=await sharedSettings.saveNow(entries);
+    if(ok){ setDirty(false); showToast("保存しました"); if(onShiftsSaved) onShiftsSaved(); }
+    else showToast("⚠ 保存できませんでした（ログインし直して、もう一度保存してください）");
   }
 
   // 有休・振替・祝振替の残りを、変更前→変更後に合わせて増減する
@@ -7642,7 +7689,7 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
   const [rangeEnd,setRangeEnd]=React.useState("18:00");
   const rangeTimeable=rangeType==="出勤"||!!HALF_SHIFT[rangeType];
   const rangeCount=(()=>{ if(!rangeFrom||!rangeTo||rangeTo<rangeFrom) return 0; let n=0; const d=new Date(rangeFrom+"T00:00:00"), e=new Date(rangeTo+"T00:00:00"); while(d<=e&&n<400){ if(rangeDays.includes(d.getDay())) n++; d.setDate(d.getDate()+1); } return n; })();
-  function applyRange(){
+  async function applyRange(){
     if(!selStaff) return;
     if(!rangeFrom||!rangeTo||rangeTo<rangeFrom){ alert("開始日と終了日を正しく選んでください（終了日は開始日と同じか後）"); return; }
     if(rangeCount===0){ alert("対象になる日がありません（曜日の選択を確認してください）"); return; }
@@ -7670,10 +7717,10 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
       }
       d.setDate(d.getDate()+1);
     }
-    try{
-      new Set([...touched,...viewMonths]).forEach(M=>{ sharedSettings.set(`shifts_${M}`,JSON.stringify(sm[M]||{})); sharedSettings.set(`shifthalf_${M}`,JSON.stringify(hm[M]||{})); });
-      sharedSettings.set("holiday_balance",JSON.stringify(newH));
-    }catch(err){ alert("保存に失敗しました"); return; }
+    const entries={holiday_balance:JSON.stringify(newH)};
+    new Set([...touched,...viewMonths]).forEach(M=>{ entries[`shifts_${M}`]=JSON.stringify(sm[M]||{}); entries[`shifthalf_${M}`]=JSON.stringify(hm[M]||{}); });
+    // サーバーへの保存が終わってから結果を出す（保存できなかったときに「保存しました」と出さない）
+    if(!(await sharedSettings.saveNow(entries))){ alert("保存できませんでした。ログインし直して、もう一度設定してください。"); return; }
     setShiftsByMonth(sm); setHalfByMonth(hm); setMonthHolidays(newH); setDirty(false);
     setRangeOpen(false);
     showToast(`${label}（${rangeCount}日）を「${rangeType}」にして保存しました`);
@@ -7706,13 +7753,13 @@ function StaffMgmtPanel({currentUser,onShiftsSaved}){
     if(!selStaff) return;
     setSaving(true);
     try{
-      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      const token=await writeToken();
       for(const shift of weeklyShifts){
-        await fetch(`${SUPABASE_URL}/rest/v1/staff_weekly_shifts?on_conflict=staff_id,day_of_week`,{
+        await ensureOk(await fetch(`${SUPABASE_URL}/rest/v1/staff_weekly_shifts?on_conflict=staff_id,day_of_week`,{
           method:"POST",
           headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates"},
           body:JSON.stringify({staff_id:selStaff.id,day_of_week:shift.day,is_working:shift.is_working,start_time:shift.start_time,end_time:shift.end_time,store_id:shift.store_id||null})
-        });
+        }));
       }
       showToast(`${selStaff.name}のシフトを保存しました`);
       if(onShiftsSaved) onShiftsSaved(); // カレンダー画面が使っているシフトデータも更新する
@@ -11962,6 +12009,80 @@ function ChurnAlertPanel({bookings,todayStr}){
     </div>
   );
 }
+// ===== 患者様ごとの印：口コミ（依頼済み・獲得）／鍼灸保険（案内済み・獲得・✖） =====
+// patient_marks テーブル（名前から空白を除いたものがキー）。カレンダーの予約枠・予約の詳細・会計画面（pos.html）で同じ印を見られる
+const MARK_REVIEW={
+  requested:{label:"口コミ依頼済み",short:"依頼済み",chip:"口依",color:"#92400e",bg:"#fef3c7"},
+  got:{label:"口コミ獲得",short:"獲得",chip:"口✓",color:"#065f46",bg:"#d1fae5"},
+};
+const MARK_ACU={
+  guided:{label:"鍼灸保険 案内済み",short:"案内済み",chip:"鍼案",color:"#1e40af",bg:"#dbeafe"},
+  got:{label:"鍼灸保険 獲得",short:"獲得",chip:"鍼✓",color:"#065f46",bg:"#d1fae5"},
+  no:{label:"鍼灸保険 ✖（見送り）",short:"✖",chip:"鍼✖",color:"#991b1b",bg:"#fee2e2"},
+};
+function patientMarkKey(name){ return String(name||"").replace(/[\s　]/g,""); }
+async function savePatientMark(name,patch,staffId){
+  const key=patientMarkKey(name); if(!key) throw new Error("お名前がありません");
+  const now=new Date().toISOString();
+  const body={patient_key:key,patient_name:name,updated_at:now,updated_by:staffId||null,...patch};
+  if("review" in patch) body.review_at=patch.review?now:null;
+  if("acu" in patch) body.acu_at=patch.acu?now:null;
+  const {data:{session}}=await supabaseClient.auth.getSession();
+  if(!session) throw new Error("ログインが切れています。もう一度ログインしてください");
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/patient_marks?on_conflict=patient_key`,{method:"POST",
+    headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${session.access_token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=representation"},
+    body:JSON.stringify(body)});
+  const txt=await res.text(); let data=null; try{ data=txt?JSON.parse(txt):null; }catch(e){}
+  if(!res.ok||!Array.isArray(data)||!data[0]) throw new Error((data&&data.message)||`保存できませんでした（HTTP ${res.status}）`);
+  return data[0];
+}
+// カレンダーの予約枠に出す小さな印
+function PatientMarkChips({mark}){
+  if(!mark) return null;
+  const items=[mark.review&&MARK_REVIEW[mark.review],mark.acu&&MARK_ACU[mark.acu]].filter(Boolean);
+  if(!items.length) return null;
+  return <>{items.map(m=><span key={m.chip} title={m.label} style={{display:"inline-block",background:m.bg,color:m.color,borderRadius:4,padding:"0 3px",marginRight:2,fontSize:9,fontWeight:900,textShadow:"none",textDecoration:"none",verticalAlign:"1px",lineHeight:1.4}}>{m.chip}</span>)}</>;
+}
+// 口コミ・鍼灸保険の印をタップで切り替えるボタン（予約の詳細・患者様の画面などで使う）
+function PatientMarkEditor({name,mark,onSaved,staffId,compact}){
+  const [busy,setBusy]=React.useState(false);
+  const [err,setErr]=React.useState("");
+  async function set(patch){
+    setBusy(true); setErr("");
+    try{ const row=await savePatientMark(name,patch,staffId); onSaved&&onSaved(row); }
+    catch(e){ setErr(e.message||"保存できませんでした"); }
+    setBusy(false);
+  }
+  const btn=(on,m,onClick,label)=>(
+    <button type="button" disabled={busy} onClick={onClick} aria-pressed={on}
+      style={{padding:compact?"3px 6px":"5px 9px",borderRadius:6,fontSize:compact?10.5:12,fontWeight:800,cursor:busy?"default":"pointer",fontFamily:"inherit",
+        border:"1.5px solid "+(on?(m?m.color:"#64748b"):"#e2e8f0"),background:on?(m?m.bg:"#f1f5f9"):"white",color:on?(m?m.color:"#475569"):"#64748b"}}>{label}</button>
+  );
+  const rv=mark&&mark.review||null, ac=mark&&mark.acu||null;
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+      <div>
+        <div style={{fontSize:compact?10:11,fontWeight:800,color:"#475569",marginBottom:3}}>⭐ 口コミ</div>
+        <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+          {btn(!rv,null,()=>set({review:null}),"未")}
+          {btn(rv==="requested",MARK_REVIEW.requested,()=>set({review:"requested"}),"依頼済み")}
+          {btn(rv==="got",MARK_REVIEW.got,()=>set({review:"got"}),"獲得")}
+        </div>
+      </div>
+      <div>
+        <div style={{fontSize:compact?10:11,fontWeight:800,color:"#475569",marginBottom:3}}>🪡 鍼灸保険</div>
+        <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+          {btn(!ac,null,()=>set({acu:null}),"未")}
+          {btn(ac==="guided",MARK_ACU.guided,()=>set({acu:"guided"}),"案内済み")}
+          {btn(ac==="got",MARK_ACU.got,()=>set({acu:"got"}),"獲得")}
+          {btn(ac==="no",MARK_ACU.no,()=>set({acu:"no"}),"✖")}
+        </div>
+      </div>
+      {err&&<div style={{fontSize:11,color:"#dc2626",fontWeight:700}}>{err}</div>}
+    </div>
+  );
+}
+
 function QuickMemoEditor({booking,onSave}){
   const [value,setValue]=React.useState(booking.memo||"");
   const [saving,setSaving]=React.useState(false);
@@ -12530,6 +12651,398 @@ function BulkReceiptPanel({payments,bookings,stores,refunds=[]}){
   );
 }
 // スタッフKPIの集計開始日（これより前＝プレオープン／イベント期間の予約・来院は集計に含めない）
+// ===== 個人サマリー・個人マンダラ・目標（KGI／KPI／KDI） =====
+// 計算は staff-goals-logic.js（window.StaffGoals）。テストは test/staff-goals.test.js
+const summaryYen=n=>(Math.round(Number(n)||0)).toLocaleString("ja-JP");
+// 集計の対象スタッフ（イベント専用の枠・共用アカウントは除く）
+function goalStaffList(){ return STAFF_ACCOUNTS.filter(s=>!s.eventOnly&&!String(s.name||"").includes("共用")); }
+// 予約ID → 店舗ID
+function bookingStoreLookup(bookings){
+  const m={}; (bookings||[]).forEach(b=>{ m[b.id]=b.store_id||1; });
+  return id=>m[id];
+}
+
+// 個人サマリー：POSのスタッフ別ランキングと同じ形（順位・総合／技術／商品の 売上・客数・客単価・売上比率）
+function StaffSummaryPanel({payments,bookings,stores,todayStr}){
+  const SG=window.StaffGoals;
+  const [from,setFrom]=React.useState(todayStr.slice(0,8)+"01");
+  const [to,setTo]=React.useState(todayStr);
+  const [storeId,setStoreId]=React.useState("all");
+  const [sortKey,setSortKey]=React.useState("total");
+  const storeOf=React.useMemo(()=>bookingStoreLookup(bookings),[bookings]);
+  const firstDates=React.useMemo(()=>SG.firstVisitDates(payments),[payments]);
+  const rows=React.useMemo(()=>{
+    const list=SG.summarize(payments,{from,to,storeId:storeId==="all"?null:Number(storeId),storeOfBooking:storeOf,firstDates});
+    return SG.rank(list.filter(r=>r.total!==0||r.visits>0),sortKey);
+  },[payments,from,to,storeId,sortKey,storeOf,firstDates]);
+  const nameOf=id=>(STAFF_ACCOUNTS.find(s=>s.id===id)||{}).name||"担当未設定";
+  const sum=k=>rows.reduce((a,r)=>a+(r[k]||0),0);
+  const totalRow={total:sum("total"),visits:sum("visits"),tech:sum("tech"),techVisits:sum("techVisits"),goods:sum("goods"),goodsVisits:sum("goodsVisits"),newVisits:sum("newVisits"),repeatVisits:sum("repeatVisits")};
+  const avgOf=(s,v)=>v?Math.round(s/v):0;
+
+  function exportCsv(){
+    const head=["順位","スタッフ名","総合売上","総合客数","総合客単価","技術売上","技術客数","技術客単価","商品売上","商品客数","商品客単価","売上比率(%)","新規客数","再来客数"];
+    const lines=[head,...rows.map(r=>[r.rank,nameOf(r.staffId),r.total,r.visits,r.avg,r.tech,r.techVisits,r.techAvg,r.goods,r.goodsVisits,r.goodsAvg,r.share,r.newVisits,r.repeatVisits])]
+      .map(cols=>cols.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(","));
+    const blob=new Blob(["﻿"+lines.join("\n")],{type:"text/csv;charset=utf-8;"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`個人サマリー_${from}_${to}.csv`; a.click();
+  }
+  const btn=(active)=>({padding:"8px 12px",borderRadius:8,border:"1.5px solid "+(active?"#059669":"#e2e8f0"),background:active?"#059669":"white",color:active?"white":"#374151",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"});
+  const th={padding:"8px 10px",fontSize:12,fontWeight:800,color:"#475569",background:"#fdf2f4",borderBottom:"1px solid #e2e8f0",textAlign:"center",whiteSpace:"nowrap"};
+  const td={padding:"10px",fontSize:13,borderBottom:"1px solid #f1f5f9",textAlign:"right",whiteSpace:"nowrap"};
+  const hl=k=>sortKey===k?{background:"#fef9c3",fontWeight:800}:{};
+
+  return(
+    <div style={{padding:16,maxWidth:1300,margin:"0 auto"}}>
+      <div style={{fontSize:22,fontWeight:900,color:"#0f172a",marginBottom:4}}>個人サマリー</div>
+      <div style={{fontSize:12,color:"#64748b",marginBottom:14}}>スタッフごとの売上・客数・客単価（税込・会計の担当で集計）。返金は返金日の売上から引きます。</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",background:"white",padding:12,borderRadius:12,marginBottom:12,border:"1px solid #e2e8f0"}}>
+        <span style={{fontSize:12,fontWeight:800,color:"#475569"}}>期間</span>
+        <input type="date" value={from} onChange={e=>setFrom(e.target.value)} aria-label="開始日" style={{padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontFamily:"inherit"}}/>
+        <span>〜</span>
+        <input type="date" value={to} onChange={e=>setTo(e.target.value)} aria-label="終了日" style={{padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontFamily:"inherit"}}/>
+        <button onClick={()=>{setFrom(todayStr);setTo(todayStr);}} style={btn(false)}>本日</button>
+        <button onClick={()=>{setFrom(todayStr.slice(0,8)+"01");setTo(todayStr);}} style={btn(false)}>当月</button>
+        <select value={storeId} onChange={e=>setStoreId(e.target.value)} aria-label="店舗" style={{padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontFamily:"inherit"}}>
+          <option value="all">全体</option>
+          {(stores||[]).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <span style={{flex:1}}/>
+        <button onClick={()=>window.print()} style={btn(false)}>印刷</button>
+        <button onClick={exportCsv} style={btn(false)}>ファイル出力</button>
+      </div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
+        {SG.SORTS.map(s=><button key={s.key} onClick={()=>setSortKey(s.key)} style={btn(sortKey===s.key)}>{s.label}</button>)}
+      </div>
+      <div style={{background:"white",borderRadius:12,border:"1px solid #e2e8f0",overflowX:"auto"}}>
+        <div style={{padding:"8px 12px",fontSize:12,fontWeight:800}}>【税込】</div>
+        <table style={{width:"100%",borderCollapse:"collapse"}}>
+          <thead>
+            <tr>
+              <th style={th} rowSpan={2}>順位</th><th style={th} rowSpan={2}>スタッフ名</th>
+              <th style={th} colSpan={3}>総合</th><th style={th} colSpan={3}>技術</th><th style={th} colSpan={3}>商品</th>
+              <th style={th} rowSpan={2}>売上<br/>比率</th><th style={th} rowSpan={2}>新規</th><th style={th} rowSpan={2}>再来</th>
+            </tr>
+            <tr>{["売上","客数","客単価","売上","客数","客単価","売上","客数","客単価"].map((h,i)=><th key={i} style={th}>{h}</th>)}</tr>
+          </thead>
+          <tbody>
+            {rows.length===0&&<tr><td colSpan={14} style={{...td,textAlign:"center",color:"#94a3b8"}}>この期間の会計はありません</td></tr>}
+            {rows.map(r=>(
+              <tr key={r.staffId}>
+                <td style={{...td,textAlign:"center",fontWeight:800,background:"#fdf2f4"}}>{r.rank}位</td>
+                <td style={{...td,textAlign:"left"}}>{nameOf(r.staffId)}</td>
+                <td style={{...td,...hl("total")}}>{summaryYen(r.total)}</td><td style={{...td,...hl("visits")}}>{r.visits}</td><td style={{...td,...hl("avg")}}>{summaryYen(r.avg)}</td>
+                <td style={{...td,...hl("tech")}}>{summaryYen(r.tech)}</td><td style={{...td,...hl("techVisits")}}>{r.techVisits}</td><td style={{...td,...hl("techAvg")}}>{summaryYen(r.techAvg)}</td>
+                <td style={{...td,...hl("goods")}}>{summaryYen(r.goods)}</td><td style={{...td,...hl("goodsVisits")}}>{r.goodsVisits}</td><td style={{...td,...hl("goodsAvg")}}>{summaryYen(r.goodsAvg)}</td>
+                <td style={td}>{r.share}%</td><td style={{...td,...hl("newVisits")}}>{r.newVisits}</td><td style={{...td,...hl("repeatVisits")}}>{r.repeatVisits}</td>
+              </tr>
+            ))}
+            {rows.length>0&&(
+              <tr style={{background:"#f8fafc",fontWeight:800}}>
+                <td style={{...td,textAlign:"center"}} colSpan={2}>合計</td>
+                <td style={td}>{summaryYen(totalRow.total)}</td><td style={td}>{totalRow.visits}</td><td style={td}>{summaryYen(avgOf(totalRow.total,totalRow.visits))}</td>
+                <td style={td}>{summaryYen(totalRow.tech)}</td><td style={td}>{totalRow.techVisits}</td><td style={td}>{summaryYen(avgOf(totalRow.tech,totalRow.techVisits))}</td>
+                <td style={td}>{summaryYen(totalRow.goods)}</td><td style={td}>{totalRow.goodsVisits}</td><td style={td}>{summaryYen(avgOf(totalRow.goods,totalRow.goodsVisits))}</td>
+                <td style={td}>100%</td><td style={td}>{totalRow.newVisits}</td><td style={td}>{totalRow.repeatVisits}</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div style={{fontSize:11,color:"#64748b",marginTop:8,lineHeight:1.7}}>
+        客数＝担当した来院の数（同じ予約の会計が複数あっても1人）。客単価＝売上÷客数。合計の客数は担当ごとの延べ人数です。<br/>
+        商品＝会計の自費項目で「物販：」で始まるもの・物販の名前を含むもの。保険・自費施術・回数券・フリーパスなどは技術に入ります。新規＝その患者さんの初めての会計の日。
+      </div>
+    </div>
+  );
+}
+
+// 目標の書き込み（ログイン切れ・権限なし・失敗を必ず知らせる）
+async function goalWrite(method,table,body,filters="",prefer="return=representation"){
+  const {data:{session}}=await supabaseClient.auth.getSession();
+  if(!session) throw new Error("ログインの有効期限が切れています。もう一度ログインしてから保存してください。");
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/${table}${filters}`,{
+    method,headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${session.access_token}`,"Content-Type":"application/json",Prefer:prefer},
+    body:body?JSON.stringify(body):null,
+  });
+  const text=await res.text();
+  if(res.status===401) throw new Error("ログインの有効期限が切れています。もう一度ログインしてから保存してください。");
+  if(res.status===403) throw new Error("このスタッフの目標を編集する権限がありません（管理者か本人だけが編集できます）。");
+  if(res.status===404&&/staff_(goals|mandalas)/.test(text)) throw new Error("目標用のテーブルがまだ作られていません。管理者に連絡してください。");
+  if(!res.ok) throw new Error(`保存に失敗しました（HTTP ${res.status}）`);
+  return text?JSON.parse(text):[];
+}
+
+function MandalaGoalRow({g,indent,month,summaryRow,canEdit,cellTitle,onSaveResult,onEdit,onDelete}){
+const SG=window.StaffGoals;
+const input={padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"};
+const levelColor={KGI:"#dc2626",KPI:"#2563eb",KDI:"#059669"};
+  const actual=SG.actualOf(g,month,summaryRow);
+  const rate=SG.achievement(g.target,actual,g.direction);
+  const r=(g.results||{})[month]||{};
+  const [a,setA]=React.useState(r.actual??"");
+  const [m,setM]=React.useState(r.memo||"");
+  React.useEffect(()=>{ setA(r.actual??""); setM(r.memo||""); },[month,g.id]);
+  const unit=g.unit||"";
+  return(
+    <div style={{display:"grid",gridTemplateColumns:"minmax(200px,2fr) 110px 120px 150px 1fr auto",gap:8,alignItems:"center",padding:"10px 12px",borderBottom:"1px solid #f1f5f9",marginLeft:indent}}>
+      <div>
+        <span style={{fontSize:10,fontWeight:800,color:"white",background:levelColor[g.level],borderRadius:6,padding:"2px 6px",marginRight:6}}>{g.level}</span>
+        <span style={{fontWeight:700,fontSize:14}}>{g.title}</span>
+        <div style={{fontSize:11,color:"#64748b",marginTop:2}}>
+          {g.cell!==null&&g.cell!==undefined&&<>マス：{cellTitle(g.cell)}　</>}
+          指標：{(SG.METRICS[g.metric]||SG.METRICS.manual).label}{g.direction==="down"?"（少ないほど良い）":""}
+        </div>
+      </div>
+      <div style={{fontSize:13}}>目標 <b>{g.target===null||g.target===undefined?"—":`${summaryYen(g.target)}${unit}`}</b></div>
+      <div style={{fontSize:13}}>
+        {g.metric==="manual"
+          ? (canEdit?<input value={a} onChange={e=>setA(e.target.value)} inputMode="decimal" placeholder="実績" aria-label="実績" style={{...input,width:100}}/>:<span>実績 {actual===null?"—":summaryYen(actual)+unit}</span>)
+          : <span>実績 <b>{summaryYen(actual)}{unit}</b><span style={{fontSize:10,color:"#64748b"}}>（自動）</span></span>}
+      </div>
+      <div>
+        {rate===null?<span style={{fontSize:12,color:"#94a3b8"}}>達成率 —</span>:(
+          <div>
+            <div style={{fontSize:12,fontWeight:800,color:rate>=100?"#059669":rate>=70?"#d97706":"#dc2626"}}>{rate}%</div>
+            <div style={{height:6,background:"#e2e8f0",borderRadius:3}}><div style={{height:6,width:Math.min(100,rate)+"%",background:rate>=100?"#059669":rate>=70?"#f59e0b":"#ef4444",borderRadius:3}}/></div>
+          </div>
+        )}
+      </div>
+      <div>{g.metric==="manual"&&canEdit?<input value={m} onChange={e=>setM(e.target.value)} placeholder="メモ（振り返り）" aria-label="メモ" style={{...input,width:"100%"}}/>:<span style={{fontSize:12,color:"#475569"}}>{r.memo||""}</span>}</div>
+      {canEdit&&(
+        <div style={{display:"flex",gap:4}}>
+          {g.metric==="manual"&&<button onClick={()=>onSaveResult(g,a,m)} style={{...input,background:"#059669",color:"white",border:"none",fontWeight:700,cursor:"pointer"}}>保存</button>}
+          <button onClick={()=>onEdit(g)} style={{...input,background:"white",cursor:"pointer"}}>編集</button>
+          <button onClick={()=>onDelete(g)} style={{...input,background:"white",color:"#dc2626",cursor:"pointer"}}>削除</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+// 個人マンダラ・目標：3×3のマンダラ（中心＝目標、周り＝重点テーマ）と、KGI→KPI→KDI の目標を月ごとに管理する
+function StaffMandalaPanel({user,isAdmin,payments,bookings,todayStr}){
+  const SG=window.StaffGoals;
+  const staffList=goalStaffList();
+  const [staffId,setStaffId]=React.useState(staffList.some(s=>s.id===user.id)?user.id:(staffList[0]||{}).id);
+  const [year,setYear]=React.useState(Number(todayStr.slice(0,4)));
+  const [month,setMonth]=React.useState(todayStr.slice(0,7));
+  const [cells,setCells]=React.useState(SG.emptyMandala());
+  const [goals,setGoals]=React.useState([]);
+  const [loading,setLoading]=React.useState(true);
+  const [loadError,setLoadError]=React.useState("");
+  const [msg,setMsg]=React.useState("");
+  const [editCell,setEditCell]=React.useState(null); // {cell,title,memo}
+  const [form,setForm]=React.useState(null);         // 目標の追加・編集
+  const [saving,setSaving]=React.useState(false);
+  const canEdit=isAdmin||user.id===staffId;
+  const staff=staffList.find(s=>s.id===staffId)||{};
+
+  function load(){
+    if(!staffId) return;
+    setLoading(true); setLoadError("");
+    Promise.all([
+      sb.query("staff_mandalas","GET",null,`?staff_id=eq.${staffId}&year=eq.${year}`),
+      sb.query("staff_goals","GET",null,`?staff_id=eq.${staffId}&year=eq.${year}&order=sort_order.asc,id.asc`),
+    ]).then(([m,g])=>{
+      if(!Array.isArray(m)||!Array.isArray(g)){ setLoadError("目標を読み込めませんでした（目標用のテーブルが未作成の可能性があります）"); setCells(SG.emptyMandala()); setGoals([]); }
+      else { setCells(SG.normalizeCells(m[0]&&m[0].cells)); setGoals(g); }
+      setLoading(false);
+    }).catch(()=>{ setLoadError("目標を読み込めませんでした"); setLoading(false); });
+  }
+  React.useEffect(load,[staffId,year]);
+  React.useEffect(()=>{ if(month.slice(0,4)!==String(year)) setMonth(`${year}-${todayStr.slice(5,7)}`); },[year]);
+
+  // その月の個人サマリー（自動の指標に使う）
+  const summaryRow=React.useMemo(()=>{
+    const {from,to}=SG.monthRange(month);
+    return SG.summarize(payments,{from,to,storeOfBooking:bookingStoreLookup(bookings)}).find(r=>r.staffId===staffId)||null;
+  },[payments,bookings,month,staffId]);
+
+  async function saveCell(){
+    setSaving(true); setMsg("");
+    try{
+      const next=cells.map(c=>c.cell===editCell.cell?{cell:c.cell,title:editCell.title.trim(),memo:editCell.memo.trim()}:c);
+      await goalWrite("POST","staff_mandalas?on_conflict=staff_id,year",{staff_id:staffId,year,cells:next,updated_at:new Date().toISOString(),updated_by:user.id},"","resolution=merge-duplicates,return=representation");
+      setCells(next); setEditCell(null); setMsg("マンダラを保存しました");
+    }catch(e){ setMsg("⚠ "+e.message); }
+    setSaving(false);
+  }
+
+  function openNew(level,extra={}){
+    const kgi=goals.find(g=>g.level==="KGI");
+    setForm({id:null,level,title:"",cell:level==="KGI"?0:(extra.cell??1),parent_id:extra.parent_id??(level==="KPI"&&kgi?kgi.id:null),metric:"manual",target:"",unit:"",direction:"up"});
+  }
+  async function saveGoal(){
+    if(!form.title.trim()){ setMsg("⚠ 目標の名前を入れてください"); return; }
+    setSaving(true); setMsg("");
+    try{
+      const unit=form.metric!=="manual"?SG.METRICS[form.metric].unit:form.unit;
+      const body={staff_id:staffId,year,level:form.level,cell:form.cell===""||form.cell===null?null:Number(form.cell),parent_id:form.parent_id?Number(form.parent_id):null,
+        title:form.title.trim(),metric:form.metric,target:form.target===""?null:Number(form.target),unit,direction:form.direction,updated_at:new Date().toISOString(),updated_by:user.id};
+      if(form.id) await goalWrite("PATCH","staff_goals",body,`?id=eq.${form.id}`);
+      else await goalWrite("POST","staff_goals",{...body,sort_order:goals.length});
+      setForm(null); setMsg("目標を保存しました"); load();
+    }catch(e){ setMsg("⚠ "+e.message); }
+    setSaving(false);
+  }
+  function editGoal(g){ setForm({...g,target:g.target??"",cell:g.cell??"",parent_id:g.parent_id??""}); }
+  async function deleteGoal(g){
+    if(!confirm(`「${g.title}」を削除しますか？（この目標の実績の記録も消えます）`)) return;
+    try{ await goalWrite("DELETE","staff_goals",null,`?id=eq.${g.id}`); setMsg("削除しました"); load(); }catch(e){ setMsg("⚠ "+e.message); }
+  }
+  async function saveResult(g,actual,memo){
+    try{
+      const results={...(g.results||{}),[month]:{actual:actual===""?null:Number(actual),memo:memo||""}};
+      await goalWrite("PATCH","staff_goals",{results,updated_at:new Date().toISOString(),updated_by:user.id},`?id=eq.${g.id}`);
+      setGoals(prev=>prev.map(x=>x.id===g.id?{...x,results}:x)); setMsg("実績を保存しました");
+    }catch(e){ setMsg("⚠ "+e.message); }
+  }
+
+  const months=Array.from({length:12},(_,i)=>`${year}-${String(i+1).padStart(2,"0")}`);
+  const kgis=goals.filter(g=>g.level==="KGI");
+  const kpis=goals.filter(g=>g.level==="KPI");
+  const kdis=goals.filter(g=>g.level==="KDI");
+  const cellTitle=i=>cells[i]&&cells[i].title?cells[i].title:(i===0?"目標（KGI）":`テーマ${i}`);
+  const input={padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontFamily:"inherit"};
+  const levelColor={KGI:"#dc2626",KPI:"#2563eb",KDI:"#059669"};
+
+  return(
+    <div style={{padding:16,maxWidth:1200,margin:"0 auto"}}>
+      <div style={{fontSize:22,fontWeight:900,color:"#0f172a",marginBottom:4}}>個人マンダラ・目標</div>
+      <div style={{fontSize:12,color:"#64748b",marginBottom:14}}>中心に1年の目標（KGI）、周りの8マスに重点テーマを書き、テーマごとの重要指標（KPI）と毎月の行動目標（KDI）で進み具合を見ます。編集できるのは本人と管理者です。</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",background:"white",padding:12,borderRadius:12,marginBottom:12,border:"1px solid #e2e8f0"}}>
+        <select value={staffId||""} onChange={e=>setStaffId(Number(e.target.value))} aria-label="スタッフ" style={input}>
+          {staffList.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <select value={year} onChange={e=>setYear(Number(e.target.value))} aria-label="年" style={input}>
+          {[year-1,year,year+1].map(y=><option key={y} value={y}>{y}年</option>)}
+        </select>
+        <select value={month} onChange={e=>setMonth(e.target.value)} aria-label="実績を見る月" style={input}>
+          {months.map(m=><option key={m} value={m}>{Number(m.slice(5))}月の実績</option>)}
+        </select>
+        {!canEdit&&<span style={{fontSize:12,color:"#64748b"}}>（閲覧のみ）</span>}
+        {msg&&<span style={{fontSize:13,fontWeight:700,color:msg.startsWith("⚠")?"#dc2626":"#059669"}}>{msg}</span>}
+      </div>
+      {loadError&&<div style={{background:"#fef2f2",color:"#b91c1c",padding:12,borderRadius:10,marginBottom:12,fontSize:13}}>{loadError}</div>}
+      {loading?<div style={{padding:24,textAlign:"center",color:"#94a3b8"}}>読み込み中...</div>:(
+        <>
+          {/* マンダラ 3×3 */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,maxWidth:720,margin:"0 auto 18px"}}>
+            {SG.MANDALA_GRID.map(i=>{
+              const c=cells[i];
+              const center=i===0;
+              const kpiCount=kpis.filter(g=>g.cell===i).length;
+              return(
+                <div key={i} onClick={()=>canEdit&&setEditCell({cell:i,title:c.title,memo:c.memo})}
+                  style={{minHeight:110,borderRadius:12,padding:10,cursor:canEdit?"pointer":"default",border:center?"2px solid #dc2626":"1.5px solid #cbd5e1",background:center?"#fef2f2":"white",display:"flex",flexDirection:"column",justifyContent:"center",textAlign:"center"}}>
+                  <div style={{fontSize:10,color:center?"#dc2626":"#64748b",fontWeight:800}}>{center?`${staff.name||""} の目標（KGI）`:`テーマ ${i}`}</div>
+                  <div style={{fontSize:center?16:14,fontWeight:800,color:c.title?"#0f172a":"#cbd5e1",marginTop:4,whiteSpace:"pre-wrap"}}>{c.title||(canEdit?"押して入力":"未設定")}</div>
+                  {c.memo&&<div style={{fontSize:11,color:"#64748b",marginTop:4,whiteSpace:"pre-wrap"}}>{c.memo}</div>}
+                  {!center&&kpiCount>0&&<div style={{fontSize:10,color:"#2563eb",marginTop:4}}>KPI {kpiCount}件</div>}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* KGI → KPI → KDI */}
+          <div style={{background:"white",borderRadius:12,border:"1px solid #e2e8f0",marginBottom:12}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 14px",borderBottom:"1px solid #e2e8f0"}}>
+              <div style={{fontWeight:800}}>目標と実績（{Number(month.slice(5))}月）</div>
+              {canEdit&&(
+                <div style={{display:"flex",gap:6}}>
+                  <button onClick={()=>openNew("KGI")} style={{...input,cursor:"pointer",color:levelColor.KGI,fontWeight:700}}>＋ KGI</button>
+                  <button onClick={()=>openNew("KPI")} style={{...input,cursor:"pointer",color:levelColor.KPI,fontWeight:700}}>＋ KPI</button>
+                  <button onClick={()=>openNew("KDI",{parent_id:kpis[0]&&kpis[0].id,cell:kpis[0]?kpis[0].cell:1})} style={{...input,cursor:"pointer",color:levelColor.KDI,fontWeight:700}}>＋ KDI</button>
+                </div>
+              )}
+            </div>
+            {goals.length===0&&<div style={{padding:20,fontSize:13,color:"#94a3b8",textAlign:"center"}}>まだ目標がありません。{canEdit?"上のボタンから KGI（最終目標）→ KPI（重要指標）→ KDI（行動目標）の順に追加してください。":""}</div>}
+            {kgis.map(g=><MandalaGoalRow key={g.id} g={g} indent={0} month={month} summaryRow={summaryRow} canEdit={canEdit} cellTitle={cellTitle} onSaveResult={saveResult} onEdit={editGoal} onDelete={deleteGoal}/>)}
+            {kpis.map(k=>(
+              <React.Fragment key={k.id}>
+                <MandalaGoalRow g={k} indent={16} month={month} summaryRow={summaryRow} canEdit={canEdit} cellTitle={cellTitle} onSaveResult={saveResult} onEdit={editGoal} onDelete={deleteGoal}/>
+                {kdis.filter(d=>d.parent_id===k.id).map(d=><MandalaGoalRow key={d.id} g={d} indent={36} month={month} summaryRow={summaryRow} canEdit={canEdit} cellTitle={cellTitle} onSaveResult={saveResult} onEdit={editGoal} onDelete={deleteGoal}/>)}
+              </React.Fragment>
+            ))}
+            {kdis.filter(d=>!kpis.some(k=>k.id===d.parent_id)).map(d=><MandalaGoalRow key={d.id} g={d} indent={16} month={month} summaryRow={summaryRow} canEdit={canEdit} cellTitle={cellTitle} onSaveResult={saveResult} onEdit={editGoal} onDelete={deleteGoal}/>)}
+          </div>
+          <div style={{fontSize:11,color:"#64748b",lineHeight:1.7}}>
+            KGI＝最終的に達成したい目標（例：月の総合売上 120万円）。KPI＝KGIにつながる重要な指標（例：新規客数 15人、客単価 5,000円）。KDI＝毎月の行動の目標（例：回数券の提案 30件）。<br/>
+            指標を「総合売上」「客数」などにすると、個人サマリーと同じ数字が実績に自動で入ります。「手入力」は毎月の実績を入力して保存します。
+          </div>
+        </>
+      )}
+
+      {editCell&&(
+        <div className="modal-overlay" onClick={e=>{if(e.target===e.currentTarget)setEditCell(null);}}>
+          <div className="modal-box" style={{maxWidth:460}}>
+            <div className="modal-header" style={{background:"linear-gradient(135deg,#0f2744,#1e4d8c)"}}><div style={{fontWeight:800,color:"white"}}>{editCell.cell===0?"中心：目標（KGI）":`テーマ ${editCell.cell}`}</div></div>
+            <div style={{padding:16,display:"grid",gap:10}}>
+              <label style={{fontSize:12,fontWeight:700}}>タイトル<textarea value={editCell.title} onChange={e=>setEditCell({...editCell,title:e.target.value})} rows={2} maxLength={80} style={{...input,width:"100%",marginTop:4}} placeholder={editCell.cell===0?"例：指名No.1・月売上120万円":"例：新規の方の継続率を上げる"}/></label>
+              <label style={{fontSize:12,fontWeight:700}}>メモ（具体的にやること）<textarea value={editCell.memo} onChange={e=>setEditCell({...editCell,memo:e.target.value})} rows={3} maxLength={300} style={{...input,width:"100%",marginTop:4}}/></label>
+              <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                <button onClick={()=>setEditCell(null)} style={{...input,background:"white",cursor:"pointer"}}>キャンセル</button>
+                <button onClick={saveCell} disabled={saving} style={{...input,background:"#059669",color:"white",border:"none",fontWeight:800,cursor:"pointer"}}>{saving?"保存中...":"保存"}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {form&&(
+        <div className="modal-overlay" onClick={e=>{if(e.target===e.currentTarget)setForm(null);}}>
+          <div className="modal-box" style={{maxWidth:520}}>
+            <div className="modal-header" style={{background:levelColor[form.level]}}><div style={{fontWeight:800,color:"white"}}>{SG.LEVELS[form.level]}{form.id?"の編集":"を追加"}</div></div>
+            <div style={{padding:16,display:"grid",gap:10}}>
+              <label style={{fontSize:12,fontWeight:700}}>区分
+                <select value={form.level} onChange={e=>setForm({...form,level:e.target.value})} style={{...input,width:"100%",marginTop:4}}>
+                  {Object.entries(SG.LEVELS).map(([k,l])=><option key={k} value={k}>{l}</option>)}
+                </select>
+              </label>
+              <label style={{fontSize:12,fontWeight:700}}>目標の名前<input value={form.title} onChange={e=>setForm({...form,title:e.target.value})} maxLength={200} style={{...input,width:"100%",marginTop:4}} placeholder={form.level==="KGI"?"例：月の総合売上":form.level==="KPI"?"例：新規客数":"例：回数券の提案件数"}/></label>
+              {form.level!=="KGI"&&(
+                <label style={{fontSize:12,fontWeight:700}}>マンダラのマス
+                  <select value={form.cell??""} onChange={e=>setForm({...form,cell:e.target.value})} style={{...input,width:"100%",marginTop:4}}>
+                    {[1,2,3,4,5,6,7,8].map(i=><option key={i} value={i}>{i}：{cellTitle(i)}</option>)}
+                  </select>
+                </label>
+              )}
+              {form.level!=="KGI"&&(
+                <label style={{fontSize:12,fontWeight:700}}>つながる上の目標
+                  <select value={form.parent_id??""} onChange={e=>setForm({...form,parent_id:e.target.value})} style={{...input,width:"100%",marginTop:4}}>
+                    <option value="">なし</option>
+                    {goals.filter(g=>g.id!==form.id&&g.level===(form.level==="KPI"?"KGI":"KPI")).map(g=><option key={g.id} value={g.id}>{g.level}：{g.title}</option>)}
+                  </select>
+                </label>
+              )}
+              <label style={{fontSize:12,fontWeight:700}}>指標（実績の取り方）
+                <select value={form.metric} onChange={e=>setForm({...form,metric:e.target.value})} style={{...input,width:"100%",marginTop:4}}>
+                  {Object.entries(SG.METRICS).map(([k,m])=><option key={k} value={k}>{k==="manual"?"手入力（毎月入力）":`${m.label}（自動）`}</option>)}
+                </select>
+              </label>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                <label style={{fontSize:12,fontWeight:700}}>月の目標<input value={form.target} onChange={e=>setForm({...form,target:e.target.value})} inputMode="decimal" style={{...input,width:"100%",marginTop:4}}/></label>
+                <label style={{fontSize:12,fontWeight:700}}>単位<input value={form.metric!=="manual"?SG.METRICS[form.metric].unit:form.unit} disabled={form.metric!=="manual"} onChange={e=>setForm({...form,unit:e.target.value})} maxLength={10} placeholder="件・回・%" style={{...input,width:"100%",marginTop:4}}/></label>
+                <label style={{fontSize:12,fontWeight:700}}>良い方向
+                  <select value={form.direction} onChange={e=>setForm({...form,direction:e.target.value})} style={{...input,width:"100%",marginTop:4}}>
+                    <option value="up">多いほど良い</option><option value="down">少ないほど良い</option>
+                  </select>
+                </label>
+              </div>
+              <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                <button onClick={()=>setForm(null)} style={{...input,background:"white",cursor:"pointer"}}>キャンセル</button>
+                <button onClick={saveGoal} disabled={saving} style={{...input,background:levelColor[form.level],color:"white",border:"none",fontWeight:800,cursor:"pointer"}}>{saving?"保存中...":"保存"}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const STAFF_KPI_START="2026-10-05";
 function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainingMode,onOpenPatient}){
   const [openRow,setOpenRow]=React.useState(null); // 内訳を開いている行（「表の名前|スタッフID」）
@@ -13566,13 +14079,21 @@ function AttendancePunchPanel({currentUser,isAdmin}){
   }
   function fmtHM(h){ const m=Math.round(h*60); return `${Math.floor(m/60)}:${String(m%60).padStart(2,"0")}`; }
 
-  // 集計する期間（開始月〜終了月。逆に選んだ場合は入れ替える）
-  const fromM=selMonth<=endMonth?selMonth:endMonth, toM=selMonth<=endMonth?endMonth:selMonth;
+  // 集計する期間：「月で選ぶ」（開始月〜終了月）か「日付で選ぶ」（開始日〜終了日）。逆に選んだ場合は入れ替える
+  const [rangeMode,setRangeMode]=React.useState("month");
+  const [fromDate,setFromDate]=React.useState(()=>{const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-01`;});
+  const [toDate,setToDate]=React.useState(()=>todayStrLocal);
+  const fromD0=rangeMode==="date"?(fromDate<=toDate?fromDate:toDate):null, toD0=rangeMode==="date"?(fromDate<=toDate?toDate:fromDate):null;
+  const fromM=rangeMode==="date"?fromD0.slice(0,7):(selMonth<=endMonth?selMonth:endMonth), toM=rangeMode==="date"?toD0.slice(0,7):(selMonth<=endMonth?endMonth:selMonth);
+  const fromD=rangeMode==="date"?fromD0:`${fromM}-01`;
+  const toD=rangeMode==="date"?toD0:(()=>{ const [y,m]=toM.split("-").map(Number); return `${toM}-${String(new Date(y,m,0).getDate()).padStart(2,"0")}`; })();
   const rangeMonths=(()=>{ const out=[]; let [y,m]=fromM.split("-").map(Number); const [ty,tm]=toM.split("-").map(Number); while((y<ty||(y===ty&&m<=tm))&&out.length<60){ out.push(`${y}-${String(m).padStart(2,"0")}`); m++; if(m>12){m=1;y++;} } return out; })();
-  const rangeLabel=fromM===toM?`${Number(fromM.slice(0,4))}年${Number(fromM.slice(5))}月`:`${Number(fromM.slice(0,4))}年${Number(fromM.slice(5))}月〜${Number(toM.slice(0,4))}年${Number(toM.slice(5))}月`;
+  const fmtJD=d=>`${Number(d.slice(0,4))}年${Number(d.slice(5,7))}月${Number(d.slice(8,10))}日`;
+  const rangeDays=Math.round((new Date(toD+"T00:00:00")-new Date(fromD+"T00:00:00"))/86400000)+1;
+  const rangeLabel=rangeMode==="date"?(fromD===toD?fmtJD(fromD):`${fmtJD(fromD)}〜${fmtJD(toD)}`):fromM===toM?`${Number(fromM.slice(0,4))}年${Number(fromM.slice(5))}月`:`${Number(fromM.slice(0,4))}年${Number(fromM.slice(5))}月〜${Number(toM.slice(0,4))}年${Number(toM.slice(5))}月`;
   const ymNow=(off)=>{ const d=new Date(); d.setDate(1); d.setMonth(d.getMonth()+off); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
-  const setRange=(f,t)=>{ setSelMonth(f); setEndMonth(t); };
-  const monthRecords=records.filter(r=>r.date&&r.date.slice(0,7)>=fromM&&r.date.slice(0,7)<=toM);
+  const setRange=(f,t)=>{ setRangeMode("month"); setSelMonth(f); setEndMonth(t); };
+  const monthRecords=records.filter(r=>r.date&&r.date>=fromD&&r.date<=toD);
 
   // スタッフ別の月間合計時間
   const totalsByStaff={};
@@ -13653,7 +14174,7 @@ function AttendancePunchPanel({currentUser,isAdmin}){
       const breakTimes=breaksOf(r).map(b=>`${fmtTime(b.start)}〜${b.end?fmtTime(b.end):"休憩中"}`).join(" / ");
       return[s.name,r.date,fmtTime(r.clock_in),fmtTime(r.clock_out),breakTimes,breakHoursOf(r).toFixed(2),h!=null?h.toFixed(2):""];
     });
-    downloadCSV("勤怠記録_"+(fromM===toM?fromM:fromM+"〜"+toM)+".csv",toCSV(rows,headers));
+    downloadCSV("勤怠記録_"+(rangeMode==="date"?fromD+"〜"+toD:(fromM===toM?fromM:fromM+"〜"+toM))+".csv",toCSV(rows,headers));
   }
 
   const bigBtn=(bg,shadow)=>({padding:"16px 10px",flex:1,minWidth:120,background:bg,color:"white",border:"none",borderRadius:14,fontSize:15,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:`0 4px 14px ${shadow}`});
@@ -13733,16 +14254,26 @@ function AttendancePunchPanel({currentUser,isAdmin}){
           <div>
             <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:8}}>📊 月間勤務時間集計（全スタッフ・休憩を除く実働）</div>
             <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-              <span style={{fontSize:12,fontWeight:700,color:"#64748b"}}>対象月</span>
-              <input type="month" aria-label="集計の開始月" value={selMonth} onChange={e=>e.target.value&&setSelMonth(e.target.value)}
-                style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700}}/>
-              <span style={{fontWeight:700,color:"#64748b"}}>〜</span>
-              <input type="month" aria-label="集計の終了月" value={endMonth} onChange={e=>e.target.value&&setEndMonth(e.target.value)}
-                style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700}}/>
-              {[["今月",0,0],["先月",-1,-1],["直近3か月",-2,0],["直近6か月",-5,0]].map(([l,f,t])=>{ const on=fromM===ymNow(f)&&toM===ymNow(t);
+              <span style={{display:"inline-flex",border:"1.5px solid #e2e8f0",borderRadius:8,overflow:"hidden"}}>
+                {[["month","月で選ぶ"],["date","日付で選ぶ"]].map(([k,l])=><button key={k} type="button" onClick={()=>setRangeMode(k)} aria-pressed={rangeMode===k} style={{padding:"6px 10px",border:"none",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",background:rangeMode===k?"#1e3a5f":"white",color:rangeMode===k?"white":"#475569"}}>{l}</button>)}
+              </span>
+              {rangeMode==="month"?<>
+                <input type="month" aria-label="集計の開始月" value={selMonth} onChange={e=>e.target.value&&setSelMonth(e.target.value)}
+                  style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700}}/>
+                <span style={{fontWeight:700,color:"#64748b"}}>〜</span>
+                <input type="month" aria-label="集計の終了月" value={endMonth} onChange={e=>e.target.value&&setEndMonth(e.target.value)}
+                  style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700}}/>
+              </>:<>
+                <input type="date" aria-label="集計の開始日" value={fromDate} onChange={e=>e.target.value&&setFromDate(e.target.value)}
+                  style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700}}/>
+                <span style={{fontWeight:700,color:"#64748b"}}>〜</span>
+                <input type="date" aria-label="集計の終了日" value={toDate} onChange={e=>e.target.value&&setToDate(e.target.value)}
+                  style={{padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700}}/>
+              </>}
+              {[["今月",0,0],["先月",-1,-1],["直近3か月",-2,0],["直近6か月",-5,0]].map(([l,f,t])=>{ const on=rangeMode==="month"&&fromM===ymNow(f)&&toM===ymNow(t);
                 return <button key={l} type="button" onClick={()=>setRange(ymNow(f),ymNow(t))} style={{padding:"5px 10px",borderRadius:14,fontSize:11.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",border:"1.5px solid "+(on?"#1e3a5f":"#e2e8f0"),background:on?"#1e3a5f":"white",color:on?"white":"#475569"}}>{l}</button>; })}
             </div>
-            <div style={{fontSize:12,color:"#64748b",marginTop:6}}>集計期間：<b style={{color:"#1e3a5f"}}>{rangeLabel}</b>（{rangeMonths.length}か月）</div>
+            <div style={{fontSize:12,color:"#64748b",marginTop:6}}>集計期間：<b style={{color:"#1e3a5f"}}>{rangeLabel}</b>（{rangeMode==="date"?`${rangeDays}日間`:`${rangeMonths.length}か月`}）</div>
           </div>
           <button onClick={exportCSV} style={{padding:"9px 16px",background:"#059669",color:"white",border:"none",borderRadius:8,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>⬇ CSVダウンロード</button>
         </div>
@@ -14294,6 +14825,11 @@ function Dashboard({user,onLogout}){
     setView("patients");
   }
   const [allPayments,setAllPayments]=React.useState([]);
+  const [patientMarks,setPatientMarks]=React.useState({}); // {名前（空白なし）: 口コミ・鍼灸保険の印}
+  const loadPatientMarks=React.useCallback(()=>{
+    sb.select("patient_marks").then(rows=>{ if(Array.isArray(rows)){ const m={}; rows.forEach(r=>{ m[r.patient_key]=r; }); setPatientMarks(m); } }).catch(()=>{});
+  },[]);
+  const updatePatientMark=row=>setPatientMarks(prev=>({...prev,[row.patient_key]:row}));
   const [allRefunds,setAllRefunds]=React.useState([]);
   const payments=React.useMemo(()=>allPayments.filter(p=>!!p.is_training===trainingMode),[allPayments,trainingMode]);
   // 返金（取消されていないもの）。売上集計では「返金日にマイナスの会計」として扱う
@@ -14350,15 +14886,16 @@ function Dashboard({user,onLogout}){
       if(next===base){
         await sb.query("staff_date_lanes","DELETE",null,`?staff_id=eq.${staffId}&date=eq.${dateStr}`);
       }else{
-        const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
-        await fetch(`${SUPABASE_URL}/rest/v1/staff_date_lanes?on_conflict=staff_id,date`,{
+        const token=await writeToken();
+        await ensureOk(await fetch(`${SUPABASE_URL}/rest/v1/staff_date_lanes?on_conflict=staff_id,date`,{
           method:"POST",
           headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates"},
           body:JSON.stringify({staff_id:staffId,date:dateStr,lane_count:next}),
-        });
+        }));
       }
     }catch(e){
       console.error("レーン数の保存に失敗しました",e);
+      alert("レーン数の保存に失敗しました：\n"+(e.message||"不明なエラー"));
     }
   }
   React.useEffect(()=>{
@@ -14370,6 +14907,7 @@ function Dashboard({user,onLogout}){
 
   async function fetchAll(){
     reloadRefunds();
+    loadPatientMarks();
     // シフト・目標などの共有設定も30秒ごとに取り込む（他の通信を止めないようawaitはしない）
     sharedSettings.pull().catch(()=>{});
     const startedAt=Date.now();
@@ -14810,7 +15348,7 @@ function Dashboard({user,onLogout}){
   async function cancelBooking(reason,rebookInfo){
     if(!cancelModalBooking) return;
     try{
-      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      const token=await writeToken();
       const res=await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${cancelModalBooking.id}`,{
         method:"PATCH",
         headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
@@ -14874,7 +15412,7 @@ function Dashboard({user,onLogout}){
   }
   async function restoreBooking(id){
     try{
-      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      const token=await writeToken();
       const res=await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${id}`,{
         method:"PATCH",
         headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,"Content-Type":"application/json",Prefer:"return=representation"},
@@ -14898,7 +15436,7 @@ function Dashboard({user,onLogout}){
 
   async function deleteCancelledBooking(id){
     try{
-      const token=(await supabaseClient.auth.getSession()).data.session?.access_token||SUPABASE_ANON_KEY;
+      const token=await writeToken();
       const res=await fetch(`${SUPABASE_URL}/rest/v1/bookings?id=eq.${id}`,{
         method:"DELETE",
         headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${token}`,Prefer:"return=representation"},
@@ -15242,6 +15780,7 @@ function Dashboard({user,onLogout}){
       {id:"daily_report",label:"日計表（自動集計）",icon:"bar-chart",special:""},
       {id:"stats",label:"予約分析・サマリー",icon:"bar-chart",special:""},
       {id:"staff_kpi",label:"スタッフKPI管理",icon:"trending",special:""},
+      {id:"staff_summary",label:"個人サマリー（売上・客数・客単価）",icon:"bar-chart",special:""},
     ]},
     {id:"money",label:"お金・会計",color:"#b45309",items:[
       {id:"money_calc",label:"当日の会計明細・金額計算・小口",icon:"receipt",special:""},
@@ -15268,6 +15807,7 @@ function Dashboard({user,onLogout}){
     ]},
     {id:"staff",label:"スタッフ",color:"#d97706",defaultCollapsed:true,items:[
       {id:"staff_mgmt",label:"スタッフ・シフト管理",icon:"users-cog",special:""},
+      {id:"staff_mandala",label:"個人マンダラ・目標（KGI・KPI・KDI）",icon:"trending",special:""},
       {id:"attendance",label:"勤怠管理",icon:"clock",special:""},
       {id:"learning",label:"学習カリキュラム",icon:"clipboard-list",special:""},
     ]},
@@ -15824,6 +16364,7 @@ function Dashboard({user,onLogout}){
                                           }}
                                           title={(sp?`${sp.icon}${sp.label}の予約\n`:"")+"ダブルクリックで患者情報を見る"}
                                           style={{fontWeight:800,fontSize:12,color:"white",textShadow:"0 1px 2px rgba(0,0,0,.55)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",letterSpacing:0.2,textDecoration:"underline",textDecorationColor:"rgba(255,255,255,.35)",textUnderlineOffset:2,cursor:"pointer"}}>{sp&&<span style={{display:"inline-block",background:"white",color:sp.color,borderRadius:4,padding:"0 3px",marginRight:3,fontSize:10,fontWeight:900,textShadow:"none",textDecoration:"none",verticalAlign:"1px"}}>{sp.icon}{sp.label}</span>}{isCheckedIn?"📷":""}{isPaid?"✓ ":""}{b.patient_name}</div>
+                                        {patientMarks[patientMarkKey(b.patient_name)]&&<div style={{lineHeight:1,whiteSpace:"nowrap",overflow:"hidden",marginTop:1}}><PatientMarkChips mark={patientMarks[patientMarkKey(b.patient_name)]}/></div>}
                                         {/* 時間などの詳細は、普段は隠して名前だけのすっきり表示にし、バーをタップ（予約ポップアップ表示中）または対応時間をリサイズ中だけ表示する */}
                                         {(isBeingResized||(bookingPopup&&bookingPopup.booking&&bookingPopup.booking.id===b.id))&&(
                                         <div style={{fontSize:10,color:"rgba(255,255,255,.95)",textShadow:"0 1px 2px rgba(0,0,0,.45)",fontWeight:700}}>{b.time}{cnt>1&&<span style={{marginLeft:2,background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}{isBeingResized&&<span style={{marginLeft:2,fontWeight:800}}>{Math.max(10,(b.duration||DURATION[b.menu]||30)+Math.round(resizeDeltaPx/CELL_W)*10)}分</span>}</div>
@@ -15891,6 +16432,8 @@ function Dashboard({user,onLogout}){
           {view==="churn_alert"&&<ChurnAlertPanel bookings={bookings} todayStr={todayStr}/>}
                     {view==="line_link_check"&&<LineLinkCheckPanel bookings={bookings}/>}
                              {view==="staff_kpi"&&<StaffKPIPanel onOpenPatient={openPatientByName} bookings={bookings} payments={paymentsNet} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr} trainingMode={trainingMode}/>}
+                             {view==="staff_summary"&&<StaffSummaryPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}
+                             {view==="staff_mandala"&&<StaffMandalaPanel user={user} isAdmin={isAdmin} payments={paymentsNet} bookings={bookings} todayStr={todayStr}/>}
                              {view==="pass_holders"&&<PassHoldersPanel payments={payments} bookings={bookings} refunds={refunds} trainingMode={trainingMode} onOpenPatient={openPatientByName}/>}
                              {view==="referral_mgmt"&&<ReferralMgmtPanel bookings={bookings} payments={payments}/>}
                     {view==="cancelled_list"&&<CancelledListPanel bookings={bookings} todayStr={todayStr} onRestore={restoreBooking} onDelete={deleteCancelledBooking}/>}
@@ -16090,6 +16633,12 @@ function Dashboard({user,onLogout}){
                 {isReadOnlyReal&&<div style={{fontSize:10,fontWeight:800,color:"#1e293b",background:"#fff",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4}}>🔒 本番の予約（閲覧のみ）</div>}
               </div>
               {!isReadOnlyReal&&(
+                <div style={{padding:"8px 10px",borderBottom:"1px solid #f1f5f9"}}>
+                  <PatientMarkEditor compact name={b.patient_name} mark={patientMarks[patientMarkKey(b.patient_name)]} staffId={user&&user.id}
+                    onSaved={row=>{ updatePatientMark(row); showToast("口コミ・鍼灸保険の印を保存しました"); }}/>
+                </div>
+              )}
+              {!isReadOnlyReal&&(
                            <QuickMemoEditor key={b.id} booking={b} onSave={async(val)=>{
                 try{
                   const result=await sb.update("bookings",b.id,{memo:val||null});
@@ -16226,19 +16775,50 @@ function App(){
     restoreSession();
   },[]);
 
+  // ログインの有効期限切れ（別の端末でのログアウトなど）を検知したら、再ログインを促す。
+  // 画面だけログイン中のまま保存すると、保存されずに消えてしまうため。
+  const [loginExpired,setLoginExpired]=React.useState(false);
+  React.useEffect(()=>{
+    if(!user) return;
+    const onExpired=()=>setLoginExpired(true);
+    window.addEventListener("ando-login-expired",onExpired);
+    const {data:{subscription}}=supabaseClient.auth.onAuthStateChange((event)=>{ if(event==="SIGNED_OUT") onExpired(); });
+    const timer=setInterval(()=>{ sb.getSession().then(s=>{ if(!s) onExpired(); }).catch(()=>{}); },60000);
+    return ()=>{ window.removeEventListener("ando-login-expired",onExpired); subscription.unsubscribe(); clearInterval(timer); };
+  },[user]);
+
   function handleLogin(u){
     try{sessionStorage.setItem("ando_user",JSON.stringify(u));}catch{}
+    setLoginExpired(false);
     setUser(u);
   }
   function handleLogout(){
     try{sessionStorage.removeItem("ando_user");}catch{}
-    sb.logout();
     setUser(null);
+    sb.logout();
   }
 
   if(checking)return(<div className="loading"><div className="loading-spinner"></div><div style={{fontWeight:700,color:"#1e3a5f",fontSize:14}}>確認中...</div></div>);
   if(!user)return <LoginScreen onLogin={handleLogin}/>;
-  return <Dashboard user={user} onLogout={handleLogout}/>;
+  return(
+    <>
+      <Dashboard user={user} onLogout={handleLogout}/>
+      {loginExpired&&(
+        <div className="modal-overlay" style={{zIndex:10000}}>
+          <div className="modal-box" style={{maxWidth:420}} role="alertdialog" aria-label="ログインの有効期限切れ">
+            <div className="modal-header" style={{background:"linear-gradient(135deg,#dc2626,#b91c1c)"}}>
+              <div style={{fontWeight:800,fontSize:16,color:"white"}}>もう一度ログインしてください</div>
+            </div>
+            <div style={{padding:20,fontSize:14,lineHeight:1.8,color:"#374151"}}>
+              ログインの有効期限が切れました（別の端末でログアウトした場合などに起こります）。<br/>
+              このままでは変更が保存されません。ログインし直してから、もう一度入力・保存してください。
+              <button onClick={handleLogout} style={{display:"block",width:"100%",marginTop:16,padding:"12px",background:"#1e3a5f",color:"white",border:"none",borderRadius:8,fontWeight:800,fontSize:15,cursor:"pointer"}}>ログイン画面へ</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
