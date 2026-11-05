@@ -113,3 +113,30 @@ test("評価項目の目標をマニュアル項目に付ける", () => {
   assert.equal(m.eval.direction, "以下");
   assert.equal(attachEval(DEFAULT_MANUAL, items).find((x) => x.id === "c_greeting").eval.kind, "基本");
 });
+
+import { DEFAULT_BEHAVIOR, BEHAVIOR_CHAPTERS, parseBehavior, behaviorRows, parseScripts, scriptsText, validateBehavior, chaptersOf } from "../lib/behavior-manual.js";
+
+test("行動マニュアル：初期値はIDが重複せず、全章に項目があり、シートに書いて読み直すと同じ", () => {
+  const ids = DEFAULT_BEHAVIOR.map((b) => b.id);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.deepEqual(chaptersOf(DEFAULT_BEHAVIOR), BEHAVIOR_CHAPTERS);
+  for (const b of DEFAULT_BEHAVIOR) assert.ok(b.actions.length + b.rules.length + b.scripts.length > 0, b.id);
+  const back = parseBehavior(behaviorRows(DEFAULT_BEHAVIOR));
+  assert.equal(back.length, DEFAULT_BEHAVIOR.length);
+  for (let i = 0; i < back.length; i++) {
+    const { by, at, ...a } = back[i];
+    const { by: _b, at: _a, ...e } = DEFAULT_BEHAVIOR[i];
+    assert.deepEqual(a, e, DEFAULT_BEHAVIOR[i].id);
+  }
+});
+
+test("行動マニュアル：トーク例は「■見出し」で区切る・入力チェック", () => {
+  const s = parseScripts("■A\n一行目\n二行目\n■B\nbbb");
+  assert.deepEqual(s, [{ label: "A", text: "一行目\n二行目" }, { label: "B", text: "bbb" }]);
+  assert.deepEqual(parseScripts(scriptsText(s)), s);
+  const v = validateBehavior({ id: "x1", title: "電話", chapter: "5. 電話・受付対応", area: "?", actions: "・3コール以内\n\n⭐メモを残す", scripts: "本文だけ" });
+  assert.equal(v.area, "社会人");
+  assert.deepEqual(v.actions, ["3コール以内", "メモを残す"]);
+  assert.deepEqual(v.scripts, [{ label: "", text: "本文だけ" }]);
+  assert.throws(() => validateBehavior({ id: "x1", title: "", chapter: "a" }), /タイトル/);
+});
