@@ -1,6 +1,6 @@
 # システム構成 — AND GROUP MANAGEMENT SYSTEM
 
-設計案 0.1（**未承認**）。要件は [requirements.md](./requirements.md)。
+設計案 0.2（**未承認**。2026-11-05 の回答を反映）。要件は [requirements.md](./requirements.md)。
 
 ## 1. 全体構成
 
@@ -13,10 +13,14 @@ flowchart LR
     N["Next.js App Router<br/>Server Components / Server Actions<br/>Route Handlers"]
     C["Vercel Cron<br/>（日次ジョブ）"]
   end
-  subgraph Supabase["Supabase（専用プロジェクト案：Q-15）"]
-    A["Supabase Auth"]
-    P[("PostgreSQL<br/>RLS・RPC関数<br/>監査ログ")]
+  subgraph Supabase["Supabase（既存プロジェクト・無料プラン）"]
+    A["Supabase Auth<br/>（POSと共通のID・PASS）"]
+    P[("mgmt スキーマ（新システム）<br/>RLS・RPC関数・監査ログ")]
+    POS[("public スキーマ（既存POS）<br/>clinic_staff・meetings・action_items<br/>attendance_records・app_settings")]
   end
+  POSUI["既存のPOS画面<br/>（香里園駅前院・茨木院）"] --> POS
+  P <-- "連携（ビュー・トリガー・RPC）" --> POS
+  SH["Googleスプレッドシート台帳<br/>（等級・院）"] -. "役職の取り込み（手動実行）" .-> N
   B -- "HTTPS（Cookieセッション）" --> N
   N -- "ユーザーのJWTで呼び出し<br/>（RLSが効く）" --> P
   N -- "ログイン" --> A
@@ -30,7 +34,7 @@ flowchart LR
 | 業務ルールの最終防衛線 | PostgreSQL の RPC 関数（plpgsql）＋ RLS | 承認順序・自己承認禁止・残数計算・排他制御をDBで強制 |
 | 認証 | Supabase Auth | 個人アカウント（方式は Q-7） |
 | 定期処理 | Vercel Cron（日次） | 議事録期限・有給期限・年5日の通知、取得予定→取得済みの反映 |
-| ホスティング | Vercel | 本番・プレビュー環境 |
+| ホスティング | Vercel（Hobby で開発。本番の契約は Q-26） | 本番・プレビュー環境 |
 
 ### 設計の基本方針
 
@@ -40,37 +44,42 @@ flowchart LR
 4. **すべての重要操作を監査ログに残す。** 監査ログは追記のみ（更新・削除不可）。
 5. **店舗はデータ。** 店舗・エリア・役職・休暇区分・規定はマスタで、コード変更なしに増やせる。
 
-## 2. 既存システムとの関係
+## 2. 既存システムとの連携（Q-15「連携する」）
 
-このリポジトリには既存の仕組みがあります。新システムとの関係は以下の案です（**確定は Q-15**）。
+**新しいSupabaseプロジェクトは作らず、既存プロジェクトに専用スキーマ `mgmt` を追加**します。既存のテーブル名（`meetings`・`action_items`・`staff_leave_balance` など）と衝突させず、権限（RLS）も新システム側で厳しく管理するためです。
 
-| 既存 | 現状 | 新システムとの関係（案） |
+| 既存 | 現状（2026-11-05 確認） | 連携方法 |
 |---|---|---|
-| 静的HTML＋`/api`（Vercel関数） | 予約・POS・評価（/incentive）・マニュアル（/manual）など | 触らない。新システムは別ディレクトリ・別Vercelプロジェクト |
-| Supabase（既存プロジェクト） | 予約などで使用。公開ページにanonキーが埋め込まれている。`clinic_staff` でスタッフ管理 | **新システムは専用のSupabaseプロジェクトを推奨**（休暇・個人情報を、公開ページと同じプロジェクトに置かないため） |
-| Googleスプレッドシート（台帳） | 等級・評価・インセンティブ・マニュアル | 連携しない（初期）。等級や院の情報を将来つなぐかは Q-15 |
-| /manual の行動マニュアル | スタッフの行動基準 | 社内規定（company_rules）とは別物として並存。将来の統合は Q-15 |
-| `body-check/`（Next.js） | 別アプリ | 同じ構成（別ディレクトリ＋別Vercelプロジェクト）の前例として踏襲 |
+| Supabase Auth | POSは「ID → ID@ando.jp」＋PASSでログイン | **同じ仕組みを使う**。新システムの管理画面でID・PASSを発行（Q-7）。POSと同じID・PASSで両方に入れる |
+| `public.clinic_staff`（11名） | スタッフ・役割・`auth_uid`・`store_ids`・`hire_date` | `mgmt.users.pos_staff_id` で1対1に紐づけ。新しく発行したスタッフは両方に登録 |
+| `public.stores`（2院：香里園駅前院・茨木院） | POSの店舗 | `mgmt.stores.pos_store_id` で紐づけ。7院の店舗マスタは `mgmt.stores` が持つ（Q-24・Q-27） |
+| `public.meetings`・`public.action_items`・`public.agenda_items` | POSの院内会議・行動計画（会議2件・タスク8件） | **拡張して共用**。POSのテーブルに不足項目の列を追加し、議事録・参加者は `mgmt` 側の表で持つ（database.md §4.3） |
+| `public.attendance_records` | POSの打刻（出勤・退勤・休憩） | 勤務実績の参照元（振休→勤務変更・アルバイト勤務の実績確認）。読み取りのみ |
+| `app_settings` の `shifts_YYYY-MM`・`holiday_balance` | POSのシフト表と、有休残・振替残・祝振替残（JSON） | 初期残数の参考データとして読み取り。POSシフト画面の扱いは Q-25 |
+| `public.staff_leave_balance`（0件） | 未使用の残数表 | 使わない（`mgmt` の台帳に一本化） |
+| Googleスプレッドシート台帳 | 等級（G4院長・G5 BM・G6 GM）・所属院 | 役職・所属の**取り込み**（管理画面から手動実行、差分を確認してから反映） |
+| /manual（行動マニュアル） | 行動基準 | 社内規定とは別物として並存。規定画面から行動マニュアルへリンク |
 
-### 配置（案）
+### 配置
 
 ```
 ando-seikotsu-ibaraki/
 ├─ docs/                  … 本設計書（.vercelignore で既存サイトに公開しない）
-├─ management/            … 新システム（Next.js）。Vercel の Root Directory に指定
-│  ├─ app/                … 画面（App Router）
-│  ├─ components/         … shadcn/ui ベースの部品
-│  ├─ lib/                … 日付・残数計算・権限チェック（純粋関数＋テスト）
-│  ├─ server/             … Server Actions・データ取得
+├─ management/            … 新システム（Next.js）。Vercel の別プロジェクト（Root Directory に指定）
+│  ├─ app/  components/  lib/  server/
 │  ├─ supabase/
-│  │  ├─ migrations/      … テーブル・RLS・RPC（SQL）
-│  │  ├─ seed/            … 店舗・役職・初期規定（下書き）
-│  │  └─ tests/           … pgTAP（RLS・承認ルール）
-│  └─ e2e/                … Playwright
-└─ （既存のファイルはそのまま）
+│  │  ├─ migrations/      … mgmt スキーマ・RLS・RPC、public への列追加（SQL）
+│  │  ├─ seed/            … 店舗7院・役職・初期規定（下書き）
+│  │  └─ tests/           … pgTAP
+│  └─ e2e/
+└─ （既存のファイルはそのまま。POSの改修は Q-25 の判断後）
 ```
 
-> 既存サイトは、リポジトリ内のファイルがそのまま公開される構成のため、`docs/` を `.vercelignore` に追加済みです。
+### 既存プロジェクトを共用するときの注意
+
+- 既存の公開ページには anon キーが埋め込まれているため、`mgmt` スキーマのすべてのテーブルで RLS を有効にし、**anon ロールには一切の権限を与えない**（`authenticated` のみ）。
+- `public` への変更（列の追加）は既存のPOSが動き続けることを確認してから行う。列は追加のみ（既存の列の削除・名前変更はしない）。
+- 既存のRLS無効テーブル（`patient_karte`）は本件とは別に対応を推奨（open-questions.md）。
 
 ## 3. 画面とサーバー処理の流れ
 
@@ -121,33 +130,36 @@ sequenceDiagram
 | annual-5days | 毎週月曜 | 年5日取得義務の未達見込みを判定し通知 |
 
 - 通知はイベントキーで一意にし、ジョブが2回動いても重複しない。
-- 現在の Vercel プランによっては Cron の回数・時刻精度に制限がある。プランの確認は Q-23。
+- Vercel Hobby の Cron は1日1回までで、実行時刻に幅がある。上の頻度（毎日1回・週1回）はこの範囲に収めている。
 
-## 6. 認証とセッション
+## 6. 認証とセッション（Q-7：このシステムでID・PASSを発行）
 
-- Supabase Auth（`@supabase/ssr`）で Cookie セッションを使い、Server Components・Server Actions で毎回ユーザーを確認する。
-- ログイン方式（メール＋パスワード／メールのリンク／スタッフIDとパスワード 等）は未確定（Q-7）。メールを持たないスタッフへの対応が論点。
-- 退職処理：`users.status = 'retired'` にし、Supabase Auth のユーザーを停止（ban）。データは保持し、閲覧権限のある人は履歴を見られる。
+- POSと同じく「ログインID（例：`tanaka`）→ Supabase Auth 上は `tanaka@ando.jp`」＋PASS。
+- **PASSの発行・再発行**は管理画面から（Supabase Auth の管理APIをサーバー側で呼ぶ。初期は社長が実行。院長に自院分を許すかは Q-18）。発行したPASSは画面に1回だけ表示し、システムには保存しない。初回ログイン時に変更を求める。
+- `public.clinic_staff.password` 列は使わない（PASSは Supabase Auth のみが保持）。
+- セッションは `@supabase/ssr` の Cookie。Server Components・Server Actions で毎回ユーザーを確認する。
+- 退職処理：`mgmt.users.status = 'retired'` にし、Supabase Auth のユーザーを停止（POSにも入れなくなる）。データは保持。
 
 ## 7. 環境
 
 | 環境 | 用途 | データ |
 |---|---|---|
 | ローカル | 開発・テスト | Supabase CLI のローカルDB、ダミーデータ |
-| プレビュー（Vercel Preview） | 確認用 | 検証用Supabaseプロジェクト、ダミーデータのみ |
+| プレビュー（Vercel Preview） | 確認用 | ダミーデータのみ。無料枠のため、検証用は既存プロジェクト内の別スキーマ（`mgmt_test`）か、一時停止中のプロジェクトの再利用で用意（Q-26） |
 | 本番 | 運用 | **承認後にのみ作成・実データ登録** |
 
 - マイグレーションはSQLファイルで管理し、ローカル → 検証 → 本番の順に適用する。
 - 秘密情報（サービスロールキー等）は Vercel の環境変数にのみ置き、リポジトリやブラウザに出さない。
 
-## 8. バックアップ・復旧
+## 8. 無料プランでの運用とバックアップ（Q-23・Q-26）
 
-| 項目 | 方針（案） |
-|---|---|
-| 自動バックアップ | Supabase の日次バックアップ（プランにより保持日数が異なる：Q-23） |
-| 追加バックアップ | 週1回、主要テーブルを暗号化した保管場所へエクスポート（保管先は要決定） |
-| 復旧手順 | ①影響範囲の特定（監査ログ）②検証環境へ復元して確認 ③本番へ復元 ④残数の再計算関数を全員分実行し、整合性チェックを確認 |
-| 復旧訓練 | 導入前（PHASE 10）に1回、検証環境で実施 |
+| 項目 | 無料プランの状況 | 対応（案） |
+|---|---|---|
+| Supabase | 既存プロジェクト（無料）を共用。DB 500MB まで。**自動バックアップなし** | 週1回、`mgmt` スキーマと連携テーブルをエクスポートし暗号化して保管（保管先は Q-26） |
+| Vercel Hobby | **個人・非商用の利用が前提の規約**。Cron は1日1回・時刻に幅あり | 開発・検証は無料で進める。**本番公開前に Pro か商用可の配信先かを判断**（Q-26） |
+| 定期処理 | 1日1回のCronで足りる設計（§5） | 期限通知は「前日・当日の朝」に1回ずつ |
+
+**復旧手順**：①影響範囲の特定（監査ログ）②検証環境へ復元して確認 ③本番へ復元 ④全員分の残数を再計算し、整合性チェックを確認。導入前（PHASE 10）に1回、検証環境で復旧訓練を行う。
 
 ## 9. 将来の拡張
 

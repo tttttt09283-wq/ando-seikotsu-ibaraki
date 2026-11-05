@@ -1,8 +1,11 @@
 # データベース設計 — AND GROUP MANAGEMENT SYSTEM
 
-設計案 0.1（**未承認**）。PostgreSQL（Supabase）。権限は [permissions.md](./permissions.md)、残数計算は [leave-management.md](./leave-management.md)。
+設計案 0.2（**未承認**。2026-11-05 の回答を反映）。PostgreSQL（Supabase・既存プロジェクト）。権限は [permissions.md](./permissions.md)、残数計算は [leave-management.md](./leave-management.md)。
 
 ## 1. 方針
+
+- **既存のSupabaseプロジェクトに専用スキーマ `mgmt` を作り、新システムのテーブルはすべて `mgmt` に置く。** 既存POSのテーブル（`public`）とは、紐づけ列・ビュー・RPCで連携する。
+- 会議・決定事項だけは、POSと共用するため **`public.meetings`・`public.action_items` に列を追加**して使う（追加のみ。既存の列は変えない）。
 
 - 主キーは `uuid`（`gen_random_uuid()`）。`users.id` は Supabase Auth の `auth.users.id` と同じ値。
 - 時刻は `timestamptz`（UTC保存）、暦日は `date`。
@@ -26,11 +29,11 @@
 | 規定 | `company_rules` | 規定（番号・名前） |
 | | `company_rule_versions` | 規定の版（本文・施行日・承認・公開状態） |
 | | `rule_acknowledgements` | 既読・確認の記録（版ごと） |
-| 会議 | `meetings` | 会議（開催予定〜期限超過） |
+| 会議 | `meetings` | 会議（**POSの `public.meetings` を拡張して共用**） |
 | | `meeting_minutes` | 議事録 |
 | | `meeting_attendees` | 参加者 |
-| | `meeting_action_items` | 決定事項（担当者・期限・行動・実行状況） |
-| | ★`tasks` | 院のタスク（決定事項からの作成を含む） |
+| | `meeting_action_items` | 決定事項（**POSの `public.action_items` を拡張**。`mgmt` にはビューを置く） |
+| | ★`tasks` | 院のタスク（POSの `action_items` で足りなければ追加） |
 | 勤務 | `part_time_requests` | アルバイト勤務申請 |
 | | `holiday_change_requests` | 振休からアルバイト勤務への変更申請 |
 | | ★`work_records` | 実際の勤務実績（申請状態と独立） |
@@ -47,7 +50,7 @@
 | | `audit_logs` | 監査ログ（追記のみ） |
 | | ★`holidays` | 祝日 |
 | | ★`import_batches` / ★`import_rows` | CSV取り込みの単位と行ごとの検証結果 |
-| | ★`approval_route_rules` | 代替承認ルートなどの承認者設定（会社承認後に有効化） |
+| | ★`approval_route_rules` | 承認者の設定（院長本人の振休は本人承認可、など） |
 
 ## 3. ER図
 
@@ -110,8 +113,10 @@ erDiagram
 **users**
 | 列 | 型 | 説明 |
 |---|---|---|
-| id | uuid | = auth.users.id |
+| id | uuid | = auth.users.id（POSと共通のログイン） |
 | staff_code | text UNIQUE | スタッフID（CSVのキー） |
+| login_id | text UNIQUE | ログインID（Auth上は `login_id@ando.jp`） |
+| pos_staff_id | int NULL | POSの `public.clinic_staff.id`（紐づけ） |
 | name / name_kana | text | 氏名 |
 | employment_type | text | 正社員／短時間正社員／アルバイト（区分は要確認） |
 | hire_date | date | 入社日（有給の付与計算に使用） |
@@ -119,7 +124,7 @@ erDiagram
 | status | text | active／suspended／retired |
 | retired_at | date | 退職日 |
 
-**stores**：`code` UNIQUE、`name`、`area_id`、`display_order`、`is_active`、`opened_on`
+**stores**：`code` UNIQUE、`name`、`area_id`、`display_order`、`is_active`、`opened_on`、`pos_store_id`（POSの `public.stores.id`。POSに登録のある院だけ）
 **areas**：`name`、`display_order`
 
 **user_store_assignments**（複数店舗所属に対応）
@@ -155,33 +160,33 @@ erDiagram
 
 **rule_acknowledgements**：`version_id`、`user_id`、`acknowledged_at` — `(version_id, user_id)` UNIQUE
 
-### 4.3 会議・タスク
+### 4.3 会議・タスク（POSと共用）
 
-**meetings**
-| 列 | 型 | 説明 |
+POSの `public.meetings`（院内会議）と `public.action_items`（行動計画・タスク）を拡張して使う。POSの画面はそのまま動き、新システムからは同じ会議・タスクが見える。
+
+**public.meetings への追加列**（既存：`id`・`held_on`・`title`・`notes`・`store_id`・`created_by`・`photos`）
+| 追加列 | 型 | 説明 |
 |---|---|---|
-| store_id | uuid | |
-| meeting_date | date | 開催日（JSTの暦日） |
-| title | text | 会議名 |
-| starts_at | tstz NULL | 予定時刻（任意） |
-| minutes_due_at | tstz | 開催日＋3日 23:59:59 JST。開催日の登録・変更時にトリガーで `minutes_due_at(meeting_date)` から設定（タイムゾーン変換は生成列にできないため） |
-| status | text | scheduled／awaiting_minutes／submitted／overdue（表示ステータスは workflows.md） |
-| submitted_at | tstz NULL | 正式提出日時 |
-| submitted_late | bool | **生成列**：`submitted_at > minutes_due_at` |
+| mgmt_store_id | uuid NULL | 7院の店舗（`mgmt.stores`）。POSに無い院の会議はこちらだけを持つ（Q-24・Q-27） |
+| minutes_due_at | tstz | 開催日（`held_on`）＋3日 23:59:59 JST。開催日の登録・変更時にトリガーで設定（タイムゾーン変換は生成列にできないため） |
+| minutes_status | text | scheduled／awaiting_minutes／submitted／overdue |
+| minutes_submitted_at | tstz NULL | 正式提出日時 |
+| minutes_submitted_late | bool | 期限超過で提出したか |
+| no_decisions | bool | 「決定事項なし」を明示したか |
 
-**meeting_minutes**：`meeting_id` UNIQUE、`agenda`、`content`、`decisions`（text）、`submitted_by`、`submitted_at`、`revision`（提出後の修正回数。修正は監査ログに残す）
-**meeting_attendees**：`meeting_id`、`user_id`（社外・他院の人は `guest_name`）
-**meeting_action_items**
-| 列 | 型 | 説明 |
+**mgmt.meeting_minutes**：`meeting_id`（→ public.meetings）UNIQUE、`agenda`、`content`、`submitted_by`、`submitted_at`、`revision`（提出後の修正回数。修正は監査ログに残す）
+**mgmt.meeting_attendees**：`meeting_id`、`user_id`（社外・他院の人は `guest_name`）
+
+**決定事項＝ public.action_items**（既存：`title`・`detail`・`owner_staff_id`・`due_date`・`status`・`progress`・`meeting_id`・`store_id` など）
+| 追加列 | 型 | 説明 |
 |---|---|---|
-| meeting_id | uuid | |
-| action | text | 具体的な行動（必須） |
-| owner_user_id | uuid | 担当者（必須） |
-| due_date | date | 実施期限（必須） |
-| status | text | open／in_progress／done／cancelled |
-| completed_at | tstz | |
+| is_decision | bool | 議事録の決定事項か（true のとき担当者・期限・具体的な行動が必須） |
+| owner_user_id | uuid NULL | `mgmt.users` の担当者（POSの `owner_staff_id` と対応） |
+| mgmt_store_id | uuid NULL | 7院の店舗 |
 
-**tasks**：`store_id`、`title`、`detail`、`assignee_user_id`、`due_date`、`status`、`source_action_item_id`（決定事項から作ったとき）
+`mgmt.meeting_action_items` はこの2表を結ぶ**ビュー**として用意する（指示書のテーブル名を保つため）。決定事項の実行状況（`status`・`progress`）は会議の完了とは別に管理する。
+
+**mgmt.tasks**：決定事項以外の院のタスクが必要な場合に使う（POSの `action_items` で足りるなら作らない。実装時に確認）
 
 ### 4.4 勤務
 
@@ -215,7 +220,15 @@ erDiagram
 
 ### 4.5 休暇
 
-**leave_types**：`code`（PAID 有給／SHIFT 振替休日／COMP 代休）、`name`
+**leave_types**：`code`、`name`、`group`
+| code | 名前 | group | 発生（Q-2） |
+|---|---|---|---|
+| PAID | 有給休暇 | 有給 | 入社日基準の付与（Q-12） |
+| SHIFT | 振替（公休出勤） | 振替休日 | 公休日に出勤したとき |
+| SHIFT_HOLIDAY | 祝振替（祝日出勤） | 振替休日 | 祝日に出勤したとき |
+| COMP | 代休 | 代休 | 未確定（Q-11） |
+
+POSのシフト表の区分（有休／振替／祝振替）と同じ。振替休日は2種類を別々に管理し、画面では「振休」として合計も表示する。
 **leave_policies**（区分ごとの制度。値は会社制度の確定後に設定：Q-2・Q-3）
 | 列 | 型 | 説明 |
 |---|---|---|
@@ -226,10 +239,13 @@ erDiagram
 | hourly_max_days_per_year | int | 時間単位の上限日数（法令上 年5日以内） |
 | hours_per_day | numeric | 時間単位の1日換算時間 |
 | validity_months | int | 有効期間（有給は法定の時効 2年＝24か月） |
+| expiry_rule | text | months（付与日から◯か月）／end_of_origin_month（**振休：発生した月の末日**） |
+| on_expiry | text | lapse（失効）／alert_only（**振休：失効させずアラート**） |
+| grant_basis | text | 有給の付与基準：hire_date（**入社日基準**）／fixed_date（統一基準日）。`valid_from` で後から変更できる |
 | consume_order | text | fifo_expiry（有効期限の早い付与から使う） |
 | min_notice_days | int NULL | 申請期限の目安（強制はしない） |
 
-**leave_grants**（付与）
+**leave_grants**（付与。振休は「出勤した日」ごとに1行）
 | 列 | 型 | 説明 |
 |---|---|---|
 | user_id / leave_type_id | uuid | |
