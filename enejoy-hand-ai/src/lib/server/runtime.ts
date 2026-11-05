@@ -3,6 +3,7 @@ import { DEMO_TIMING, getLimits } from "@/config/limits";
 import { DemoExecutor } from "@/lib/engine/demo-executor";
 import { syncSheets, type EngineDeps } from "@/lib/engine/engine";
 import { fetchSheetGrid, sheetsAuthMode } from "@/lib/import/google-sheets";
+import { processAutoReplies } from "@/lib/engine/auto-reply";
 import { refreshCompetitors, syncGoogle } from "@/lib/engine/reputation";
 import { createGoogleApi, createPlacesApi, type GoogleApi, type PlacesApi } from "@/lib/google/client";
 import { getAccessToken, getOAuthConfig, isConnected } from "@/lib/google/oauth";
@@ -102,10 +103,19 @@ function startSheetSync(deps: EngineDeps) {
     try {
       const api = await getGoogleApiIfConnected();
       if (api) await syncGoogle(deps, api);
+      await processAutoReplies(deps, api);
     } catch (e) {
       console.error("[enejoy-hand-ai] google sync failed", e);
     }
   }, hours * 3_600_000).unref?.();
+  // 口コミの自動返信：待ち時間の過ぎた予定を10分ごとに投稿する（自動返信が無効なら何もしない）
+  setInterval(async () => {
+    try {
+      await processAutoReplies(deps, await getGoogleApiIfConnected());
+    } catch (e) {
+      console.error("[enejoy-hand-ai] auto reply failed", (e as Error).name);
+    }
+  }, 10 * 60_000).unref?.();
   setInterval(async () => {
     try {
       const places = getPlacesApi();

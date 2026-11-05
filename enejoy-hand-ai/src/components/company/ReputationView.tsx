@@ -14,6 +14,7 @@ import { formatDateTime } from "@/lib/time";
 import type { CustomerReview } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { TENANT } from "@/tenant";
+import { AutoReplyPanel } from "./AutoReplyPanel";
 import { useClinics, useCompany } from "./StateProvider";
 
 const TABS = [
@@ -21,6 +22,7 @@ const TABS = [
   { id: "reviews", label: "口コミ" },
   { id: "performance", label: "表示回数・電話" },
   { id: "competitors", label: "地域の競合" },
+  { id: "auto", label: "自動返信" },
   { id: "settings", label: "接続・設定" },
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
@@ -728,7 +730,7 @@ function Settings() {
 export function ReputationView() {
   const { snapshot } = useCompany();
   const params = useSearchParams();
-  const [tab, setTab] = React.useState<TabId>(params.get("google") ? "settings" : "overview");
+  const [tab, setTab] = React.useState<TabId>(params.get("google") ? "settings" : (TABS.find((t) => t.id === params.get("tab"))?.id ?? "overview"));
   const r = snapshot.reputation;
   const empty = r.locations.length === 0 && r.reviews.length === 0 && r.comparison.every((c) => c.competitors.length === 0);
 
@@ -757,7 +759,7 @@ export function ReputationView() {
           </button>
         ))}
       </div>
-      {empty && tab !== "settings" ? (
+      {empty && tab !== "settings" && tab !== "auto" ? (
         <div className="text-muted-foreground space-y-3 rounded-xl border border-dashed p-8 text-center text-sm">
           <p>まだデータがありません。「接続・設定」でGoogleアカウントを接続するか、デモデータで画面を確認してください。</p>
           <Button size="sm" variant="outline" onClick={() => setTab("settings")}>
@@ -770,6 +772,7 @@ export function ReputationView() {
           {tab === "reviews" && <Reviews />}
           {tab === "performance" && <Performance />}
           {tab === "competitors" && <Competitors />}
+          {tab === "auto" && <AutoReplyPanel />}
           {tab === "settings" && <Settings />}
         </>
       )}

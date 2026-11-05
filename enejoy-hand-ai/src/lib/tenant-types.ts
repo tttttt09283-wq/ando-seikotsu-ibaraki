@@ -246,6 +246,8 @@ export type TenantConfig = {
   staffRoles: { role: StaffRole; label: string; aliases: string[]; fte: number }[];
   /** 会社のマンダラチャートのたたき台（中心の目標＋8テーマ×8行動） */
   mandalaTemplate: { center: string; themes: { title: string; items: string[] }[] };
+  /** 口コミの自動返信の初期値（返信文のひな形・自動返信しない言葉） */
+  autoReply: { templates: { high: string[]; mid: string[] }; stopWords: string[] };
   teams: Team[];
   members: Member[];
   /** チームごとのレビュー担当リーダー */

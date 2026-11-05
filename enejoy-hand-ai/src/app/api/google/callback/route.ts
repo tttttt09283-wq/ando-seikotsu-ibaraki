@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { processAutoReplies } from "@/lib/engine/auto-reply";
 import { markGoogleConnected, syncGoogle } from "@/lib/engine/reputation";
 import { createGoogleApi } from "@/lib/google/client";
 import { exchangeCode, getAccessToken, getOAuthConfig, OAUTH_STATE_COOKIE } from "@/lib/google/oauth";
@@ -26,7 +27,9 @@ export async function GET(req: NextRequest) {
     const deps = getEngineDeps();
     await markGoogleConnected(deps, actor.memberId, email);
     try {
-      await syncGoogle(deps, createGoogleApi(getAccessToken), { actorId: actor.memberId });
+      const api = createGoogleApi(getAccessToken);
+      await syncGoogle(deps, api, { actorId: actor.memberId });
+      await processAutoReplies(deps, api);
     } catch {
       // 同期の失敗は画面に表示する（接続自体は完了）
     }

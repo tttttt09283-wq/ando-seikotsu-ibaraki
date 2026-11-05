@@ -247,6 +247,8 @@ export type ApprovalPayload =
   | { kind: "review_reply"; reviewId: string; comment: string }
   /** 院別予算の確定（承認された内容＝この payload の予算をそのまま確定する） */
   | { kind: "budget_confirm"; standardJpy: number; perStaffJpy: number; cells: BudgetCell[]; label: string; note?: string }
+  /** 口コミの自動返信ルールの有効化（承認された時点のルールで有効にする） */
+  | { kind: "auto_reply_policy"; settings: AutoReplySettings }
   /** 中期事業計画の採用（承認された時点のシナリオをそのまま採用する） */
   | { kind: "plan_adopt"; scenario: MidPlanScenario; note?: string };
 
@@ -578,8 +580,49 @@ export type GoogleConnectionState = {
   lastMessage?: string;
 };
 
+/**
+ * 口コミの自動返信のルール。ルールそのものを承認（外部サービスへの書き込み）してから有効になる。
+ * ★2以下はルールに関係なく必ず人が確認する（自動返信しない）。
+ */
+export type AutoReplySettings = {
+  enabled: boolean;
+  /** この★以上の口コミだけ自動で返信（3〜5） */
+  minRating: number;
+  /** ★だけで本文のない口コミも対象にするか */
+  includeNoComment: boolean;
+  /** 有効にする前の未返信の口コミも対象にするか（false＝有効にした後の口コミだけ） */
+  includeBacklog: boolean;
+  /** 投稿までの待ち時間（時間）。この間に止める・書き換えることができる */
+  delayHours: number;
+  /** 1日に自動で投稿する上限 */
+  dailyLimit: number;
+  /** 返信文のひな形（{お名前} {院名} を置き換える）。複数あれば順番に使う */
+  templates: { high: string[]; mid: string[] };
+  /** 本文にこの言葉がある口コミは自動返信せず、人の確認に回す */
+  stopWords: string[];
+  approvedAt?: string;
+  approvalId?: string;
+  stoppedAt?: string;
+};
+
+export type AutoReplyJob = {
+  id: string;
+  reviewId: string;
+  clinicId?: string;
+  rating: number;
+  comment: string;
+  createdAt: string;
+  dueAt: string;
+  status: "scheduled" | "posted" | "canceled" | "failed" | "skipped";
+  message?: string;
+  postedAt?: string;
+  mode: DataMode;
+};
+
 export type ReputationData = {
   google: GoogleConnectionState;
+  autoReply?: AutoReplySettings;
+  autoReplyJobs?: AutoReplyJob[];
   locations: GbpLocation[];
   reviews: CustomerReview[];
   performance: PerformanceMonth[];
@@ -913,4 +956,28 @@ export const mandalaInputSchema = z.discriminatedUnion("action", [
     note: z.string().trim().max(500).optional(),
   }),
   z.object({ action: z.literal("remove"), id: z.string().min(1).max(40) }),
+]);
+
+// ---- 口コミの自動返信 ----
+
+const replyTemplate = z.string().trim().min(10, "返信文が短すぎます").max(1000, "返信文は1000文字以内にしてください");
+export const autoReplyInputSchema = z.discriminatedUnion("action", [
+  /** ルールを保存して有効化の承認を依頼する */
+  z.object({
+    action: z.literal("request"),
+    minRating: z.number().int().min(3, "★2以下は自動返信にできません").max(5),
+    includeNoComment: z.boolean(),
+    includeBacklog: z.boolean(),
+    delayHours: z.number().int().min(0).max(72),
+    dailyLimit: z.number().int().min(1).max(50),
+    templates: z.object({ high: z.array(replyTemplate).min(1).max(5), mid: z.array(replyTemplate).max(5) }),
+    stopWords: z.array(z.string().trim().min(1).max(20)).max(50),
+  }),
+  /** すぐに止める（承認なし） */
+  z.object({ action: z.literal("stop") }),
+  /** 予定の返信をやめる・書き換える */
+  z.object({ action: z.literal("cancel_job"), id: z.string().min(1).max(40) }),
+  z.object({ action: z.literal("edit_job"), id: z.string().min(1).max(40), comment: replyTemplate }),
+  /** 期限の来た予定をすぐ処理する（同期と同じ処理） */
+  z.object({ action: z.literal("run") }),
 ]);

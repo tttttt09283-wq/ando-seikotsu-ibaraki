@@ -22,6 +22,7 @@ import { COMMANDER_ID, getMember, OPERATOR_ID, PRESIDENT_ID, TENANT } from "@/te
 import { ActivityStream } from "./ActivityStream";
 import { CommandBox } from "./CommandBox";
 import { CompanyMap, StatusLegend } from "./CompanyMap";
+import { MandalaPanel } from "./MandalaPanel";
 import { CommanderIcon } from "./MemberParts";
 import { formatOku, RevenueCard } from "./RevenuePanel";
 import { useCompany, useNow } from "./StateProvider";
@@ -310,6 +311,7 @@ export function Dashboard() {
 
       <CommandBox />
       <KpiTiles />
+      <MandalaPanel variant="dashboard" />
 
       <div className="grid gap-6 xl:grid-cols-3">
         <div className="space-y-6 xl:col-span-2">

@@ -7,6 +7,7 @@ import type { CompanyData, Competitor, DataMode, RatingSnapshot } from "@/lib/ty
 import { COMMANDER_ID, TENANT } from "@/tenant";
 import { applyBudgetConfirm } from "./budget";
 import { applyPlanAdopt } from "./planning";
+import { applyAutoReplyPolicy } from "./auto-reply";
 import { audit, createApproval, EngineError, iso, log, name, newId, type EngineDeps } from "./engine";
 
 /**
@@ -214,6 +215,7 @@ export async function executeApprovedAction(deps: EngineDeps, approvalId: string
   // 予算の確定は社内の記録の更新なので、ここで反映する
   if (a.payload.kind === "budget_confirm") return applyBudgetConfirm(deps, approvalId);
   if (a.payload.kind === "plan_adopt") return applyPlanAdopt(deps, approvalId);
+  if (a.payload.kind === "auto_reply_policy") return applyAutoReplyPolicy(deps, approvalId);
   const payload = a.payload;
   const review = snap.reputation.reviews.find((r) => r.id === payload.reviewId);
 

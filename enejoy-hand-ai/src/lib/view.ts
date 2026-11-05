@@ -37,7 +37,8 @@ import { competitorComparison, reputationMode, reviewStats } from "@/lib/engine/
 import { budgetTable } from "@/lib/engine/budget-metrics";
 import { kpiTable } from "@/lib/engine/kpi-metrics";
 import { fyStarts, midPlanTable } from "@/lib/engine/midplan-metrics";
-import type { MandalaChart, MidPlanScenario, OrgSnapshot } from "@/lib/types";
+import type { AutoReplyJob, AutoReplySettings, MandalaChart, MidPlanScenario, OrgSnapshot } from "@/lib/types";
+import { autoReplySettings } from "@/lib/engine/auto-reply";
 
 /**
  * 表示する承認依頼：今のモードのもの＋本番の口コミへの返信など、実データへの書き込みを伴うもの
@@ -140,6 +141,10 @@ export type CompanySnapshot = {
     performance: PerformanceMonth[];
     stats: ReturnType<typeof reviewStats>;
     comparison: ReturnType<typeof competitorComparison>;
+    /** 口コミの自動返信のルールと、予定・投稿の記録（新しい順） */
+    autoReply: AutoReplySettings;
+    autoReplyJobs: AutoReplyJob[];
+    autoReplyPendingApprovalId: string | null;
   };
   /** 今の院の一覧（設定の院＋画面で追加した院。開院月・閉院月を反映） */
   clinics: Clinic[];
@@ -371,6 +376,9 @@ export function buildSnapshot(data: CompanyData, mode: DataMode, now: Date, limi
       return {
         mode: rm,
         google: rep.google,
+        autoReply: autoReplySettings(data),
+        autoReplyJobs: (rep.autoReplyJobs ?? []).filter((j) => j.mode === rm).slice(-100).reverse(),
+        autoReplyPendingApprovalId: data.approvals.find((a) => a.status === "PENDING" && a.payload?.kind === "auto_reply_policy")?.id ?? null,
         locations: rep.locations.filter((l) => l.mode === rm),
         reviews: rep.reviews
           .filter((r) => r.mode === rm)

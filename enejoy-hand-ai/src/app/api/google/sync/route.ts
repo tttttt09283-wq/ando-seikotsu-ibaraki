@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { processAutoReplies } from "@/lib/engine/auto-reply";
 import { refreshCompetitors, syncGoogle } from "@/lib/engine/reputation";
 import { checkSameOrigin, engineErrorResponse, jsonError, requireRole, snapshotResponse } from "@/lib/server/api";
 import { getEngineDeps, getGoogleApiIfConnected, getPlacesApi } from "@/lib/server/runtime";
@@ -15,8 +16,9 @@ export async function POST(req: NextRequest) {
   try {
     const deps = getEngineDeps();
     const google = api ? await syncGoogle(deps, api, { actorId: actor.memberId }) : null;
+    const autoReply = await processAutoReplies(deps, api);
     const competitors = places ? await refreshCompetitors(deps, places, { actorId: actor.memberId }) : null;
-    return await snapshotResponse(actor, 200, { google, competitors });
+    return await snapshotResponse(actor, 200, { google, competitors, autoReply });
   } catch (e) {
     return engineErrorResponse(e);
   }

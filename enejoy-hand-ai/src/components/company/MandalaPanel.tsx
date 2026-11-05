@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Copy, LoaderCircle, PencilLine, Plus, Printer, Save, Trash2, Undo2 } from "lucide-react";
 import * as React from "react";
 import { Badge } from "@/components/ui/badge";
@@ -185,7 +186,8 @@ function List({ draft, editing, set, cycle }: { draft: Draft; editing: boolean; 
   );
 }
 
-export function MandalaPanel() {
+export function MandalaPanel({ variant = "full" }: { variant?: "full" | "dashboard" }) {
+  const dashboard = variant === "dashboard";
   const { snapshot, mutate } = useCompany();
   const charts = snapshot.mandala.charts;
   const [selected, setSelected] = React.useState<string | null>(charts.find((c) => c.scope === "company")?.id ?? charts[0]?.id ?? null);
@@ -248,6 +250,7 @@ export function MandalaPanel() {
 
   return (
     <div className="space-y-6">
+      {!dashboard && (
       <Card className="print:hidden">
         <CardHeader className="flex-wrap">
           <div>
@@ -323,6 +326,7 @@ export function MandalaPanel() {
           <Message msg={msg} />
         </CardContent>
       </Card>
+      )}
 
       {chart && draft ? (
         <Card className="print:border-0 print:shadow-none">
@@ -333,6 +337,22 @@ export function MandalaPanel() {
                 <Badge variant="secondary">{chart.scopeLabel || SCOPE_LABEL[chart.scope]}</Badge>
                 {editing && <Badge className="bg-amber-500 text-white">編集中</Badge>}
               </CardTitle>
+              {dashboard && charts.length > 1 && (
+                <div className="mt-2 flex flex-wrap gap-1.5 print:hidden">
+                  {charts.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      aria-pressed={chart.id === c.id}
+                      disabled={editing}
+                      onClick={() => setSelected(c.id)}
+                      className={cn("rounded-full px-2.5 py-0.5 text-xs disabled:opacity-50", chart.id === c.id ? "bg-primary text-primary-foreground" : "bg-secondary hover:bg-accent")}
+                    >
+                      {c.title}
+                    </button>
+                  ))}
+                </div>
+              )}
               <CardDescription>
                 {p && p.total > 0 ? `行動 ${p.total}件のうち 完了 ${p.done}件・進行中 ${p.doing}件（${Math.round((p.done / p.total) * 100)}%）` : "まだ行動が入っていません"}・最終更新 {formatDateTime(chart.updatedAt)}
               </CardDescription>
@@ -362,6 +382,12 @@ export function MandalaPanel() {
                   <Button size="sm" variant="ghost" onClick={() => window.print()}>
                     <Printer aria-hidden /> 印刷
                   </Button>
+                  {dashboard ? (
+                    <Button size="sm" variant="ghost" asChild>
+                      <Link href="/plan?tab=mandala">追加・管理</Link>
+                    </Button>
+                  ) : (
+                  <>
                   <Button
                     size="sm"
                     variant="ghost"
@@ -384,6 +410,8 @@ export function MandalaPanel() {
                   >
                     <Trash2 aria-hidden />
                   </Button>
+                  </>
+                  )}
                 </>
               )}
             </div>
@@ -413,7 +441,23 @@ export function MandalaPanel() {
                 完了
               </li>
             </ul>
+            {dashboard && <Message msg={msg} />}
             {editing && <p className="text-muted-foreground text-xs">1マス60文字まで。「会社のたたき台」は例なので、会議で話し合った内容に書き換えてください。</p>}
+          </CardContent>
+        </Card>
+      ) : dashboard ? (
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>会社のマンダラチャート</CardTitle>
+              <CardDescription>中心に今期の目標、周りに8つのテーマ、テーマごとに8つの行動。会社のたたき台から作って、書き換えて使います。</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <Button size="sm" disabled={busy !== null} onClick={create}>
+              {busy === "create" ? <LoaderCircle className="animate-spin" aria-hidden /> : <Plus aria-hidden />} 会社のたたき台で作る
+            </Button>
+            <Message msg={msg} />
           </CardContent>
         </Card>
       ) : (
