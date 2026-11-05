@@ -11,6 +11,14 @@
       "destination": "/api/evaluation?__mandala=1"
     },
     {
+      "source": "/api/manual",
+      "destination": "/api/evaluation?__manual=1"
+    },
+    {
+      "source": "/manual",
+      "destination": "/manual.html"
+    },
+    {
       "source": "/beauty",
       "destination": "/beauty.html"
     },

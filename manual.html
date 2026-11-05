@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>マニュアル - あんど整骨院</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#f6f3ee;color:#1e293b;}
+.topbar{position:sticky;top:0;z-index:10;background:linear-gradient(135deg,#7c2d12,#c2410c);color:white;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.topbar h1{font-size:16px;font-weight:800;}
+.topbar .sub{font-size:11px;opacity:.85;margin-top:2px;}
+.btn{padding:8px 14px;border-radius:8px;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}
+.btn-outline{background:rgba(255,255,255,.12);color:white;border:1px solid rgba(255,255,255,.35);text-decoration:none;}
+.btn-main{background:#c2410c;color:white;}
+.btn-gray{background:white;color:#334155;border:1.5px solid #cbd5e1;}
+.btn-ok{background:#15803d;color:white;}
+.btn-sm{padding:5px 10px;font-size:12px;}
+.btn-link{background:none;border:none;color:#c2410c;font-weight:700;cursor:pointer;font-size:12px;font-family:inherit;padding:2px 4px;}
+.btn-del{background:none;border:none;color:#dc2626;cursor:pointer;font-size:12px;font-weight:700;font-family:inherit;}
+.wrap{max-width:1100px;margin:0 auto;padding:16px;}
+.tabs{display:flex;gap:2px;margin-bottom:14px;border-bottom:2px solid #e7ded3;overflow-x:auto;}
+.tab{padding:10px 12px;border:none;background:none;font-size:14px;font-weight:700;color:#78716c;cursor:pointer;font-family:inherit;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap;}
+.tab.sel{color:#c2410c;border-bottom-color:#c2410c;}
+.card{background:white;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:14px;overflow:hidden;}
+.card-h{padding:12px 16px;border-bottom:1px solid #f5f5f4;font-weight:800;font-size:14px;color:#7c2d12;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
+.card-b{padding:14px 16px;}
+.chip-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
+.chip{padding:6px 14px;border-radius:20px;border:1.5px solid #e7e5e4;background:white;color:#374151;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit;}
+.chip.sel{background:#7c2d12;color:white;border-color:#7c2d12;}
+.chip.mine{border-color:#f97316;}
+.small{font-size:11.5px;color:#64748b;line-height:1.6;}
+.muted{color:#a8a29e;font-size:13px;}
+.center{text-align:center;padding:40px;color:#64748b;}
+.err{background:#fef2f2;color:#b91c1c;padding:10px 12px;border-radius:8px;font-size:13px;margin-bottom:10px;}
+.note{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;padding:10px 12px;border-radius:10px;font-size:12.5px;line-height:1.7;margin-bottom:12px;}
+.warnbox{background:#fffbeb;border:1px solid #fde68a;color:#92400e;padding:10px 12px;border-radius:10px;font-size:12.5px;line-height:1.7;margin-bottom:12px;}
+/* 理念 */
+.rinen-hero{background:linear-gradient(160deg,#fff7ed,#ffedd5);border-radius:16px;padding:20px 16px;margin-bottom:14px;text-align:center;}
+.rinen-hero .big{font-size:40px;font-weight:900;letter-spacing:.2em;color:#7c2d12;}
+.rinen-hero .lead{font-size:13.5px;color:#7c2d12;margin-top:6px;line-height:1.8;}
+.rinen-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:14px;}
+.rinen-card{background:white;border-radius:14px;padding:14px 12px;box-shadow:0 1px 3px rgba(0,0,0,.08);position:relative;}
+.rinen-card .ch{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900;color:white;margin-bottom:8px;}
+.rinen-card .t{font-weight:800;font-size:13.5px;margin-bottom:6px;}
+.rinen-card .b{font-size:12.5px;line-height:1.75;color:#44403c;white-space:pre-wrap;}
+.r-心{background:#e11d48;} .r-豊{background:#ca8a04;} .r-笑{background:#ea580c;} .r-幸{background:#0d9488;}
+.rb{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;color:white;font-size:11px;font-weight:900;flex:none;}
+.cycle{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;align-items:stretch;}
+.cycle .s{background:#fafaf9;border:1.5px solid #e7e5e4;border-radius:10px;padding:10px 8px;font-size:12px;line-height:1.55;position:relative;}
+.cycle .s b{display:block;font-size:12.5px;color:#7c2d12;margin-bottom:2px;}
+.cycle .s:not(:last-child)::after{content:"›";position:absolute;right:-8px;top:50%;transform:translateY(-50%);color:#c2410c;font-weight:900;font-size:16px;}
+/* クラス */
+.mission{background:linear-gradient(135deg,#7c2d12,#9a3412);color:white;border-radius:14px;padding:16px;margin-bottom:14px;}
+.mission .lbl{font-size:11px;opacity:.8;font-weight:700;}
+.mission .t{font-size:17px;font-weight:900;margin:4px 0 6px;line-height:1.5;}
+.mission .b{font-size:13px;line-height:1.8;opacity:.95;white-space:pre-wrap;}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.sec-h{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:12px;font-weight:800;color:#57534e;margin:10px 0 6px;}
+.sec-h:first-child{margin-top:0;}
+.item{border:1.5px solid #f0ebe5;border-radius:10px;padding:10px 12px;margin-bottom:8px;background:white;}
+.item .top{display:flex;align-items:flex-start;gap:6px;justify-content:space-between;}
+.item .t{font-weight:800;font-size:13.5px;line-height:1.45;display:flex;gap:6px;align-items:flex-start;}
+.item .b{font-size:12.5px;line-height:1.75;color:#44403c;margin-top:4px;white-space:pre-wrap;}
+.tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;}
+.tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:800;}
+.tag-定量{background:#dbeafe;color:#1e40af;} .tag-定性{background:#fce7f3;color:#9d174d;}
+.tag-eval{background:#dcfce7;color:#166534;} .tag-noeval{background:#f5f5f4;color:#78716c;} .tag-req{background:#fee2e2;color:#991b1b;}
+.policy{display:flex;gap:10px;align-items:flex-start;padding:8px 0;border-bottom:1px dashed #e7e5e4;}
+.policy:last-child{border-bottom:none;}
+.policy .t{font-weight:800;font-size:13.5px;}
+.policy .b{font-size:12.5px;color:#44403c;line-height:1.75;margin-top:2px;white-space:pre-wrap;}
+.read-box{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:12px 14px;border-radius:12px;margin-bottom:14px;font-size:13px;font-weight:700;}
+.read-未確認{background:#fef2f2;color:#991b1b;border:1px solid #fecaca;}
+.read-更新あり{background:#fffbeb;color:#92400e;border:1px solid #fde68a;}
+.read-確認済{background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;}
+.st{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:800;white-space:nowrap;}
+.st-未確認,.st-未着手{background:#f5f5f4;color:#78716c;} .st-更新あり,.st-練習中{background:#fef3c7;color:#92400e;} .st-確認済,.st-合格{background:#dcfce7;color:#166534;}
+/* カリキュラム */
+.phase{margin-bottom:12px;}
+.phase-h{font-weight:900;font-size:13px;color:#7c2d12;margin-bottom:6px;display:flex;align-items:center;gap:8px;}
+.phase-h .cnt{font-size:11px;color:#78716c;font-weight:700;}
+.step{display:flex;gap:10px;align-items:flex-start;border:1.5px solid #f0ebe5;border-radius:10px;padding:10px 12px;margin-bottom:6px;background:white;}
+.step.done{background:#f0fdf4;border-color:#bbf7d0;}
+.step.doing{background:#fffbeb;border-color:#fde68a;}
+.step .mark{font-size:18px;line-height:1;flex:none;margin-top:1px;}
+.step .main{flex:1;min-width:0;}
+.step .t{font-weight:800;font-size:13.5px;line-height:1.45;}
+.step .c{font-size:12px;color:#57534e;margin-top:3px;line-height:1.65;}
+.step .acts{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;align-items:center;}
+.bar{height:8px;background:#e7e5e4;border-radius:4px;overflow:hidden;}
+.bar>i{display:block;height:100%;background:#16a34a;}
+.kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:14px;}
+.kpi{border:1.5px solid #e7e5e4;border-radius:12px;padding:12px;background:white;}
+.kpi .l{font-size:12px;font-weight:700;color:#57534e;}
+.kpi .v{font-size:22px;font-weight:900;margin:4px 0;font-variant-numeric:tabular-nums;}
+table{width:100%;border-collapse:collapse;font-size:12.5px;}
+th{background:#fafaf9;padding:7px 8px;text-align:left;font-weight:800;color:#78716c;border-bottom:2px solid #e7e5e4;white-space:nowrap;}
+td{padding:7px 8px;text-align:left;border-bottom:1px solid #f5f5f4;vertical-align:top;}
+.scroll{overflow-x:auto;}
+input,select,textarea{padding:8px 10px;border:1.5px solid #e7e5e4;border-radius:8px;font-size:14px;font-family:inherit;width:100%;background:white;}
+textarea{min-height:90px;line-height:1.6;}
+.search{margin-bottom:12px;}
+.form-grid{display:grid;grid-template-columns:110px 1fr;gap:8px 10px;align-items:center;}
+.form-grid label{font-size:12px;font-weight:700;color:#57534e;}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50;display:flex;align-items:flex-start;justify-content:center;padding:30px 12px;overflow-y:auto;}
+.modal{background:white;border-radius:14px;max-width:560px;width:100%;}
+.hl{background:#fef08a;}
+@media (max-width:760px){
+  .rinen-grid{grid-template-columns:repeat(2,minmax(0,1fr));}
+  .two{grid-template-columns:1fr;}
+  .cycle{grid-template-columns:1fr 1fr;}
+  .cycle .s::after{display:none;}
+  .kpis{grid-template-columns:1fr 1fr;}
+}
+@media (max-width:640px){ .wrap{padding:10px;} .form-grid{grid-template-columns:1fr;} .rinen-hero .big{font-size:34px;} }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <div><h1>📘 あんど整骨院 マニュアル</h1><div class="sub" id="subLabel">理念「心豊笑幸」・クラス別の方針・評価基準・育成カリキュラム</div></div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;" id="topActions"></div>
+</div>
+<div class="wrap" id="root"><div class="center">読み込み中...</div></div>
+<div id="modal"></div>
+<script>
+const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz";
+// /incentive と同じログイン（同じタブの sessionStorage を使う）
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
+});
+const PIN_KEY = "ando_pin_token";
+const ssGet = (k) => { try { return sessionStorage.getItem(k); } catch (e) { return null; } };
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+async function authHeader() {
+  const pin = ssGet(PIN_KEY);
+  if (pin) return `Pin ${pin}`;
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  return session ? `Bearer ${session.access_token}` : null;
+}
+const root = document.getElementById("root");
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const yen = (v) => "¥" + Math.round(v).toLocaleString("ja-JP");
+function fmtTarget(e) {
+  if (!e || e.target === null || e.target === undefined) return "";
+  const v = e.unit === "円" ? yen(e.target) : `${Number(e.target).toLocaleString("ja-JP")}${e.unit || ""}`;
+  return `${v}${e.direction || ""}`;
+}
+
+let data = null, busy = false;
+let view = lsGet("manual_view") || "rinen";
+let grade = lsGet("manual_grade") || "";
+let personIdx = 0, query = "", showEvalMap = false, staffClinic = "";
+
+async function api(method, body, refresh) {
+  const auth = await authHeader();
+  if (!auth) { renderLogin(); return null; }
+  const url = method === "GET" ? `/api/manual${refresh ? "?refresh=1" : ""}` : "/api/manual";
+  const res = await fetch(url, { method, headers: { Authorization: auth, ...(body ? { "Content-Type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  const json = await res.json().catch(() => ({}));
+  if (res.status === 401) { renderLogin(json.error); return null; }
+  if (!res.ok) throw new Error(json.error || `読み込みに失敗しました（HTTP ${res.status}）`);
+  return json;
+}
+async function load(refresh) {
+  root.innerHTML = `<div class="center">読み込み中...</div>`;
+  try {
+    const json = await api("GET", null, refresh);
+    if (!json) return;
+    data = json;
+    if (!data.grades.includes(grade)) grade = data.viewer.manualGrade;
+    render();
+  } catch (e) { root.innerHTML = `<div class="card"><div class="card-b"><div class="err">${esc(e.message)}</div><button class="btn btn-main" onclick="load(true)">もう一度読み込む</button></div></div>`; }
+}
+async function act(body) {
+  if (busy) return false;
+  busy = true;
+  try { const json = await api("POST", body); if (json) data = json; return !!json; }
+  catch (e) { alert(e.message); return false; }
+  finally { busy = false; render(); }
+}
+function renderLogin(msg) {
+  document.getElementById("topActions").innerHTML = "";
+  root.innerHTML = `<div class="card" style="max-width:420px;margin:40px auto;"><div class="card-b" style="text-align:center;">
+    ${msg ? `<div class="err">${esc(msg)}</div>` : ""}
+    <div style="font-weight:800;margin-bottom:10px;">ログインしてください</div>
+    <div class="small" style="margin-bottom:14px;">インセンティブ・評価と同じID・PASSでログインします。スマホからも使えます。</div>
+    <a class="btn btn-main" style="display:inline-block;text-decoration:none;" href="/incentive?next=manual">ログイン画面へ</a></div></div>`;
+}
+const setView = (v) => { view = v; lsSet("manual_view", v); render(); window.scrollTo(0, 0); };
+const setGrade = (g) => { grade = g; lsSet("manual_grade", g); render(); };
+const gLabel = (g) => g === data.common ? data.gradeLabels[g] : `${g} ${data.gradeLabels[g]}`;
+const me = () => data.people.find((p) => p.key === data.viewer.personKey) || null;
+
+// ===== 画面 =====
+function render() {
+  if (!data) return;
+  const v = data.viewer;
+  document.getElementById("subLabel").textContent = `${v.name}さん（${data.gradeLabels[v.manualGrade] || ""}）・理念「心豊笑幸」`;
+  document.getElementById("topActions").innerHTML =
+    `<button class="btn btn-outline" onclick="load(true)">↻ 更新</button>` +
+    `<a class="btn btn-outline" href="/incentive">📝 評価</a><a class="btn btn-outline" href="/mandala">🧭 マンダラ</a>`;
+  const others = data.people.filter((p) => p.key !== v.personKey);
+  const tabs = [["rinen", "🌸 理念・共通"], ["class", "📘 クラス別"], ["curriculum", "🎓 カリキュラム"], ["eval", "📊 評価基準"]];
+  if (others.length) tabs.push(["staff", "👥 スタッフ状況"]);
+  if (!tabs.some(([k]) => k === view)) view = "rinen";
+  let html = `<div class="tabs">${tabs.map(([k, l]) => `<button class="tab ${view === k ? "sel" : ""}" onclick="setView('${k}')">${l}</button>`).join("")}</div>`;
+  if (data.canEdit && (data.usingDefaults.manual || data.usingDefaults.curriculum)) {
+    html += `<div class="note">✏️ 今は初期値（たたき台）を表示しています。社長・GMが内容を編集・保存すると、台帳の「${data.usingDefaults.manual ? "マニュアル" : ""}${data.usingDefaults.manual && data.usingDefaults.curriculum ? "」「" : ""}${data.usingDefaults.curriculum ? "育成カリキュラム" : ""}」シートに保存され、全スタッフに反映されます。</div>`;
+  }
+  if (view === "rinen") html += rinenView();
+  else if (view === "class") html += classView();
+  else if (view === "curriculum") html += curriculumView();
+  else if (view === "eval") html += evalView();
+  else if (view === "staff") html += staffView();
+  root.innerHTML = html;
+}
+
+const itemsOf = (g, area) => data.manual.filter((m) => m.grade === g && m.area === area);
+const editBtns = (m) => data.canEdit ? `<span style="white-space:nowrap;"><button class="btn-link" onclick="editItem('${m.id}')">編集</button><button class="btn-del" onclick="delItem('${m.id}')">削除</button></span>` : "";
+const addBtn = (g, area, measure) => data.canEdit ? `<button class="btn-link" onclick="newItem('${g}','${area}','${measure || ""}')">＋ 追加</button>` : "";
+const rinenBadge = (r) => r ? `<span class="rb r-${r}" title="理念「${r}」">${r}</span>` : "";
+
+function readBox(g) {
+  const p = me();
+  if (!p) return "";
+  const r = (p.reads || {})[g];
+  if (!r) return "";
+  const label = g === data.common ? "全クラス共通のマニュアル" : `${gLabel(g)}のマニュアル`;
+  const msg = r.state === "確認済" ? `✅ ${label}を確認済み（${esc(r.at)}）` : r.state === "更新あり" ? `🔔 ${label}が更新されました。読み直して確認してください` : `📖 ${label}を読んだら「読みました」を押してください`;
+  return `<div class="read-box read-${r.state}"><span>${msg}</span>${r.state === "確認済" ? "" : `<button class="btn btn-main btn-sm" onclick="act({action:'confirmRead',grade:'${g}'})">読みました</button>`}</div>`;
+}
+
+function itemCard(m) {
+  const e = m.eval;
+  const tags = [];
+  if (m.measure) tags.push(`<span class="tag tag-${m.measure}">${m.measure}</span>`);
+  if (m.evalId && e) {
+    tags.push(`<span class="tag tag-eval">評価対象${fmtTarget(e) ? `：目標 ${esc(fmtTarget(e))}` : e.kind !== "数値" ? "：上司が5段階評価" : ""}</span>`);
+    if (e.auto) tags.push(`<span class="tag tag-noeval">数字は自動で集計</span>`);
+    if (e.required) tags.push(`<span class="tag tag-req">必須</span>`);
+  } else if (m.evalId) tags.push(`<span class="tag tag-noeval">評価項目「${esc(m.evalId)}」が見つかりません</span>`);
+  else if (m.measure) tags.push(`<span class="tag tag-noeval">行動基準（評価項目なし）</span>`);
+  return `<div class="item"><div class="top"><div class="t">${rinenBadge(m.rinen)}<span>${hl(m.title)}</span></div>${editBtns(m)}</div>
+    ${m.body ? `<div class="b">${hl(m.body)}</div>` : ""}${tags.length ? `<div class="tags">${tags.join("")}</div>` : ""}</div>`;
+}
+function hl(s) {
+  const t = esc(s);
+  if (!query) return t;
+  const q = esc(query).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return t.replace(new RegExp(q, "g"), (x) => `<span class="hl">${x}</span>`);
+}
+function policyList(list) {
+  return list.map((m) => `<div class="policy">${rinenBadge(m.rinen)}<div style="flex:1;"><div class="t" style="display:flex;justify-content:space-between;gap:6px;"><span>${hl(m.title)}</span>${editBtns(m)}</div>${m.body ? `<div class="b">${hl(m.body)}</div>` : ""}</div></div>`).join("") || `<div class="muted">まだありません</div>`;
+}
+// 施術者／社会人 × 定量／定性
+function standardsBlock(g) {
+  const col = (area, icon, sub) => {
+    const list = itemsOf(g, area);
+    const part = (measure) => {
+      const l = list.filter((m) => m.measure === measure);
+      return `<div class="sec-h"><span><span class="tag tag-${measure}">${measure}</span> ${measure === "定量" ? "数字で測るもの" : "行動・姿勢で見るもの"}</span>${addBtn(g, area, measure)}</div>${l.map(itemCard).join("") || `<div class="muted" style="margin-bottom:8px;">なし</div>`}`;
+    };
+    return `<div class="card"><div class="card-h"><span>${icon} ${area}として</span><span class="small">${sub}</span></div><div class="card-b">${part("定量")}${part("定性")}</div></div>`;
+  };
+  return `<div class="two">${col("施術者", "🤲", "技術・患者様への結果")}${col("社会人", "🤝", g === data.common || ["G1", "G2"].includes(g) ? "姿勢・ルール・チームへの貢献" : "姿勢・組織運営・チームへの貢献")}</div>`;
+}
+
+function rinenView() {
+  const c = data.common;
+  const rinen = itemsOf(c, "理念");
+  const cards = rinen.map((m) => `<div class="rinen-card"><div class="ch r-${esc(m.rinen || "心")}">${esc(m.rinen || "")}</div><div class="t">${esc(m.title)}</div><div class="b">${esc(m.body)}</div>${data.canEdit ? `<div style="margin-top:6px;">${editBtns(m)}</div>` : ""}</div>`).join("");
+  const cycle = [
+    ["個人の成長", "技術と人間性を磨く（カリキュラム・評価）"], ["患者様の笑顔", "改善・満足・口コミ・継続通院"], ["院の成果", "売上予算・継続率・成約率"],
+    ["会社の成長", "利益・新店舗・新しいポスト"], ["全員に還元", "給与・賞与・インセンティブ（人件費42%）・キャリアアップ"], ["物心ともに幸せ", "やりがい・仲間・豊かな生活 → さらに成長"],
+  ];
+  return `${readBox(c)}
+  <div class="rinen-hero"><div class="small" style="color:#9a3412;font-weight:800;">あんど整骨院の理念</div><div class="big">心豊笑幸</div>
+    <div class="lead">会社に関わる全ての人が、物心ともに幸せになる。<br>そのために、一人ひとりの働きが会社の成長につながる仕組みをつくります。</div></div>
+  <div class="rinen-grid">${cards}</div>${data.canEdit ? `<div style="margin:-6px 0 12px;">${addBtn(c, "理念")}</div>` : ""}
+  <div class="card"><div class="card-h">🔄 成長と還元の循環</div><div class="card-b"><div class="cycle">${cycle.map(([t, b]) => `<div class="s"><b>${t}</b>${b}</div>`).join("")}</div>
+    <div class="small" style="margin-top:10px;">クラスごとの役割（📘 クラス別）を果たし、評価基準（📊 評価基準）で成果を見える化し、成果を公平に還元する。これを全院・全クラスで同じルールで回すことで、統率の取れた組織をつくります。</div></div></div>
+  <div class="card"><div class="card-h"><span>🏢 全社共通の方針</span>${addBtn(c, "方針")}</div><div class="card-b">${policyList(itemsOf(c, "方針"))}</div></div>
+  <div class="small" style="margin:0 0 8px;font-weight:800;color:#57534e;">全クラス共通の基準（全員が守るもの）</div>
+  ${standardsBlock(c)}`;
+}
+
+function gradeChips(onclick, cur) {
+  const mine = data.viewer.manualGrade;
+  return `<div class="chip-row">${data.grades.map((g) => `<button class="chip ${g === cur ? "sel" : ""} ${g === mine ? "mine" : ""}" onclick="${onclick}('${g}')">${gLabel(g)}${g === mine ? " ★" : ""}</button>`).join("")}</div>`;
+}
+
+function classView() {
+  let html = `<input class="search" type="search" placeholder="🔍 マニュアル全体を検索（例：報連相、成約、清掃）" value="${esc(query)}" oninput="query=this.value.trim();renderSearchOnly()">`;
+  html += `<div id="classBody">${query ? searchResults() : classBody()}</div>`;
+  return html;
+}
+function renderSearchOnly() {
+  const el = document.getElementById("classBody");
+  if (el) el.innerHTML = query ? searchResults() : classBody();
+}
+function searchResults() {
+  const q = query.toLowerCase();
+  const hits = data.manual.filter((m) => `${m.title} ${m.body}`.toLowerCase().includes(q));
+  if (!hits.length) return `<div class="center">「${esc(query)}」は見つかりませんでした</div>`;
+  const byGrade = [data.common, ...data.grades].map((g) => [g, hits.filter((m) => m.grade === g)]).filter(([, l]) => l.length);
+  return byGrade.map(([g, l]) => `<div class="card"><div class="card-h">${esc(gLabel(g))}（${l.length}件）</div><div class="card-b">${l.map((m) => `<div class="small" style="font-weight:800;color:#9a3412;">${esc(m.area)}${m.measure ? `・${m.measure}` : ""}</div>${itemCard(m)}`).join("")}</div></div>`).join("");
+}
+function classBody() {
+  const g = grade;
+  const mission = itemsOf(g, "使命")[0];
+  const idx = data.grades.indexOf(g);
+  const next = data.grades[idx + 1];
+  let html = gradeChips("setGrade", g);
+  html += g === data.viewer.manualGrade ? readBox(g) : "";
+  html += `<div class="mission"><div class="lbl">${esc(gLabel(g))} の使命</div>${mission ? `<div class="t">${esc(mission.title)}</div><div class="b">${esc(mission.body)}</div>${data.canEdit ? `<div style="margin-top:6px;"><button class="btn btn-sm btn-outline" onclick="editItem('${mission.id}')">編集</button></div>` : ""}` : `<div class="t">（未設定）</div>${addBtn(g, "使命")}`}</div>`;
+  html += `<div class="card"><div class="card-h"><span>🧭 会社としての方針（${esc(gLabel(g))}）</span>${addBtn(g, "方針")}</div><div class="card-b">${policyList(itemsOf(g, "方針"))}</div></div>`;
+  html += standardsBlock(g);
+  html += `<div class="note">💡 全クラス共通の基準（挨拶・身だしなみ・時間厳守・報連相など）は、どのクラスでも評価の対象です。<a href="#" onclick="setView('rinen');return false;">🌸 理念・共通</a> も確認してください。${next ? `<br>次のクラス（${esc(gLabel(next))}）で求められることは <a href="#" onclick="setGrade('${next}');return false;">こちら</a>。` : ""}</div>`;
+  return html;
+}
+
+// ===== 評価基準（評価項目との対応） =====
+function evalView() {
+  const g = grade;
+  const rows = data.evaluation[g] || [];
+  let html = gradeChips("setGrade", g);
+  html += `<div class="note">月次評価（📝 評価）の項目を、<b>施術者／社会人</b> と <b>定量（数字）／定性（行動・姿勢）</b> に分けて表示しています。点数は「獲得点÷満点×100」で、配分は評価画面の「評価配分」で決まります。</div>`;
+  const cell = (area, measure) => rows.filter((r) => r.area === area && r.measure === measure);
+  const unassigned = rows.filter((r) => !r.area);
+  const list = (l) => l.length ? l.map((r) => `<div class="item"><div class="t">${esc(r.label)}${r.required ? ` <span class="tag tag-req">必須</span>` : ""}</div>
+      <div class="tags">${fmtTarget(r) ? `<span class="tag tag-eval">目標 ${esc(fmtTarget(r))}</span>` : `<span class="tag tag-noeval">上司が5段階で評価</span>`}${r.auto ? `<span class="tag tag-noeval">自動集計</span>` : ""}${r.kind === "基本" ? `<span class="tag tag-noeval">全クラス共通</span>` : ""}</div>
+      ${r.note ? `<div class="b small">${esc(r.note)}</div>` : ""}</div>`).join("") : `<div class="muted" style="margin-bottom:8px;">なし</div>`;
+  html += `<div class="two">${["施術者", "社会人"].map((a) => `<div class="card"><div class="card-h">${a === "施術者" ? "🤲" : "🤝"} ${a}として</div><div class="card-b">
+    <div class="sec-h"><span><span class="tag tag-定量">定量</span> ${cell(a, "定量").length}項目</span></div>${list(cell(a, "定量"))}
+    <div class="sec-h"><span><span class="tag tag-定性">定性</span> ${cell(a, "定性").length}項目</span></div>${list(cell(a, "定性"))}</div></div>`).join("")}</div>`;
+  if (unassigned.length) {
+    html += `<div class="card"><div class="card-h">⚠️ マニュアルに説明がない評価項目（${unassigned.length}）</div><div class="card-b">
+      <div class="warnbox">評価されるのに、マニュアルに基準の説明がない項目です。${data.canEdit ? "「📘 クラス別」でマニュアル項目を追加し、評価項目を紐づけてください。" : "社長・GMに追加を依頼してください。"}</div>${list(unassigned)}</div></div>`;
+  }
+  return html;
+}
+
+// ===== カリキュラム =====
+function curriculumView() {
+  const people = data.people;
+  if (personIdx >= people.length) personIdx = 0;
+  const p = people[personIdx];
+  if (!p) return `<div class="center">スタッフとして登録されていないため、進み具合は表示できません。</div>` + stepsFor(grade, null);
+  let html = "";
+  if (people.length > 1) {
+    html += `<div class="form-grid" style="margin-bottom:12px;"><label>スタッフ</label><select onchange="personIdx=Number(this.value);render()">${people.map((x, i) => `<option value="${i}" ${i === personIdx ? "selected" : ""}>${esc(x.name)}（${esc(x.grade)}・${esc(x.clinics.join("・"))}）${x.key === data.viewer.personKey ? " ★自分" : ""}</option>`).join("")}</select></div>`;
+  }
+  const s = p.summary;
+  html += `<div class="kpis"><div class="kpi"><div class="l">合格</div><div class="v">${s.passed}<span style="font-size:13px;color:#78716c;"> / ${s.total}</span></div><div class="bar"><i style="width:${s.rate || 0}%"></i></div></div>
+    <div class="kpi"><div class="l">練習中</div><div class="v">${s.practicing}</div><div class="small">ステップ</div></div>
+    <div class="kpi"><div class="l">達成率</div><div class="v">${s.rate === null ? "-" : s.rate + "%"}</div><div class="small">${esc(gLabel(p.manualGrade))}のカリキュラム</div></div></div>`;
+  if (p.manualGrade === "G1") html += `<div class="small" style="margin:-6px 0 10px;">新人カリキュラムの進み具合は、月次評価「社内実技チェックの進捗」の参考になります。</div>`;
+  html += stepsFor(p.manualGrade, p);
+  return html;
+}
+function stepsFor(g, p) {
+  const steps = data.curriculum.filter((s) => s.grade === g);
+  const phases = [...new Set(steps.map((s) => s.phase))];
+  const self = p && p.key === data.viewer.personKey;
+  let html = `<div class="card"><div class="card-h"><span>🎓 ${esc(gLabel(g))}の育成カリキュラム${p ? `（${esc(p.name)}さん）` : ""}</span>${data.canEdit ? `<button class="btn-link" onclick="newStep('${g}')">＋ ステップ追加</button>` : ""}</div><div class="card-b">`;
+  if (!steps.length) html += `<div class="muted">このクラスのカリキュラムはまだありません</div>`;
+  for (const ph of phases) {
+    const l = steps.filter((s) => s.phase === ph);
+    const done = p ? l.filter((s) => (p.progress[s.id] || {}).status === "合格").length : 0;
+    html += `<div class="phase"><div class="phase-h">${esc(ph)}${p ? `<span class="cnt">${done}/${l.length} 合格</span>` : ""}</div>`;
+    for (const s of l) {
+      const pr = p ? p.progress[s.id] || {} : {};
+      const st = pr.status || "未着手";
+      const acts = [];
+      if (p && p.canCheck) {
+        if (st !== "合格") acts.push(`<button class="btn btn-ok btn-sm" onclick="setStep('${s.id}','合格')">✓ 合格</button>`);
+        if (st !== "練習中") acts.push(`<button class="btn btn-gray btn-sm" onclick="setStep('${s.id}','練習中')">練習中</button>`);
+        if (st !== "未着手") acts.push(`<button class="btn-link" onclick="setStep('${s.id}','')">未着手に戻す</button>`);
+      } else if (self && st !== "合格") {
+        acts.push(st === "練習中" ? `<button class="btn-link" onclick="setStep('${s.id}','')">未着手に戻す</button>` : `<button class="btn btn-gray btn-sm" onclick="setStep('${s.id}','練習中')">練習を始めた</button>`);
+      }
+      if (p && (p.canCheck || self)) acts.push(`<button class="btn-link" onclick="memoStep('${s.id}')">メモ</button>`);
+      if (data.canEdit) acts.push(`<button class="btn-link" onclick="editStep('${s.id}')">編集</button><button class="btn-del" onclick="delStep('${s.id}')">削除</button>`);
+      html += `<div class="step ${st === "合格" ? "done" : st === "練習中" ? "doing" : ""}"><div class="mark">${st === "合格" ? "✅" : st === "練習中" ? "🔶" : "⬜"}</div><div class="main">
+        <div class="t">${esc(s.title)}</div>
+        <div class="c">合格基準：${esc(s.criterion || "-")}</div>
+        <div class="tags"><span class="tag ${s.area === "施術者" ? "tag-定量" : "tag-定性"}">${esc(s.area)}</span>${s.checker ? `<span class="tag tag-noeval">確認：${esc(s.checker)}</span>` : ""}${p ? `<span class="st st-${st}">${st}</span>` : ""}${pr.at ? `<span class="small">${esc(pr.checker)} ${esc(pr.at)}</span>` : ""}</div>
+        ${pr.memo ? `<div class="c">📝 ${esc(pr.memo)}</div>` : ""}
+        ${acts.length ? `<div class="acts">${acts.join("")}</div>` : ""}</div></div>`;
+    }
+    html += `</div>`;
+  }
+  return html + `</div></div>`;
+}
+function curPerson() { return data.people[personIdx]; }
+function setStep(stepId, status) {
+  const p = curPerson();
+  if (!p) return;
+  act({ action: "setProgress", personKey: p.key, stepId, status });
+}
+function memoStep(stepId) {
+  const p = curPerson();
+  const cur = (p.progress[stepId] || {});
+  const memo = prompt("メモ（できたこと・次の課題など）", cur.memo || "");
+  if (memo === null) return;
+  act({ action: "setProgress", personKey: p.key, stepId, status: cur.status || "", memo });
+}
+
+// ===== スタッフ状況 =====
+function staffView() {
+  const clinics = [...new Set(data.people.flatMap((p) => p.clinics))];
+  const list = data.people.filter((p) => !staffClinic || p.clinics.includes(staffClinic));
+  const rs = (r) => r ? `<span class="st st-${r.state}">${r.state}</span>` : "-";
+  let html = clinics.length > 1 ? `<div class="chip-row"><button class="chip ${!staffClinic ? "sel" : ""}" onclick="staffClinic='';render()">すべて</button>${clinics.map((c) => `<button class="chip ${c === staffClinic ? "sel" : ""}" onclick="staffClinic='${esc(c)}';render()">${esc(c)}</button>`).join("")}</div>` : "";
+  const unread = list.filter((p) => Object.values(p.reads).some((r) => r.state !== "確認済")).length;
+  html += `<div class="note">マニュアルの確認状況と、カリキュラムの進み具合です。${unread ? `<b>${unread}名</b>がまだ確認していないか、更新後に読み直していません。` : "全員が最新のマニュアルを確認済みです。"}</div>`;
+  html += `<div class="card"><div class="scroll"><table><thead><tr><th>氏名</th><th>クラス</th><th>院</th><th>共通</th><th>クラス別</th><th>カリキュラム</th><th></th></tr></thead><tbody>${list.map((p) => {
+    const i = data.people.indexOf(p);
+    const s = p.summary;
+    return `<tr><td><b>${esc(p.name)}</b></td><td>${esc(p.grade)}</td><td>${esc(p.clinics.join("・"))}</td><td>${rs(p.reads[data.common])}</td><td>${rs(p.reads[p.manualGrade])}</td>
+      <td style="min-width:120px;">${s.total ? `${s.passed}/${s.total}（${s.rate}%）<div class="bar" style="margin-top:3px;"><i style="width:${s.rate}%"></i></div>` : "-"}</td>
+      <td><button class="btn-link" onclick="personIdx=${i};setView('curriculum')">見る ›</button></td></tr>`;
+  }).join("")}</tbody></table></div></div>`;
+  return html;
+}
+
+// ===== 編集（社長・GM） =====
+function closeModal() { document.getElementById("modal").innerHTML = ""; }
+function openModal(title, inner, onsave) {
+  window.__save = onsave;
+  document.getElementById("modal").innerHTML = `<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="card-h">${esc(title)}<button class="btn-link" onclick="closeModal()">✕</button></div><div class="card-b">${inner}
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;"><button class="btn btn-gray" onclick="closeModal()">キャンセル</button><button class="btn btn-main" onclick="window.__save()">保存</button></div></div></div></div>`;
+}
+const opt = (vals, cur, labels = {}) => vals.map((v) => `<option value="${esc(v)}" ${v === cur ? "selected" : ""}>${esc(labels[v] || v || "（なし）")}</option>`).join("");
+const fv = (id) => (document.getElementById(id) || {}).value || "";
+function itemForm(m, originalId) {
+  const grades = [data.common, ...data.grades];
+  const evalOpts = (g) => {
+    const list = [...(data.evalItemOptions[g] || []), ...(g === data.common ? [] : data.evalItemOptions[data.common] || [])];
+    return `<option value="">（評価項目と紐づけない）</option>` + list.map((it) => `<option value="${esc(it.id)}" ${it.id === m.evalId ? "selected" : ""}>${esc(it.label)}（${esc(it.kind)}・${esc(it.id)}）</option>`).join("") +
+      (m.evalId && !list.some((it) => it.id === m.evalId) ? `<option value="${esc(m.evalId)}" selected>${esc(m.evalId)}（見つかりません）</option>` : "");
+  };
+  window.__refreshEval = () => { document.getElementById("f_eval").innerHTML = evalOpts(fv("f_grade")); };
+  openModal(originalId ? "マニュアル項目を編集" : "マニュアル項目を追加", `<div class="form-grid">
+    <label>クラス</label><select id="f_grade" onchange="__refreshEval()">${opt(grades, m.grade, Object.fromEntries(grades.map((g) => [g, gLabel(g)])))}</select>
+    <label>区分</label><select id="f_area">${opt(data.areas, m.area)}</select>
+    <label>定量／定性</label><select id="f_measure">${opt(["", ...data.measures], m.measure, { "": "（施術者・社会人のときに選ぶ）" })}</select>
+    <label>理念</label><select id="f_rinen">${opt(["", ...data.rinen], m.rinen, { "": "（なし）", 心: "心", 豊: "豊", 笑: "笑", 幸: "幸" })}</select>
+    <label>タイトル</label><input id="f_title" value="${esc(m.title)}" maxlength="80">
+    <label>内容・基準</label><textarea id="f_body" maxlength="1500">${esc(m.body)}</textarea>
+    <label>評価項目</label><select id="f_eval">${evalOpts(m.grade)}</select>
+    <label>項目ID</label><input id="f_id" value="${esc(m.id)}" placeholder="半角英数字（例：g2_greeting）">
+    <label>並び順</label><input id="f_order" type="number" value="${esc(m.order || "")}" placeholder="空なら最後">
+  </div><div class="small" style="margin-top:8px;">「施術者」「社会人」の項目は定量／定性を選びます。評価項目を紐づけると「評価対象」として目標値が表示されます。</div>`, async () => {
+    const item = { grade: fv("f_grade"), area: fv("f_area"), measure: fv("f_measure"), rinen: fv("f_rinen"), title: fv("f_title"), body: fv("f_body"), evalId: fv("f_eval"), id: fv("f_id").trim(), order: Number(fv("f_order")) || 0 };
+    if (await act({ action: "saveItem", item, originalId })) closeModal();
+  });
+}
+function editItem(id) { const m = data.manual.find((x) => x.id === id); if (m) itemForm(m, id); }
+function newItem(g, area, measure) {
+  itemForm({ grade: g, area, measure: measure || (area === "施術者" || area === "社会人" ? "定性" : ""), rinen: "", title: "", body: "", evalId: "", id: `${g === data.common ? "c" : g.toLowerCase()}_${Date.now().toString(36)}`, order: 0 }, "");
+}
+async function delItem(id) {
+  const m = data.manual.find((x) => x.id === id);
+  if (!m || !confirm(`「${m.title}」を削除しますか？`)) return;
+  await act({ action: "deleteItem", id });
+}
+function stepForm(s, originalId) {
+  openModal(originalId ? "カリキュラムのステップを編集" : "ステップを追加", `<div class="form-grid">
+    <label>クラス</label><select id="s_grade">${opt(data.grades, s.grade, Object.fromEntries(data.grades.map((g) => [g, gLabel(g)])))}</select>
+    <label>時期</label><input id="s_phase" value="${esc(s.phase)}" placeholder="例：1週目・1ヶ月・3ヶ月">
+    <label>区分</label><select id="s_area">${opt(["施術者", "社会人"], s.area)}</select>
+    <label>内容</label><input id="s_title" value="${esc(s.title)}" maxlength="80">
+    <label>合格基準</label><textarea id="s_crit" maxlength="300">${esc(s.criterion)}</textarea>
+    <label>確認者</label><input id="s_checker" value="${esc(s.checker)}" placeholder="例：院長・副院長">
+    <label>ステップID</label><input id="s_id" value="${esc(s.id)}">
+    <label>並び順</label><input id="s_order" type="number" value="${esc(s.order || "")}" placeholder="空なら最後">
+  </div>`, async () => {
+    const step = { grade: fv("s_grade"), phase: fv("s_phase"), area: fv("s_area"), title: fv("s_title"), criterion: fv("s_crit"), checker: fv("s_checker"), id: fv("s_id").trim(), order: Number(fv("s_order")) || 0 };
+    if (await act({ action: "saveStep", step, originalId })) closeModal();
+  });
+}
+function editStep(id) { const s = data.curriculum.find((x) => x.id === id); if (s) stepForm(s, id); }
+function newStep(g) {
+  const last = data.curriculum.filter((s) => s.grade === g).pop();
+  stepForm({ grade: g, phase: last ? last.phase : "1週目", area: "施術者", title: "", criterion: "", checker: "院長", id: `${g.toLowerCase()}_${Date.now().toString(36)}`, order: 0 }, "");
+}
+async function delStep(id) {
+  const s = data.curriculum.find((x) => x.id === id);
+  if (!s || !confirm(`「${s.title}」を削除しますか？（進み具合の記録はシートに残ります）`)) return;
+  await act({ action: "deleteStep", id });
+}
+
+load();
+</script>
+</body>
+</html>
