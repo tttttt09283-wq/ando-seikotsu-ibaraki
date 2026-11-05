@@ -16,6 +16,7 @@
 // 評価項目は台帳の「評価項目」シートを直接編集すれば変更できる（配点・目標値・採点基準など）。
 
 import { mandalaHandler } from "../lib/mandala-api.js";
+import { manualHandler } from "../lib/manual-api.js";
 import { batchGet, batchUpdate, getSheetTitles, addSheets, appendRows } from "../lib/google-sheets.js";
 import { resolveViewer, filterModelForViewer, canSeeLabor, canSeeCompany, clinicsAt, evalGradeAt, evalAsAt } from "../lib/incentive-calc.js";
 import { CAREER_SHEET_ID, loadModel, invalidateModel, loadNewPatients, authenticate, viewerNotFound } from "../lib/incentive-data.js";
@@ -23,7 +24,7 @@ import { EVENT_SHEET, EVENT_HEADER, MAX_EVENT_BONUS, eventBonusMap, groupEvents,
 import {
   ITEM_SHEET, RECORD_SHEET, RECORD_HEADER, DEFAULT_ITEMS, ADDED_DEFAULT_ITEMS, COMMON_GRADE,
   STAFF_SHEET, STAFF_HEADER, parseStaffSettings, DIST_SHEET, parseDist, distRows, validateDist, distFor, deptPointsFor, DEPT_PREFIX, DEFAULT_DEPARTMENTS, departmentNames, deptMembership, canSetCandidate, gradeRank, itemSheetRows, parseItemSheet, parseRecords,
-  scoreMonth, isNumericKind, rankOf, itemsFor, validateItems, GRADE_LABELS, AUTO_OPTIONS, parseMonthKey, monthKeyOf, halfMonthKeys, autoValues, superiorOf, canEvaluate, buildRecordRows,
+  withAddedDefaults, scoreMonth, isNumericKind, rankOf, itemsFor, validateItems, GRADE_LABELS, AUTO_OPTIONS, parseMonthKey, monthKeyOf, halfMonthKeys, autoValues, superiorOf, canEvaluate, buildRecordRows,
 } from "../lib/evaluation.js";
 import { normName } from "../lib/incentive-calc.js";
 import { LADDER_SHEET, parseLadder, judgeCareer, maskSensitive } from "../lib/career-judgement.js";
@@ -102,19 +103,6 @@ function maskLabor(items, cur, allowed) {
 
 // 後から増えた初期項目（患者対応チェック・平均通院回数）を、まだ持っていない評価項目シートに足す。
 // どのクラスにも同じIDの項目が無いときだけ（設定画面で消したクラスにまた出てこないように）
-function withAddedDefaults(items) {
-  const has = (id) => Object.values(items).some((list) => list.some((it) => it.id === id));
-  const out = { ...items };
-  // 2コース制で増えたクラス（S1〜S3 スペシャリスト）が評価項目シートに無ければ初期値を使う
-  for (const g of ["S1", "S2", "S3"]) if (!out[g]) out[g] = DEFAULT_ITEMS[g];
-  for (const [g, add] of Object.entries(ADDED_DEFAULT_ITEMS)) {
-    // そのクラスに既にある項目（初期値から入れたスペシャリストのクラスなど）は足さない
-    const missing = add.filter((it) => !has(it.id) && !(out[g] || []).some((x) => x.id === it.id));
-    if (missing.length && out[g]) out[g] = [...out[g], ...missing];
-  }
-  return out;
-}
-
 // 部門ができる前に作った評価項目シートには部門の行が無いので、その場合は既定の部門の項目を使う
 function withDefaultDepartments(items) {
   if (departmentNames(items).length) return items;
@@ -510,6 +498,7 @@ async function save({ model, np, viewer, isAdmin, staff, body }) {
 export default async function handler(req, res) {
   // /api/mandala もこの関数で受ける（Vercelの無料プランは関数が12個までのため。vercel.json で振り替え）
   if (req.query && req.query.__mandala) return mandalaHandler(req, res);
+  if (req.query && req.query.__manual) return manualHandler(req, res); // /api/manual も同じ理由で
   if (req.method !== "GET" && req.method !== "POST") {
     res.status(405).json({ error: "GET・POSTのみ対応しています" });
     return;

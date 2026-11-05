@@ -303,7 +303,7 @@ async function load(refresh) {
     if (res.status === 401) return renderLogin(body.error);
     if (!res.ok) throw new Error(body.error || `読み込みに失敗しました（HTTP ${res.status}）`);
     // マンダラの画面からログインしに来た人は、ログインできたらマンダラへ戻す
-    try { if (new URLSearchParams(location.search).get("next") === "mandala") { location.replace("/mandala"); return; } } catch (e) {}
+    try { const nx = new URLSearchParams(location.search).get("next"); if (nx === "mandala" || nx === "manual") { location.replace("/" + nx); return; } } catch (e) {}
     data = body;
     if (!halfKey) {
       const cur = data.halves.find((h) => h.elapsed.length && !h.complete) || [...data.halves].reverse().find((h) => h.elapsed.length) || data.halves[0];
@@ -351,6 +351,7 @@ function render() {
   document.getElementById("subLabel").textContent =
     `${data.fiscalYear}年度 ・ ${data.latestMonth ? data.latestMonth + "月分まで反映" : "実績なし"} ・ ${v.name}さん（${SCOPE_LABEL[v.scope]}）`;
   document.getElementById("topActions").innerHTML =
+    `<a class="btn btn-outline" style="text-decoration:none;" href="/manual">📘 マニュアル</a>` +
     `<a class="btn btn-outline" style="text-decoration:none;" href="/mandala">🧭 マンダラ・KDI</a>` +
     `<button class="btn btn-outline" onclick="${view === "evaluation" ? "loadEval(true)" : view === "logins" ? "loginsData=null;render()" : "load(true)"}">↻ 最新に更新</button>` +
     `<button class="btn btn-outline" onclick="logout()">ログアウト</button>`;
