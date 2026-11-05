@@ -116,3 +116,13 @@ test("在庫の残り", () => {
   const p = { id: "insole" };
   assert.equal(NG.stockLeft(p, [{ product: "insole", qty: 20 }, { product: "sandal", qty: 5 }, { product: "insole", qty: 10 }], 12), 18);
 });
+
+test("練習（トレーニングモード）の会計は本番の集計に入れない", () => {
+  const pays = [
+    { booking_id: 1, jifee_items: [{ label: "物販：インソール", amount: 5500 }] },
+    { booking_id: 2, is_training: true, jifee_items: [{ label: "物販：インソール", amount: 5500 }] },
+  ];
+  assert.equal(NG.aggregatePayments(pays).goodsUnits, 1);
+  assert.equal(NG.aggregatePayments(pays, undefined, true).goodsUnits, 1);
+  assert.equal(NG.aggregatePayments(pays, undefined, true).goods.insole.units, 1);
+});

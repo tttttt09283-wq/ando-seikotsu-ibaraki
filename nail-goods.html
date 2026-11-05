@@ -126,7 +126,7 @@ function defaultData() {
   };
 }
 let data = null, session = null, tab = lsGet("nail_goods_tab") || "nail", saveTimer = null, stores = [];
-let pos = { ym: thisMonth(), loading: false, result: null, error: null, since: null };
+let pos = { ym: thisMonth(), loading: false, result: null, error: null, since: null, training: false };
 
 // ===== 読み込み・保存 =====
 async function token() { const { data: { session: s } } = await supabaseClient.auth.getSession(); session = s; return s ? s.access_token : SUPABASE_ANON_KEY; }
@@ -180,7 +180,7 @@ function save() {
 
 // ===== POS（会計）から実績を取る =====
 async function loadPos(from, to) {
-  const pays = await sbGetAll("payments", `?payment_date=gte.${from}&payment_date=lte.${to}&select=id,booking_id,payment_date,jifee_items,is_refund,patient_name&order=id`);
+  const pays = await sbGetAll("payments", `?payment_date=gte.${from}&payment_date=lte.${to}&select=id,booking_id,payment_date,jifee_items,is_refund,is_training,patient_name&order=id`);
   if (!data.storeId) return pays;
   const bks = await sbGetAll("bookings", `?date=gte.${shiftMonth(from.slice(0, 7), -1)}-01&date=lte.${to}&select=id,store_id&order=id`);
   const firstStore = stores[0] ? String(stores[0].id) : "1";
@@ -191,11 +191,11 @@ async function fetchPosMonth() {
   pos.loading = true; pos.error = null; render();
   try {
     const pays = await loadPos(`${pos.ym}-01`, lastDay(pos.ym));
-    pos.result = NG.aggregatePayments(pays, data.products);
+    pos.result = NG.aggregatePayments(pays, data.products, pos.training);
     // 在庫計算用：販売開始月から今日までの物販の販売数
     const since = data.startMonth <= thisMonth() ? data.startMonth : thisMonth();
     const all = since === pos.ym ? pays : await loadPos(`${since}-01`, todayStr());
-    pos.since = { from: since, agg: NG.aggregatePayments(all, data.products) };
+    pos.since = { from: since, agg: NG.aggregatePayments(all, data.products, pos.training) };
   } catch (e) { pos.error = e.message; }
   pos.loading = false; render();
 }
@@ -363,9 +363,11 @@ function viewRecord() {
       <input type="month" value="${ym}" onchange="pos.ym=this.value;fetchPosMonth()"/>
       <button class="btn btn-gray btn-sm" onclick="pos.ym=shiftMonth(pos.ym,1);fetchPosMonth()">▶</button>
       <select onchange="data.storeId=this.value;save();fetchPosMonth()"><option value="">全店舗</option>${stores.map((s) => `<option value="${s.id}" ${String(s.id) === String(data.storeId) ? "selected" : ""}>${esc(s.name)}</option>`).join("")}</select>
+      <label class="small" style="display:flex;align-items:center;gap:4px;"><input type="checkbox" ${pos.training ? "checked" : ""} onchange="pos.training=this.checked;fetchPosMonth()"/>練習の会計（トレーニングモード）を表示</label>
       <button class="btn btn-main btn-sm" onclick="fetchPosMonth()">POSから再集計</button></span></div>
   <div class="card-b">
     ${pos.error ? `<div class="err">${esc(pos.error)}${session ? "" : "（POSの会計を読むには管理画面からログインした状態で開いてください）"}</div>` : ""}
+    ${pos.training ? `<div class="warnbox">いまは練習（トレーニングモード）の会計だけを表示しています。本番の数字を見るときはチェックを外してください。</div>` : ""}
     ${pos.loading ? `<div class="muted">POSの会計を集計中…</div>` : ""}
     <div class="grid3">
       <div class="stat"><div class="l">物販の売上（POS）</div><div class="v">${r ? yen(r.goodsSales) : "-"}</div><div class="s">${plan ? `見込み ${yen(plan.sales)} → 達成率 ${r ? pctS(r.goodsSales / (plan.sales || 1) * 100) : "-"}` : "販売開始月より前、または見込み期間外"}</div></div>

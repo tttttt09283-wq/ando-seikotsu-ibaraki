@@ -196,12 +196,14 @@
 
   // ===== 実績の集計 =====
   // POS の会計（payments）から、月の巻き爪件数・売上と物販の販売数・売上を出す
-  function aggregatePayments(payments,products=DEFAULT_PRODUCTS){
+  // training=true のときはトレーニングモード（練習）の会計だけ、false のときは本番の会計だけを数える
+  function aggregatePayments(payments,products=DEFAULT_PRODUCTS,training=false){
     const out={makiNew:0,makiCont:0,makiSales:0,goods:{},goodsSales:0,goodsUnits:0,buyers:0};
     products.forEach(p=>{out.goods[p.id]={units:0,sales:0};});
     const buyers=new Set();
     (payments||[]).forEach(pay=>{
       if(!pay||pay.is_refund) return;
+      if(!!pay.is_training!==!!training) return;
       (Array.isArray(pay.jifee_items)?pay.jifee_items:[]).forEach(it=>{
         const label=String((it&&it.label)||"");
         const amt=parseInt(it&&it.amount)||0;
