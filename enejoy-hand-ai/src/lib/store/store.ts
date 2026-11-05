@@ -94,6 +94,7 @@ export class FileStore implements CompanyStore {
         kpis: { ...base.kpis, ...(parsed.kpis ?? {}) },
         org: { ...base.org, ...(parsed.org ?? {}) },
         midPlan: { ...base.midPlan, ...(parsed.midPlan ?? {}) },
+        mandala: { ...base.mandala, ...(parsed.mandala ?? {}) },
       };
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== "ENOENT") {

@@ -107,3 +107,16 @@
 @media (prefers-reduced-motion: reduce) {
   .status-live { animation: none; }
 }
+
+/* 印刷（マンダラチャートなど）：メニューや切り替えは印刷しない */
+@media print {
+  aside,
+  nav,
+  header,
+  [role="tablist"] {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+}

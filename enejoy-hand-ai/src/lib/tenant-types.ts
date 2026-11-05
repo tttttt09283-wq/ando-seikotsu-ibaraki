@@ -244,6 +244,8 @@ export type TenantConfig = {
   };
   /** 組織図の役割の名前（行名の前方一致）と、施術者の換算人数（時短・アルバイトは 0.5 など。受付は 0） */
   staffRoles: { role: StaffRole; label: string; aliases: string[]; fte: number }[];
+  /** 会社のマンダラチャートのたたき台（中心の目標＋8テーマ×8行動） */
+  mandalaTemplate: { center: string; themes: { title: string; items: string[] }[] };
   teams: Team[];
   members: Member[];
   /** チームごとのレビュー担当リーダー */

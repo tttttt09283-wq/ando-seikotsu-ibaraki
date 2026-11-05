@@ -385,6 +385,32 @@ export type MidPlanState = {
   adopted: { scenario: MidPlanScenario; approvalId: string; at: string; note?: string } | null;
 };
 
+// ---- マンダラチャート ----
+
+/** 行動の進み具合 */
+export type MandalaStatus = "todo" | "doing" | "done";
+
+export type MandalaItem = { text: string; status: MandalaStatus; owner?: string };
+
+/** 中心の目標を支える8つのテーマ。それぞれに8つの行動 */
+export type MandalaTheme = { title: string; items: MandalaItem[] };
+
+export type MandalaChart = {
+  id: string;
+  title: string;
+  /** 会社全体／部門／院／その他（個人など） */
+  scope: "company" | "department" | "clinic" | "other";
+  scopeLabel?: string;
+  center: string;
+  themes: MandalaTheme[];
+  note?: string;
+  createdAt: string;
+  updatedAt: string;
+  updatedBy: string;
+};
+
+export type MandalaState = { charts: MandalaChart[] };
+
 export type UsageRecord = {
   id: string;
   mode: DataMode;
@@ -586,6 +612,7 @@ export type CompanyData = {
   kpis: KpiState;
   org: OrgState;
   midPlan: MidPlanState;
+  mandala: MandalaState;
 };
 
 export function emptyCompanyData(): CompanyData {
@@ -610,6 +637,7 @@ export function emptyCompanyData(): CompanyData {
     kpis: { defs: null },
     org: { snapshots: [] },
     midPlan: { scenarios: [], adopted: null },
+    mandala: { charts: [] },
   };
 }
 
@@ -859,4 +887,30 @@ export const planInputSchema = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("remove"), id: z.string().min(1).max(40) }),
   z.object({ action: z.literal("request_adopt"), id: z.string().min(1).max(40), note: z.string().trim().max(300).optional() }),
+]);
+
+// ---- マンダラチャート ----
+
+const mandalaText = z.string().trim().max(60, "1マス60文字以内で入力してください");
+const mandalaItemSchema = z.object({ text: mandalaText, status: z.enum(["todo", "doing", "done"]), owner: z.string().trim().max(20).optional() });
+const mandalaThemeSchema = z.object({ title: mandalaText, items: z.array(mandalaItemSchema).length(8) });
+export const mandalaInputSchema = z.discriminatedUnion("action", [
+  z.object({
+    action: z.literal("create"),
+    title: z.string().trim().min(1, "名前を入力してください").max(40),
+    scope: z.enum(["company", "department", "clinic", "other"]),
+    scopeLabel: z.string().trim().max(30).optional(),
+    template: z.enum(["blank", "company"]),
+    copyFrom: z.string().max(40).optional(),
+  }),
+  z.object({
+    action: z.literal("update"),
+    id: z.string().min(1).max(40),
+    title: z.string().trim().min(1).max(40).optional(),
+    scopeLabel: z.string().trim().max(30).optional(),
+    center: mandalaText.optional(),
+    themes: z.array(mandalaThemeSchema).length(8).optional(),
+    note: z.string().trim().max(500).optional(),
+  }),
+  z.object({ action: z.literal("remove"), id: z.string().min(1).max(40) }),
 ]);

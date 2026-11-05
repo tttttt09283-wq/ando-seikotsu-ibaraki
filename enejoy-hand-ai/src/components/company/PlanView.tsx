@@ -11,6 +11,7 @@ import type { OrgCounts, StaffRole } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { TENANT } from "@/tenant";
 import { KpiPanel } from "./KpiPanel";
+import { MandalaPanel } from "./MandalaPanel";
 import { MidPlanPanel } from "./MidPlanPanel";
 import { Message, PlanSheetImport, SourcePicker, sourceBody, sourceReady, type Msg, type SourceValue } from "./SheetImport";
 import { useClinics, useCompany } from "./StateProvider";
@@ -291,6 +292,7 @@ function ImportPanel() {
 
 const PLAN_TABS = [
   { id: "plan", label: "中期計画" },
+  { id: "mandala", label: "マンダラチャート" },
   { id: "kpi", label: "管理項目" },
   { id: "org", label: "人員（組織図）" },
   { id: "import", label: "シートの取り込み" },
@@ -324,6 +326,7 @@ export function PlanView() {
         ))}
       </div>
       {tab === "plan" && <MidPlanPanel />}
+      {tab === "mandala" && <MandalaPanel />}
       {tab === "kpi" && <KpiPanel />}
       {tab === "org" && <OrgPanel />}
       {tab === "import" && <ImportPanel />}

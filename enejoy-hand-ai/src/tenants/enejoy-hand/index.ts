@@ -1,6 +1,7 @@
 import type { TenantConfig } from "@/lib/tenant-types";
 import { recommendApprover } from "./approval-policy";
 import { KPIS, STAFF_ROLES } from "./kpis";
+import { MANDALA_TEMPLATE } from "./mandala";
 import { MEMBERS, REVIEWER_BY_TEAM, TEAMS } from "./organization";
 import { CLINICS, METRICS, PLAN_HIGHLIGHTS, TOTAL_ROW_ALIASES } from "./numbers";
 import { PLAYBOOK } from "./playbook";
@@ -66,6 +67,7 @@ const enejoyHand: TenantConfig = {
   kpis: KPIS,
   fiscal: { term: 10, planYears: 3, defaultGrowth: 1.05 },
   staffRoles: STAFF_ROLES,
+  mandalaTemplate: MANDALA_TEMPLATE,
   budget: { standardPerClinicJpy: 3_500_000, label: "1院あたり月350万円（平均）", perStaffJpy: 1_000_000 },
   teams: TEAMS,
   members: MEMBERS,

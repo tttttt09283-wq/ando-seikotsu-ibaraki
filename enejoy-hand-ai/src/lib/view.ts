@@ -37,7 +37,7 @@ import { competitorComparison, reputationMode, reviewStats } from "@/lib/engine/
 import { budgetTable } from "@/lib/engine/budget-metrics";
 import { kpiTable } from "@/lib/engine/kpi-metrics";
 import { fyStarts, midPlanTable } from "@/lib/engine/midplan-metrics";
-import type { MidPlanScenario, OrgSnapshot } from "@/lib/types";
+import type { MandalaChart, MidPlanScenario, OrgSnapshot } from "@/lib/types";
 
 /**
  * 表示する承認依頼：今のモードのもの＋本番の口コミへの返信など、実データへの書き込みを伴うもの
@@ -164,6 +164,8 @@ export type CompanySnapshot = {
     adopted: (ReturnType<typeof midPlanTable> & { name: string; at: string; approvalId: string; note?: string }) | null;
     pendingApprovalId: string | null;
   };
+  /** マンダラチャート */
+  mandala: { charts: MandalaChart[] };
   /** 監査ログ（新しい順・統括責任者のみ） */
   audit: AuditEntry[];
   safety: SafetyState;
@@ -388,6 +390,7 @@ export function buildSnapshot(data: CompanyData, mode: DataMode, now: Date, limi
       pendingApprovalId: data.approvals.find((a) => a.status === "PENDING" && a.payload?.kind === "budget_confirm")?.id ?? null,
     },
     kpi: kpiTable(data, now),
+    mandala: { charts: data.mandala.charts },
     org: { snapshots: data.org.snapshots },
     plan: {
       fyStarts: fyStarts(),
