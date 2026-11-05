@@ -1651,6 +1651,47 @@ async function save(){
   render();
 }
 
+// ===== 口コミ（依頼済み・獲得）／鍼灸保険（案内済み・獲得・✖）の印（患者様ごと・管理画面のカレンダーと共通） =====
+const MARK_REVIEW={requested:{label:"依頼済み",color:"#92400e",bg:"#fef3c7"},got:{label:"獲得",color:"#065f46",bg:"#d1fae5"}};
+const MARK_ACU={guided:{label:"案内済み",color:"#1e40af",bg:"#dbeafe"},got:{label:"獲得",color:"#065f46",bg:"#d1fae5"},no:{label:"✖",color:"#991b1b",bg:"#fee2e2"}};
+function patientMarkKey(name){ return String(name||"").replace(/[\s　]/g,""); }
+async function loadPatientMark(){
+  try{ const rows=await sbGet("patient_marks",`?patient_key=eq.${encodeURIComponent(patientMarkKey(booking.patient_name))}&limit=1`);
+    state.mark=Array.isArray(rows)&&rows[0]?rows[0]:{}; }catch(e){ state.mark={}; }
+}
+async function setPatientMark(field,val){
+  if(state.markSaving) return;
+  state.markSaving=true; state.markMsg=""; render();
+  try{
+    const now=new Date().toISOString();
+    const body={patient_key:patientMarkKey(booking.patient_name),patient_name:booking.patient_name,updated_at:now,updated_by:booking.staff_id||null,[field]:val||null,[field+"_at"]:val?now:null};
+    const res=await sbUpsert("patient_marks",body,"patient_key");
+    if(!Array.isArray(res)||!res[0]) throw new Error((res&&res.message)||"保存できませんでした");
+    state.mark=res[0]; state.markMsg="保存しました";
+  }catch(e){ state.markMsg="保存できませんでした："+e.message; }
+  state.markSaving=false; render();
+}
+function renderPatientMarks(){
+  const m=state.mark||{};
+  const b=(on,def,onclick,label)=>`<button type="button" onclick="${onclick}" ${state.markSaving?"disabled":""} aria-pressed="${on}" style="padding:7px 12px;border-radius:8px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;border:1.5px solid ${on?(def?def.color:"#64748b"):"#e2e8f0"};background:${on?(def?def.bg:"#f1f5f9"):"white"};color:${on?(def?def.color:"#475569"):"#64748b"};">${label}</button>`;
+  const rv=m.review||null, ac=m.acu||null;
+  const headline=[rv?`⭐ 口コミ：${MARK_REVIEW[rv].label}`:"⭐ 口コミ：まだ",ac?`🪡 鍼灸保険：${MARK_ACU[ac].label}`:"🪡 鍼灸保険：まだ"].join("　");
+  return `<div class="card" style="border:2px solid ${(!rv||!ac)?"#f59e0b":"#a7f3d0"};">
+    <div class="card-header" style="background:${(!rv||!ac)?"#fffbeb":"#ecfdf5"};color:#1e3a5f;">${escH(headline)}</div>
+    <div class="card-body">
+      <div style="font-size:12px;font-weight:800;color:#475569;margin-bottom:4px;">⭐ 口コミ</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+        ${b(!rv,null,"setPatientMark('review',null)","まだ")}${b(rv==="requested",MARK_REVIEW.requested,"setPatientMark('review','requested')","依頼済み")}${b(rv==="got",MARK_REVIEW.got,"setPatientMark('review','got')","獲得")}
+      </div>
+      <div style="font-size:12px;font-weight:800;color:#475569;margin-bottom:4px;">🪡 鍼灸保険</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        ${b(!ac,null,"setPatientMark('acu',null)","まだ")}${b(ac==="guided",MARK_ACU.guided,"setPatientMark('acu','guided')","案内済み")}${b(ac==="got",MARK_ACU.got,"setPatientMark('acu','got')","獲得")}${b(ac==="no",MARK_ACU.no,"setPatientMark('acu','no')","✖")}
+      </div>
+      ${state.markMsg?`<div style="margin-top:8px;font-size:12px;font-weight:700;color:${state.markMsg.startsWith("保存しました")?"#059669":"#dc2626"};">${escH(state.markMsg)}</div>`:""}
+      <div style="margin-top:6px;font-size:11px;color:#94a3b8;">患者様ごとに記録され、管理画面のカレンダーの予約枠にも表示されます。</div>
+    </div>
+  </div>`;
+}
 function render(){
   const root=document.getElementById("root");
   if(!booking) return;
@@ -1680,6 +1721,7 @@ function render(){
             <b>⚠ 購入した回数券・フリーパスが登録されていません</b><br>${state.missingPasses.map(r=>escH(r.pass_type)).join("、")}（このままだと次回以降の会計で使えません）
             <button onclick="registerMissingPasses()" style="display:block;width:100%;margin-top:8px;padding:9px;border-radius:8px;border:none;background:#dc2626;color:white;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;">🎫 回数券・フリーパスを登録する</button></div>`:""}
         </div>
+        ${state.mark?renderPatientMarks():""}
         ${renderRefundSection()}
         ${renderReceiptSection()}
         ${renderNextBookings()}
@@ -1706,6 +1748,7 @@ function render(){
       </div>
       <div class="main-grid">
         <div class="left-col">
+          ${state.mark&&!state.fixing?renderPatientMarks():""}
           ${renderPrevPayments()}
           ${isPreOpenPeriod()&&!state.fixing?`
           <div class="card" style="border:2px solid #f59e0b;">
@@ -1900,6 +1943,8 @@ async function init(){
     }catch(e){ console.error("回数券・FPの取得に失敗しました",e); }
     // 前回会計の取得は画面表示を止めない（失敗しても会計はそのまま使える）。取得できたら描画し直す
     loadPrevPayments().then(()=>{ try{ if(!state.done&&!state.saving) render(); }catch(e){} }).catch(()=>{});
+    // 口コミ・鍼灸保険の印も、画面表示を止めずに読み込む
+    loadPatientMark().then(()=>{ try{ if(!state.saving) render(); }catch(e){} }).catch(()=>{});
     document.getElementById("patientBadge").textContent=booking.patient_name+" 様";
     if(booking.is_training){ document.getElementById("trainingBanner").style.display="block"; }
     // レシート発行頻度の希望（問診票または過去の会計時の設定）を読み込む
