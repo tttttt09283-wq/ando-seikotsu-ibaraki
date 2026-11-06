@@ -49,27 +49,34 @@
 
   const emptyRow=staffId=>({staffId,total:0,tech:0,goods:0,visits:0,techVisits:0,goodsVisits:0,newVisits:0,repeatVisits:0});
 
-  // 期間・店舗で絞った、スタッフごとの集計。客数は「1回の来院（予約）」を1人と数える（同じ予約の会計が複数あってもまとめて1人）
+  // 期間・店舗で絞った、スタッフごとの集計。客数は「1回の来院（予約）」を1人と数える（同じ予約の会計が複数あってもまとめて1人）。
+  // 総合の客数・新規・再来＝会計の担当（予約の担当）として対応した人数。回数券・フリーパスの消化や無料体験などの ¥0 の会計も数える。
+  // 技術・商品の客数＝その来院でその区分の売上を担当した人数（ほかの担当の患者さんの鍼などを手伝った分も入る）。¥0 の会計は担当の技術に数える。
   // opts: {from, to, storeId|null, storeOfBooking(bookingId)->storeId, firstDates}
   function summarize(payments,opts){
     const o=opts||{};
     const firstDates=o.firstDates||firstVisitDates(payments);
     const rows={};
-    const visitSeen={}; // "staffId|来院キー" → {tech,goods}
+    const visitSeen={}; // "staffId|来院キー" → {any,tech,goods}
     (payments||[]).forEach(p=>{
       if(!p.payment_date||(o.from&&p.payment_date<o.from)||(o.to&&p.payment_date>o.to)) return;
       if(o.storeId!=null&&o.storeOfBooking&&p.booking_id!=null&&o.storeOfBooking(p.booking_id)!==o.storeId) return;
       const visitKey=p.booking_id!=null?"b"+p.booking_id:"p"+p.id;
       const name=String(p.patient_name||"").replace(/\s/g,"");
       const isNew=!!name&&firstDates[name]===p.payment_date;
-      splitPayment(p).forEach(part=>{
+      const main=p.staff_id||0;
+      const parts=splitPayment(p);
+      if(!p.is_refund&&!parts.some(x=>x.staffId===main)) parts.push({staffId:main,tech:0,goods:0});
+      const paymentTotal=Number(p.total_amount)||0;
+      parts.forEach(part=>{
         const r=rows[part.staffId]=rows[part.staffId]||emptyRow(part.staffId);
         r.tech+=part.tech; r.goods+=part.goods; r.total+=part.tech+part.goods;
         if(p.is_refund) return; // 返金は金額だけ引き、客数は数えない
+        const isMain=part.staffId===main;
         const k=part.staffId+"|"+visitKey;
         const seen=visitSeen[k]=visitSeen[k]||{any:false,tech:false,goods:false};
-        if(!seen.any&&(part.tech>0||part.goods>0)){ seen.any=true; r.visits++; if(isNew) r.newVisits++; else r.repeatVisits++; }
-        if(!seen.tech&&part.tech>0){ seen.tech=true; r.techVisits++; }
+        if(!seen.any&&isMain){ seen.any=true; r.visits++; if(isNew) r.newVisits++; else r.repeatVisits++; }
+        if(!seen.tech&&(part.tech>0||(isMain&&paymentTotal===0))){ seen.tech=true; r.techVisits++; }
         if(!seen.goods&&part.goods>0){ seen.goods=true; r.goodsVisits++; }
       });
     });

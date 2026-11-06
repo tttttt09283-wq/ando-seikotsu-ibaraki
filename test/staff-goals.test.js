@@ -35,7 +35,18 @@ test("担当ごとに技術・商品へ分け、同じ予約は1人と数える"
   assert.equal(a.newVisits, 1);
   assert.equal(a.repeatVisits, 1);
   assert.equal(a.avg, 1500);
-  assert.deepEqual(plain(b), { staffId: 2, total: 3000, tech: 3000, goods: 0, visits: 1, techVisits: 1, goodsVisits: 0, newVisits: 1, repeatVisits: 0, avg: 3000, techAvg: 3000, goodsAvg: 0 });
+  // B は Aの患者さんの鍼を担当しただけ：売上と技術の客数には入るが、総合の客数（担当した人数）には入らない
+  assert.deepEqual(plain(b), { staffId: 2, total: 3000, tech: 3000, goods: 0, visits: 0, techVisits: 1, goodsVisits: 0, newVisits: 0, repeatVisits: 0, avg: 0, techAvg: 3000, goodsAvg: 0 });
+});
+
+test("回数券・フリーパスの消化など ¥0 の会計も、担当した1人として数える", () => {
+  const zero = [
+    { id: 11, booking_id: 21, patient_name: "架空 次郎", payment_date: "2026-11-02", staff_id: 4, insurance_amount: 0, jifee_amount: 0, total_amount: 0, jifee_items: [] },
+    { id: 12, booking_id: 22, patient_name: "架空 次郎", payment_date: "2026-11-03", staff_id: 4, insurance_amount: 0, jifee_amount: 0, total_amount: 0, jifee_items: [] },
+    { id: 13, booking_id: 23, patient_name: "架空 三郎", payment_date: "2026-11-03", staff_id: 4, insurance_amount: 1000, jifee_amount: 0, total_amount: 1000, jifee_items: [] },
+  ];
+  const [r] = SG.summarize(zero, { from: "2026-11-01", to: "2026-11-30" });
+  assert.deepEqual(plain([r.visits, r.techVisits, r.total, r.avg, r.newVisits, r.repeatVisits]), [3, 3, 1000, 333, 2, 1]);
 });
 
 test("店舗で絞り込める", () => {
