@@ -3,14 +3,13 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { loginIdDomain } from "@/lib/supabase/env";
 import { requirePermission, ForbiddenError } from "@/server/session";
 import { userSchema, assignmentSchema, globalRoleSchema, firstError, formToObject } from "@/lib/validation";
 import { generateInitialPassword } from "@/lib/password";
-import { toAuthEmail } from "@/lib/login-id";
 import { friendlyDbError } from "@/lib/db-error";
 import { jstToday } from "@/lib/time";
 import { back } from "@/server/redirect-with";
+import { provisionLogin, undoProvision, type Provisioned } from "@/server/provision";
 
 export type IssueState = {
   error?: string;
@@ -28,19 +27,6 @@ async function guardRedirect(path: string) {
   if (err) back(path, "err", err);
 }
 
-// Supabase Auth に同じメールのユーザーがいるか（POSですでに使っているID）
-async function findAuthUserId(email: string): Promise<string | null> {
-  const admin = createAdminClient();
-  for (let page = 1; page <= 20; page++) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 200 });
-    if (error) throw new Error("ログイン情報を確認できませんでした");
-    const hit = data.users.find((u) => (u.email ?? "").toLowerCase() === email);
-    if (hit) return hit.id;
-    if (data.users.length < 200) return null;
-  }
-  return null;
-}
-
 // スタッフ登録＋ID・PASSの発行（POSで使っているIDなら、そのアカウントに紐づける）
 export async function registerUser(_prev: IssueState, fd: FormData): Promise<IssueState> {
   const denied = await guardState();
@@ -55,21 +41,9 @@ export async function registerUser(_prev: IssueState, fd: FormData): Promise<Iss
   if (!["MANAGER", "STAFF", "PART_TIMER"].includes(storeRole)) return { error: "店舗での役職が正しくありません" };
   const reissueForExisting = raw.reissue === "on";
 
-  const email = toAuthEmail(u.login_id, loginIdDomain());
-  const admin = createAdminClient();
-  let authId = await findAuthUserId(email);
-  const linkedExisting = authId !== null;
-  let password: string | null = null;
-  if (!authId) {
-    password = generateInitialPassword();
-    const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true, user_metadata: { name: u.name } });
-    if (error || !data.user) return { error: "ログインIDを発行できませんでした" };
-    authId = data.user.id;
-  } else if (reissueForExisting) {
-    password = generateInitialPassword();
-    const { error } = await admin.auth.admin.updateUserById(authId, { password });
-    if (error) return { error: "既存のアカウントのPASSを再発行できませんでした" };
-  }
+  let prov: Provisioned;
+  try { prov = await provisionLogin(u.login_id, u.name, { reissueExisting: reissueForExisting }); } catch (e) { return { error: (e as Error).message }; }
+  const { authId, password, linkedExisting } = prov;
 
   const supabase = await createClient();
   const { error } = await supabase.rpc("register_user", {
@@ -79,7 +53,7 @@ export async function registerUser(_prev: IssueState, fd: FormData): Promise<Iss
   });
   if (error) {
     // 今回新しく作ったログインだけ取り消す（POSの既存アカウントは消さない）
-    if (!linkedExisting) await admin.auth.admin.deleteUser(authId).catch(() => {});
+    await undoProvision(prov);
     return { error: friendlyDbError(error) };
   }
   revalidatePath("/admin/users");

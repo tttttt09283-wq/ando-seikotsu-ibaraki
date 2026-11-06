@@ -15,10 +15,12 @@ export default async function PresidentPage() {
       <h1 className="text-xl font-black text-brand-800">社長ダッシュボード</h1>
       <PhaseNote phase="PHASE 4〜9">有給・アルバイト勤務・振休変更・社内規定の承認待ちをここにまとめて表示し、この画面から承認・差戻し・却下できるようにします。</PhaseNote>
       <Card>
-        <CardHeader><CardTitle>管理（PHASE 2）</CardTitle></CardHeader>
+        <CardHeader><CardTitle>管理</CardTitle></CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           <Button asChild><Link href="/admin/users">スタッフ・ID/PASSの管理</Link></Button>
           <Button asChild variant="outline"><Link href="/admin/stores">店舗・エリアの管理</Link></Button>
+          <Button asChild variant="outline"><Link href="/admin/leave">有給の付与予定</Link></Button>
+          <Button asChild variant="outline"><Link href="/admin/import">CSV取り込み（初期移行）</Link></Button>
         </CardContent>
       </Card>
     </>

@@ -18,6 +18,7 @@ insert into mgmt.permissions (code, description) values
   ('leave.paid.final_approve', '有給の最終承認'),
   ('leave.shift.approve', '振休の承認（店舗）'),
   ('leave.adjust', '残数の修正'),
+  ('leave.shift.register', '振休の発生（出勤した日）を登録する'),
   ('leave.import', 'CSVでの残数取り込み'),
   ('parttime.request', 'アルバイト勤務の申請'),
   ('parttime.final_approve', 'アルバイト勤務の最終承認'),
@@ -44,7 +45,7 @@ on conflict (code) do update set description = excluded.description;
 with m(role_code, perm) as (values
   -- 社長
   ('PRESIDENT','leave.view.self'),('PRESIDENT','leave.view.store'),('PRESIDENT','leave.paid.final_approve'),
-  ('PRESIDENT','leave.adjust'),('PRESIDENT','leave.import'),('PRESIDENT','parttime.final_approve'),
+  ('PRESIDENT','leave.adjust'),('PRESIDENT','leave.shift.register'),('PRESIDENT','leave.import'),('PRESIDENT','parttime.final_approve'),
   ('PRESIDENT','holidaychange.final_approve'),('PRESIDENT','meeting.manage'),('PRESIDENT','task.manage.store'),
   ('PRESIDENT','task.view.self'),('PRESIDENT','rule.view'),('PRESIDENT','rule.edit'),('PRESIDENT','rule.approve'),
   ('PRESIDENT','dashboard.president'),('PRESIDENT','dashboard.gm'),('PRESIDENT','audit.view'),('PRESIDENT','master.manage'),
@@ -58,7 +59,7 @@ with m(role_code, perm) as (values
   ('BM','rule.view'),('BM','dashboard.area'),('BM','staff.view.store'),
   -- 院長（所属店舗で効く）
   ('MANAGER','leave.view.self'),('MANAGER','leave.view.store'),('MANAGER','leave.request.self'),('MANAGER','leave.request.proxy'),
-  ('MANAGER','leave.shift.approve'),('MANAGER','parttime.request'),('MANAGER','holidaychange.request'),
+  ('MANAGER','leave.shift.approve'),('MANAGER','leave.shift.register'),('MANAGER','parttime.request'),('MANAGER','holidaychange.request'),
   ('MANAGER','meeting.manage'),('MANAGER','task.manage.store'),('MANAGER','task.view.self'),('MANAGER','rule.view'),
   ('MANAGER','dashboard.manager'),('MANAGER','staff.view.store'),
   -- 一般スタッフ

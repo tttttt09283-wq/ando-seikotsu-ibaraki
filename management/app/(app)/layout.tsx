@@ -8,11 +8,12 @@ import { Button } from "@/components/ui/button";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const me = await requireMe();
   if (me.must_change_password) redirect("/account/password");
-  const isAdmin = await canAnywhere("master.manage");
+  const [isAdmin, canLeaveAdmin] = await Promise.all([canAnywhere("master.manage"), canAnywhere("leave.adjust")]);
   const nav = [
     { href: "/", label: "ホーム" },
     { href: "/me", label: "マイページ" },
     ...(isAdmin ? [{ href: "/admin/users", label: "スタッフ管理" }, { href: "/admin/stores", label: "店舗・エリア" }] : []),
+    ...(canLeaveAdmin ? [{ href: "/admin/leave", label: "有給の付与" }, { href: "/admin/import", label: "CSV取り込み" }] : []),
   ];
   return (
     <div className="min-h-dvh">

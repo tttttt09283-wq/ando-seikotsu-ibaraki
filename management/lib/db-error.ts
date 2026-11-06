@@ -8,6 +8,7 @@ export function friendlyDbError(e: DbError): string {
     if (/login_id/.test(msg + (e.details ?? ""))) return "このログインIDはすでに使われています";
     if (/staff_code/.test(msg + (e.details ?? ""))) return "このスタッフIDはすでに使われています";
     if (/pos_staff_id|pos_store_id/.test(msg + (e.details ?? ""))) return "このPOSの番号はすでに別の人（院）に紐づいています";
+    if (/leave_grants_no_double/.test(msg)) return "この人・この付与日の休暇はすでに付与（取り込み）済みです";
     if (/user_primary_assignment/.test(msg)) return "主所属はすでに設定されています（先に今の主所属を終了してください）";
     return "同じ内容がすでに登録されています";
   }
