@@ -16624,20 +16624,20 @@ function Dashboard({user,onLogout}){
         // visualViewport（実表示領域）が使える場合はそちらを優先して使う
         const vw=(window.visualViewport&&window.visualViewport.width)||window.innerWidth;
         const vh=(window.visualViewport&&window.visualViewport.height)||window.innerHeight;
-        const popupWidth=Math.min(300,vw-margin*2); // 見やすいよう大きめ（狭い画面では画面幅に合わせる）
-        const estPopupHeight=cnt===1?520:460; // 初診バッジ＋問診票ボタンがある分だけ高くなる
-        const posLeft=Math.max(margin,Math.min(bookingPopup.x, vw-popupWidth-margin));
-        const posTop=Math.max(margin,Math.min(bookingPopup.y, vh-Math.min(estPopupHeight,vh-margin*2)));
-        const popupMaxHeight=vh-posTop-margin; // 実際に見えているスペースに合わせて上限を決める（これがないと下にはみ出す）
+        // 画面の真ん中に横長の四角で出す。広い画面では左に印・メモ、右に操作ボタンの2列。狭い画面（スマホ）は1列
+        const popupWidth=Math.min(760,vw-margin*3);
+        const wide=popupWidth>=600;
+        const popupMaxHeight=vh-margin*3;
         return(
           <>
             {/* オーバーレイ（クリックで閉じる） */}
-            <div onClick={()=>setBookingPopup(null)} style={{position:"fixed",inset:0,zIndex:300}}/>
-            {/* ポップアップ */}
-            <div style={{position:"fixed",left:posLeft,top:posTop,zIndex:400,background:"white",borderRadius:14,boxShadow:"0 8px 32px rgba(0,0,0,.2)",width:popupWidth,maxHeight:popupMaxHeight,overflowY:"auto",WebkitOverflowScrolling:"touch",border:"1px solid #e2e8f0"}}>
+            <div onClick={()=>setBookingPopup(null)} style={{position:"fixed",inset:0,zIndex:300,background:"rgba(15,23,42,.45)"}}/>
+            {/* ポップアップ（画面の真ん中） */}
+            <div role="dialog" aria-label={`${b.patient_name}の予約`} style={{position:"fixed",left:"50%",top:"50%",transform:"translate(-50%,-50%)",zIndex:400,background:"white",borderRadius:14,boxShadow:"0 8px 32px rgba(0,0,0,.2)",width:popupWidth,maxHeight:popupMaxHeight,overflowY:"auto",WebkitOverflowScrolling:"touch",border:"1px solid #e2e8f0"}}>
               {/* ヘッダー */}
-              <div style={{background:`linear-gradient(135deg,${s.color},${s.color}cc)`,padding:"14px 16px",borderRadius:"14px 14px 0 0"}}>
-                <div style={{fontWeight:800,fontSize:18,color:"white"}}>{b.patient_name}</div>
+              <div style={{background:`linear-gradient(135deg,${s.color},${s.color}cc)`,padding:"14px 16px",borderRadius:"14px 14px 0 0",position:"relative"}}>
+                <button type="button" onClick={()=>setBookingPopup(null)} aria-label="閉じる" style={{position:"absolute",top:10,right:10,width:34,height:34,borderRadius:17,border:"none",background:"rgba(255,255,255,.22)",color:"white",fontSize:18,fontWeight:800,cursor:"pointer",lineHeight:1}}>×</button>
+                <div style={{fontWeight:800,fontSize:wide?22:18,color:"white",paddingRight:40}}>{b.patient_name}</div>
                 <div style={{fontSize:13,color:"rgba(255,255,255,.8)",marginTop:2}}>{b.date}　{b.time}　{s.name}</div>
                 <div style={{fontSize:13,fontWeight:700,color:"white",marginTop:3,lineHeight:1.4}}>{specialBookingKind(b)?specialBookingKind(b).icon+" ":"💆 "}{bookingMenuSummary(b)}</div>
                 {cnt>1&&<div style={{fontSize:12,color:"rgba(255,255,255,.7)",marginTop:1}}>{cnt}回目</div>}
@@ -16650,8 +16650,10 @@ function Dashboard({user,onLogout}){
                 {b.memo&&<div style={{fontSize:13,color:"white",background:"rgba(255,255,255,.18)",borderRadius:6,padding:"5px 8px",marginTop:6,lineHeight:1.5}}>📝 {b.memo}</div>}
                 {isReadOnlyReal&&<div style={{fontSize:12,fontWeight:800,color:"#1e293b",background:"#fff",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4}}>🔒 本番の予約（閲覧のみ）</div>}
               </div>
+              <div style={{display:"grid",gridTemplateColumns:wide?"1fr 1fr":"1fr",alignItems:"start"}}>
+              <div style={wide?{borderRight:"1px solid #f1f5f9"}:undefined}>
               {!isReadOnlyReal&&(
-                <div style={{padding:"8px 10px",borderBottom:"1px solid #f1f5f9"}}>
+                <div style={{padding:"12px 14px",borderBottom:"1px solid #f1f5f9"}}>
                   <PatientMarkEditor name={b.patient_name} month={(b.date||"").slice(0,7)} mark={patientMarks[patientMarkKey(b.patient_name)]} staffId={user&&user.id}
                     onSaved={row=>{ updatePatientMark(row); showToast("口コミ・鍼灸保険・レセの印を保存しました"); }}/>
                 </div>
@@ -16670,8 +16672,9 @@ function Dashboard({user,onLogout}){
                 }
               }}/>
               )}
+              </div>
               {/* アクション */}
-              <div style={{padding:8,display:"flex",flexDirection:"column",gap:4}}>
+              <div style={{padding:wide?12:8,display:"flex",flexDirection:"column",gap:wide?8:4}}>
                 {isReadOnlyReal&&(
                   <div style={{fontSize:13,color:"#64748b",padding:"4px 4px 8px",lineHeight:1.5}}>トレーニングモード中は本番の予約を編集・会計できません。来院履歴のみ確認できます。</div>
                 )}
@@ -16727,6 +16730,7 @@ function Dashboard({user,onLogout}){
                     キャンセルにする
                   </button>
                 )}
+              </div>
               </div>
             </div>
           </>
