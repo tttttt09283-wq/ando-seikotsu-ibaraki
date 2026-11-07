@@ -175,3 +175,23 @@ describe("休暇申請の表示用の関数", () => {
     expect(shortageOf(2, 3, 2)).toBe(true);
   });
 });
+
+import { shiftCutoffFor, isAfterCutoff, workMinutes, fmtMinutes } from "../part-time";
+describe("アルバイト勤務：シフト確定の基準日（前月20日）", () => {
+  test("基準日は勤務する月の前月20日。年をまたぐ月・設定の変更", () => {
+    expect(shiftCutoffFor("2026-12-05")).toBe("2026-11-20");
+    expect(shiftCutoffFor("2027-01-31")).toBe("2026-12-20");
+    expect(shiftCutoffFor("2026-12-05", 15)).toBe("2026-11-15");
+    expect(shiftCutoffFor("2026-12-05", 31)).toBe("2026-11-28");
+  });
+  test("基準日当日までは計画どおり、翌日からは例外申請", () => {
+    expect(isAfterCutoff("2026-11-20", "2026-12-05")).toBe(false);
+    expect(isAfterCutoff("2026-11-21", "2026-12-05")).toBe(true);
+    expect(isAfterCutoff("2026-11-07", "2026-11-25")).toBe(true);
+  });
+  test("実働時間", () => {
+    expect(workMinutes("10:00", "15:00", 30)).toBe(270);
+    expect(fmtMinutes(270)).toBe("4時間30分");
+    expect(fmtMinutes(180)).toBe("3時間");
+  });
+});

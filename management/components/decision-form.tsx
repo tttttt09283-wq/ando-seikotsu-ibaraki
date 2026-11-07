@@ -1,15 +1,17 @@
 "use client";
 import { useState } from "react";
 import { decideLeave } from "@/app/(app)/leave/actions";
+import { decidePartTime } from "@/app/(app)/part-time/actions";
 import { Button } from "@/components/ui/button";
 import { Input, Select, Field } from "@/components/ui/input";
 import { SubmitButton } from "@/components/submit-button";
 import { REJECT_CATEGORIES } from "@/lib/leave/requests";
 
 // 承認・差戻し・却下。差戻し・却下は理由が必須（空では送れない）。有給の却下は理由の区分も必須
-export function DecisionForm({ stepId, version, kind, idempotencyKey, backTo, disabledApprove, selfApproval }: {
-  stepId: string; version: number; kind: "PAID" | "SHIFT"; idempotencyKey: string; backTo: string; disabledApprove?: string; selfApproval?: boolean;
+export function DecisionForm({ stepId, version, kind, idempotencyKey, backTo, disabledApprove, selfApproval, target = "leave" }: {
+  stepId: string; version: number; kind: "PAID" | "SHIFT" | "PART_TIME"; idempotencyKey: string; backTo: string; disabledApprove?: string; selfApproval?: boolean; target?: "leave" | "part_time";
 }) {
+  const decide = target === "part_time" ? decidePartTime : decideLeave;
   const [mode, setMode] = useState<"approve" | "return" | "reject" | null>(null);
   const hidden = (
     <>
@@ -19,7 +21,7 @@ export function DecisionForm({ stepId, version, kind, idempotencyKey, backTo, di
   );
   if (mode === "return" || mode === "reject") {
     return (
-      <form action={decideLeave} className="grid gap-2 rounded-lg border border-stone-200 bg-stone-50 p-3">
+      <form action={decide} className="grid gap-2 rounded-lg border border-stone-200 bg-stone-50 p-3">
         {hidden}<input type="hidden" name="action" value={mode} />
         {mode === "reject" && kind === "PAID" ? (
           <Field label="却下の理由の区分（必須）">
@@ -36,7 +38,7 @@ export function DecisionForm({ stepId, version, kind, idempotencyKey, backTo, di
   }
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <form action={decideLeave} onSubmit={(e) => { if (!confirm(selfApproval ? "ご自身の振休を承認します（GM・社長に通知されます）。よろしいですか？" : "承認しますか？")) e.preventDefault(); }}>
+      <form action={decide} onSubmit={(e) => { if (!confirm(selfApproval ? "ご自身の振休を承認します（GM・社長に通知されます）。よろしいですか？" : "承認しますか？")) e.preventDefault(); }}>
         {hidden}<input type="hidden" name="action" value="approve" />
         <SubmitButton disabled={!!disabledApprove} title={disabledApprove}>{selfApproval ? "本人承認する" : "承認"}</SubmitButton>
       </form>

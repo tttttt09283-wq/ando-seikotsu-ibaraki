@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireMe, canAnywhere } from "@/server/session";
 import { approvalQueue, unreadNotifications } from "@/server/requests";
+import { partTimeQueue } from "@/server/part-time";
 import { describeRoles } from "@/lib/roles";
 import { signOut } from "@/app/login/actions";
 import { Button } from "@/components/ui/button";
@@ -9,15 +10,18 @@ import { Button } from "@/components/ui/button";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const me = await requireMe();
   if (me.must_change_password) redirect("/account/password");
-  const [isAdmin, canLeaveAdmin, canPaid, canShift, unread] = await Promise.all([
-    canAnywhere("master.manage"), canAnywhere("leave.adjust"), canAnywhere("leave.paid.final_approve"), canAnywhere("leave.shift.approve"), unreadNotifications(),
+  const [isAdmin, canLeaveAdmin, canPaid, canShift, canPtApprove, canPtRequest, unread] = await Promise.all([
+    canAnywhere("master.manage"), canAnywhere("leave.adjust"), canAnywhere("leave.paid.final_approve"), canAnywhere("leave.shift.approve"),
+    canAnywhere("parttime.final_approve"), canAnywhere("parttime.request"), unreadNotifications(),
   ]);
-  const queueCount = canPaid || canShift ? (await approvalQueue()).length : 0;
+  const canApprove = canPaid || canShift || canPtApprove;
+  const queueCount = canApprove ? (await approvalQueue()).length + (canPtApprove ? (await partTimeQueue()).length : 0) : 0;
   const nav = [
     { href: "/", label: "ホーム" },
     { href: "/me", label: "マイページ" },
     { href: "/leave", label: "休暇の申請" },
-    ...(canPaid || canShift ? [{ href: "/approvals", label: `承認${queueCount ? `（${queueCount}）` : ""}` }] : []),
+    ...(canPtRequest || canPtApprove ? [{ href: "/part-time", label: "アルバイト勤務" }] : []),
+    ...(canApprove ? [{ href: "/approvals", label: `承認${queueCount ? `（${queueCount}）` : ""}` }] : []),
     { href: "/notifications", label: `通知${unread ? `（${unread}）` : ""}` },
     ...(isAdmin ? [{ href: "/admin/users", label: "スタッフ管理" }, { href: "/admin/stores", label: "店舗・エリア" }] : []),
     ...(canLeaveAdmin ? [{ href: "/admin/leave", label: "有給の付与" }, { href: "/admin/import", label: "CSV取り込み" }] : []),

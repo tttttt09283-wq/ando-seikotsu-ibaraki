@@ -23,15 +23,24 @@ export async function startDb() {
   asPg("initdb", ["-D", data, "-U", "postgres", "--auth=trust", "--encoding=UTF8", "--locale=C"]);
   asPg("pg_ctl", ["-D", data, "-o", `-p ${port} -k ${dir} -c listen_addresses=''`, "-l", join(dir, "log"), "-w", "start"]);
   const client = new pg.Client({ host: dir, port, user: "postgres", database: "postgres" });
-  await client.connect();
-  await client.query(readFileSync(join(here, "supabase-stub.sql"), "utf8"));
-  for (const f of readdirSync(join(root, "migrations")).sort()) await client.query(readFileSync(join(root, "migrations", f), "utf8"));
-  for (const f of readdirSync(join(root, "seed")).sort()) await client.query(readFileSync(join(root, "seed", f), "utf8"));
   const stop = async () => {
     await client.end().catch(() => {});
     try { asPg("pg_ctl", ["-D", data, "-m", "immediate", "stop"]); } catch {}
     rmSync(dir, { recursive: true, force: true });
   };
+  // 失敗したら一時DBを止めてからエラーにする（止めないとテストが終わらずに止まる）
+  try {
+    await client.connect();
+    await client.query(readFileSync(join(here, "supabase-stub.sql"), "utf8"));
+    for (const f of readdirSync(join(root, "migrations")).sort()) {
+      try { await client.query(readFileSync(join(root, "migrations", f), "utf8")); }
+      catch (e) { throw new Error(`${f}：${e.message}`); }
+    }
+    for (const f of readdirSync(join(root, "seed")).sort()) await client.query(readFileSync(join(root, "seed", f), "utf8"));
+  } catch (e) {
+    await stop();
+    throw e;
+  }
   return { client, stop };
 }
 

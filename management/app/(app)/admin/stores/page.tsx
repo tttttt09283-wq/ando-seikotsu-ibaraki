@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { can } from "@/server/session";
 import { saveStore, saveArea } from "./actions";
+import { updateCutoff } from "@/app/(app)/part-time/actions";
+import { shiftCutoffDay } from "@/server/part-time";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input, Select, Field } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +48,7 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
     supabase.from("areas").select("*").order("display_order"),
   ]);
   const areaList = (areas ?? []) as Area[];
+  const cutoff = await shiftCutoffDay();
   const areaName = (id: string | null) => areaList.find((a) => a.id === id)?.name;
   return (
     <>
@@ -70,6 +73,17 @@ export default async function StoresPage({ searchParams }: { searchParams: Promi
             <summary className="cursor-pointer px-3 py-2.5 font-bold text-brand-700">＋ 店舗を追加</summary>
             <div className="border-t border-stone-100 p-3"><StoreForm areas={areaList} /></div>
           </details>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle>運用設定</CardTitle></CardHeader>
+        <CardContent>
+          <form action={updateCutoff} className="flex flex-wrap items-end gap-2">
+            <Field label="シフト確定の基準日（勤務する月の前月の何日まで）" hint="この日を過ぎたアルバイト勤務の申請は「例外申請」になり、理由が必要です（Q-20：20日）">
+              <div className="flex items-center gap-2"><span className="text-sm">前月</span><Input name="day" type="number" min={1} max={28} defaultValue={cutoff} className="w-24" required /><span className="text-sm">日</span></div>
+            </Field>
+            <SubmitButton variant="outline">保存</SubmitButton>
+          </form>
         </CardContent>
       </Card>
       <Card>

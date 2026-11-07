@@ -4,6 +4,9 @@ import { randomUUID } from "node:crypto";
 import { notFound } from "next/navigation";
 import { canAnywhere } from "@/server/session";
 import { approvalQueue } from "@/server/requests";
+import { partTimeQueue } from "@/server/part-time";
+import { CATEGORY_LABEL, hhmm, fmtMinutes } from "@/lib/part-time";
+import { formatDate } from "@/lib/time";
 import { KIND_LABEL, formatDates } from "@/lib/leave/requests";
 import { fmtDays } from "@/lib/leave/types";
 import { formatJstDateTime } from "@/lib/time";
@@ -16,15 +19,37 @@ import { DecisionForm } from "@/components/decision-form";
 export const metadata: Metadata = { title: "承認" };
 
 export default async function ApprovalsPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
-  const [paid, shift] = await Promise.all([canAnywhere("leave.paid.final_approve"), canAnywhere("leave.shift.approve")]);
-  if (!paid && !shift) notFound();
+  const [paid, shift, pt] = await Promise.all([canAnywhere("leave.paid.final_approve"), canAnywhere("leave.shift.approve"), canAnywhere("parttime.final_approve")]);
+  if (!paid && !shift && !pt) notFound();
   const sp = await searchParams;
-  const queue = await approvalQueue();
+  const [queue, ptQueue] = await Promise.all([approvalQueue(), pt ? partTimeQueue() : Promise.resolve([])]);
   return (
     <>
-      <h1 className="text-xl font-black text-brand-800">承認待ち（{queue.length}件）</h1>
+      <h1 className="text-xl font-black text-brand-800">承認待ち（{queue.length + ptQueue.length}件）</h1>
       <Flash ok={sp.ok} err={sp.err} />
-      {queue.length === 0 ? <Alert tone="ok">承認待ちはありません。</Alert> : null}
+      {queue.length + ptQueue.length === 0 ? <Alert tone="ok">承認待ちはありません。</Alert> : null}
+      {ptQueue.map((q) => (
+        <Card key={q.step_id} className={q.category === "help" ? "border-red-400" : ""}>
+          <CardHeader>
+            <CardTitle className="flex flex-wrap items-center gap-2">
+              {q.category === "help" ? <Badge tone="danger">緊急</Badge> : null}<Badge>アルバイト勤務</Badge>{q.store_name}
+              {q.is_exception ? <Badge tone="warn">シフト確定後</Badge> : null}
+            </CardTitle>
+            <Link href={`/part-time/${q.request_id}`} className="text-sm font-bold text-brand-700">詳細 ›</Link>
+          </CardHeader>
+          <CardContent className="grid gap-3 text-sm">
+            <dl className="grid grid-cols-[7rem_1fr] gap-y-1">
+              <dt className="text-stone-500">勤務日時</dt><dd className="font-bold">{formatDate(q.work_date)} {hhmm(q.start_time)}〜{hhmm(q.end_time)}（実働{fmtMinutes(q.minutes)}）</dd>
+              <dt className="text-stone-500">区分</dt><dd>{CATEGORY_LABEL[q.category]}</dd>
+              <dt className="text-stone-500">勤務する人</dt><dd>{q.worker_name ?? "未定（院長があとで設定）"}</dd>
+              <dt className="text-stone-500">申請理由</dt><dd>{q.reason}</dd>
+              <dt className="text-stone-500">申請者</dt><dd>{q.requested_by_name}（{formatJstDateTime(q.submitted_at)}）</dd>
+            </dl>
+            {q.is_exception ? <Alert tone="warn">シフト確定（{formatDate(q.cutoff_date)}）後の例外申請：{q.exception_reason}</Alert> : null}
+            <DecisionForm target="part_time" stepId={q.step_id} version={q.step_version} kind="PART_TIME" idempotencyKey={randomUUID()} backTo="/approvals" />
+          </CardContent>
+        </Card>
+      ))}
       {queue.map((q) => {
         const after = q.available - q.pending_other - q.total_days;
         return (

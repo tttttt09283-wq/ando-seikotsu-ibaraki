@@ -3,6 +3,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { can } from "@/server/session";
 import { approvalQueue } from "@/server/requests";
+import { partTimeQueue } from "@/server/part-time";
+import { CATEGORY_SHORT, hhmm } from "@/lib/part-time";
+import { formatDate } from "@/lib/time";
 import { formatDates, KIND_LABEL } from "@/lib/leave/requests";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,8 +16,9 @@ export const metadata: Metadata = { title: "社長ダッシュボード" };
 
 export default async function PresidentPage() {
   if (!(await can("dashboard.president"))) notFound();
-  const queue = await approvalQueue();
+  const [queue, pt] = await Promise.all([approvalQueue(), partTimeQueue()]);
   const paid = queue.filter((q) => q.kind === "PAID");
+  const urgent = pt.filter((q) => q.category === "help").length;
   return (
     <>
       <h1 className="text-xl font-black text-brand-800">社長ダッシュボード</h1>
@@ -32,7 +36,21 @@ export default async function PresidentPage() {
           </ul>
         </CardContent>
       </Card>
-      <PhaseNote phase="PHASE 5〜8">アルバイト勤務・振休からの勤務変更・社内規定の承認待ちもここに加わります。</PhaseNote>
+      <Card className={urgent ? "border-red-400" : pt.length ? "border-brand-600" : ""}>
+        <CardHeader><CardTitle>アルバイト勤務の承認待ち（{pt.length}件{urgent ? `・うち緊急${urgent}件` : ""}）</CardTitle><Button asChild size="sm"><Link href="/approvals">承認画面へ</Link></Button></CardHeader>
+        <CardContent>
+          <ul className="divide-y divide-stone-100">
+            {pt.slice(0, 8).map((q) => (
+              <li key={q.step_id}><Link href={`/part-time/${q.request_id}`} className="flex flex-wrap items-center gap-2 py-2.5 text-sm hover:text-brand-700">
+                {q.category === "help" ? <Badge tone="danger">緊急</Badge> : <Badge>{CATEGORY_SHORT[q.category]}</Badge>}<b>{q.store_name}</b>
+                <span>{formatDate(q.work_date)} {hhmm(q.start_time)}〜{hhmm(q.end_time)}</span>{q.is_exception ? <Badge tone="warn">シフト確定後</Badge> : null}
+              </Link></li>
+            ))}
+            {pt.length === 0 ? <li className="py-2 text-sm text-stone-500">承認待ちはありません</li> : null}
+          </ul>
+        </CardContent>
+      </Card>
+      <PhaseNote phase="PHASE 6〜8">振休からの勤務変更・社内規定の承認待ちもここに加わります。</PhaseNote>
       <Card>
         <CardHeader><CardTitle>管理</CardTitle></CardHeader>
         <CardContent className="flex flex-wrap gap-2">

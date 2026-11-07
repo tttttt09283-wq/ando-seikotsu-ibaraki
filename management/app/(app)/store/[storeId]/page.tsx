@@ -5,6 +5,9 @@ import { createClient } from "@/lib/supabase/server";
 import { can } from "@/server/session";
 import { getStoreLeave } from "@/server/leave";
 import { approvalQueue, listRequests } from "@/server/requests";
+import { listPartTime } from "@/server/part-time";
+import { CATEGORY_SHORT, hhmm } from "@/lib/part-time";
+import { formatDate as fmtD } from "@/lib/time";
 import { formatDates, KIND_LABEL } from "@/lib/leave/requests";
 import { RequestStatusBadge } from "@/components/request-status";
 import { Button } from "@/components/ui/button";
@@ -24,7 +27,7 @@ export default async function StorePage({ params }: { params: Promise<{ storeId:
   const supabase = await createClient();
   const { data: store } = await supabase.from("stores").select("name").eq("id", storeId).single();
   if (!store) notFound();
-  const [rows, queue, requests] = await Promise.all([getStoreLeave(storeId), approvalQueue(), listRequests({ storeId, limit: 10 })]);
+  const [rows, queue, requests, partTime, canPt] = await Promise.all([getStoreLeave(storeId), approvalQueue(), listRequests({ storeId, limit: 10 }), listPartTime({ storeId, limit: 10 }), can("parttime.request", storeId)]);
   const shiftQueue = queue.filter((q) => q.kind === "SHIFT" && q.store_name === store.name);
   const overdue = rows.filter((r) => r.shift.overdue + r.shift_holiday.overdue > 0);
   const fiveDayAlerts = rows.filter((r) => r.five_day.target && ["caution", "warning", "urgent"].includes(r.five_day.level));
@@ -88,7 +91,21 @@ export default async function StorePage({ params }: { params: Promise<{ storeId:
           </ul>
         </CardContent>
       </Card>
-      <PhaseNote phase="PHASE 5〜9">アルバイト勤務の申請・会議予定・議事録の提出期限をここに表示します。</PhaseNote>
+      <Card>
+        <CardHeader><CardTitle>アルバイト勤務の申請</CardTitle>{canPt ? <Button asChild size="sm"><Link href="/part-time/new">＋ 申請</Link></Button> : null}</CardHeader>
+        <CardContent className="p-0">
+          <ul className="divide-y divide-stone-100 text-sm">
+            {partTime.map((r) => (
+              <li key={r.id}><Link href={`/part-time/${r.id}`} className="flex flex-wrap items-center gap-2 px-4 py-2.5 hover:bg-stone-50">
+                <b>{fmtD(r.work_date)}</b><span>{hhmm(r.start_time)}〜{hhmm(r.end_time)}</span><Badge tone={r.category === "help" ? "danger" : "neutral"}>{CATEGORY_SHORT[r.category]}</Badge>
+                <span>{r.worker?.name ?? "勤務者未定"}</span><span className="ml-auto"><RequestStatusBadge status={r.status} /></span>
+              </Link></li>
+            ))}
+            {partTime.length === 0 ? <li className="px-4 py-4 text-stone-500">まだありません</li> : null}
+          </ul>
+        </CardContent>
+      </Card>
+      <PhaseNote phase="PHASE 6〜9">振休からの勤務変更・会議予定・議事録の提出期限をここに表示します。</PhaseNote>
     </>
   );
 }
