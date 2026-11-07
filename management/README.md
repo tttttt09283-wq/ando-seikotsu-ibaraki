@@ -55,6 +55,13 @@ npm run test:db     # DBテスト：ローカルの PostgreSQL 16 を一時的�
 
 `test:db` は `/usr/lib/postgresql/16/bin` の PostgreSQL を使う（`PG_BIN` で変更可）。Supabase の `auth` スキーマとロールは `supabase/tests/supabase-stub.sql` で再現している（本番には適用しない）。
 
+## 検証環境（ダミーデータのみ）
+
+- Supabase の検証用プロジェクト `and-group-management-verify`（無料・東京）に、マイグレーションと初期マスタを適用済み。
+- Exposed schemas への `mgmt` の追加は、SQL（`alter role authenticator set pgrst.db_schemas = 'public, graphql_public, mgmt'` と `notify pgrst, 'reload config'`）で行った。本番では Supabase の設定画面（API → Exposed schemas）で行う。
+- ダミーの利用者7名（ログインIDは `t-` で始まる）で、ログイン・PASS変更の強制・院長の権限範囲・振休の登録を確認済み。
+- この環境で Node のサーバーから外部に出るには `NODE_USE_ENV_PROXY=1` が必要（開発用サンドボックスの事情。本番の Vercel では不要）。
+
 ## 本番に適用する手順（**承認をいただいてから実施**）
 
 1. Supabase（既存プロジェクト）の SQL エディタで `supabase/migrations/*.sql` を順に実行し、`supabase/seed/0001_master.sql` を実行

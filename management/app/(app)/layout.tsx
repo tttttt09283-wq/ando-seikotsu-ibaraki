@@ -34,7 +34,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           ))}
         </nav>
       </header>
-      <main className="mx-auto grid max-w-5xl gap-4 px-4 py-5">{children}</main>
+      <main className="mx-auto grid max-w-5xl grid-cols-1 gap-4 px-4 py-5 [&>*]:min-w-0">{children}</main>
     </div>
   );
 }
