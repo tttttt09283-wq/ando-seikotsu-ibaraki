@@ -19,7 +19,7 @@ import { DecisionForm } from "@/components/decision-form";
 
 export const metadata: Metadata = { title: "申請の詳細" };
 
-type Ev = { id: number; action: string; reason: string | null; reason_category: string | null; self_approved: boolean; occurred_at: string; actor: { name: string } | null };
+type Ev = { id: number; action: string; reason: string | null; reason_category: string | null; self_approved: boolean; occurred_at: string; actor_name: string | null };
 
 export default async function LeaveDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; err?: string }> }) {
   const me = await requireMe();
@@ -32,7 +32,7 @@ export default async function LeaveDetailPage({ params, searchParams }: { params
     .eq("id", id).maybeSingle();
   if (!r) notFound();
   const [{ data: events }, queue] = await Promise.all([
-    supabase.from("approval_events").select("id, action, reason, reason_category, self_approved, occurred_at, actor:users!approval_events_actor_user_id_fkey(name)").eq("request_id", id).order("id"),
+    supabase.rpc("request_history", { p_kind: "leave", p_request: id }),
     approvalQueue(),
   ]);
   const myStep = queue.find((q) => q.request_id === id);
@@ -109,7 +109,7 @@ export default async function LeaveDetailPage({ params, searchParams }: { params
             {((events ?? []) as unknown as Ev[]).map((e) => (
               <li key={e.id} className="flex flex-wrap items-baseline gap-2 border-l-2 border-brand-100 pl-3">
                 <b>{EVENT_LABEL[e.action] ?? e.action}</b>
-                <span>{e.actor?.name ?? "システム"}</span>
+                <span>{e.actor_name ?? "（不明）"}</span>
                 {e.self_approved ? <Badge tone="warn">本人承認</Badge> : null}
                 <span className="text-xs text-stone-500">{formatJstDateTime(e.occurred_at)}</span>
                 {e.reason ? <span className="w-full text-stone-700">{e.reason_category ? `【${e.reason_category}】` : ""}{e.reason}</span> : null}

@@ -81,7 +81,7 @@ npm run test:db     # DBテスト：ローカルの PostgreSQL 16 を一時的�
 
 - Supabase の検証用プロジェクト `and-group-management-verify`（無料・東京）に、マイグレーションと初期マスタを適用済み。
 - Exposed schemas への `mgmt` の追加は、SQL（`alter role authenticator set pgrst.db_schemas = 'public, graphql_public, mgmt'` と `notify pgrst, 'reload config'`）で行った。本番では Supabase の設定画面（API → Exposed schemas）で行う。
-- ダミーの利用者7名（ログインIDは `t-` で始まる）で、ログイン・PASS変更の強制・院長の権限範囲・振休の登録、PHASE 4 の申請→承認（社長の有給承認、院長の振休承認、院長本人の振休の本人承認とGMへの通知）を確認済み。
+- ダミーの利用者7名（ログインIDは `t-` で始まる）で、ログイン・PASS変更の強制・院長の権限範囲・振休の登録、PHASE 4 の申請→承認（社長の有給承認、院長の振休承認、院長本人の振休の本人承認とGMへの通知）、PHASE 5 のアルバイト勤務（基準日後の例外申請、緊急の優先表示、社長の承認、承認後の勤務者の設定と通知）を確認済み。
 - この環境で Node のサーバーから外部に出るには `NODE_USE_ENV_PROXY=1` が必要（開発用サンドボックスの事情。本番の Vercel では不要）。
 
 ## 本番に適用する手順（**承認をいただいてから実施**）

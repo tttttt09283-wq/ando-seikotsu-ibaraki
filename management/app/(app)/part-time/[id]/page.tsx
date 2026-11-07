@@ -19,7 +19,7 @@ import { RequestStatusBadge } from "@/components/request-status";
 import { DecisionForm } from "@/components/decision-form";
 
 export const metadata: Metadata = { title: "アルバイト勤務の申請" };
-type Ev = { id: number; action: string; reason: string | null; occurred_at: string; actor: { name: string } | null };
+type Ev = { id: number; action: string; reason: string | null; occurred_at: string; actor_name: string | null };
 
 export default async function PartTimeDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ ok?: string; err?: string }> }) {
   const { id } = await params;
@@ -31,7 +31,7 @@ export default async function PartTimeDetailPage({ params, searchParams }: { par
     .eq("id", id).maybeSingle();
   if (!r) notFound();
   const [{ data: events }, queue, isRequester] = await Promise.all([
-    supabase.from("approval_events").select("id, action, reason, occurred_at, actor:users!approval_events_actor_user_id_fkey(name)").eq("request_kind", "part_time").eq("request_id", id).order("id"),
+    supabase.rpc("request_history", { p_kind: "part_time", p_request: id }),
     partTimeQueue(),
     can("parttime.request", r.store_id),
   ]);
@@ -125,7 +125,7 @@ export default async function PartTimeDetailPage({ params, searchParams }: { par
           <ol className="grid gap-2 text-sm">
             {((events ?? []) as unknown as Ev[]).map((e) => (
               <li key={e.id} className="flex flex-wrap items-baseline gap-2 border-l-2 border-brand-100 pl-3">
-                <b>{e.action === "assign_worker" ? "勤務者の設定" : EVENT_LABEL[e.action] ?? e.action}</b><span>{e.actor?.name ?? "システム"}</span>
+                <b>{e.action === "assign_worker" ? "勤務者の設定" : EVENT_LABEL[e.action] ?? e.action}</b><span>{e.actor_name ?? "（不明）"}</span>
                 <span className="text-xs text-stone-500">{formatJstDateTime(e.occurred_at)}</span>
                 {e.reason ? <span className="w-full text-stone-700">{e.reason}</span> : null}
               </li>

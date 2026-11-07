@@ -116,3 +116,11 @@ test("差戻し→再申請、却下は理由必須、取下げ・取消、見�
   // 直接の書き込みはできない
   await assert.rejects(run("president", "update mgmt.part_time_requests set status = 'approved' where id = $1", [id2]), /permission denied/);
 });
+
+test("履歴は操作した人の名前つきで、申請を見られる人だけが取得できる", async () => {
+  const id = await submit("mgr_OWADA", "OWADA");
+  await decide("president", id, "approve");
+  const h = await run("mgr_OWADA", "select action, actor_name from mgmt.request_history('part_time', $1)", [id]);
+  assert.deepEqual(h.map((x) => [x.action, x.actor_name]), [["submit", "テストmgr_OWADA"], ["approve", "テストpresident"]]);
+  assert.deepEqual(await run("mgr_IBARAKI", "select * from mgmt.request_history('part_time', $1)", [id]), []);
+});
