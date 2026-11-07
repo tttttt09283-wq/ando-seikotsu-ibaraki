@@ -4,6 +4,10 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { can } from "@/server/session";
 import { getStoreLeave } from "@/server/leave";
+import { approvalQueue, listRequests } from "@/server/requests";
+import { formatDates, KIND_LABEL } from "@/lib/leave/requests";
+import { RequestStatusBadge } from "@/components/request-status";
+import { Button } from "@/components/ui/button";
 import { ROLE_LABEL, type RoleCode } from "@/lib/roles";
 import { fmtDays, FIVE_DAY_LABEL } from "@/lib/leave/types";
 import { formatDate } from "@/lib/time";
@@ -20,7 +24,8 @@ export default async function StorePage({ params }: { params: Promise<{ storeId:
   const supabase = await createClient();
   const { data: store } = await supabase.from("stores").select("name").eq("id", storeId).single();
   if (!store) notFound();
-  const rows = await getStoreLeave(storeId);
+  const [rows, queue, requests] = await Promise.all([getStoreLeave(storeId), approvalQueue(), listRequests({ storeId, limit: 10 })]);
+  const shiftQueue = queue.filter((q) => q.kind === "SHIFT" && q.store_name === store.name);
   const overdue = rows.filter((r) => r.shift.overdue + r.shift_holiday.overdue > 0);
   const fiveDayAlerts = rows.filter((r) => r.five_day.target && ["caution", "warning", "urgent"].includes(r.five_day.level));
   return (
@@ -31,6 +36,16 @@ export default async function StorePage({ params }: { params: Promise<{ storeId:
       ) : null}
       {fiveDayAlerts.length ? (
         <Alert tone="warn"><b>有給の年5日：</b>{fiveDayAlerts.map((r) => `${r.name}さん（${r.five_day.target ? `あと${fmtDays(r.five_day.remaining_required)}・期限${formatDate(r.five_day.period_end)}` : ""}）`).join("、")}</Alert>
+      ) : null}
+      {shiftQueue.length ? (
+        <Card className="border-brand-600">
+          <CardHeader><CardTitle>振休の承認待ち（{shiftQueue.length}件）</CardTitle><Button asChild size="sm"><Link href="/approvals">承認する</Link></Button></CardHeader>
+          <CardContent>
+            <ul className="divide-y divide-stone-100 text-sm">
+              {shiftQueue.map((q) => <li key={q.step_id} className="py-2"><Link href={`/leave/${q.request_id}`} className="hover:text-brand-700"><b>{q.user_name}</b>　{formatDates(q.dates)}（{q.total_days}日）{q.self_approval ? "・ご自身" : ""}</Link></li>)}
+            </ul>
+          </CardContent>
+        </Card>
       ) : null}
       <Card>
         <CardHeader><CardTitle>スタッフ別の残数（{rows.length}名）</CardTitle><span className="text-xs text-stone-500">名前を押すと明細</span></CardHeader>
@@ -60,7 +75,20 @@ export default async function StorePage({ params }: { params: Promise<{ storeId:
           </ul>
         </CardContent>
       </Card>
-      <PhaseNote phase="PHASE 4〜9">振休の承認待ち・有給の申請状況・会議予定・議事録の提出期限をここに表示します。</PhaseNote>
+      <Card>
+        <CardHeader><CardTitle>最近の休暇申請</CardTitle><Link href="/leave" className="text-sm font-bold text-brand-700">すべて ›</Link></CardHeader>
+        <CardContent className="p-0">
+          <ul className="divide-y divide-stone-100 text-sm">
+            {requests.map((r) => (
+              <li key={r.id}><Link href={`/leave/${r.id}`} className="flex flex-wrap items-center gap-2 px-4 py-2.5 hover:bg-stone-50">
+                <Badge tone={r.kind === "PAID" ? "brand" : "neutral"}>{KIND_LABEL[r.kind]}</Badge><b>{r.users?.name}</b><span>{formatDates(r.dates)}</span><span className="ml-auto"><RequestStatusBadge status={r.status} /></span>
+              </Link></li>
+            ))}
+            {requests.length === 0 ? <li className="px-4 py-4 text-stone-500">まだありません</li> : null}
+          </ul>
+        </CardContent>
+      </Card>
+      <PhaseNote phase="PHASE 5〜9">アルバイト勤務の申請・会議予定・議事録の提出期限をここに表示します。</PhaseNote>
     </>
   );
 }

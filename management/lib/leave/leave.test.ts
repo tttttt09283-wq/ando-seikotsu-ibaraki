@@ -163,3 +163,15 @@ describe("スタッフCSVの検証", () => {
 test("区分の呼び方", () => {
   expect(["有休", "振休", "祝振替", "代休", "その他"].map(leaveTypeFromLabel)).toEqual(["PAID", "SHIFT", "SHIFT_HOLIDAY", "COMP", null]);
 });
+
+import { normalizeDates, formatDates, shortageOf } from "./requests";
+describe("休暇申請の表示用の関数", () => {
+  test("日付を並べ替えて重複・不正な値を除く", () => {
+    expect(normalizeDates(["2026-12-11", "2026-12-10", "2026-12-10", "x", " 2026-12-09 "])).toEqual(["2026-12-09", "2026-12-10", "2026-12-11"]);
+    expect(formatDates(["2026-12-09", "2027-01-04"])).toBe("12/9・1/4");
+  });
+  test("残数不足の判定は、ほかの承認待ちも差し引く", () => {
+    expect(shortageOf(2, 3, 0)).toBe(false);
+    expect(shortageOf(2, 3, 2)).toBe(true);
+  });
+});

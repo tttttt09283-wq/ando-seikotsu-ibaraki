@@ -13,6 +13,7 @@ export function friendlyDbError(e: DbError): string {
     return "同じ内容がすでに登録されています";
   }
   if (e.code === "23P01") return "同じ院で期間が重なる所属があります（先に今の所属を終了してください）";
+  if (e.code === "42501" && /[ぁ-んァ-ン一-龥]/.test(msg)) return msg;
   if (e.code === "42501" || /row-level security/.test(msg)) return "この操作を行う権限がありません";
   if (e.code === "23514") return "入力値が条件に合いません";
   if (e.code === "P0001") return msg; // DB の関数・トリガーで出した日本語のメッセージ
