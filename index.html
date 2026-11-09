@@ -85,12 +85,15 @@ if (typeof module !== 'undefined' && module.exports) {
 </script>
 <script>
 // あんど整骨院：管理画面から直接レジドロアを開けるための処理（会計を介さない、両替などの操作用）
-// pos.html（会計画面）で使っているのと同じStarWebPRNT SDKを使用
-function openAdminCashDrawer(){
+// レジのドロアは Star mPOP につながっているため、Star webPRNT Browser アプリ経由で開ける。
+// 画面上部の「レジを開ける」・各種設定・会計画面（pos.html は親の画面のこの関数を呼ぶ）で共通。
+// notify(メッセージ, "success"|"delete") を渡すとその画面に結果を出す（省略時は各種設定の表示）
+function openAdminCashDrawer(notify){
+  const show=(msg,type)=>{ if(notify) notify(msg,type); else if(window.__showAdminDrawerToast) window.__showAdminDrawerToast(msg,type); };
   const isInWebPRNTApp=navigator.userAgent.indexOf("webPRNTSupportMessageHandler")>=0;
   if(!isInWebPRNTApp){
-    alert("レシートプリンター（Star webPRNT Browser）アプリ内でのみ利用できます");
-    return;
+    alert("レジのドロアは、レシートプリンター（Star webPRNT Browser）アプリで開いた画面からだけ開けられます");
+    return false;
   }
   try{
     const builder=new StarWebPrintBuilder();
@@ -100,18 +103,19 @@ function openAdminCashDrawer(){
     const trader=new StarWebPrintTrader({url:"https://localhost:8001/StarWebPRNT/SendMessage"});
     trader.onReceive=function(response){
       if(response.traderSuccess==="true"){
-        if(window.__showAdminDrawerToast) window.__showAdminDrawerToast("🗄️ レジを開けました","success");
+        show("🗄️ レジを開けました","success");
       }else{
-        if(window.__showAdminDrawerToast) window.__showAdminDrawerToast("❌ レジドロアを開けられませんでした（プリンターの状態をご確認ください）","delete");
+        show("❌ レジドロアを開けられませんでした（プリンターの状態をご確認ください）","delete");
       }
     };
     trader.onError=function(response){
-      if(window.__showAdminDrawerToast) window.__showAdminDrawerToast("❌ ドロア開放エラー："+(response.responseText||"接続できませんでした"),"delete");
+      show("❌ ドロア開放エラー："+(response.responseText||"接続できませんでした"),"delete");
     };
     trader.sendMessage({request:request});
   }catch(e){
-    if(window.__showAdminDrawerToast) window.__showAdminDrawerToast("❌ ドロア開放処理でエラーが発生しました："+e.message,"delete");
+    show("❌ ドロア開放処理でエラーが発生しました："+e.message,"delete");
   }
+  return true;
 }
 </script>
 <style>
@@ -4514,7 +4518,10 @@ function DailyReportPanel({bookings,payments,stores,todayStr,refunds,onOpenPos,o
         if(p.insurance_type){
           // 会計画面で施術区分（保険診療／鍼灸併用／鍼灸のみ）を選んだ会計だけを保険として数える
           r.insCount++;
-          if(String(p.insurance_type).startsWith("鍼灸")) r.hariCount++; else r.juCount++;
+          // 「手技療法＋鍼灸併用」（保険診療と鍼灸併用の両方）は柔整・鍼灸の両方に数える
+          const t=String(p.insurance_type);
+          if(/鍼灸/.test(t)) r.hariCount++;
+          if(!t.startsWith("鍼灸")) r.juCount++;
         }else{
           // 区分が未選択の会計は「自費のみ」として数える
           r.jihiOnlyCount++;
@@ -12449,7 +12456,7 @@ function bulkPadRow(left,right,width=BULK_RECEIPT_W){
   return l+" ".repeat(Math.max(1,width-bulkDisplayWidth(l)-bulkDisplayWidth(right)))+right;
 }
 const bulkYen=n=>Number(n||0).toLocaleString()+"円";
-const BULK_INSURANCE_LABEL={"手技療法":"保険診療","鍼灸併用":"鍼灸保険（併用）","鍼灸のみ":"鍼灸保険（のみ）"};
+const BULK_INSURANCE_LABEL={"手技療法":"保険診療","鍼灸併用":"鍼灸保険（併用）","鍼灸のみ":"鍼灸保険（のみ）","手技療法＋鍼灸併用":"保険診療＋鍼灸保険（併用）"};
 // 1回の会計の内訳（保険と自費の項目）
 function bulkPaymentItems(p){
   const items=[];
@@ -12551,11 +12558,6 @@ async function sendEpsonCommands(cmds){
   }
   return true;
 }
-// レジのドロアを開ける（両替・つり銭の確認など、会計をしないで開けたいとき）
-// ドロアのケーブルがプリンターのどちらの端子（drawer_1＝2番ピン／drawer_2＝5番ピン）につながっていても開くよう、両方に少し長めの信号を送る
-// （つながっていない方への信号は何も起こらない）
-const DRAWER_OPEN_COMMANDS=`<pulse drawer="drawer_1" time="pulse_200"/><pulse drawer="drawer_2" time="pulse_200"/>`;
-function openRegisterDrawer(){ return sendEpsonCommands(DRAWER_OPEN_COMMANDS); }
 // プリンターが使えない端末用：レシートの部分だけを印刷する（画面全体を印刷しない）
 function printBulkReceiptPreview(lines){
   const html=lines.map(l=>`<div style="text-align:${l.center?"center":"left"};font-weight:${l.bold?800:400};white-space:pre;">${bulkEscapeXml(l.text)||"&nbsp;"}</div>`).join("");
@@ -16093,16 +16095,10 @@ function Dashboard({user,onLogout}){
               </div>
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <button onClick={async()=>{
+              <button onClick={()=>{
+                // 各種設定の「レジを開ける」と同じ方法（Star mPOP）。連打で何度も開かないよう少しの間は押せなくする
                 if(drawerBusy) return;
-                setDrawerBusy(true);
-                try{ await openRegisterDrawer(); showToast("🗄️ レジを開けました"); }
-                catch(e){
-                  // つなげないときは、たいていこのブラウザでプリンターの接続（証明書）を許可していないため、許可の画面を開けるようにする
-                  const ip=(localStorage.getItem("epsonPrinterIP")||"").trim()||"192.168.0.146";
-                  if(confirm("❌ レジを開けられませんでした\n\n"+(e.message||"")+"\n\nプリンター（"+ip+"）との接続を許可する画面を開きますか？\n開いた画面で「詳細設定」→「"+ip+" にアクセスする」を押し、プリンターの画面が出たらそのタブを閉じて、もう一度「レジを開ける」を押してください。")) window.open("https://"+ip+"/","_blank");
-                }
-                setDrawerBusy(false);
+                if(openAdminCashDrawer((msg,type)=>showToast(msg,type))){ setDrawerBusy(true); setTimeout(()=>setDrawerBusy(false),2000); }
               }} disabled={drawerBusy} title="レジのドロアを開けます（両替・つり銭の確認など）"
                 style={{display:"flex",alignItems:"center",gap:6,padding:"7px 12px",borderRadius:20,border:"1.5px solid rgba(255,255,255,.25)",background:"rgba(255,255,255,.08)",cursor:drawerBusy?"default":"pointer",fontFamily:"inherit",opacity:drawerBusy?.6:1}}>
                 <span style={{fontSize:14}}>🗄️</span>
