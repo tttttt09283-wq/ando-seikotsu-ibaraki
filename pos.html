@@ -928,6 +928,13 @@ function getEpsonPrinterIP(){
   const saved=(localStorage.getItem("epsonPrinterIP")||"").trim();
   return saved||DEFAULT_EPSON_IP;
 }
+// プリンターは自分で作った証明書（https）を使うため、ブラウザごとに一度「このプリンターにつないでよい」と許可が必要。
+// プリンターの画面を新しいタブで開き、「詳細」→「アクセスする」を選んでもらう（ブラウザの更新・再起動で消えることがある）
+function openPrinterCertPage(){
+  const ip=getEpsonPrinterIP();
+  alert(`プリンター（${ip}）の画面を新しいタブで開きます。\n\n「この接続ではプライバシーが保護されません」などと出たら、\n「詳細設定」（Safariは「詳細を表示」）→「${ip} にアクセスする」を押してください。\nプリンターの画面が出たら、そのタブを閉じて、もう一度印刷してください。`);
+  window.open(`https://${ip}/`,"_blank");
+}
 function setEpsonPrinterIP(){
   const current=getEpsonPrinterIP();
   const ip=prompt("EPSONプリンター（TM-m30III-H）のIPアドレスを入力してください（例：192.168.1.50）\n\nプリンター本体のメニューボタン長押しで印字されるステータスシート、またはルーターの接続機器一覧で確認できます。",current);
@@ -972,15 +979,48 @@ function eposEnvelope(innerCommands){
     `\n</epos-print></soap:Body></soap:Envelope>`;
 }
 // プリンターへePOS-Print XMLを送信する共通処理。成功/失敗をPromiseで返す
+// 印刷できなかった理由を、画面に出せる言葉にする
+function explainPrintError(e,ip){
+  // プリンターが返すエラーコードの意味（ePOS-Print の code 属性）
+  const EPOS_ERROR_TEXT={
+    EPTR_COVER_OPEN:"プリンターのカバーが開いています",
+    EPTR_REC_EMPTY:"レシート用紙が切れています",
+    EPTR_AUTOCUTTER:"用紙カッターのエラーです（紙詰まりを確認して、電源を入れ直してください）",
+    EPTR_MECHANICAL:"プリンターの機械エラーです（電源を入れ直してください）",
+    EPTR_UNRECOVERABLE:"プリンターの復帰できないエラーです（電源を入れ直してください）",
+    DeviceNotFound:"プリンターが見つかりません（プリンターの設定のデバイスIDが local_printer か確認してください）",
+    EX_DEVICE_NOT_FOUND:"プリンターが見つかりません",
+    EX_TIMEOUT:"プリンターの応答がありませんでした（ほかの端末が印刷中か、電源を確認してください）",
+    EX_BUSY:"プリンターがほかの端末で使用中です。少し待ってからもう一度お試しください",
+    SchemaError:"送ったデータをプリンターが読めませんでした",
+    PrintSystemError:"プリンターの内部エラーです（電源を入れ直してください）",
+  };
+  if(e&&e.code) return `プリンターがエラーを返しました：${EPOS_ERROR_TEXT[e.code]||e.code}`;
+  if(e&&e.name==="AbortError") return `プリンター（${ip}）から15秒たっても返事がありませんでした。プリンターの電源・LANケーブル・Wi-Fiを確認してください。`;
+  // ブラウザがプリンターにつなげなかった（すぐにエラーになる）
+  return `プリンター（${ip}）につなげませんでした。よくある原因：\n`+
+    `① このブラウザでプリンターの証明書を許可していない（ブラウザの更新・iPadの再起動などで消えることがあります）\n`+
+    `　→ 会計画面の上の「🔓 プリンターとの接続を許可する」を押し、開いた画面で「詳細」→「アクセスする」を選んでください\n`+
+    `② ブラウザの「ローカルネットワークへのアクセス」をブロックしている（Chrome）\n`+
+    `　→ アドレスバー左のマーク →「ローカルネットワーク」を「許可」にしてください\n`+
+    `③ プリンターのIPアドレスが変わった・電源が切れている（今の設定：${ip}）`;
+}
 function sendEposRequest(ip,innerCommands){
+  const ctrl=typeof AbortController!=="undefined"?new AbortController():null;
+  const timer=ctrl?setTimeout(()=>ctrl.abort(),15000):null;
   return fetch(eposEndpoint(ip),{
     method:"POST",
     headers:{"Content-Type":"text/xml; charset=utf-8","If-Modified-Since":"Thu, 01 Jan 1970 00:00:00 GMT"},
-    body:eposEnvelope(innerCommands)
+    body:eposEnvelope(innerCommands),
+    signal:ctrl?ctrl.signal:undefined,
+    targetAddressSpace:"local", // Chrome：同じLAN内の機器への通信であることを伝える（ローカルネットワークの許可の確認が出る）
   }).then(res=>res.text()).then(text=>{
     if(text.indexOf('success="true"')>=0) return true;
-    throw new Error("プリンターからエラー応答がありました（用紙切れ・カバー開き等をご確認ください）");
-  });
+    const m=text.match(/code="([^"]*)"/);
+    const err=new Error("プリンターからエラー応答がありました（用紙切れ・カバー開き等をご確認ください）");
+    err.code=m&&m[1]?m[1]:"不明なエラー";
+    throw err;
+  }).finally(()=>{ if(timer) clearTimeout(timer); });
 }
 // USB接続では、印刷コマンド自体はプリンターに届いて実際に印字されるのに完了通知だけが遅れることがあるため、
 // 連打で紙が何枚も出てしまわないよう、送信中は次の送信をブロックする簡易ロックを設ける。
@@ -1005,7 +1045,8 @@ function printReceiptViaWebPRNT(){
     showPrintToast("🖨️ 印刷しました");
   }).catch(e=>{
     receiptPrintInFlight=false;
-    showPrintToast("❌ 印刷に失敗しました："+e.message+"（IPアドレス・電源・LAN接続をご確認ください）");
+    // 理由を出したうえで、すぐにお客様へお渡しできるよう画面からの印刷（プレビュー印刷）に切り替えられるようにする
+    if(confirm("❌ 領収書を印刷できませんでした。\n\n"+explainPrintError(e,ip)+"\n\n代わりに画面から印刷（プレビュー印刷）しますか？")) openReceiptPrintWindow();
   });
 }
 // ===== EPSONプリンターに接続されたレジドロアを開ける =====
@@ -1034,6 +1075,7 @@ function printMinimalTest(){
   sendEposRequest(ip,`<text lang="ja"/><text align="center"/><text>TEST OK\n接続確認\n</text><feed line="2"/><cut type="feed"/>`).then(()=>{
     showPrintToast("🧪 テスト印刷 成功");
   }).catch(e=>{
+    alert("❌ テスト印刷エラー\n\n"+explainPrintError(e,ip));
     showPrintToast("❌ テスト印刷エラー："+e.message+"\n\n※https配信のページからhttpのプリンターへ接続できない場合は、Chromeの設定→プライバシーとセキュリティ→サイトの設定→「安全性の低いコンテンツ」で、このサイトのURLを追加して許可してください。");
   });
 }
@@ -1766,6 +1808,7 @@ function render(){
           <button onclick="openCashDrawer(true)" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:white;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">🗄️ レジを開ける</button>
           <button onclick="printMinimalTest()" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:white;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">🧪 テスト印刷</button>
           <button onclick="setEpsonPrinterIP()" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:white;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">🖨️ プリンター設定</button>
+          <button onclick="openPrinterCertPage()" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:white;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">🔓 プリンターとの接続を許可する</button>
         </div>
       </div>
       <div class="main-grid">
