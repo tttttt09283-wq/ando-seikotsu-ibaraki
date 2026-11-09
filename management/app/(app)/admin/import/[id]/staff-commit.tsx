@@ -5,10 +5,11 @@ import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/submit-button";
+import { ActionForm } from "@/components/action-form";
 
 // スタッフの一括登録。発行したPASSはこの画面に1回だけ表示する
 export function StaffCommit({ batchId, disabled }: { batchId: string; disabled: boolean }) {
-  const [state, action] = useActionState<StaffImportState, FormData>(commitStaff, {});
+  const [state, action, pending] = useActionState<StaffImportState, FormData>(commitStaff, {});
   const [copied, setCopied] = useState(false);
   if (state.results) {
     const ok = state.results.filter((r) => !r.error);
@@ -34,10 +35,10 @@ export function StaffCommit({ batchId, disabled }: { batchId: string; disabled: 
     );
   }
   return (
-    <form action={action} className="grid gap-2" onSubmit={(e) => { if (!confirm("スタッフを登録してID・PASSを発行しますか？")) e.preventDefault(); }}>
+    <ActionForm action={action} pending={pending} className="grid gap-2" confirmMessage="スタッフを登録してID・PASSを発行しますか？">
       <input type="hidden" name="batch_id" value={batchId} />
       {state.error ? <Alert tone="danger">{state.error}</Alert> : null}
       <div><SubmitButton disabled={disabled} pendingText="登録中…（人数が多いと時間がかかります）">スタッフを登録してID・PASSを発行</SubmitButton></div>
-    </form>
+    </ActionForm>
   );
 }

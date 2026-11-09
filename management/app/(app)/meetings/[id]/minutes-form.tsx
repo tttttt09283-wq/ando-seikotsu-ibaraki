@@ -5,6 +5,7 @@ import { Input, Select, Field, Textarea } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/submit-button";
+import { ActionForm } from "@/components/action-form";
 import { cleanDecisions, type DecisionInput } from "@/lib/meetings";
 
 type Member = { user_id: string; name: string };
@@ -13,16 +14,24 @@ type Initial = { agenda: string; content: string; attendees: string[]; guests: s
 export function MinutesForm({ meetingId, members, initial, submitted, canSubmit, heldOn }: {
   meetingId: number; members: Member[]; initial: Initial; submitted: boolean; canSubmit: boolean; heldOn: string;
 }) {
-  const [state, action] = useActionState<MinutesState, FormData>(saveMinutes, {});
+  const [state, action, pending] = useActionState<MinutesState, FormData>(saveMinutes, {});
   const [rows, setRows] = useState<DecisionInput[]>(initial.decisions.length ? initial.decisions : [{ id: null, title: "", detail: "", owner_user_id: "", due_date: "" }]);
   const [noDecisions, setNoDecisions] = useState(initial.noDecisions);
+  // 入力は state で持つ（送信後に React がフォームを初期化しても、エラーのときに書いた内容が消えないように）
+  const [agenda, setAgenda] = useState(initial.agenda);
+  const [content, setContent] = useState(initial.content);
+  const [guests, setGuests] = useState(initial.guests);
+  const [attendees, setAttendees] = useState<string[]>(initial.attendees);
   const set = (i: number, patch: Partial<DecisionInput>) => setRows((r) => r.map((x, j) => (j === i ? { ...x, ...patch } : x)));
   const decisions = noDecisions ? [] : cleanDecisions(rows);
   // 参加者の候補：院の所属者＋すでに参加者になっている人（他院の人など）
   return (
-    <form action={action} className="grid gap-4">
+    <ActionForm action={action} pending={pending} className="grid gap-4">
       <input type="hidden" name="id" value={meetingId} />
       <input type="hidden" name="decisions" value={JSON.stringify(decisions)} />
+      {/* チェックボックスは送信後の初期化で外れることがあるため、選んだ値は hidden で送る */}
+      <input type="hidden" name="attendees_json" value={JSON.stringify(attendees)} />
+      <input type="hidden" name="no_decisions" value={noDecisions ? "on" : ""} />
       {state.error ? <Alert tone="danger">{state.error}</Alert> : null}
       {state.ok ? <Alert tone="ok">{state.ok}</Alert> : null}
       <fieldset className="grid gap-2">
@@ -30,18 +39,18 @@ export function MinutesForm({ meetingId, members, initial, submitted, canSubmit,
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {members.map((m) => (
             <label key={m.user_id} className="flex min-h-11 items-center gap-2 rounded-lg border border-stone-300 px-3 has-[:checked]:border-brand-700 has-[:checked]:bg-brand-50">
-              <input type="checkbox" name="attendees" value={m.user_id} defaultChecked={initial.attendees.includes(m.user_id)} className="size-5" /><span className="text-sm">{m.name}</span>
+              <input type="checkbox" value={m.user_id} checked={attendees.includes(m.user_id)} onChange={(e) => setAttendees((a) => (e.target.checked ? [...a, m.user_id] : a.filter((x) => x !== m.user_id)))} className="size-5" /><span className="text-sm">{m.name}</span>
             </label>
           ))}
         </div>
-        <Field label="ほかの参加者（他院・社外の人。1行に1人）"><Textarea name="guests" defaultValue={initial.guests} className="min-h-16" placeholder="例：〇〇メーカー 担当者" /></Field>
+        <Field label="ほかの参加者（他院・社外の人。1行に1人）"><Textarea name="guests" value={guests} onChange={(e) => setGuests(e.target.value)} className="min-h-16" placeholder="例：〇〇メーカー 担当者" /></Field>
       </fieldset>
-      <Field label="議題（必須）"><Textarea name="agenda" defaultValue={initial.agenda} required={false} placeholder={"例：\n1. 今月の新規・再来の数値\n2. 口コミを増やす取り組み"} /></Field>
-      <Field label="会議の内容（必須）"><Textarea name="content" defaultValue={initial.content} className="min-h-40" placeholder="話し合ったこと・出た意見・決まった理由など" /></Field>
+      <Field label="議題（必須）"><Textarea name="agenda" value={agenda} onChange={(e) => setAgenda(e.target.value)} placeholder={"例：\n1. 今月の新規・再来の数値\n2. 口コミを増やす取り組み"} /></Field>
+      <Field label="会議の内容（必須）"><Textarea name="content" value={content} onChange={(e) => setContent(e.target.value)} className="min-h-40" placeholder="話し合ったこと・出た意見・決まった理由など" /></Field>
 
       <fieldset className="grid gap-3">
         <legend className="mb-1 text-sm font-bold text-stone-700">決定事項（必須：担当者・実施期限・具体的な行動）</legend>
-        <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" name="no_decisions" checked={noDecisions} onChange={(e) => setNoDecisions(e.target.checked)} className="size-5" />この会議では決定事項なし</label>
+        <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={noDecisions} onChange={(e) => setNoDecisions(e.target.checked)} className="size-5" />この会議では決定事項なし</label>
         {!noDecisions ? (
           <>
             {rows.map((r, i) => (
@@ -69,6 +78,6 @@ export function MinutesForm({ meetingId, members, initial, submitted, canSubmit,
         <SubmitButton name="intent" value="submit" pendingText="提出中…" disabled={!canSubmit}>{submitted ? "修正して再提出" : "議事録を正式に提出"}</SubmitButton>
         {!canSubmit ? <span className="text-xs text-stone-600">開催日（当日）から提出できます。それまでは下書き保存できます。</span> : null}
       </div>
-    </form>
+    </ActionForm>
   );
 }

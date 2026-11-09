@@ -5,6 +5,8 @@ import { Input, Select, Field } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { SubmitButton } from "@/components/submit-button";
+import { ActionForm } from "@/components/action-form";
+import { useFields } from "@/components/use-fields";
 import { fmtDays } from "@/lib/leave/types";
 import { normalizeDates, shortageOf } from "@/lib/leave/requests";
 import { formatDate } from "@/lib/time";
@@ -12,10 +14,11 @@ import { formatDate } from "@/lib/time";
 export type Person = { id: string; name: string; self: boolean; paid: { available: number; pending: number }; shift: { available: number; pending: number; nextExpiry: string | null } };
 
 export function LeaveForm({ people, idempotencyKey, today }: { people: Person[]; idempotencyKey: string; today: string }) {
-  const [state, action] = useActionState<SubmitState, FormData>(submitLeave, {});
+  const [state, action, pending] = useActionState<SubmitState, FormData>(submitLeave, {});
   const [personId, setPersonId] = useState(people[0]?.id ?? "");
   const [kind, setKind] = useState<"PAID" | "SHIFT">("PAID");
   const [dates, setDates] = useState<string[]>([""]);
+  const { bind } = useFields();
   const person = people.find((p) => p.id === personId) ?? people[0];
   const chosen = useMemo(() => normalizeDates(dates), [dates]);
   const b = kind === "PAID" ? person.paid : person.shift;
@@ -23,7 +26,7 @@ export function LeaveForm({ people, idempotencyKey, today }: { people: Person[];
   const proxy = person && !person.self;
 
   return (
-    <form action={action} className="grid gap-4">
+    <ActionForm action={action} pending={pending} className="grid gap-4">
       <input type="hidden" name="idempotency_key" value={idempotencyKey} />
       {state.error ? <Alert tone="danger">{state.error}</Alert> : null}
       {people.length > 1 ? (
@@ -69,11 +72,11 @@ export function LeaveForm({ people, idempotencyKey, today }: { people: Person[];
       {short ? (
         <>
           <Alert tone="warn">残数が足りません。このまま申請すると「例外確認」として承認者に回ります（残数が足りないままでは承認できません）。</Alert>
-          <Field label="例外確認の理由（必須）"><Input name="exception_note" required minLength={2} maxLength={500} /></Field>
+          <Field label="例外確認の理由（必須）"><Input {...bind("exception_note")} required minLength={2} maxLength={500} /></Field>
         </>
       ) : null}
-      <Field label={kind === "PAID" ? "メモ（任意。有給の理由は書かなくてかまいません）" : "メモ（任意）"}><Input name="reason" maxLength={500} /></Field>
+      <Field label={kind === "PAID" ? "メモ（任意。有給の理由は書かなくてかまいません）" : "メモ（任意）"}><Input {...bind("reason")} maxLength={500} /></Field>
       <div><SubmitButton pendingText="申請中…" disabled={!chosen.length}>申請する</SubmitButton></div>
-    </form>
+    </ActionForm>
   );
 }

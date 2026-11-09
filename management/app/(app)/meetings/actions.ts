@@ -50,7 +50,8 @@ export async function saveMinutes(_prev: MinutesState, fd: FormData): Promise<Mi
   let decisions: unknown;
   try { decisions = JSON.parse(String(fd.get("decisions") || "[]")); } catch { return { error: "決定事項の形式が正しくありません" }; }
   if (!Array.isArray(decisions) || decisions.length > 50) return { error: "決定事項は50件までです" };
-  const attendees = fd.getAll("attendees").map(String).filter((x) => uuidRe.test(x));
+  let attendees: string[] = [];
+  try { const a = JSON.parse(String(fd.get("attendees_json") || "[]")); if (Array.isArray(a)) attendees = a.map(String).filter((x) => uuidRe.test(x)); } catch { return { error: "参加者の形式が正しくありません" }; }
   const guests = String(fd.get("guests") ?? "").split(/[\n、,]/).map((s) => s.trim()).filter(Boolean).slice(0, 30);
   const supabase = await createClient();
   const { error } = await supabase.rpc("save_minutes", {

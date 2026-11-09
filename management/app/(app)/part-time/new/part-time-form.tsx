@@ -4,6 +4,8 @@ import { submitPartTime, type PartTimeState } from "../actions";
 import { Input, Select, Field } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { SubmitButton } from "@/components/submit-button";
+import { ActionForm } from "@/components/action-form";
+import { useFields } from "@/components/use-fields";
 import { CATEGORY_LABEL, isAfterCutoff, shiftCutoffFor, workMinutes, fmtMinutes, type PartTimeCategory } from "@/lib/part-time";
 import { formatDate } from "@/lib/time";
 
@@ -11,18 +13,19 @@ type Store = { id: string; name: string };
 type Worker = { id: string; name: string; storeIds: string[] };
 
 export function PartTimeForm({ stores, workers, today, cutoffDay, idempotencyKey }: { stores: Store[]; workers: Worker[]; today: string; cutoffDay: number; idempotencyKey: string }) {
-  const [state, action] = useActionState<PartTimeState, FormData>(submitPartTime, {});
+  const [state, action, pending] = useActionState<PartTimeState, FormData>(submitPartTime, {});
   const [storeId, setStoreId] = useState(stores[0]?.id ?? "");
   const [category, setCategory] = useState<PartTimeCategory>("plan");
   const [date, setDate] = useState("");
   const [start, setStart] = useState("10:00");
   const [end, setEnd] = useState("15:00");
   const [brk, setBrk] = useState(0);
+  const { bind } = useFields({ worker_user_id: "" });
   const late = date ? isAfterCutoff(today, date, cutoffDay) : false;
   const minutes = workMinutes(start, end, brk);
   const storeWorkers = workers.filter((w) => w.storeIds.includes(storeId));
   return (
-    <form action={action} className="grid gap-4">
+    <ActionForm action={action} pending={pending} className="grid gap-4">
       <input type="hidden" name="idempotency_key" value={idempotencyKey} />
       {state.error ? <Alert tone="danger">{state.error}</Alert> : null}
       {stores.length > 1 ? (
@@ -47,17 +50,17 @@ export function PartTimeForm({ stores, workers, today, cutoffDay, idempotencyKey
       {late ? (
         <>
           <Alert tone="warn">シフト確定（前月{cutoffDay}日）を過ぎた申請のため「例外申請」になります。理由を入力してください。</Alert>
-          <Field label="例外申請の理由（必須）"><Input name="exception_reason" required minLength={2} maxLength={500} /></Field>
+          <Field label="例外申請の理由（必須）"><Input {...bind("exception_reason")} required minLength={2} maxLength={500} /></Field>
         </>
       ) : null}
       <Field label="勤務する人（アルバイト）" hint="アルバイトの人の登録が済んでいない場合は「未定」で申請し、あとから設定できます">
-        <Select name="worker_user_id" defaultValue="">
+        <Select {...bind("worker_user_id")}>
           <option value="">未定（あとで入力）</option>
           {storeWorkers.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
         </Select>
       </Field>
-      <Field label="申請理由（必須）"><Input name="reason" required minLength={2} maxLength={500} placeholder="例：スタッフ研修のため午前が人手不足" /></Field>
+      <Field label="申請理由（必須）"><Input {...bind("reason")} required minLength={2} maxLength={500} placeholder="例：スタッフ研修のため午前が人手不足" /></Field>
       <div><SubmitButton pendingText="申請中…" disabled={minutes <= 0}>社長に申請する</SubmitButton></div>
-    </form>
+    </ActionForm>
   );
 }
