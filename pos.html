@@ -553,7 +553,16 @@ function selectInsuranceRate(rate){
   }
   render();
 }
-// 医療助成：500円／0円のワンタップ選択
+// 医療助成で選べる金額。鍼灸併用は柔整（保険診療）の医療助成500円＋鍼灸保険の医療助成500円＝1,000円
+function medicalAssistOptions(){
+  if(state.insuranceType==="鍼灸併用") return [
+    {amount:1000,note:"柔整 500円＋鍼灸 500円"},
+    {amount:500,note:"どちらか一方だけ"},
+    {amount:0,note:""},
+  ];
+  return [{amount:500,note:""},{amount:0,note:""}];
+}
+// 医療助成：ワンタップ選択（保険診療・鍼灸のみ＝500円／0円、鍼灸併用＝1,000円／500円／0円）
 function selectMedicalAssistAmount(amount){
   state.insuranceTier=null;
   state.insuranceAmount=amount;
@@ -1873,10 +1882,9 @@ function render(){
               `:`<div style="font-size:11px;color:#9ca3af;margin-bottom:10px;">↑施術区分を選ぶと、負担割合を選べます</div>`}
               ${(state.insuranceType&&state.insuranceRate==="医療助成")?`
                 <div class="ins-history-box">
-                  <div class="ins-history-title">📋 医療助成</div>
+                  <div class="ins-history-title">📋 医療助成${state.insuranceType==="鍼灸併用"?"（鍼灸併用：柔整と鍼灸の医療助成を合わせた金額）":""}</div>
                   <div style="display:flex;gap:8px;">
-                    <button style="flex:1;padding:12px;font-size:15px;font-weight:800;border-radius:8px;cursor:pointer;border:2px solid #1e3a5f;background:${state.insuranceAmount==500?"#1e3a5f":"white"};color:${state.insuranceAmount==500?"white":"#1e3a5f"};" onclick="selectMedicalAssistAmount(500)">500円</button>
-                    <button style="flex:1;padding:12px;font-size:15px;font-weight:800;border-radius:8px;cursor:pointer;border:2px solid #1e3a5f;background:${state.insuranceAmount==0?"#1e3a5f":"white"};color:${state.insuranceAmount==0?"white":"#1e3a5f"};" onclick="selectMedicalAssistAmount(0)">0円</button>
+                    ${medicalAssistOptions().map(o=>{const on=Number(state.insuranceAmount)===o.amount;return `<button style="flex:1;padding:12px;font-size:15px;font-weight:800;border-radius:8px;cursor:pointer;border:2px solid #1e3a5f;background:${on?"#1e3a5f":"white"};color:${on?"white":"#1e3a5f"};" onclick="selectMedicalAssistAmount(${o.amount})">${o.amount.toLocaleString()}円${o.note?`<div style="font-size:10px;font-weight:600;opacity:.85;">${o.note}</div>`:""}</button>`;}).join("")}
                   </div>
                 </div>
               `:(state.insuranceType&&state.insuranceRate)?(()=>{
