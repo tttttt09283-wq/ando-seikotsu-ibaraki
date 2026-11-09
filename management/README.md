@@ -2,7 +2,7 @@
 
 あんど整骨院グループの社内業務管理アプリ。設計は [../docs](../docs/requirements.md)。
 
-**現在：PHASE 5（アルバイト勤務申請）まで。本番のデータベース・公開・実データ登録は未実施（承認後に行う）。**
+**現在：PHASE 6（振休→アルバイト勤務の変更）まで。本番のデータベース・公開・実データ登録は未実施（承認後に行う）。**
 
 ## できること（PHASE 2）
 
@@ -51,6 +51,16 @@
 
 勤務する月の前月20日を過ぎた申請は「例外申請」（理由必須）。判定は DB 関数 `mgmt.shift_cutoff_for()`。
 
+## できること（PHASE 6）
+
+| 画面 | 内容 |
+|---|---|
+| `/holiday-change/new` | 院長：承認済みの振休（まだ先の日）を選び、アルバイトとしての勤務時間・理由を入力して申請 |
+| `/holiday-change`・`/holiday-change/[id]` | 申請の一覧・詳細（GM確認 → 社長承認の進み具合）・履歴。差戻し後の再申請（GMの確認から）、取下げ |
+| `/approvals`・`/gm`・`/president` | GM：事前確認。社長：GM確認済みの最終承認（GMの確認前は DB が拒否） |
+
+確定すると、その振休は「勤務に変更（消費）」（`leave_usage.status = 'converted'`）になり、残数には戻らない（Q-8）。変更済みの日を含む振休の申請は取り消せない。
+
 ## 構成
 
 - Next.js 16（App Router・`proxy.ts`）／TypeScript／Tailwind CSS 4／shadcn/ui 方式の部品（`components/ui`）
@@ -81,7 +91,7 @@ npm run test:db     # DBテスト：ローカルの PostgreSQL 16 を一時的�
 
 - Supabase の検証用プロジェクト `and-group-management-verify`（無料・東京）に、マイグレーションと初期マスタを適用済み。
 - Exposed schemas への `mgmt` の追加は、SQL（`alter role authenticator set pgrst.db_schemas = 'public, graphql_public, mgmt'` と `notify pgrst, 'reload config'`）で行った。本番では Supabase の設定画面（API → Exposed schemas）で行う。
-- ダミーの利用者7名（ログインIDは `t-` で始まる）で、ログイン・PASS変更の強制・院長の権限範囲・振休の登録、PHASE 4 の申請→承認（社長の有給承認、院長の振休承認、院長本人の振休の本人承認とGMへの通知）、PHASE 5 のアルバイト勤務（基準日後の例外申請、緊急の優先表示、社長の承認、承認後の勤務者の設定と通知）を確認済み。
+- ダミーの利用者7名（ログインIDは `t-` で始まる）で、ログイン・PASS変更の強制・院長の権限範囲・振休の登録、PHASE 4 の申請→承認（社長の有給承認、院長の振休承認、院長本人の振休の本人承認とGMへの通知）、PHASE 5 のアルバイト勤務（基準日後の例外申請、緊急の優先表示、社長の承認、承認後の勤務者の設定と通知）、PHASE 6 の振休→アルバイト勤務（GM確認前は社長が承認できない、GM確認→社長承認で確定、振休が消費され残数に戻らない、候補から外れる）を確認済み。
 - この環境で Node のサーバーから外部に出るには `NODE_USE_ENV_PROXY=1` が必要（開発用サンドボックスの事情。本番の Vercel では不要）。
 
 ## 本番に適用する手順（**承認をいただいてから実施**）
