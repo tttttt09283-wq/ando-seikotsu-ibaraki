@@ -544,6 +544,33 @@ function selectInsuranceType(type){
   state.acuTier=null;
   render();
 }
+// ===== 保険の窓口負担を「柔整（保険診療）」と「鍼灸」に分けて保存する =====
+// payments.ju_insurance_amount／acu_insurance_amount。列がまだ無いデータベースでは保存しない（会計が止まらないように）
+let paymentSplitSupported=false;
+async function detectPaymentSplitColumns(){
+  try{ const r=await sbGet("payments","?select=ju_insurance_amount,acu_insurance_amount&limit=1"); paymentSplitSupported=Array.isArray(r); }
+  catch(e){ paymentSplitSupported=false; }
+}
+function insuranceSplitForSave(){
+  const amt=parseInt(state.insuranceAmount)||0, type=state.insuranceType;
+  if(!type) return {ju:amt,acu:0};
+  if(type==="鍼灸併用"||type==="鍼灸のみ") return {ju:0,acu:amt};
+  if(type===INS_COMBINED){
+    // 医療助成：1,000円＝柔整500円＋鍼灸500円。それ以外（500円など）は柔整の分として扱う
+    if(state.insuranceRate==="医療助成") return amt>=1000?{ju:amt-500,acu:500}:{ju:amt,acu:0};
+    // 鍼灸併用で選んだ段階の金額を鍼灸に、残りを柔整に（合計を手で直したときも合計は合う）
+    // 会計の訂正で段階を選び直していないときは、前に保存した鍼灸の金額を使う
+    const acuPart=state.acuTier?getInsuranceAmountFor("鍼灸併用",state.insuranceRate,state.acuTier):Number(state.alreadyPaid&&state.alreadyPaid.acu_insurance_amount)||0;
+    const acu=Math.min(amt,acuPart);
+    return {ju:amt-acu,acu};
+  }
+  return {ju:amt,acu:0};
+}
+function splitFieldsForSave(){
+  if(!paymentSplitSupported) return {};
+  const x=insuranceSplitForSave();
+  return {ju_insurance_amount:x.ju,acu_insurance_amount:x.acu};
+}
 // 保険診療＋鍼灸併用：それぞれの段階から金額を合計する
 function combinedInsuranceAmount(){
   return getInsuranceAmountFor("手技療法",state.insuranceRate,state.insuranceTier)+getInsuranceAmountFor("鍼灸併用",state.insuranceRate,state.acuTier);
@@ -1637,7 +1664,7 @@ async function saveFix(){
   if(reason===null) return;
   state.saving=true;render();
   try{
-    const res=await sbPatch("payments",before.id,after);
+    const res=await sbPatch("payments",before.id,{...after,...splitFieldsForSave()});
     if(!Array.isArray(res)||res.length===0) throw new Error((res&&res.message)||"更新できませんでした（権限がない可能性があります）");
     try{
       await sbPost("payment_corrections",{payment_id:before.id,booking_id:booking.id,before_data:b,after_data:after,reason:reason.trim()||null,staff_name:currentStaffName()});
@@ -1697,6 +1724,7 @@ async function save(){
       jifee_items:jifeeItemsForSave(),
       insurance_staff_id:insuranceStaffForSave(),
       insurance_type:state.insuranceType||null,
+      ...splitFieldsForSave(),
       is_training:!!booking.is_training,
     });
     if(result&&result.error){throw new Error(result.message||result.error||"保存に失敗しました");}
@@ -2066,6 +2094,7 @@ async function init(){
     treatment=treatments[0]||null;
     const samePatient=await sbGet("bookings",`?patient_name=eq.${encodeURIComponent(booking.patient_name)}&order=date.asc`);
     visitCount=Array.isArray(samePatient)?samePatient.length:1;
+    detectPaymentSplitColumns();
     // この患者様の有効な回数券・フリーパスを取得（会計画面に残数・期限を表示し、消費を選べるようにする）
     try{
       const rows=await sbGet("passes",`?patient_name=eq.${encodeURIComponent(booking.patient_name)}&active=eq.true&order=expiry_date.asc`);

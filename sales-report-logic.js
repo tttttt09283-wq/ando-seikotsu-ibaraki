@@ -113,6 +113,16 @@
   ];
   const sourceKey=t=>{ const s=String(t||"").trim(); if(!s) return "none"; return SOURCES.find(x=>x.re.test(s)).key; };
 
+  // ===== 保険の窓口負担の柔整・鍼灸の内訳 =====
+  // 会計で分けて保存した金額（ju_insurance_amount／acu_insurance_amount）を使う。
+  // 分けて保存していない古い会計は、区分が「鍼灸～」（鍼灸併用・鍼灸のみ）なら鍼灸、それ以外は柔整
+  function insuranceSplit(p){
+    const ins=Number(p&&p.insurance_amount)||0;
+    const ju=p&&p.ju_insurance_amount, acu=p&&p.acu_insurance_amount;
+    if((ju!==null&&ju!==undefined)||(acu!==null&&acu!==undefined)) return {ju:Number(ju)||0,acu:Number(acu)||0};
+    return /^鍼灸/.test(String((p&&p.insurance_type)||""))?{ju:0,acu:ins}:{ju:ins,acu:0};
+  }
+
   // ===== 会計1件の内訳 =====
   // 技術＝保険の窓口負担＋自費の施術（回数券・FPを含む）。商品＝物販。消費税は自費・商品（課税）にだけ内税10%（保険は非課税）
   function splitAmounts(p){
@@ -146,6 +156,7 @@
       days:new Set(visits.map(v=>v.date)).size,
       total:zero(),tech:zero(),goods:zero(),
       techRows:Object.fromEntries(TECH_ROWS.map(t=>[t.key,zero()])),
+      juIns:zero(), acuIns:zero(),
       goodsRows:Object.fromEntries([...GOODS_KINDS.map(g=>g.key),"other"].map(k=>[k,zero()])),
       visitClass:Object.fromEntries(VISIT_CLASSES.map(c=>[c.key,zero()])),
       gender:Object.fromEntries(GENDERS.map(g=>[g.key,zero()])),
@@ -160,8 +171,9 @@
     const staff=new Set();
 
     visits.forEach(v=>{
-      const sum={total:0,ins:0,tech:0,goods:0,goodsByKind:{}};
+      const sum={total:0,ins:0,tech:0,goods:0,goodsByKind:{},ju:0,acu:0};
       v.payments.forEach(p=>{
+        const sp=insuranceSplit(p); sum.ju+=sp.ju; sum.acu+=sp.acu;
         const a=splitAmounts(p);
         sum.total+=a.total; sum.ins+=a.ins; sum.tech+=a.tech; sum.goods+=a.goods;
         Object.entries(a.goodsByKind).forEach(([k,x])=>{ sum.goodsByKind[k]=(sum.goodsByKind[k]||0)+x; });
@@ -177,6 +189,8 @@
       if(sum.ins>0){ const k=rateKey(b.insurance_rate); r.techRows[k].count++; r.techRows[k].amount+=sum.ins; }
       if(sum.tech-sum.ins>0){ r.techRows.other.count++; r.techRows.other.amount+=sum.tech-sum.ins; }
       r.nonTaxable+=sum.ins; r.taxable+=sum.total-sum.ins;
+      if(sum.ju>0){ r.juIns.count++; r.juIns.amount+=sum.ju; }
+      if(sum.acu>0){ r.acuIns.count++; r.acuIns.amount+=sum.acu; }
       const c=cls[v.key]||"guest"; r.visitClass[c].count++; r.visitClass[c].amount+=sum.total;
       const prof=profiles[v.patient]||{};
       const g=genderKey(prof.gender); r.gender[g].count++; r.gender[g].amount+=sum.total;
@@ -188,7 +202,7 @@
     refunds.forEach(p=>{
       const a=Number(p.total_amount)||0, ins=Math.max(a,Number(p.insurance_amount)||0), rest=a-ins;
       r.total.amount+=a; r.tech.amount+=a;
-      if(ins){ r.techRows[rateKey((bookingById[p.booking_id]||{}).insurance_rate)].amount+=ins; r.nonTaxable+=ins; }
+      if(ins){ r.techRows[rateKey((bookingById[p.booking_id]||{}).insurance_rate)].amount+=ins; r.nonTaxable+=ins; r.juIns.amount+=ins; }
       if(rest){ r.techRows.other.amount+=rest; r.taxable+=rest; }
     });
     r.staffCount=[...staff].filter(Boolean).length;
@@ -209,7 +223,7 @@
     return r;
   }
 
-  const api={GOODS_KINDS,isGoods,goodsKind,PAY_KINDS,parsePayments,visitsOf,classifyVisits,VISIT_CLASSES,patientProfiles,GENDERS,genderKey,
+  const api={insuranceSplit,GOODS_KINDS,isGoods,goodsKind,PAY_KINDS,parsePayments,visitsOf,classifyVisits,VISIT_CLASSES,patientProfiles,GENDERS,genderKey,
     AGE_BANDS,ageBand,SOURCES,sourceKey,splitAmounts,rateKey,TECH_ROWS,buildReport};
   root.SalesReport=api;
 })(typeof window!=="undefined"?window:globalThis);

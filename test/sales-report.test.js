@@ -69,3 +69,15 @@ test("支払方法の読み取り", () => {
   assert.deepEqual(plain(SR.parsePayments("現金:2000", 2000)), [{ kind: "cash", amount: 2000 }]);
   assert.deepEqual(plain(SR.parsePayments("現金", 800)), [{ kind: "cash", amount: 800 }]);
 });
+
+test("保険の窓口負担を柔整・鍼灸に分ける（分けて保存した会計・古い会計）", () => {
+  assert.deepEqual(plain(SR.insuranceSplit({ insurance_amount: 1400, insurance_type: "手技療法＋鍼灸併用", ju_insurance_amount: 800, acu_insurance_amount: 600 })), { ju: 800, acu: 600 });
+  assert.deepEqual(plain(SR.insuranceSplit({ insurance_amount: 600, insurance_type: "鍼灸併用" })), { ju: 0, acu: 600 });
+  assert.deepEqual(plain(SR.insuranceSplit({ insurance_amount: 800, insurance_type: "手技療法" })), { ju: 800, acu: 0 });
+  const r = SR.buildReport([
+    { id: 1, booking_id: 1, patient_name: "架空 一", payment_date: "2026-11-01", staff_id: 1, insurance_amount: 1400, jifee_amount: 0, total_amount: 1400, insurance_type: "手技療法＋鍼灸併用", ju_insurance_amount: 800, acu_insurance_amount: 600 },
+    { id: 2, booking_id: 2, patient_name: "架空 二", payment_date: "2026-11-01", staff_id: 1, insurance_amount: 1100, jifee_amount: 0, total_amount: 1100, insurance_type: "手技療法" },
+  ], { from: "2026-11-01", to: "2026-11-30", bookings: [] });
+  assert.deepEqual(plain(r.juIns), { count: 2, amount: 1900 });
+  assert.deepEqual(plain(r.acuIns), { count: 1, amount: 600 });
+});
