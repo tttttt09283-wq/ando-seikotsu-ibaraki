@@ -1036,7 +1036,6 @@ function sendEposRequest(ip,innerCommands){
     headers:{"Content-Type":"text/xml; charset=utf-8","If-Modified-Since":"Thu, 01 Jan 1970 00:00:00 GMT"},
     body:eposEnvelope(innerCommands),
     signal:ctrl?ctrl.signal:undefined,
-    targetAddressSpace:"local", // Chrome：同じLAN内の機器への通信であることを伝える（ローカルネットワークの許可の確認が出る）
   }).then(res=>res.text()).then(text=>{
     if(text.indexOf('success="true"')>=0) return true;
     const m=text.match(/code="([^"]*)"/);

@@ -8287,6 +8287,52 @@ function StoreMgmtPanel(){
 }
 
 // ===== 患者管理パネル =====
+// ===== レシートの発行頻度（毎回／月ごと／年ごと／不要）=====
+// patient_preferences（電話番号ごと）。会計画面（pos.html）はこの設定でレシートを出す・まとめる。まとめレシートの対象にもなる
+const RECEIPT_FREQUENCIES=["毎回","月ごと","年ごと","不要"];
+function ReceiptFrequencyEditor({name,phone}){
+  const tel=String(phone||"").trim();
+  const [freq,setFreq]=React.useState(null);
+  const [loaded,setLoaded]=React.useState(false);
+  const [busy,setBusy]=React.useState(false);
+  const [msg,setMsg]=React.useState("");
+  React.useEffect(()=>{
+    setLoaded(false); setMsg(""); setFreq(null);
+    if(!tel){ setLoaded(true); return; }
+    sb.query("patient_preferences","GET",null,`?phone=eq.${encodeURIComponent(tel)}&limit=1`)
+      .then(r=>{ setFreq(Array.isArray(r)&&r[0]?r[0].receipt_frequency||null:null); setLoaded(true); })
+      .catch(()=>setLoaded(true));
+  },[tel]);
+  async function save(v){
+    setBusy(true); setMsg("");
+    try{
+      const {data:{session}}=await supabaseClient.auth.getSession();
+      if(!session) throw new Error("ログインが切れています。もう一度ログインしてください");
+      const res=await fetch(`${SUPABASE_URL}/rest/v1/patient_preferences?on_conflict=phone`,{method:"POST",
+        headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${session.access_token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=representation"},
+        body:JSON.stringify({phone:tel,patient_name:name,receipt_frequency:v,updated_at:new Date().toISOString()})});
+      if(!res.ok) throw new Error(`保存できませんでした（HTTP ${res.status}）`);
+      setFreq(v); setMsg("保存しました");
+    }catch(e){ setMsg("⚠ "+(e.message||"保存できませんでした")); }
+    setBusy(false);
+  }
+  return(
+    <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:8}}>
+      <span style={{fontSize:12,fontWeight:800,color:"white"}}>🧾 レシート</span>
+      {!tel?<span style={{fontSize:11,color:"rgba(255,255,255,.75)"}}>電話番号が無いため設定できません（「✏️ 情報編集」で電話番号を入れてください）</span>
+      :!loaded?<span style={{fontSize:11,color:"rgba(255,255,255,.75)"}}>読み込み中…</span>
+      :<>
+        {RECEIPT_FREQUENCIES.map(v=>(
+          <button key={v} type="button" disabled={busy} onClick={()=>save(v)} aria-pressed={freq===v}
+            style={{padding:"4px 10px",borderRadius:14,fontSize:12,fontWeight:800,cursor:busy?"default":"pointer",fontFamily:"inherit",
+              border:"1.5px solid "+(freq===v?"#fde68a":"rgba(255,255,255,.45)"),background:freq===v?"#fde68a":"transparent",color:freq===v?"#92400e":"white"}}>{v==="月ごと"?"月まとめ":v==="年ごと"?"年まとめ":v}</button>
+        ))}
+        {!freq&&<span style={{fontSize:11,color:"rgba(255,255,255,.75)"}}>未設定（次の会計で聞きます）</span>}
+        {msg&&<span style={{fontSize:11,fontWeight:700,color:msg.startsWith("⚠")?"#fecaca":"#bbf7d0"}}>{msg}</span>}
+      </>}
+    </div>
+  );
+}
 function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,selStoreId,setAllBookings,allPayments,setAllPayments,initialPatient,onConsumeInitialPatient,onOpenPos,onOpenRefund}){
   const [patientQ,setPatientQ]=React.useState("");
   const [selPatient,setSelPatient]=React.useState(null);
@@ -8650,6 +8696,7 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
                     {patientInfo?.address&&<span style={{marginLeft:10}}>📍 {patientInfo.address}</span>}
                     {firstBk?.line_user_id&&<span style={{marginLeft:8,background:"rgba(6,199,85,.3)",borderRadius:4,padding:"1px 6px",fontSize:10,fontWeight:700}}>LINE連携</span>}
                   </div>
+                  <ReceiptFrequencyEditor key={selPatient} name={selPatient} phone={patientInfo?.phone||firstBk?.phone}/>
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                   {[{label:"来院",val:selBks.filter(b=>!b.cancelled).length+"回",color:"#60a5fa"},{label:"施術録",val:treatments.length+"件",color:"#34d399"},{label:"成約",val:treatments.filter(t=>t.result==="成約").length+"件",color:"#fbbf24"},{label:"キャンセル",val:selBks.filter(b=>b.cancelled).length+"回",color:"#f87171"}].map(item=>(
@@ -12489,14 +12536,14 @@ async function sendEpsonCommands(cmds){
   try{
     const res=await fetch(`https://${ip}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`,{
       method:"POST",headers:{"Content-Type":"text/xml; charset=utf-8","If-Modified-Since":"Thu, 01 Jan 1970 00:00:00 GMT"},body,
-      signal:AbortSignal.timeout?AbortSignal.timeout(15000):undefined, targetAddressSpace:"local",
+      signal:AbortSignal.timeout?AbortSignal.timeout(15000):undefined,
     });
     text=await res.text();
   }catch(e){
     // すぐにエラーになるのは、ブラウザがプリンターにつなげなかったとき（証明書の許可・ローカルネットワークの許可・IP・電源）
     throw new Error(e&&(e.name==="TimeoutError"||e.name==="AbortError")
       ?`プリンター（${ip}）から返事がありませんでした。電源・LANを確認してください`
-      :`プリンター（${ip}）につなげませんでした。会計画面の上の「🔓 プリンターとの接続を許可する」で許可してからもう一度お試しください（電源・IPアドレスも確認してください）。つながらないときは「🖨 通常のプリンター」から印刷してください`);
+      :`プリンター（${ip}）につなげませんでした。会計画面の上の「🔓 プリンターとの接続を許可する」で許可してからもう一度お試しください（電源・IPアドレスも確認してください）`);
   }
   if(text.indexOf('success="true"')<0){
     const m=text.match(/code="([^"]*)"/);
@@ -12603,7 +12650,7 @@ function BulkReceiptPanel({payments,bookings,stores,refunds=[]}){
   async function printToPrinter(){
     setPrinting(true); setPrintMsg({ok:true,text:"🖨️ プリンターへ送信中…"});
     try{ await printBulkReceiptToEpson(receiptLines); setPrintMsg({ok:true,text:"🖨️ 印刷しました"}); }
-    catch(e){ setPrintMsg({ok:false,text:"❌ 印刷に失敗しました："+e.message}); }
+    catch(e){ setPrintMsg({ok:false,text:"❌ 印刷に失敗しました："+e.message+"　つながらないときは「🖨 通常のプリンター」から印刷してください"}); }
     setPrinting(false);
   }
 
@@ -16047,7 +16094,11 @@ function Dashboard({user,onLogout}){
                 if(drawerBusy) return;
                 setDrawerBusy(true);
                 try{ await openRegisterDrawer(); showToast("🗄️ レジを開けました"); }
-                catch(e){ alert("❌ レジを開けられませんでした\n\n"+(e.message||"")); }
+                catch(e){
+                  // つなげないときは、たいていこのブラウザでプリンターの接続（証明書）を許可していないため、許可の画面を開けるようにする
+                  const ip=(localStorage.getItem("epsonPrinterIP")||"").trim()||"192.168.0.146";
+                  if(confirm("❌ レジを開けられませんでした\n\n"+(e.message||"")+"\n\nプリンター（"+ip+"）との接続を許可する画面を開きますか？\n開いた画面で「詳細設定」→「"+ip+" にアクセスする」を押し、プリンターの画面が出たらそのタブを閉じて、もう一度「レジを開ける」を押してください。")) window.open("https://"+ip+"/","_blank");
+                }
                 setDrawerBusy(false);
               }} disabled={drawerBusy} title="レジのドロアを開けます（両替・つり銭の確認など）"
                 style={{display:"flex",alignItems:"center",gap:6,padding:"7px 12px",borderRadius:20,border:"1.5px solid rgba(255,255,255,.25)",background:"rgba(255,255,255,.08)",cursor:drawerBusy?"default":"pointer",fontFamily:"inherit",opacity:drawerBusy?.6:1}}>
