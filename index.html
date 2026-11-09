@@ -12,6 +12,7 @@
 <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="/staff-goals-logic.js"></script>
+<script src="/sales-report-logic.js"></script>
 <script>
 //
 // StarWebPrintBuilder API
@@ -12469,8 +12470,8 @@ function buildBulkReceiptLines({store,patientName,label,payments,refunds=[]}){
 function bulkEscapeXml(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 // レシートプリンターへ送る。成功で true、失敗は Error
 async function printBulkReceiptToEpson(lines){
-  const ip=(localStorage.getItem("epsonPrinterIP")||"").trim();
-  if(!ip) throw new Error("この端末にはプリンターのIPアドレスが登録されていません（会計画面の🖨️設定で登録してください）");
+  // 会計画面（pos.html）と同じ：この端末で設定したIP、なければ香里園駅前院のレジプリンターの初期値
+  const ip=(localStorage.getItem("epsonPrinterIP")||"").trim()||"192.168.0.146";
   let cmds=`<text lang="ja"/>`, align=null, bold=null;
   lines.forEach(l=>{
     const a=l.center?"center":"left", b=!!l.bold;
@@ -12480,11 +12481,23 @@ async function printBulkReceiptToEpson(lines){
   });
   cmds+=`<feed line="3"/><cut type="feed"/>`;
   const body=`<?xml version="1.0" encoding="utf-8"?>\n<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">\n<soap:Body><epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">\n${cmds}\n</epos-print></soap:Body></soap:Envelope>`;
-  const res=await fetch(`https://${ip}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`,{
-    method:"POST",headers:{"Content-Type":"text/xml; charset=utf-8","If-Modified-Since":"Thu, 01 Jan 1970 00:00:00 GMT"},body,
-  });
-  const text=await res.text();
-  if(text.indexOf('success="true"')<0) throw new Error("プリンターからエラー応答がありました（用紙切れ・カバー開き等をご確認ください）");
+  let text="";
+  try{
+    const res=await fetch(`https://${ip}/cgi-bin/epos/service.cgi?devid=local_printer&timeout=10000`,{
+      method:"POST",headers:{"Content-Type":"text/xml; charset=utf-8","If-Modified-Since":"Thu, 01 Jan 1970 00:00:00 GMT"},body,
+      signal:AbortSignal.timeout?AbortSignal.timeout(15000):undefined, targetAddressSpace:"local",
+    });
+    text=await res.text();
+  }catch(e){
+    // すぐにエラーになるのは、ブラウザがプリンターにつなげなかったとき（証明書の許可・ローカルネットワークの許可・IP・電源）
+    throw new Error(e&&(e.name==="TimeoutError"||e.name==="AbortError")
+      ?`プリンター（${ip}）から返事がありませんでした。電源・LANを確認してください`
+      :`プリンター（${ip}）につなげませんでした。会計画面の上の「🔓 プリンターとの接続を許可する」で許可してからもう一度お試しください（電源・IPアドレスも確認してください）。つながらないときは「🖨 通常のプリンター」から印刷してください`);
+  }
+  if(text.indexOf('success="true"')<0){
+    const m=text.match(/code="([^"]*)"/);
+    throw new Error("プリンターからエラー応答がありました"+(m?`（${m[1]}）`:"")+"（用紙切れ・カバー開き等をご確認ください）");
+  }
   return true;
 }
 // プリンターが使えない端末用：レシートの部分だけを印刷する（画面全体を印刷しない）
@@ -12667,6 +12680,168 @@ function BulkReceiptPanel({payments,bookings,stores,refunds=[]}){
   );
 }
 // スタッフKPIの集計開始日（これより前＝プレオープン／イベント期間の予約・来院は集計に含めない）
+// ===== 売上日報・日計／累計表（POSの「総合売上日報」「日計／累計表」と同じ集計） =====
+// 計算は sales-report-logic.js（window.SalesReport）。テストは test/sales-report.test.js
+function SalesReportPanel({payments,bookings,stores,todayStr}){
+  const SR=window.SalesReport;
+  const monthStart=todayStr.slice(0,8)+"01";
+  const [from,setFrom]=React.useState(monthStart);
+  const [to,setTo]=React.useState(todayStr);
+  const [storeId,setStoreId]=React.useState("all");
+  const [tab,setTab]=React.useState("daily"); // "daily"=総合売上日報 / "ledger"=日計・累計表
+  const [closings,setClosings]=React.useState([]);
+  React.useEffect(()=>{
+    sb.select("register_closings",`?date=gte.${from}&date=lte.${to}&order=date.asc`).then(r=>setClosings(Array.isArray(r)?r:[])).catch(()=>setClosings([]));
+  },[from,to]);
+  const r=React.useMemo(()=>SR.buildReport(payments,{from,to,storeId:storeId==="all"?null:Number(storeId),bookings,registerClosings:closings}),[payments,bookings,from,to,storeId,closings]);
+  const n=v=>(Math.round(Number(v)||0)).toLocaleString("ja-JP");
+  const pct=(a,b)=>b?`${Math.round(a/b*1000)/10}%`:"0%";
+  const avg=(a,c)=>c?n(a/c):"0";
+  const storeName=storeId==="all"?"全体":((stores||[]).find(s=>String(s.id)===String(storeId))||{}).name||"";
+  const prevMonth=()=>{ const d=new Date(monthStart+"T00:00:00"); d.setMonth(d.getMonth()-1); const s=fmtDate(d); const e=new Date(d.getFullYear(),d.getMonth()+1,0); setFrom(s); setTo(fmtDate(e)); };
+
+  // 表の部品（印刷・CSVにも使う）
+  const tables=[]; // CSV用：{title, head:[...], rows:[[...]]}
+  const th={padding:"6px 8px",fontSize:12,fontWeight:800,color:"#475569",background:"#f5efe6",border:"1px solid #e7e0d6",textAlign:"center",whiteSpace:"nowrap"};
+  const td={padding:"6px 8px",fontSize:13,border:"1px solid #eee7dc",textAlign:"right",whiteSpace:"nowrap"};
+  const tdl={...td,textAlign:"left",fontWeight:700,background:"#faf7f2"};
+  function Table({title,head,rows,note}){
+    tables.push({title,head,rows});
+    return(
+      <div style={{marginBottom:14,overflowX:"auto"}}>
+        <table style={{borderCollapse:"collapse",background:"white",minWidth:360}}>
+          <thead>
+            <tr><th style={{...th,background:"#ede4d6"}} colSpan={head.length}>{title}</th></tr>
+            <tr>{head.map((h,i)=><th key={i} style={th}>{h}</th>)}</tr>
+          </thead>
+          <tbody>{rows.map((row,i)=><tr key={i}>{row.map((c,j)=><td key={j} style={j===0?tdl:td}>{c}</td>)}</tr>)}</tbody>
+        </table>
+        {note&&<div style={{fontSize:11,color:"#64748b",marginTop:3}}>{note}</div>}
+      </div>
+    );
+  }
+  const G=SR.GENDERS;
+  const genderTable=(title,src,labels,firstHead)=>{
+    const sums=Object.fromEntries(G.map(g=>[g.key,labels.reduce((s,l)=>s+(src[l.key]?src[l.key][g.key]:0),0)]));
+    const all=G.reduce((s,g)=>s+sums[g.key],0);
+    const rows=labels.map(l=>{ const row=src[l.key]||{}; const t=G.reduce((s,g)=>s+(row[g.key]||0),0);
+      return [l.label,...G.flatMap(g=>[n(row[g.key]||0),pct(row[g.key]||0,all)]),n(t),pct(t,all)]; });
+    rows.push(["合計",...G.flatMap(g=>[n(sums[g.key]),pct(sums[g.key],all)]),n(all),all?"100%":"0%"]);
+    return <Table title={title} head={[firstHead,...G.flatMap(g=>[`${g.label} 客数`,"客比率"]),"合計 客数","客比率"]} rows={rows}/>;
+  };
+
+  function exportCsv(){
+    const lines=[[`${tab==="daily"?"総合売上日報":"日計／累計表"}（${storeName}）`,`${from}〜${to}`,`稼働日数 ${r.days}日`]];
+    tables.forEach(t=>{ lines.push([]); lines.push([t.title]); lines.push(t.head); t.rows.forEach(x=>lines.push(x)); });
+    const csv=lines.map(cols=>cols.map(c=>`"${String(c??"").replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`${tab==="daily"?"総合売上日報":"日計累計表"}_${from}_${to}.csv`; a.click();
+  }
+
+  const btn=on=>({padding:"8px 12px",borderRadius:8,border:"1.5px solid "+(on?"#0e7490":"#e2e8f0"),background:on?"#0e7490":"white",color:on?"white":"#374151",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"});
+  const T=r.total.amount;
+  const C=r.total.count;
+
+  return(
+    <div style={{padding:16,maxWidth:1200,margin:"0 auto"}} className="sales-report">
+      <style>{`@media print{.sales-report .no-print{display:none!important}}`}</style>
+      <div style={{fontSize:22,fontWeight:900,color:"#0f172a",marginBottom:4}}>{tab==="daily"?"総合売上日報":"日計／累計表"}<span style={{fontSize:14,color:"#64748b",marginLeft:8}}>— {storeName}</span></div>
+      <div className="no-print" style={{display:"flex",gap:6,marginBottom:10}}>
+        <button onClick={()=>setTab("daily")} style={btn(tab==="daily")}>総合売上日報</button>
+        <button onClick={()=>setTab("ledger")} style={btn(tab==="ledger")}>日計／累計表</button>
+      </div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",background:"white",padding:12,borderRadius:12,marginBottom:14,border:"1px solid #e2e8f0"}}>
+        <span style={{fontSize:12,fontWeight:800,color:"#475569"}}>期間</span>
+        <input type="date" value={from} onChange={e=>setFrom(e.target.value)} aria-label="開始日" style={{padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontFamily:"inherit"}}/>
+        <span>〜</span>
+        <input type="date" value={to} onChange={e=>setTo(e.target.value)} aria-label="終了日" style={{padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontFamily:"inherit"}}/>
+        <span className="no-print" style={{display:"flex",gap:6}}>
+          <button onClick={()=>{setFrom(todayStr);setTo(todayStr);}} style={btn(false)}>本日</button>
+          <button onClick={()=>{setFrom(monthStart);setTo(todayStr);}} style={btn(false)}>当月</button>
+          <button onClick={prevMonth} style={btn(false)}>前月</button>
+        </span>
+        <select value={storeId} onChange={e=>setStoreId(e.target.value)} aria-label="店舗" style={{padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontFamily:"inherit"}}>
+          <option value="all">全体</option>
+          {(stores||[]).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <span style={{fontSize:14,fontWeight:800}}>稼働日数 {r.days}日</span>
+        <span style={{flex:1}}/>
+        <span className="no-print" style={{display:"flex",gap:6}}>
+          <button onClick={()=>window.print()} style={btn(false)}>印刷</button>
+          <button onClick={exportCsv} style={btn(false)}>ファイル出力</button>
+        </span>
+      </div>
+
+      {tab==="daily"&&(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(460px,1fr))",gap:12,alignItems:"start"}}>
+          <div>
+            <Table title="期間【税込】" head={["","客数","客比率","金額","金額比","客単価"]} rows={[
+              ["総売上",n(C),"100%",n(T),"100%",avg(T,C)],
+              ["技術売上",n(r.tech.count),pct(r.tech.count,C),n(r.tech.amount),pct(r.tech.amount,T),avg(r.tech.amount,r.tech.count)],
+              ["商品売上",n(r.goods.count),pct(r.goods.count,C),n(r.goods.amount),pct(r.goods.amount,T),avg(r.goods.amount,r.goods.count)],
+            ]}/>
+            <Table title="技術売上内訳" head={["","客数","客比率","金額","金額比","客単価"]} rows={SR.TECH_ROWS.map(t=>{ const x=r.techRows[t.key]; return [t.label,n(x.count),pct(x.count,C),n(x.amount),pct(x.amount,T),avg(x.amount,x.count)]; })}
+              note="保険は窓口負担の金額。1回の来院で保険と自費の両方がある場合は、それぞれの行に数えます。"/>
+            <Table title="商品売上内訳" head={["","客数","客比率","金額","金額比","客単価"]} rows={[...SR.GOODS_KINDS.map(g=>[g.label,g.key]),["上記以外","other"]].map(([l,k])=>{ const x=r.goodsRows[k]; return [l,n(x.count),pct(x.count,C),n(x.amount),pct(x.amount,T),avg(x.amount,x.count)]; })}
+              note="商品＝会計の自費項目のうち「物販：」で始まるもの、コルセット・サポーター・シップなどの名前のもの。"/>
+            <Table title="来店区分・性別【税込】" head={["","客数","客比率","金額","金額比","客単価"]} rows={[
+              ...SR.VISIT_CLASSES.map(c=>{ const x=r.visitClass[c.key]; return [c.label,n(x.count),pct(x.count,C),n(x.amount),pct(x.amount,T),avg(x.amount,x.count)]; }),
+              ["予約",n(C),"100%","-","-","-"],
+              ...G.map(g=>{ const x=r.gender[g.key]; return [g.label,n(x.count),pct(x.count,C),n(x.amount),pct(x.amount,T),avg(x.amount,x.count)]; }),
+            ]} note="新規＝初めて／再来＝2回目／固定＝3回目以上で前回から90日以内／ごぶさた＝前回から90日を超えて来院。性別は問診票の記入から（未記入は不明）。"/>
+          </div>
+          <div>
+            {genderTable("新規・来店動機",r.sources,[...SR.SOURCES,{key:"none",label:"未入力"}],"きっかけ")}
+            {genderTable("年代別一覧",r.ages,SR.AGE_BANDS,"年代")}
+          </div>
+        </div>
+      )}
+
+      {tab==="ledger"&&(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(420px,1fr))",gap:12,alignItems:"start"}}>
+          <div>
+            <Table title="売上（期間）" head={["","客数","金額"]} rows={[
+              ["総売上（税込）",n(C),n(T)],
+              ["税抜総売上","-",n(r.netSales)],
+              ["内税相当額（自費・商品の10%）","-",n(r.taxIncluded)],
+              ["非課税（保険の窓口負担）","-",n(r.nonTaxable)],
+              ["技術売上",n(r.tech.count),n(r.tech.amount)],
+              ["商品売上",n(r.goods.count),n(r.goods.amount)],
+              ["値引","-","0"],
+              ["返金",n(r.refund.count),n(r.refund.amount)],
+            ]} note="返金は返金日の売上から引いています。"/>
+            <Table title="支払内訳" head={["","件数","金額"]} rows={[
+              ...[...SR.PAY_KINDS.map(k=>[k.label,k.key]),["その他","other"]].map(([l,k])=>[l,n(r.pay[k].count),n(r.pay[k].amount)]),
+              ["合計",n(Object.values(r.pay).reduce((s,x)=>s+x.count,0)),n(Object.values(r.pay).reduce((s,x)=>s+x.amount,0))],
+            ]} note="お預かりの金額（お釣りを含む場合があります）。"/>
+            <Table title="客単価・スタッフ1人当たり" head={["","客単価",`客数（${r.staffCount}人あたり）`,"金額（1人あたり）"]} rows={[
+              ["総合",avg(T,C),r.staffCount?(Math.round(C/r.staffCount*10)/10).toLocaleString():"0",r.staffCount?n(T/r.staffCount):"0"],
+              ["技術",avg(r.tech.amount,r.tech.count),r.staffCount?(Math.round(r.tech.count/r.staffCount*10)/10).toLocaleString():"0",r.staffCount?n(r.tech.amount/r.staffCount):"0"],
+              ["商品",avg(r.goods.amount,r.goods.count),r.staffCount?(Math.round(r.goods.count/r.staffCount*10)/10).toLocaleString():"0",r.staffCount?n(r.goods.amount/r.staffCount):"0"],
+            ]}/>
+          </div>
+          <div>
+            {r.register?(
+              <>
+                <Table title="現金内訳（レジ締めの記録）" head={["","金額"]} rows={[
+                  ["つり銭準備金（初日）",n(r.register.floatStart)],
+                  ["現金売上（レジ締め）",n(r.register.cashSales)],
+                  ["過不足（合計）",n(r.register.diff)],
+                  ["レジ締めをした日数",`${r.register.days}日`],
+                ]}/>
+                <Table title={`レジ残高内訳（${r.register.lastDate}）`} head={["金種","枚数","金額"]} rows={[
+                  ...[10000,5000,2000,1000,500,100,50,10,5,1].map(v=>{ const c=Number((r.register.denominations||{})[v]||(r.register.denominations||{})[String(v)]||0); return [`${v.toLocaleString()}円`,n(c),n(c*v)]; }),
+                  ["合計","",n([10000,5000,2000,1000,500,100,50,10,5,1].reduce((s,v)=>s+v*Number((r.register.denominations||{})[v]||0),0))],
+                ]}/>
+              </>
+            ):<div style={{background:"white",border:"1px solid #e2e8f0",borderRadius:10,padding:14,fontSize:13,color:"#64748b"}}>この期間のレジ締めの記録がありません（「お金・会計」→「レジ金（レジ締め）」で締めると、ここにつり銭・金種が出ます）。</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ===== 個人サマリー・個人マンダラ・目標（KGI／KPI／KDI） =====
 // 計算は staff-goals-logic.js（window.StaffGoals）。テストは test/staff-goals.test.js
 const summaryYen=n=>(Math.round(Number(n)||0)).toLocaleString("ja-JP");
@@ -15798,6 +15973,7 @@ function Dashboard({user,onLogout}){
       {id:"stats",label:"予約分析・サマリー",icon:"bar-chart",special:""},
       {id:"staff_kpi",label:"スタッフKPI管理",icon:"trending",special:""},
       {id:"staff_summary",label:"個人サマリー（売上・客数・客単価）",icon:"bar-chart",special:""},
+      {id:"sales_report",label:"総合売上日報・日計／累計表",icon:"bar-chart",special:""},
     ]},
     {id:"money",label:"お金・会計",color:"#b45309",items:[
       {id:"money_calc",label:"当日の会計明細・金額計算・小口",icon:"receipt",special:""},
@@ -16450,6 +16626,7 @@ function Dashboard({user,onLogout}){
                     {view==="line_link_check"&&<LineLinkCheckPanel bookings={bookings}/>}
                              {view==="staff_kpi"&&<StaffKPIPanel onOpenPatient={openPatientByName} bookings={bookings} payments={paymentsNet} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr} trainingMode={trainingMode}/>}
                              {view==="staff_summary"&&<StaffSummaryPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}
+                             {view==="sales_report"&&<SalesReportPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}
                              {view==="staff_mandala"&&<StaffMandalaPanel user={user} isAdmin={isAdmin} payments={paymentsNet} bookings={bookings} todayStr={todayStr}/>}
                              {view==="pass_holders"&&<PassHoldersPanel payments={payments} bookings={bookings} refunds={refunds} trainingMode={trainingMode} onOpenPatient={openPatientByName}/>}
                              {view==="referral_mgmt"&&<ReferralMgmtPanel bookings={bookings} payments={payments}/>}
