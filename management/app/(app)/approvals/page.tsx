@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { canAnywhere } from "@/server/session";
 import { approvalQueue } from "@/server/requests";
 import { partTimeQueue } from "@/server/part-time";
+import { holidayChangeQueue } from "@/server/holiday-change";
 import { CATEGORY_LABEL, hhmm, fmtMinutes } from "@/lib/part-time";
 import { formatDate } from "@/lib/time";
 import { KIND_LABEL, formatDates } from "@/lib/leave/requests";
@@ -19,15 +20,39 @@ import { DecisionForm } from "@/components/decision-form";
 export const metadata: Metadata = { title: "承認" };
 
 export default async function ApprovalsPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
-  const [paid, shift, pt] = await Promise.all([canAnywhere("leave.paid.final_approve"), canAnywhere("leave.shift.approve"), canAnywhere("parttime.final_approve")]);
-  if (!paid && !shift && !pt) notFound();
+  const [paid, shift, pt, hcGm, hcFinal] = await Promise.all([canAnywhere("leave.paid.final_approve"), canAnywhere("leave.shift.approve"), canAnywhere("parttime.final_approve"),
+    canAnywhere("holidaychange.gm_review"), canAnywhere("holidaychange.final_approve")]);
+  if (!paid && !shift && !pt && !hcGm && !hcFinal) notFound();
   const sp = await searchParams;
-  const [queue, ptQueue] = await Promise.all([approvalQueue(), pt ? partTimeQueue() : Promise.resolve([])]);
+  const [queue, ptQueue, hcQueue] = await Promise.all([paid || shift ? approvalQueue() : Promise.resolve([]), pt ? partTimeQueue() : Promise.resolve([]), hcGm || hcFinal ? holidayChangeQueue() : Promise.resolve([])]);
+  const total = queue.length + ptQueue.length + hcQueue.length;
   return (
     <>
-      <h1 className="text-xl font-black text-brand-800">承認待ち（{queue.length + ptQueue.length}件）</h1>
+      <h1 className="text-xl font-black text-brand-800">承認待ち（{total}件）</h1>
       <Flash ok={sp.ok} err={sp.err} />
-      {queue.length + ptQueue.length === 0 ? <Alert tone="ok">承認待ちはありません。</Alert> : null}
+      {total === 0 ? <Alert tone="ok">承認待ちはありません。</Alert> : null}
+      {hcQueue.map((q) => (
+        <Card key={q.step_id}>
+          <CardHeader>
+            <CardTitle className="flex flex-wrap items-center gap-2">
+              <Badge>振休→アルバイト勤務</Badge>{q.target_name}さん<span className="text-sm font-normal text-stone-600">{q.store_name}</span>
+              <Badge tone="warn">{q.step_kind === "gm_review" ? "GMの確認" : "社長の最終承認（GM確認済み）"}</Badge>
+            </CardTitle>
+            <Link href={`/holiday-change/${q.request_id}`} className="text-sm font-bold text-brand-700">詳細 ›</Link>
+          </CardHeader>
+          <CardContent className="grid gap-3 text-sm">
+            <dl className="grid grid-cols-[7rem_1fr] gap-y-1">
+              <dt className="text-stone-500">勤務日時</dt><dd className="font-bold">{formatDate(q.shift_holiday_date)} {hhmm(q.start_time)}〜{hhmm(q.end_time)}（実働{fmtMinutes(q.minutes)}）</dd>
+              <dt className="text-stone-500">申請理由</dt><dd>{q.reason}</dd>
+              <dt className="text-stone-500">申請者</dt><dd>{q.requested_by_name}（{formatJstDateTime(q.submitted_at)}）</dd>
+              {q.gm_comment ? <><dt className="text-stone-500">GMのコメント</dt><dd>{q.gm_comment}</dd></> : null}
+            </dl>
+            <p className="text-xs text-stone-500">承認で確定すると、この日の振休は使ったことになります（残数には戻りません）。</p>
+            <DecisionForm target="holiday_change" stepId={q.step_id} version={q.step_version} kind="HOLIDAY_CHANGE" idempotencyKey={randomUUID()} backTo="/approvals"
+              approveLabel={q.step_kind === "gm_review" ? "確認して社長へ" : "承認（変更確定）"} />
+          </CardContent>
+        </Card>
+      ))}
       {ptQueue.map((q) => (
         <Card key={q.step_id} className={q.category === "help" ? "border-red-400" : ""}>
           <CardHeader>

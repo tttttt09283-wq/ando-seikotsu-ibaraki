@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { can } from "@/server/session";
 import { approvalQueue } from "@/server/requests";
 import { partTimeQueue } from "@/server/part-time";
+import { holidayChangeQueue } from "@/server/holiday-change";
 import { CATEGORY_SHORT, hhmm } from "@/lib/part-time";
 import { formatDate } from "@/lib/time";
 import { formatDates, KIND_LABEL } from "@/lib/leave/requests";
@@ -16,7 +17,8 @@ export const metadata: Metadata = { title: "社長ダッシュボード" };
 
 export default async function PresidentPage() {
   if (!(await can("dashboard.president"))) notFound();
-  const [queue, pt] = await Promise.all([approvalQueue(), partTimeQueue()]);
+  const [queue, pt, hcAll] = await Promise.all([approvalQueue(), partTimeQueue(), holidayChangeQueue()]);
+  const hc = hcAll.filter((q) => q.step_kind === "president_final");
   const paid = queue.filter((q) => q.kind === "PAID");
   const urgent = pt.filter((q) => q.category === "help").length;
   return (
@@ -50,7 +52,20 @@ export default async function PresidentPage() {
           </ul>
         </CardContent>
       </Card>
-      <PhaseNote phase="PHASE 6〜8">振休からの勤務変更・社内規定の承認待ちもここに加わります。</PhaseNote>
+      <Card className={hc.length ? "border-brand-600" : ""}>
+        <CardHeader><CardTitle>振休→アルバイト勤務の承認待ち（GM確認済み {hc.length}件）</CardTitle><Button asChild size="sm"><Link href="/approvals">承認画面へ</Link></Button></CardHeader>
+        <CardContent>
+          <ul className="divide-y divide-stone-100">
+            {hc.slice(0, 8).map((q) => (
+              <li key={q.step_id}><Link href={`/holiday-change/${q.request_id}`} className="flex flex-wrap items-center gap-2 py-2.5 text-sm hover:text-brand-700">
+                <b>{q.target_name}</b><span className="text-stone-500">{q.store_name}</span><span>{formatDate(q.shift_holiday_date)} {hhmm(q.start_time)}〜{hhmm(q.end_time)}</span>
+              </Link></li>
+            ))}
+            {hc.length === 0 ? <li className="py-2 text-sm text-stone-500">承認待ちはありません</li> : null}
+          </ul>
+        </CardContent>
+      </Card>
+      <PhaseNote phase="PHASE 8">社内規定の承認待ちもここに加わります。</PhaseNote>
       <Card>
         <CardHeader><CardTitle>管理</CardTitle></CardHeader>
         <CardContent className="flex flex-wrap gap-2">

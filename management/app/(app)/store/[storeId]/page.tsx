@@ -6,6 +6,7 @@ import { can } from "@/server/session";
 import { getStoreLeave } from "@/server/leave";
 import { approvalQueue, listRequests } from "@/server/requests";
 import { listPartTime } from "@/server/part-time";
+import { listHolidayChanges, HC_STATUS } from "@/server/holiday-change";
 import { CATEGORY_SHORT, hhmm } from "@/lib/part-time";
 import { formatDate as fmtD } from "@/lib/time";
 import { formatDates, KIND_LABEL } from "@/lib/leave/requests";
@@ -27,7 +28,8 @@ export default async function StorePage({ params }: { params: Promise<{ storeId:
   const supabase = await createClient();
   const { data: store } = await supabase.from("stores").select("name").eq("id", storeId).single();
   if (!store) notFound();
-  const [rows, queue, requests, partTime, canPt] = await Promise.all([getStoreLeave(storeId), approvalQueue(), listRequests({ storeId, limit: 10 }), listPartTime({ storeId, limit: 10 }), can("parttime.request", storeId)]);
+  const [rows, queue, requests, partTime, canPt, hcRows, canHc] = await Promise.all([getStoreLeave(storeId), approvalQueue(), listRequests({ storeId, limit: 10 }), listPartTime({ storeId, limit: 10 }), can("parttime.request", storeId),
+    listHolidayChanges({ storeId, limit: 10 }), can("holidaychange.request", storeId)]);
   const shiftQueue = queue.filter((q) => q.kind === "SHIFT" && q.store_name === store.name);
   const overdue = rows.filter((r) => r.shift.overdue + r.shift_holiday.overdue > 0);
   const fiveDayAlerts = rows.filter((r) => r.five_day.target && ["caution", "warning", "urgent"].includes(r.five_day.level));
@@ -105,7 +107,21 @@ export default async function StorePage({ params }: { params: Promise<{ storeId:
           </ul>
         </CardContent>
       </Card>
-      <PhaseNote phase="PHASE 6〜9">振休からの勤務変更・会議予定・議事録の提出期限をここに表示します。</PhaseNote>
+      <Card>
+        <CardHeader><CardTitle>振休→アルバイト勤務の変更</CardTitle>{canHc ? <Button asChild size="sm"><Link href="/holiday-change/new">＋ 申請</Link></Button> : null}</CardHeader>
+        <CardContent className="p-0">
+          <ul className="divide-y divide-stone-100 text-sm">
+            {hcRows.map((r) => (
+              <li key={r.id}><Link href={`/holiday-change/${r.id}`} className="flex flex-wrap items-center gap-2 px-4 py-2.5 hover:bg-stone-50">
+                <b>{fmtD(r.shift_holiday_date)}</b><span>{hhmm(r.start_time)}〜{hhmm(r.end_time)}</span><span>{r.target?.name}</span>
+                <span className="ml-auto"><Badge tone={HC_STATUS[r.status].tone}>{HC_STATUS[r.status].text}</Badge></span>
+              </Link></li>
+            ))}
+            {hcRows.length === 0 ? <li className="px-4 py-4 text-stone-500">まだありません</li> : null}
+          </ul>
+        </CardContent>
+      </Card>
+      <PhaseNote phase="PHASE 7〜9">会議予定・議事録の提出期限をここに表示します。</PhaseNote>
     </>
   );
 }
