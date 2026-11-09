@@ -538,7 +538,17 @@ function selectInsuranceType(type){
   state.insuranceType=(state.insuranceType===type)?null:type;
   state.insuranceRate=null;
   state.insuranceTier=null;
+  syncAcuSubsidyItem();
   render();
+}
+// 鍼灸併用を医療助成で会計するときは、医療助成の金額（500円／0円）とは別に「鍼灸（医療助成）1,000円」の項目を足す。
+// 鍼灸併用・医療助成でなくなったら、自動で足した項目は外す（手で消すこともできる）
+const ACU_SUBSIDY_ITEM={label:"鍼灸（医療助成）",amount:1000};
+function syncAcuSubsidyItem(){
+  const want=state.insuranceType==="鍼灸併用"&&state.insuranceRate==="医療助成";
+  const idx=state.jifeeItems.findIndex(i=>i.autoAcuSubsidy||i.label===ACU_SUBSIDY_ITEM.label); // 訂正で開き直した会計の項目も同じものとして扱う
+  if(want&&idx<0) state.jifeeItems.push({...ACU_SUBSIDY_ITEM,autoAcuSubsidy:true});
+  if(!want&&idx>=0) state.jifeeItems.splice(idx,1);
 }
 function selectInsuranceRate(rate){
   state.insuranceRate=(state.insuranceRate===rate)?null:rate;
@@ -551,12 +561,10 @@ function selectInsuranceRate(rate){
   }else{
     state.insuranceTier=null;
   }
+  syncAcuSubsidyItem();
   render();
 }
-// 医療助成で鍼灸併用のときに、医療助成の金額（500円／0円）へ足す鍼灸の分
-const ACU_SUBSIDY_EXTRA=1000;
-const medicalAssistExtra=()=>state.insuranceType==="鍼灸併用"?ACU_SUBSIDY_EXTRA:0;
-// 医療助成：500円／0円のワンタップ選択（鍼灸併用は1,000円を足した 1,500円／1,000円）
+// 医療助成：500円／0円のワンタップ選択
 function selectMedicalAssistAmount(amount){
   state.insuranceTier=null;
   state.insuranceAmount=amount;
@@ -1876,9 +1884,10 @@ function render(){
               `:`<div style="font-size:11px;color:#9ca3af;margin-bottom:10px;">↑施術区分を選ぶと、負担割合を選べます</div>`}
               ${(state.insuranceType&&state.insuranceRate==="医療助成")?`
                 <div class="ins-history-box">
-                  <div class="ins-history-title">📋 医療助成${medicalAssistExtra()?`（鍼灸併用：医療助成の金額＋鍼灸 ${fmt(medicalAssistExtra())}）`:""}</div>
+                  <div class="ins-history-title">📋 医療助成${state.insuranceType==="鍼灸併用"?`<span style="font-weight:600;color:#475569;">（鍼灸併用：自費の項目に「${ACU_SUBSIDY_ITEM.label} ${fmt(ACU_SUBSIDY_ITEM.amount)}」を足しました）</span>`:""}</div>
                   <div style="display:flex;gap:8px;">
-                    ${[500,0].map(base=>{const v=base+medicalAssistExtra();const on=Number(state.insuranceAmount)===v;return `<button style="flex:1;padding:12px;font-size:15px;font-weight:800;border-radius:8px;cursor:pointer;border:2px solid #1e3a5f;background:${on?"#1e3a5f":"white"};color:${on?"white":"#1e3a5f"};" onclick="selectMedicalAssistAmount(${v})">${v.toLocaleString()}円${medicalAssistExtra()?`<div style="font-size:10px;font-weight:600;opacity:.8;">${base}円＋${medicalAssistExtra().toLocaleString()}円</div>`:""}</button>`;}).join("")}
+                    <button style="flex:1;padding:12px;font-size:15px;font-weight:800;border-radius:8px;cursor:pointer;border:2px solid #1e3a5f;background:${state.insuranceAmount==500?"#1e3a5f":"white"};color:${state.insuranceAmount==500?"white":"#1e3a5f"};" onclick="selectMedicalAssistAmount(500)">500円</button>
+                    <button style="flex:1;padding:12px;font-size:15px;font-weight:800;border-radius:8px;cursor:pointer;border:2px solid #1e3a5f;background:${state.insuranceAmount==0?"#1e3a5f":"white"};color:${state.insuranceAmount==0?"white":"#1e3a5f"};" onclick="selectMedicalAssistAmount(0)">0円</button>
                   </div>
                 </div>
               `:(state.insuranceType&&state.insuranceRate)?(()=>{
