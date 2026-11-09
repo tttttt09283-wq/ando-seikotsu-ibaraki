@@ -1,10 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { requireMe, canAnywhere } from "@/server/session";
-import { approvalQueue, unreadNotifications } from "@/server/requests";
-import { partTimeQueue } from "@/server/part-time";
-import { holidayChangeQueue } from "@/server/holiday-change";
-import { ruleQueue, myUnacknowledgedRules } from "@/server/rules";
+import { requireMe, getNav } from "@/server/session";
 import { describeRoles } from "@/lib/roles";
 import { signOut } from "@/app/login/actions";
 import { Button } from "@/components/ui/button";
@@ -12,18 +8,14 @@ import { Button } from "@/components/ui/button";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const me = await requireMe();
   if (me.must_change_password) redirect("/account/password");
-  const [isAdmin, canLeaveAdmin, canPaid, canShift, canPtApprove, canPtRequest, canHcRequest, canHcGm, canHcFinal, unread, canRuleApprove] = await Promise.all([
-    canAnywhere("master.manage"), canAnywhere("leave.adjust"), canAnywhere("leave.paid.final_approve"), canAnywhere("leave.shift.approve"),
-    canAnywhere("parttime.final_approve"), canAnywhere("parttime.request"),
-    canAnywhere("holidaychange.request"), canAnywhere("holidaychange.gm_review"), canAnywhere("holidaychange.final_approve"), unreadNotifications(), canAnywhere("rule.approve"),
-  ]);
-  const canHcApprove = canHcGm || canHcFinal;
-  const canApprove = canPaid || canShift || canPtApprove || canHcApprove || canRuleApprove;
-  const [q1, q2, q3] = await Promise.all([
-    canPaid || canShift ? approvalQueue() : Promise.resolve([]), canPtApprove ? partTimeQueue() : Promise.resolve([]), canHcApprove ? holidayChangeQueue() : Promise.resolve([]),
-  ]);
-  const [rq, unackRules] = await Promise.all([canRuleApprove ? ruleQueue() : Promise.resolve([]), myUnacknowledgedRules()]);
-  const queueCount = q1.length + q2.length + q3.length + rq.length;
+  const navInfo = await getNav();
+  const has = (p: string) => navInfo.perms.includes(p);
+  const isAdmin = has("master.manage"), canLeaveAdmin = has("leave.adjust");
+  const canPtRequest = has("parttime.request"), canPtApprove = has("parttime.final_approve");
+  const canHcRequest = has("holidaychange.request"), canHcApprove = has("holidaychange.gm_review") || has("holidaychange.final_approve");
+  const canApprove = has("leave.paid.final_approve") || has("leave.shift.approve") || canPtApprove || canHcApprove || has("rule.approve");
+  const queueCount = navInfo.approvals, unread = navInfo.unread;
+  const unackRules = { length: navInfo.unack_rules };
   const nav = [
     { href: "/", label: "ホーム" },
     { href: "/me", label: "マイページ" },

@@ -98,3 +98,13 @@ test("毎日の処理：有給の期限接近・期限切れの振休・タス�
   assert.deepEqual(last, { job: "daily", ok: true, error: null });
   assert.deepEqual(await run("staff_IBARAKI", "select * from mgmt.last_job_run()"), []);
 });
+
+test("メニュー用の権限と件数を1回で返す", async () => {
+  const boss = (await run("president", "select mgmt.my_nav() n"))[0].n;
+  assert.ok(boss.perms.includes("leave.paid.final_approve") && boss.perms.includes("rule.approve"));
+  assert.ok(boss.approvals >= 1, "アルバイト勤務の承認待ち");
+  const staff = (await run("staff_IBARAKI", "select mgmt.my_nav() n"))[0].n;
+  assert.ok(!staff.perms.includes("leave.paid.final_approve") && staff.perms.includes("leave.request.self"));
+  assert.equal(staff.approvals, 0);
+  assert.ok(staff.unread > 0);
+});

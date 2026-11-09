@@ -28,11 +28,18 @@ export async function can(permission: string, storeId?: string | null): Promise<
   return data === true;
 }
 
-export async function canAnywhere(permission: string): Promise<boolean> {
+// メニュー用の権限と件数（1回の問い合わせ。同じ画面の中では使い回す）
+export type NavSummary = { perms: string[]; approvals: number; unread: number; unack_rules: number };
+export const getNav = cache(async (): Promise<NavSummary> => {
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("can_anywhere", { p_permission: permission });
+  const { data, error } = await supabase.rpc("my_nav");
   if (error) throw new Error(`権限を確認できませんでした：${error.message}`);
-  return data === true;
+  return (data as NavSummary | null) ?? { perms: [], approvals: 0, unread: 0, unack_rules: 0 };
+});
+
+// どこかの院（または全社）でその権限を持っているか
+export async function canAnywhere(permission: string): Promise<boolean> {
+  return (await getNav()).perms.includes(permission);
 }
 
 export class ForbiddenError extends Error {}
