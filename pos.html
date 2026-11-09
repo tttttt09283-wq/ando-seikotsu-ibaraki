@@ -553,7 +553,10 @@ function selectInsuranceRate(rate){
   }
   render();
 }
-// 医療助成：500円／0円のワンタップ選択
+// 医療助成で鍼灸併用のときに、医療助成の金額（500円／0円）へ足す鍼灸の分
+const ACU_SUBSIDY_EXTRA=1000;
+const medicalAssistExtra=()=>state.insuranceType==="鍼灸併用"?ACU_SUBSIDY_EXTRA:0;
+// 医療助成：500円／0円のワンタップ選択（鍼灸併用は1,000円を足した 1,500円／1,000円）
 function selectMedicalAssistAmount(amount){
   state.insuranceTier=null;
   state.insuranceAmount=amount;
@@ -1873,10 +1876,9 @@ function render(){
               `:`<div style="font-size:11px;color:#9ca3af;margin-bottom:10px;">↑施術区分を選ぶと、負担割合を選べます</div>`}
               ${(state.insuranceType&&state.insuranceRate==="医療助成")?`
                 <div class="ins-history-box">
-                  <div class="ins-history-title">📋 医療助成</div>
+                  <div class="ins-history-title">📋 医療助成${medicalAssistExtra()?`（鍼灸併用：医療助成の金額＋鍼灸 ${fmt(medicalAssistExtra())}）`:""}</div>
                   <div style="display:flex;gap:8px;">
-                    <button style="flex:1;padding:12px;font-size:15px;font-weight:800;border-radius:8px;cursor:pointer;border:2px solid #1e3a5f;background:${state.insuranceAmount==500?"#1e3a5f":"white"};color:${state.insuranceAmount==500?"white":"#1e3a5f"};" onclick="selectMedicalAssistAmount(500)">500円</button>
-                    <button style="flex:1;padding:12px;font-size:15px;font-weight:800;border-radius:8px;cursor:pointer;border:2px solid #1e3a5f;background:${state.insuranceAmount==0?"#1e3a5f":"white"};color:${state.insuranceAmount==0?"white":"#1e3a5f"};" onclick="selectMedicalAssistAmount(0)">0円</button>
+                    ${[500,0].map(base=>{const v=base+medicalAssistExtra();const on=Number(state.insuranceAmount)===v;return `<button style="flex:1;padding:12px;font-size:15px;font-weight:800;border-radius:8px;cursor:pointer;border:2px solid #1e3a5f;background:${on?"#1e3a5f":"white"};color:${on?"white":"#1e3a5f"};" onclick="selectMedicalAssistAmount(${v})">${v.toLocaleString()}円${medicalAssistExtra()?`<div style="font-size:10px;font-weight:600;opacity:.8;">${base}円＋${medicalAssistExtra().toLocaleString()}円</div>`:""}</button>`;}).join("")}
                   </div>
                 </div>
               `:(state.insuranceType&&state.insuranceRate)?(()=>{
