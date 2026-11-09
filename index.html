@@ -12552,7 +12552,10 @@ async function sendEpsonCommands(cmds){
   return true;
 }
 // レジのドロアを開ける（両替・つり銭の確認など、会計をしないで開けたいとき）
-function openRegisterDrawer(){ return sendEpsonCommands(`<pulse drawer="drawer_1" time="pulse_100"/>`); }
+// ドロアのケーブルがプリンターのどちらの端子（drawer_1＝2番ピン／drawer_2＝5番ピン）につながっていても開くよう、両方に少し長めの信号を送る
+// （つながっていない方への信号は何も起こらない）
+const DRAWER_OPEN_COMMANDS=`<pulse drawer="drawer_1" time="pulse_200"/><pulse drawer="drawer_2" time="pulse_200"/>`;
+function openRegisterDrawer(){ return sendEpsonCommands(DRAWER_OPEN_COMMANDS); }
 // プリンターが使えない端末用：レシートの部分だけを印刷する（画面全体を印刷しない）
 function printBulkReceiptPreview(lines){
   const html=lines.map(l=>`<div style="text-align:${l.center?"center":"left"};font-weight:${l.bold?800:400};white-space:pre;">${bulkEscapeXml(l.text)||"&nbsp;"}</div>`).join("");
