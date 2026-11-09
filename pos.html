@@ -511,14 +511,28 @@ function calcInsuranceAmount(menuName, rate){
 }
 
 // ===== 会計画面：施術区分・負担割合ボタンからの自動金額計算 =====
-// 鍼灸系（鍼灸併用・鍼灸のみ）は「初診／2回目以降」の2段階、手技療法は「初診／2回目／3回目／4回目以降」の4段階
-function getVisitTierForType(type,visit){
-  if(type==="手技療法") return getInsMenuByVisit(visit);
-  return visit===1?"初診":"2回目以降";
+// 鍼灸のみは「初診／2回目以降」の2段階、手技療法（保険診療）は「初診／2回目／3回目／4回目以降」の4段階。
+// 鍼灸併用は保険診療と一緒に行うため、保険診療と同じ4段階で、金額＝鍼灸併用の金額＋保険診療の金額
+function tiersForType(type){
+  return type==="鍼灸のみ"?["初診","2回目以降"]:["初診","2回目","3回目","4回目以降"];
 }
+function getVisitTierForType(type,visit){
+  if(type==="鍼灸のみ") return visit===1?"初診":"2回目以降";
+  return getInsMenuByVisit(visit);
+}
+// 鍼灸の表（初診／2回目以降）での段階
+const acuTierOf=tier=>tier==="初診"?"初診":"2回目以降";
 function getInsuranceAmountFor(type,rate,tier){
+  if(type==="鍼灸併用") return acuCombinedBreakdown(rate,tier).total;
   const table=INSURANCE_AMOUNT_TABLE[type];
   return (table&&table[rate]&&table[rate][tier])||0;
+}
+// 鍼灸併用の内訳（鍼灸の分＋保険診療の分）
+function acuCombinedBreakdown(rate,tier){
+  const acuTable=INSURANCE_AMOUNT_TABLE["鍼灸併用"], manualTable=INSURANCE_AMOUNT_TABLE["手技療法"];
+  const acu=(acuTable[rate]&&acuTable[rate][acuTierOf(tier)])||0;
+  const manual=(manualTable[rate]&&manualTable[rate][tier])||0;
+  return {acu,manual,total:acu+manual};
 }
 function selectInsuranceType(type){
   state.insuranceType=(state.insuranceType===type)?null:type;
@@ -546,7 +560,7 @@ function selectMedicalAssistAmount(amount){
   render();
 }
 function stepInsuranceTier(dir){
-  const tiers=state.insuranceType==="手技療法"?["初診","2回目","3回目","4回目以降"]:["初診","2回目以降"];
+  const tiers=tiersForType(state.insuranceType);
   const curIdx=Math.max(0,tiers.indexOf(state.insuranceTier||tiers[0]));
   const nextIdx=Math.min(tiers.length-1,Math.max(0,curIdx+dir));
   state.insuranceTier=tiers[nextIdx];
@@ -1693,9 +1707,10 @@ async function save(){
     try{
       const rate=state.insuranceRate;
       if(state.insuranceType&&(rate==="3割"||rate==="2割"||rate==="1割")){
-        const tiers=state.insuranceType==="手技療法"?["初診","2回目","3回目","4回目以降"]:["初診","2回目以降"];
+        const tiers=tiersForType(state.insuranceType);
         const tier=state.insuranceTier||tiers[0];
-        const newMenu=`${state.insuranceType} ${rate} ${tier}`;
+        // 予約のメニュー名は予約画面のメニュー（鍼灸併用は「初診／2回目以降」）に合わせる
+        const newMenu=`${state.insuranceType} ${rate} ${state.insuranceType==="鍼灸併用"?acuTierOf(tier):tier}`;
         if(newMenu!==booking.menu){
           await sbPatch("bookings",booking.id,{menu:newMenu});
           booking.menu=newMenu;
@@ -1865,7 +1880,7 @@ function render(){
                   </div>
                 </div>
               `:(state.insuranceType&&state.insuranceRate)?(()=>{
-                const tiers=state.insuranceType==="手技療法"?["初診","2回目","3回目","4回目以降"]:["初診","2回目以降"];
+                const tiers=tiersForType(state.insuranceType);
                 const curIdx=Math.max(0,tiers.indexOf(state.insuranceTier||tiers[0]));
                 const curTier=tiers[curIdx];
                 const curAmount=getInsuranceAmountFor(state.insuranceType,state.insuranceRate,curTier);
@@ -1878,6 +1893,7 @@ function render(){
                       <div class="ins-stepper-center">
                         <div class="ins-stepper-tier">${curTier}</div>
                         <div class="ins-stepper-amount">${fmt(curAmount)}</div>
+                        ${state.insuranceType==="鍼灸併用"?(()=>{const b=acuCombinedBreakdown(state.insuranceRate,curTier);return `<div style="font-size:11px;color:#64748b;margin-top:2px;">鍼灸 ${fmt(b.acu)} ＋ 保険診療 ${fmt(b.manual)}</div>`;})():""}
                       </div>
                       <button class="ins-stepper-arrow" onclick="stepInsuranceTier(1)" ${curIdx>=tiers.length-1?"disabled":""}>▼</button>
                     </div>
@@ -2033,7 +2049,11 @@ async function init(){
       const bookingMenus = Array.isArray(booking.menus)&&booking.menus.length>0 ? booking.menus : (booking.menu?[booking.menu]:[]);
       let autoInsurance=0;
       bookingMenus.forEach(name=>{
-        if(BOOKING_INSURANCE_MENU_PRICE[name]!==undefined){
+        const acuMatch=String(name).match(/^鍼灸併用 (\d割) /);
+        if(acuMatch){
+          // 鍼灸併用は保険診療の金額も足す（来院回数に合わせた段階）
+          autoInsurance+=getInsuranceAmountFor("鍼灸併用",acuMatch[1],getInsMenuByVisit(visitCount));
+        }else if(BOOKING_INSURANCE_MENU_PRICE[name]!==undefined){
           autoInsurance+=BOOKING_INSURANCE_MENU_PRICE[name];
         }else if(BOOKING_JIFEE_MENU_PRICE[name]!==undefined){
           state.jifeeItems.push({label:name,amount:BOOKING_JIFEE_MENU_PRICE[name]});
