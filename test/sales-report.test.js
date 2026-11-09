@@ -81,3 +81,15 @@ test("保険の窓口負担を柔整・鍼灸に分ける（分けて保存し�
   assert.deepEqual(plain(r.juIns), { count: 2, amount: 1900 });
   assert.deepEqual(plain(r.acuIns), { count: 1, amount: 600 });
 });
+
+test("部門：保険診療＋鍼灸併用は両方に数え、請求（見込み）は実人数×1,000円", () => {
+  const P = (id, name, date, ins, type, ju, acu) => ({ id, booking_id: id, patient_name: name, payment_date: date, staff_id: 1, insurance_amount: ins, jifee_amount: 0, total_amount: ins, insurance_type: type, ju_insurance_amount: ju, acu_insurance_amount: acu });
+  const r = SR.buildReport([
+    P(1, "架空 一", "2026-11-01", 1400, "手技療法＋鍼灸併用", 800, 600),
+    P(2, "架空 一", "2026-11-05", 1400, "手技療法＋鍼灸併用", 800, 600), // 同じ人の2回目（実人数は1人）
+    P(3, "架空 二", "2026-11-02", 800, "手技療法", 800, 0),
+    P(4, "架空 三", "2026-11-03", 0, "鍼灸のみ", 0, 0), // 医療助成0円でも鍼灸の部門
+  ], { from: "2026-11-01", to: "2026-11-30", bookings: [] });
+  assert.deepEqual(plain(r.dept.ju), { visits: 3, amount: 2400, peopleCount: 2, claim: 2000 });
+  assert.deepEqual(plain(r.dept.acu), { visits: 3, amount: 1200, peopleCount: 2, claim: 2000 });
+});
