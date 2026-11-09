@@ -29,6 +29,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     ...(canPtRequest || canPtApprove ? [{ href: "/part-time", label: "アルバイト勤務" }] : []),
     ...(canHcRequest || canHcApprove ? [{ href: "/holiday-change", label: "振休→勤務" }] : []),
     ...(canApprove ? [{ href: "/approvals", label: `承認${queueCount ? `（${queueCount}）` : ""}` }] : []),
+    { href: "/meetings", label: "会議" },
+    { href: "/tasks", label: "タスク" },
     { href: "/notifications", label: `通知${unread ? `（${unread}）` : ""}` },
     ...(isAdmin ? [{ href: "/admin/users", label: "スタッフ管理" }, { href: "/admin/stores", label: "店舗・エリア" }] : []),
     ...(canLeaveAdmin ? [{ href: "/admin/leave", label: "有給の付与" }, { href: "/admin/import", label: "CSV取り込み" }] : []),

@@ -5,6 +5,7 @@ import { can } from "@/server/session";
 import { approvalQueue } from "@/server/requests";
 import { partTimeQueue } from "@/server/part-time";
 import { holidayChangeQueue } from "@/server/holiday-change";
+import { PendingMinutes } from "@/components/pending-minutes";
 import { CATEGORY_SHORT, hhmm } from "@/lib/part-time";
 import { formatDate } from "@/lib/time";
 import { formatDates, KIND_LABEL } from "@/lib/leave/requests";
@@ -65,6 +66,7 @@ export default async function PresidentPage() {
           </ul>
         </CardContent>
       </Card>
+      <PendingMinutes />
       <PhaseNote phase="PHASE 8">社内規定の承認待ちもここに加わります。</PhaseNote>
       <Card>
         <CardHeader><CardTitle>管理</CardTitle></CardHeader>

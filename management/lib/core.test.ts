@@ -77,3 +77,27 @@ describe("日本時間", () => {
     expect(formatDate("2026-11-08")).toBe("2026年11月8日（日）");
   });
 });
+
+import { remainingLabel, meetingStatusLabel, isTaskOverdue, cleanDecisions } from "./meetings";
+describe("会議・タスクの表示", () => {
+  // 2026-11-05 開催 → 期限 2026-11-08 23:59:59 JST（= 14:59:59Z）
+  const due = "2026-11-08T14:59:59Z";
+  test("残り時間", () => {
+    expect(remainingLabel(due, new Date("2026-11-06T00:00:00+09:00"))).toBe("残り3日0時間");
+    expect(remainingLabel(due, new Date("2026-11-08T23:15:00+09:00"))).toBe("残り45分");
+    expect(remainingLabel(due, new Date("2026-11-09T12:00:00+09:00"))).toBe("12時間0分超過");
+  });
+  test("状態の表示", () => {
+    expect(meetingStatusLabel("submitted", true)).toBe("提出済み（期限超過）");
+    expect(meetingStatusLabel("overdue", false)).toBe("期限超過");
+  });
+  test("期限切れのタスク", () => {
+    expect(isTaskOverdue("2026-11-08", "doing", "2026-11-09")).toBe(true);
+    expect(isTaskOverdue("2026-11-08", "done", "2026-11-09")).toBe(false);
+    expect(isTaskOverdue(null, "todo", "2026-11-09")).toBe(false);
+  });
+  test("空の決定事項の行は送らない", () => {
+    expect(cleanDecisions([{ id: null, title: " ", detail: "", owner_user_id: "", due_date: "" }, { id: null, title: " POP ", detail: "", owner_user_id: "", due_date: "" }]))
+      .toEqual([{ id: null, title: "POP", detail: "", owner_user_id: "", due_date: "" }]);
+  });
+});

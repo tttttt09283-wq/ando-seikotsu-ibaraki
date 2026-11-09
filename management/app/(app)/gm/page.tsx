@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { can } from "@/server/session";
 import { holidayChangeQueue } from "@/server/holiday-change";
+import { PendingMinutes } from "@/components/pending-minutes";
 import { hhmm } from "@/lib/part-time";
 import { formatDate } from "@/lib/time";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +32,7 @@ export default async function GmPage() {
           </ul>
         </CardContent>
       </Card>
+      <PendingMinutes />
       <PhaseNote phase="PHASE 9">議事録提出率・承認待ち・有給取得率・年5日未達見込みなど全院のKPIを表示します。</PhaseNote>
       <StoreOverview />
     </>

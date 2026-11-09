@@ -7,6 +7,8 @@ import { getStoreLeave } from "@/server/leave";
 import { approvalQueue, listRequests } from "@/server/requests";
 import { listPartTime } from "@/server/part-time";
 import { listHolidayChanges, HC_STATUS } from "@/server/holiday-change";
+import { listMeetings, storeTasks } from "@/server/meetings";
+import { MEETING_STATUS, meetingStatusLabel, remainingLabel } from "@/lib/meetings";
 import { CATEGORY_SHORT, hhmm } from "@/lib/part-time";
 import { formatDate as fmtD } from "@/lib/time";
 import { formatDates, KIND_LABEL } from "@/lib/leave/requests";
@@ -18,7 +20,6 @@ import { formatDate } from "@/lib/time";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert } from "@/components/ui/alert";
-import { PhaseNote } from "@/components/phase-note";
 
 export const metadata: Metadata = { title: "院長ダッシュボード" };
 
@@ -30,6 +31,12 @@ export default async function StorePage({ params }: { params: Promise<{ storeId:
   if (!store) notFound();
   const [rows, queue, requests, partTime, canPt, hcRows, canHc] = await Promise.all([getStoreLeave(storeId), approvalQueue(), listRequests({ storeId, limit: 10 }), listPartTime({ storeId, limit: 10 }), can("parttime.request", storeId),
     listHolidayChanges({ storeId, limit: 10 }), can("holidaychange.request", storeId)]);
+  const [meetings, canMeeting, canTask] = await Promise.all([listMeetings({ storeId }), can("meeting.manage", storeId), can("task.manage.store", storeId)]);
+  const tasks = canTask ? await storeTasks(storeId) : [];
+  const openTasks = tasks.filter((t) => t.status !== "done");
+  const overdueTasks = openTasks.filter((t) => t.due_date && t.due_date < new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10));
+  const pendingMinutes = meetings.filter((m) => m.status === "awaiting_minutes" || m.status === "overdue");
+  const upcomingMeetings = meetings.filter((m) => m.status === "scheduled").reverse().slice(0, 5);
   const shiftQueue = queue.filter((q) => q.kind === "SHIFT" && q.store_name === store.name);
   const overdue = rows.filter((r) => r.shift.overdue + r.shift_holiday.overdue > 0);
   const fiveDayAlerts = rows.filter((r) => r.five_day.target && ["caution", "warning", "urgent"].includes(r.five_day.level));
@@ -121,7 +128,26 @@ export default async function StorePage({ params }: { params: Promise<{ storeId:
           </ul>
         </CardContent>
       </Card>
-      <PhaseNote phase="PHASE 7〜9">会議予定・議事録の提出期限をここに表示します。</PhaseNote>
+      <Card className={pendingMinutes.some((m) => m.status === "overdue") ? "border-red-400" : pendingMinutes.length ? "border-amber-400" : ""}>
+        <CardHeader><CardTitle>会議・議事録</CardTitle>{canMeeting ? <Button asChild size="sm"><Link href="/meetings/new">＋ 会議を登録</Link></Button> : null}</CardHeader>
+        <CardContent className="p-0">
+          <ul className="divide-y divide-stone-100 text-sm">
+            {[...pendingMinutes, ...upcomingMeetings].map((m) => (
+              <li key={m.id}><Link href={`/meetings/${m.id}`} className="flex flex-wrap items-center gap-2 px-4 py-2.5 hover:bg-stone-50">
+                <b>{fmtD(m.held_on)}</b><span>{m.title}</span>
+                {m.status !== "scheduled" ? <span className={`text-xs font-bold ${m.status === "overdue" ? "text-red-700" : "text-amber-700"}`}>{remainingLabel(m.minutes_due_at)}</span> : null}
+                <span className="ml-auto"><Badge tone={MEETING_STATUS[m.status].tone}>{meetingStatusLabel(m.status, m.submitted_late)}</Badge></span>
+              </Link></li>
+            ))}
+            {pendingMinutes.length + upcomingMeetings.length === 0 ? <li className="px-4 py-4 text-stone-500">提出待ち・予定の会議はありません</li> : null}
+          </ul>
+        </CardContent>
+      </Card>
+      {canTask ? (
+        <Card className={overdueTasks.length ? "border-red-300" : ""}>
+          <CardHeader><CardTitle>院のタスク（未完了 {openTasks.length}件{overdueTasks.length ? `・期限切れ ${overdueTasks.length}件` : ""}）</CardTitle><Button asChild size="sm" variant="outline"><Link href={`/tasks?store=${storeId}`}>タスク管理</Link></Button></CardHeader>
+        </Card>
+      ) : null}
     </>
   );
 }

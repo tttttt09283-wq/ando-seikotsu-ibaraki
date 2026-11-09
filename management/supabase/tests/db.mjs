@@ -32,6 +32,7 @@ export async function startDb() {
   try {
     await client.connect();
     await client.query(readFileSync(join(here, "supabase-stub.sql"), "utf8"));
+    await client.query(readFileSync(join(here, "pos-stub.sql"), "utf8"));
     for (const f of readdirSync(join(root, "migrations")).sort()) {
       try { await client.query(readFileSync(join(root, "migrations", f), "utf8")); }
       catch (e) { throw new Error(`${f}：${e.message}`); }
