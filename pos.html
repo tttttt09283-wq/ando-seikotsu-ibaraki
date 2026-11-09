@@ -1080,7 +1080,8 @@ function openCashDrawer(manual){
     if(manual) showPrintToast("❌ プリンターのIP未設定のためレジドロアを開けられません（🖨️設定ボタンからIPを登録してください）");
     return;
   }
-  sendEposRequest(ip,`<pulse drawer="drawer_1" time="pulse_100"/>`).then(()=>{
+  // ドロアのケーブルがどちらの端子（drawer_1／drawer_2）につながっていても開くよう、両方に少し長めの信号を送る
+  sendEposRequest(ip,`<pulse drawer="drawer_1" time="pulse_200"/><pulse drawer="drawer_2" time="pulse_200"/>`).then(()=>{
     if(manual) showPrintToast("🗄️ レジを開けました");
   }).catch(e=>{
     showPrintToast("❌ レジドロアを開けられませんでした："+e.message);
