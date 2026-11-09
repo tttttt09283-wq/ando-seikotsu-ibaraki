@@ -6,6 +6,7 @@ import { canAnywhere } from "@/server/session";
 import { approvalQueue } from "@/server/requests";
 import { partTimeQueue } from "@/server/part-time";
 import { holidayChangeQueue } from "@/server/holiday-change";
+import { ruleQueue } from "@/server/rules";
 import { CATEGORY_LABEL, hhmm, fmtMinutes } from "@/lib/part-time";
 import { formatDate } from "@/lib/time";
 import { KIND_LABEL, formatDates } from "@/lib/leave/requests";
@@ -22,15 +23,34 @@ export const metadata: Metadata = { title: "承認" };
 export default async function ApprovalsPage({ searchParams }: { searchParams: Promise<{ ok?: string; err?: string }> }) {
   const [paid, shift, pt, hcGm, hcFinal] = await Promise.all([canAnywhere("leave.paid.final_approve"), canAnywhere("leave.shift.approve"), canAnywhere("parttime.final_approve"),
     canAnywhere("holidaychange.gm_review"), canAnywhere("holidaychange.final_approve")]);
-  if (!paid && !shift && !pt && !hcGm && !hcFinal) notFound();
+  const ruleApprove = await canAnywhere("rule.approve");
+  if (!paid && !shift && !pt && !hcGm && !hcFinal && !ruleApprove) notFound();
   const sp = await searchParams;
   const [queue, ptQueue, hcQueue] = await Promise.all([paid || shift ? approvalQueue() : Promise.resolve([]), pt ? partTimeQueue() : Promise.resolve([]), hcGm || hcFinal ? holidayChangeQueue() : Promise.resolve([])]);
-  const total = queue.length + ptQueue.length + hcQueue.length;
+  const rQueue = ruleApprove ? await ruleQueue() : [];
+  const total = queue.length + ptQueue.length + hcQueue.length + rQueue.length;
   return (
     <>
       <h1 className="text-xl font-black text-brand-800">承認待ち（{total}件）</h1>
       <Flash ok={sp.ok} err={sp.err} />
       {total === 0 ? <Alert tone="ok">承認待ちはありません。</Alert> : null}
+      {rQueue.map((q) => (
+        <Card key={q.step_id}>
+          <CardHeader>
+            <CardTitle className="flex flex-wrap items-center gap-2"><Badge>社内規定</Badge><span className="font-mono text-sm">{q.rule_no}</span>{q.title}<span className="text-sm font-normal text-stone-600">第{q.version_no}版</span>
+              {q.is_provisional ? <Badge tone="warn">初期案</Badge> : null}{q.self_authored ? <Badge tone="warn">ご自身の案</Badge> : null}</CardTitle>
+            <Link href={`/rules/${q.rule_no}/edit`} className="text-sm font-bold text-brand-700">本文・変更点 ›</Link>
+          </CardHeader>
+          <CardContent className="grid gap-3 text-sm">
+            <dl className="grid grid-cols-[7rem_1fr] gap-y-1">
+              <dt className="text-stone-500">改定内容</dt><dd>{q.change_summary ?? "制定"}</dd>
+              <dt className="text-stone-500">施行日</dt><dd>{formatDate(q.effective_date)}</dd>
+              <dt className="text-stone-500">依頼</dt><dd>{q.submitted_by_name}（{formatJstDateTime(q.submitted_at)}）</dd>
+            </dl>
+            <p className="text-xs text-stone-500">本文は「本文・変更点」で確かめてください。承認後、「公開する」を押すまでスタッフには表示されません。</p>
+          </CardContent>
+        </Card>
+      ))}
       {hcQueue.map((q) => (
         <Card key={q.step_id}>
           <CardHeader>

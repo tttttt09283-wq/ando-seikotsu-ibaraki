@@ -7,6 +7,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { RoleList } from "@/components/role-list";
 import { PaidCard, ShiftCard, FiveDayCard } from "@/components/leave-cards";
+import { UnacknowledgedRules } from "@/components/unacknowledged-rules";
 
 export const metadata: Metadata = { title: "マイページ" };
 
@@ -18,6 +19,7 @@ export default async function MyPage({ searchParams }: { searchParams: Promise<{
     <>
       <h1 className="text-xl font-black text-brand-800">マイページ</h1>
       {pw === "changed" ? <Alert tone="ok">PASSを変更しました。</Alert> : null}
+      <UnacknowledgedRules />
       <div className="grid gap-4 md:grid-cols-2">
         <PaidCard b={leave.balances.PAID} />
         <ShiftCard shift={leave.balances.SHIFT} holiday={leave.balances.SHIFT_HOLIDAY} />

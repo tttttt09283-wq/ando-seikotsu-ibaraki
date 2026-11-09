@@ -3,6 +3,7 @@ import { useState } from "react";
 import { decideLeave } from "@/app/(app)/leave/actions";
 import { decidePartTime } from "@/app/(app)/part-time/actions";
 import { decideHolidayChange } from "@/app/(app)/holiday-change/actions";
+import { decideRule } from "@/app/(app)/rules/actions";
 import { Button } from "@/components/ui/button";
 import { Input, Select, Field } from "@/components/ui/input";
 import { SubmitButton } from "@/components/submit-button";
@@ -10,9 +11,9 @@ import { REJECT_CATEGORIES } from "@/lib/leave/requests";
 
 // 承認・差戻し・却下。差戻し・却下は理由が必須（空では送れない）。有給の却下は理由の区分も必須
 export function DecisionForm({ stepId, version, kind, idempotencyKey, backTo, disabledApprove, selfApproval, target = "leave", approveLabel }: {
-  stepId: string; version: number; kind: "PAID" | "SHIFT" | "PART_TIME" | "HOLIDAY_CHANGE"; idempotencyKey: string; backTo: string; disabledApprove?: string; selfApproval?: boolean; target?: "leave" | "part_time" | "holiday_change"; approveLabel?: string;
+  stepId: string; version: number; kind: "PAID" | "SHIFT" | "PART_TIME" | "HOLIDAY_CHANGE" | "RULE"; idempotencyKey: string; backTo: string; disabledApprove?: string; selfApproval?: boolean; target?: "leave" | "part_time" | "holiday_change" | "rule"; approveLabel?: string;
 }) {
-  const decide = target === "part_time" ? decidePartTime : target === "holiday_change" ? decideHolidayChange : decideLeave;
+  const decide = target === "part_time" ? decidePartTime : target === "holiday_change" ? decideHolidayChange : target === "rule" ? decideRule : decideLeave;
   const [mode, setMode] = useState<"approve" | "return" | "reject" | null>(null);
   const hidden = (
     <>
@@ -44,7 +45,7 @@ export function DecisionForm({ stepId, version, kind, idempotencyKey, backTo, di
         <SubmitButton disabled={!!disabledApprove} title={disabledApprove}>{selfApproval ? "本人承認する" : approveLabel ?? "承認"}</SubmitButton>
       </form>
       <Button type="button" variant="outline" onClick={() => setMode("return")}>差戻し</Button>
-      <Button type="button" variant="ghost" className="text-red-700" onClick={() => setMode("reject")}>却下</Button>
+      {target !== "rule" ? <Button type="button" variant="ghost" className="text-red-700" onClick={() => setMode("reject")}>却下</Button> : null}
       {disabledApprove ? <span className="text-xs text-red-700">{disabledApprove}</span> : null}
     </div>
   );

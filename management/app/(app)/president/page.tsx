@@ -12,13 +12,13 @@ import { formatDates, KIND_LABEL } from "@/lib/leave/requests";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { PhaseNote } from "@/components/phase-note";
+import { ruleQueue } from "@/server/rules";
 
 export const metadata: Metadata = { title: "社長ダッシュボード" };
 
 export default async function PresidentPage() {
   if (!(await can("dashboard.president"))) notFound();
-  const [queue, pt, hcAll] = await Promise.all([approvalQueue(), partTimeQueue(), holidayChangeQueue()]);
+  const [queue, pt, hcAll, rq] = await Promise.all([approvalQueue(), partTimeQueue(), holidayChangeQueue(), ruleQueue()]);
   const hc = hcAll.filter((q) => q.step_kind === "president_final");
   const paid = queue.filter((q) => q.kind === "PAID");
   const urgent = pt.filter((q) => q.category === "help").length;
@@ -67,7 +67,20 @@ export default async function PresidentPage() {
         </CardContent>
       </Card>
       <PendingMinutes />
-      <PhaseNote phase="PHASE 8">社内規定の承認待ちもここに加わります。</PhaseNote>
+      <Card className={rq.length ? "border-brand-600" : ""}>
+        <CardHeader><CardTitle>社内規定の承認待ち（{rq.length}件）</CardTitle><Button asChild size="sm" variant="outline"><Link href="/rules">規定一覧</Link></Button></CardHeader>
+        <CardContent>
+          <ul className="divide-y divide-stone-100">
+            {rq.map((q) => (
+              <li key={q.step_id}><Link href={`/rules/${q.rule_no}/edit`} className="flex flex-wrap items-center gap-2 py-2.5 text-sm hover:text-brand-700">
+                <span className="font-mono text-stone-500">{q.rule_no}</span><b>{q.title}</b><span>第{q.version_no}版</span>
+                <span className="text-xs text-stone-500">{q.change_summary ?? "制定"}・{q.submitted_by_name}</span>{q.self_authored ? <Badge tone="warn">ご自身の案</Badge> : null}
+              </Link></li>
+            ))}
+            {rq.length === 0 ? <li className="py-2 text-sm text-stone-500">承認待ちはありません</li> : null}
+          </ul>
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader><CardTitle>管理</CardTitle></CardHeader>
         <CardContent className="flex flex-wrap gap-2">

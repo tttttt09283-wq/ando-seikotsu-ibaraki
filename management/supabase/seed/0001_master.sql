@@ -52,7 +52,7 @@ with m(role_code, perm) as (values
   ('PRESIDENT','staff.view.store'),('PRESIDENT','staff.view.all'),
   -- GM
   ('GM','leave.view.self'),('GM','leave.view.store'),('GM','leave.request.self'),('GM','holidaychange.gm_review'),
-  ('GM','meeting.manage'),('GM','task.manage.store'),('GM','task.view.self'),('GM','rule.view'),
+  ('GM','meeting.manage'),('GM','task.manage.store'),('GM','task.view.self'),('GM','rule.view'),('GM','rule.edit'),
   ('GM','dashboard.gm'),('GM','audit.view'),('GM','staff.view.store'),('GM','staff.view.all'),
   -- BM（担当エリアの店舗で効く）
   ('BM','leave.view.self'),('BM','leave.view.store'),('BM','leave.request.self'),('BM','task.view.self'),

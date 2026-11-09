@@ -101,3 +101,23 @@ describe("会議・タスクの表示", () => {
       .toEqual([{ id: null, title: "POP", detail: "", owner_user_id: "", due_date: "" }]);
   });
 });
+
+import { lineDiff, parseBody, appliesLabel, effectiveLabel } from "./rules";
+describe("社内規定の表示", () => {
+  test("行の差分", () => {
+    expect(lineDiff("a\nb\nc", "a\nB\nc\nd").map((d) => `${d.kind}:${d.text}`)).toEqual(["same:a", "del:b", "add:B", "same:c", "add:d"]);
+    expect(lineDiff("x", "x")).toEqual([{ kind: "same", text: "x" }]);
+  });
+  test("本文の見出し・箇条書き・段落", () => {
+    expect(parseBody("## 目的\n記録を残す。\n続き\n\n- A\n- B\n1. 一\n2. 二")).toEqual([
+      { type: "h", text: "目的" }, { type: "p", text: "記録を残す。\n続き" }, { type: "ul", items: ["A", "B"] }, { type: "ol", items: ["一", "二"] },
+    ]);
+  });
+  test("適用対象と施行の表示", () => {
+    expect(appliesLabel({})).toBe("全員");
+    expect(appliesLabel({ roles: ["MANAGER"], employment_types: ["アルバイト"] })).toBe("役職：院長／雇用区分：アルバイト");
+    expect(effectiveLabel("2026-01-01", true, "2026-11-11")).toBe("初期案・労務確認中（施行前）");
+    expect(effectiveLabel("2026-01-01", false, "2026-11-11")).toBe("施行中");
+    expect(effectiveLabel("2027-01-01", false, "2026-11-11")).toBe("施行前");
+  });
+});
