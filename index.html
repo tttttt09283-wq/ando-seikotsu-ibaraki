@@ -4652,6 +4652,22 @@ function DailyReportPanel({bookings,payments,stores,todayStr,refunds,onOpenPos,o
           </tbody>
         </table>
       </div>
+      {(()=>{
+        // この月の部門別（柔整・鍼灸）の実人数と保険請求（見込み）。保険診療＋鍼灸併用は両方に数える
+        const [y,m]=ym.split("-").map(Number);
+        const last=new Date(y,m,0).getDate();
+        const d=window.SalesReport.buildReport(payments,{from:`${ym}-01`,to:`${ym}-${String(last).padStart(2,"0")}`,storeId,bookings});
+        const SR=window.SalesReport;
+        return(
+          <div style={{marginTop:10,background:"white",border:"1px solid #e2e8f0",borderRadius:10,padding:"10px 14px",display:"flex",gap:18,flexWrap:"wrap",alignItems:"center",fontSize:13}}>
+            <span style={{fontWeight:800,color:"#1e3a5f"}}>🏥 {m}月の保険請求（見込み）</span>
+            {SR.DEPTS.map(dp=>{ const x=d.dept[dp.key]; return(
+              <span key={dp.key}><b>{dp.label}</b>：{x.peopleCount}人 × {fmt(SR.CLAIM_PER_PERSON[dp.key])} ＝ <b>{fmt(x.claim)}</b><span style={{color:"#64748b"}}>（来院 {x.visits}回・窓口 {fmt(x.amount)}）</span></span>
+            );})}
+            <span style={{fontSize:11,color:"#94a3b8"}}>実人数×1,000円の仮の計算です。保険診療＋鍼灸併用の方は両方に数えます。</span>
+          </div>
+        );
+      })()}
       <div style={{marginTop:16}}>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
           <span style={{fontWeight:800,fontSize:15,color:"#1e3a5f"}}>🧾 {Number(selDate.slice(5,7))}/{Number(selDate.slice(8,10))} の会計明細</span>
@@ -4874,9 +4890,11 @@ function StatsPanel({bookings,payments,stores,todayStr,workMinutesOf}){
       r.slots+=Math.max(1,Math.ceil((Number(b.duration)||SLOT_MIN)/SLOT_MIN));
       // 予約のメニュー名は初期値（鍼灸併用 3割 初診）のまま残っていることが多いので使わず、会計で実際に保険の負担金があった来院だけを数える。
       // 会計の保険区分が鍼灸（鍼灸併用・鍼灸のみ）なら鍼保、それ以外の保険は保険（柔整）
-      if(ins>0){
-        if([...types].some(t=>/鍼灸/.test(t))) r.shinkyu++;
-        else r.hoken++;
+      // 部門：保険診療＋鍼灸併用は保険（柔整）と鍼保の両方に数える。区分を選んだ会計は医療助成の0円も数える
+      if(ins>0||types.size){
+        const ts=[...types];
+        if(ts.some(t=>/手技/.test(t))||(ts.length===0&&ins>0)) r.hoken++;
+        if(ts.some(t=>/鍼灸/.test(t))) r.shinkyu++;
       }
     });
     // 勤務枠数：期間の初日〜（今日か期間の最終日の早いほう）
@@ -12845,9 +12863,12 @@ function SalesReportPanel({payments,bookings,stores,todayStr}){
             ]}/>
             <Table title="技術売上内訳" head={["","客数","客比率","金額","金額比","客単価"]} rows={[
               ...SR.TECH_ROWS.map(t=>{ const x=r.techRows[t.key]; return [t.label,n(x.count),pct(x.count,C),n(x.amount),pct(x.amount,T),avg(x.amount,x.count)]; }),
-              ...[["保険のうち 柔整",r.juIns],["保険のうち 鍼灸",r.acuIns]].map(([l,x])=>[l,n(x.count),pct(x.count,C),n(x.amount),pct(x.amount,T),avg(x.amount,x.count)]),
             ]}
               note="保険は窓口負担の金額。1回の来院で保険と自費の両方がある場合は、それぞれの行に数えます。"/>
+            <Table title="部門別（柔整・鍼灸）・保険請求（見込み）" head={["部門","来院数","実人数","窓口負担","保険請求（見込み）","合計"]} rows={[
+              ...SR.DEPTS.map(d=>{ const x=r.dept[d.key]; return [d.label,n(x.visits),n(x.peopleCount),n(x.amount),n(x.claim),n(x.amount+x.claim)]; }),
+              ["合計",n(r.dept.ju.visits+r.dept.acu.visits),"-",n(r.dept.ju.amount+r.dept.acu.amount),n(r.dept.ju.claim+r.dept.acu.claim),n(r.dept.ju.amount+r.dept.acu.amount+r.dept.ju.claim+r.dept.acu.claim)],
+            ]} note={`保険診療＋鍼灸併用の来院は両方の部門に数えます。保険請求（見込み）＝実人数×${SR.CLAIM_PER_PERSON.ju.toLocaleString()}円（柔整）／×${SR.CLAIM_PER_PERSON.acu.toLocaleString()}円（鍼灸）の仮の計算です。`}/>
             <Table title="商品売上内訳" head={["","客数","客比率","金額","金額比","客単価"]} rows={[...SR.GOODS_KINDS.map(g=>[g.label,g.key]),["上記以外","other"]].map(([l,k])=>{ const x=r.goodsRows[k]; return [l,n(x.count),pct(x.count,C),n(x.amount),pct(x.amount,T),avg(x.amount,x.count)]; })}
               note="商品＝会計の自費項目のうち「物販：」で始まるもの、コルセット・サポーター・シップなどの名前のもの。"/>
             <Table title="来店区分・性別【税込】" head={["","客数","客比率","金額","金額比","客単価"]} rows={[
@@ -12871,8 +12892,10 @@ function SalesReportPanel({payments,bookings,stores,todayStr}){
               ["税抜総売上","-",n(r.netSales)],
               ["内税相当額（自費・商品の10%）","-",n(r.taxIncluded)],
               ["非課税（保険の窓口負担）","-",n(r.nonTaxable)],
-              ["　うち柔整保険",n(r.juIns.count),n(r.juIns.amount)],
-              ["　うち鍼灸保険",n(r.acuIns.count),n(r.acuIns.amount)],
+              ["　うち柔整（保険診療）",n(r.dept.ju.visits),n(r.dept.ju.amount)],
+              ["　うち鍼灸保険",n(r.dept.acu.visits),n(r.dept.acu.amount)],
+              [`保険請求（見込み）柔整 ${n(r.dept.ju.peopleCount)}人`,"-",n(r.dept.ju.claim)],
+              [`保険請求（見込み）鍼灸 ${n(r.dept.acu.peopleCount)}人`,"-",n(r.dept.acu.claim)],
               ["技術売上",n(r.tech.count),n(r.tech.amount)],
               ["商品売上",n(r.goods.count),n(r.goods.amount)],
               ["値引","-","0"],

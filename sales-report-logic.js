@@ -123,6 +123,19 @@
     return /^鍼灸/.test(String((p&&p.insurance_type)||""))?{ju:0,acu:ins}:{ju:ins,acu:0};
   }
 
+  // ===== 部門（柔整＝保険診療／鍼灸）=====
+  // 保険診療＋鍼灸併用の会計は両方の部門に入る。医療助成の0円の会計も、区分を選んでいれば部門に数える
+  function insuranceDepts(p){
+    const t=String((p&&p.insurance_type)||""), sp=insuranceSplit(p), ins=Number(p&&p.insurance_amount)||0;
+    return {
+      ju:/手技/.test(t)||(!t&&ins>0)||sp.ju>0,
+      acu:/鍼灸/.test(t)||sp.acu>0,
+    };
+  }
+  // 保険の請求（見込み）：部門ごとに 実人数 × この金額（あとで実際の請求額に合わせて変えられるよう定数にしておく）
+  const CLAIM_PER_PERSON={ju:1000,acu:1000};
+  const DEPTS=[{key:"ju",label:"柔整（保険診療）"},{key:"acu",label:"鍼灸保険"}];
+
   // ===== 会計1件の内訳 =====
   // 技術＝保険の窓口負担＋自費の施術（回数券・FPを含む）。商品＝物販。消費税は自費・商品（課税）にだけ内税10%（保険は非課税）
   function splitAmounts(p){
@@ -157,6 +170,7 @@
       total:zero(),tech:zero(),goods:zero(),
       techRows:Object.fromEntries(TECH_ROWS.map(t=>[t.key,zero()])),
       juIns:zero(), acuIns:zero(),
+      dept:{ju:{visits:0,people:new Set(),amount:0},acu:{visits:0,people:new Set(),amount:0}},
       goodsRows:Object.fromEntries([...GOODS_KINDS.map(g=>g.key),"other"].map(k=>[k,zero()])),
       visitClass:Object.fromEntries(VISIT_CLASSES.map(c=>[c.key,zero()])),
       gender:Object.fromEntries(GENDERS.map(g=>[g.key,zero()])),
@@ -189,6 +203,10 @@
       if(sum.ins>0){ const k=rateKey(b.insurance_rate); r.techRows[k].count++; r.techRows[k].amount+=sum.ins; }
       if(sum.tech-sum.ins>0){ r.techRows.other.count++; r.techRows.other.amount+=sum.tech-sum.ins; }
       r.nonTaxable+=sum.ins; r.taxable+=sum.total-sum.ins;
+      // 部門ごとの来院数・実人数・窓口負担（保険診療＋鍼灸併用は両方に数える）
+      const dj=v.payments.some(p=>insuranceDepts(p).ju), da=v.payments.some(p=>insuranceDepts(p).acu);
+      if(dj){ r.dept.ju.visits++; r.dept.ju.people.add(v.patient||v.key); r.dept.ju.amount+=sum.ju; }
+      if(da){ r.dept.acu.visits++; r.dept.acu.people.add(v.patient||v.key); r.dept.acu.amount+=sum.acu; }
       if(sum.ju>0){ r.juIns.count++; r.juIns.amount+=sum.ju; }
       if(sum.acu>0){ r.acuIns.count++; r.acuIns.amount+=sum.acu; }
       const c=cls[v.key]||"guest"; r.visitClass[c].count++; r.visitClass[c].amount+=sum.total;
@@ -206,6 +224,8 @@
       if(rest){ r.techRows.other.amount+=rest; r.taxable+=rest; }
     });
     r.staffCount=[...staff].filter(Boolean).length;
+    // 実人数と請求（見込み）
+    DEPTS.forEach(d=>{ const x=r.dept[d.key]; x.peopleCount=x.people.size; x.claim=x.peopleCount*CLAIM_PER_PERSON[d.key]; delete x.people; });
     r.taxIncluded=Math.round(r.taxable*10/110);
     r.netSales=r.total.amount-r.taxIncluded;
 
@@ -223,7 +243,7 @@
     return r;
   }
 
-  const api={insuranceSplit,GOODS_KINDS,isGoods,goodsKind,PAY_KINDS,parsePayments,visitsOf,classifyVisits,VISIT_CLASSES,patientProfiles,GENDERS,genderKey,
+  const api={insuranceSplit,insuranceDepts,CLAIM_PER_PERSON,DEPTS,GOODS_KINDS,isGoods,goodsKind,PAY_KINDS,parsePayments,visitsOf,classifyVisits,VISIT_CLASSES,patientProfiles,GENDERS,genderKey,
     AGE_BANDS,ageBand,SOURCES,sourceKey,splitAmounts,rateKey,TECH_ROWS,buildReport};
   root.SalesReport=api;
 })(typeof window!=="undefined"?window:globalThis);
