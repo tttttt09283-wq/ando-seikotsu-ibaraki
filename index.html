@@ -12470,8 +12470,6 @@ function buildBulkReceiptLines({store,patientName,label,payments,refunds=[]}){
 function bulkEscapeXml(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 // レシートプリンターへ送る。成功で true、失敗は Error
 async function printBulkReceiptToEpson(lines){
-  // 会計画面（pos.html）と同じ：この端末で設定したIP、なければ香里園駅前院のレジプリンターの初期値
-  const ip=(localStorage.getItem("epsonPrinterIP")||"").trim()||"192.168.0.146";
   let cmds=`<text lang="ja"/>`, align=null, bold=null;
   lines.forEach(l=>{
     const a=l.center?"center":"left", b=!!l.bold;
@@ -12480,6 +12478,12 @@ async function printBulkReceiptToEpson(lines){
     cmds+=`<text>${bulkEscapeXml(l.text)}\n</text>`;
   });
   cmds+=`<feed line="3"/><cut type="feed"/>`;
+  return sendEpsonCommands(cmds);
+}
+// EPSONプリンター（レジのドロアもつながっている）に ePOS-Print の命令を送る。成功で true、失敗は Error
+async function sendEpsonCommands(cmds){
+  // 会計画面（pos.html）と同じ：この端末で設定したIP、なければ香里園駅前院のレジプリンターの初期値
+  const ip=(localStorage.getItem("epsonPrinterIP")||"").trim()||"192.168.0.146";
   const body=`<?xml version="1.0" encoding="utf-8"?>\n<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">\n<soap:Body><epos-print xmlns="http://www.epson-pos.com/schemas/2011/03/epos-print">\n${cmds}\n</epos-print></soap:Body></soap:Envelope>`;
   let text="";
   try{
@@ -12500,6 +12504,8 @@ async function printBulkReceiptToEpson(lines){
   }
   return true;
 }
+// レジのドロアを開ける（両替・つり銭の確認など、会計をしないで開けたいとき）
+function openRegisterDrawer(){ return sendEpsonCommands(`<pulse drawer="drawer_1" time="pulse_100"/>`); }
 // プリンターが使えない端末用：レシートの部分だけを印刷する（画面全体を印刷しない）
 function printBulkReceiptPreview(lines){
   const html=lines.map(l=>`<div style="text-align:${l.center?"center":"left"};font-weight:${l.bold?800:400};white-space:pre;">${bulkEscapeXml(l.text)||"&nbsp;"}</div>`).join("");
@@ -14869,6 +14875,7 @@ function Dashboard({user,onLogout}){
   const [breaks,setBreaks]=React.useState([]);
   const [loading,setLoading]=React.useState(true);
   // トレーニングモード：ONの間に作られた予約・会計は「練習用」として分析・KPIに一切カウントされない
+  const [drawerBusy,setDrawerBusy]=React.useState(false); // ヘッダーの「レジを開ける」を送信中
   const [trainingMode,setTrainingMode]=React.useState(()=>{
     try{ return localStorage.getItem("ando_training_mode")==="1"; }catch(e){ return false; }
   });
@@ -16036,6 +16043,17 @@ function Dashboard({user,onLogout}){
               </div>
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
+              <button onClick={async()=>{
+                if(drawerBusy) return;
+                setDrawerBusy(true);
+                try{ await openRegisterDrawer(); showToast("🗄️ レジを開けました"); }
+                catch(e){ alert("❌ レジを開けられませんでした\n\n"+(e.message||"")); }
+                setDrawerBusy(false);
+              }} disabled={drawerBusy} title="レジのドロアを開けます（両替・つり銭の確認など）"
+                style={{display:"flex",alignItems:"center",gap:6,padding:"7px 12px",borderRadius:20,border:"1.5px solid rgba(255,255,255,.25)",background:"rgba(255,255,255,.08)",cursor:drawerBusy?"default":"pointer",fontFamily:"inherit",opacity:drawerBusy?.6:1}}>
+                <span style={{fontSize:14}}>🗄️</span>
+                <span style={{fontSize:12,fontWeight:800,color:"rgba(255,255,255,.85)"}}>{drawerBusy?"開けています…":"レジを開ける"}</span>
+              </button>
               <button onClick={toggleTrainingMode} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 12px",borderRadius:20,border:"1.5px solid "+(trainingMode?"#facc15":"rgba(255,255,255,.25)"),background:trainingMode?"#facc15":"rgba(255,255,255,.1)",cursor:"pointer",fontFamily:"inherit"}}>
                 <span style={{fontSize:14}}>🎓</span>
                 <span style={{fontSize:12,fontWeight:800,color:trainingMode?"#78350f":"rgba(255,255,255,.85)"}}>{trainingMode?"トレーニング中":"トレーニングモード"}</span>
