@@ -9,16 +9,22 @@ import { formatDate } from "@/lib/time";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StoreOverview } from "@/components/store-overview";
-import { PhaseNote } from "@/components/phase-note";
+import { KpiTable } from "@/components/kpi-table";
+import { storeKpis } from "@/server/kpi";
+import { monthOf } from "@/lib/kpi";
+import { jstToday } from "@/lib/time";
 
 export const metadata: Metadata = { title: "GMダッシュボード" };
 
-export default async function GmPage() {
+export default async function GmPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
   if (!(await can("dashboard.gm"))) notFound();
-  const hc = (await holidayChangeQueue()).filter((q) => q.step_kind === "gm_review");
+  const month = monthOf((await searchParams).month, jstToday());
+  const [hcAll, kpis] = await Promise.all([holidayChangeQueue(), storeKpis(month)]);
+  const hc = hcAll.filter((q) => q.step_kind === "gm_review");
   return (
     <>
       <h1 className="text-xl font-black text-brand-800">GMダッシュボード</h1>
+      <KpiTable rows={kpis} month={month} basePath="/gm" title="全院のKPI" />
       <Card className={hc.length ? "border-brand-600" : ""}>
         <CardHeader><CardTitle>振休→アルバイト勤務の確認待ち（{hc.length}件）</CardTitle><Button asChild size="sm"><Link href="/approvals">確認画面へ</Link></Button></CardHeader>
         <CardContent>
@@ -33,7 +39,6 @@ export default async function GmPage() {
         </CardContent>
       </Card>
       <PendingMinutes />
-      <PhaseNote phase="PHASE 9">議事録提出率・承認待ち・有給取得率・年5日未達見込みなど全院のKPIを表示します。</PhaseNote>
       <StoreOverview />
     </>
   );

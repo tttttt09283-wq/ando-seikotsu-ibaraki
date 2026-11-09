@@ -7,6 +7,8 @@ import { buildOrg } from "./fixtures.mjs";
 
 let db, org, FUT;
 const q = (sql, p) => db.client.query(sql, p);
+// 1つの接続を使うので、利用者を切り替える処理は順番に行う（同時に流すと取り違える）
+const seqMap = async (keys, fn) => { const out = []; for (const k of keys) out.push(await fn(k)); return out; };
 async function run(userKey, sql, params = []) {
   await q("begin");
   try {
@@ -109,7 +111,7 @@ test("GMの差戻し→再申請はGMの確認からやり直し。却下は理�
   assert.ok(!(await run("president", "select request_id from mgmt.my_holiday_change_queue()")).some((x) => x.request_id === id));
   // 見る権限：自院の院長・GM・社長・本人は見える、他院の院長は見えない
   const seen = async (key) => (await run(key, "select count(*)::int c from mgmt.holiday_change_requests where id = $1", [id]))[0].c;
-  assert.deepEqual(await Promise.all(["mgr_TSUDA", "gm", "president", "staff_TSUDA"].map(seen)), [1, 1, 1, 1]);
+  assert.deepEqual(await seqMap(["mgr_TSUDA", "gm", "president", "staff_TSUDA"], seen), [1, 1, 1, 1]);
   assert.equal(await seen("mgr_IBARAKI"), 0);
   // 取下げ → 振休は取得予定のまま
   await run("mgr_TSUDA", "select mgmt.withdraw_holiday_change($1)", [id]);

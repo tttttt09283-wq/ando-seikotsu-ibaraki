@@ -7,6 +7,8 @@ import { buildOrg } from "./fixtures.mjs";
 
 let db, org, D;
 const q = (sql, p) => db.client.query(sql, p);
+// 1つの接続を使うので、利用者を切り替える処理は順番に行う（同時に流すと取り違える）
+const seqMap = async (keys, fn) => { const out = []; for (const k of keys) out.push(await fn(k)); return out; };
 async function run(userKey, sql, params = []) {
   await q("begin");
   try {
@@ -111,8 +113,8 @@ test("差戻し→再申請、却下は理由必須、取下げ・取消、見�
 
   // 見る権限：自院の院長・社長・GMは見える。他院の院長・スタッフは見えない
   const seen = async (key) => (await run(key, "select count(*)::int c from mgmt.part_time_requests where id = $1", [id]))[0].c;
-  assert.deepEqual(await Promise.all(["mgr_TSUDA", "president", "gm"].map(seen)), [1, 1, 1]);
-  assert.deepEqual(await Promise.all(["mgr_IBARAKI", "staff_TSUDA"].map(seen)), [0, 0]);
+  assert.deepEqual(await seqMap(["mgr_TSUDA", "president", "gm"], seen), [1, 1, 1]);
+  assert.deepEqual(await seqMap(["mgr_IBARAKI", "staff_TSUDA"], seen), [0, 0]);
   // 直接の書き込みはできない
   await assert.rejects(run("president", "update mgmt.part_time_requests set status = 'approved' where id = $1", [id2]), /permission denied/);
 });

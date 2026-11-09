@@ -121,3 +121,25 @@ describe("社内規定の表示", () => {
     expect(effectiveLabel("2027-01-01", false, "2026-11-11")).toBe("施行前");
   });
 });
+
+import { rate, rateTone, totalRow, monthOf, shiftMonth, type KpiRow } from "./kpi";
+describe("ダッシュボードの KPI", () => {
+  test("率と色分け（色だけに頼らず数値も出す）", () => {
+    expect(rate(2, 3)).toBe(66.7);
+    expect(rate(0, 0)).toBeNull();
+    expect([rateTone(95), rateTone(75), rateTone(10), rateTone(null)]).toEqual(["ok", "warn", "bad", "none"]);
+  });
+  test("合計は件数を足し、率は合計から出す", () => {
+    const base = { store_id: "a", store_name: "A", display_order: 1, staff_count: 3, meetings_held: 2, minutes_submitted: 1, minutes_on_time: 1, minutes_overdue_now: 1,
+      decisions_due: 0, decisions_done: 0, parttime_total: 1, parttime_help: 0, parttime_exception: 0, president_pending: 0, shortage_requests: 0,
+      paid_granted: "10.00", paid_taken: "2.00", five_day_risk: 1, shift_remaining: "1.0", shift_expired: "0", rule_unack: 2 } as KpiRow;
+    const t = totalRow([base, { ...base, store_id: "b", meetings_held: 2, minutes_submitted: 2 }]);
+    expect([t.meetings_held, t.minutes_submitted, t.paid_granted, t.rule_unack]).toEqual([4, 3, 20, 4]);
+    expect(rate(t.minutes_submitted, t.meetings_held)).toBe(75);
+  });
+  test("月の指定", () => {
+    expect(monthOf("2026-13", "2026-11-09")).toBe("2026-11");
+    expect(monthOf("2026-10", "2026-11-09")).toBe("2026-10");
+    expect([shiftMonth("2026-01", -1), shiftMonth("2026-12", 1)]).toEqual(["2025-12", "2027-01"]);
+  });
+});

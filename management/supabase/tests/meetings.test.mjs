@@ -7,6 +7,8 @@ import { buildOrg } from "./fixtures.mjs";
 
 let db, org, D;
 const q = (sql, p) => db.client.query(sql, p);
+// 1つの接続を使うので、利用者を切り替える処理は順番に行う（同時に流すと取り違える）
+const seqMap = async (keys, fn) => { const out = []; for (const k of keys) out.push(await fn(k)); return out; };
 async function run(userKey, sql, params = []) {
   await q("begin");
   try {
@@ -57,8 +59,8 @@ test("院長が自院の会議を登録。他院の院長・スタッフは登�
   for (const key of ["mgr_KORIEN", "staff_IBARAKI", "bmSouth"]) await assert.rejects(create(key, "IBARAKI", D.future), /院長・GM・社長/, key);
   assert.ok(await create("gm", "IBARAKI", D.future, "GM主催の会議"));
   const seen = async (key) => (await run(key, "select count(*)::int c from mgmt.list_meetings() where id = $1", [id]))[0].c;
-  assert.deepEqual(await Promise.all(["mgr_IBARAKI", "staff_IBARAKI", "bmSouth", "gm", "president"].map(seen)), [1, 1, 1, 1, 1]);
-  assert.deepEqual(await Promise.all(["mgr_KORIEN", "mgr_HIRAKATA", "staff_KORIEN"].map(seen)), [0, 0, 0]);
+  assert.deepEqual(await seqMap(["mgr_IBARAKI", "staff_IBARAKI", "bmSouth", "gm", "president"], seen), [1, 1, 1, 1, 1]);
+  assert.deepEqual(await seqMap(["mgr_KORIEN", "mgr_HIRAKATA", "staff_KORIEN"], seen), [0, 0, 0]);
   assert.equal((await run("mgr_KORIEN", "select mgmt.get_meeting($1) m", [id]))[0].m, null);
   const m = (await run("mgr_IBARAKI", "select * from mgmt.list_meetings() where id = $1", [id]))[0];
   assert.equal(m.status, "scheduled");

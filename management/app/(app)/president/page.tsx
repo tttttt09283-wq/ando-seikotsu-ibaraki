@@ -13,18 +13,30 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ruleQueue } from "@/server/rules";
+import { storeKpis, lastJobRun } from "@/server/kpi";
+import { monthOf } from "@/lib/kpi";
+import { jstToday, formatJstDateTime } from "@/lib/time";
+import { KpiTable } from "@/components/kpi-table";
 
 export const metadata: Metadata = { title: "社長ダッシュボード" };
 
-export default async function PresidentPage() {
+export default async function PresidentPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
   if (!(await can("dashboard.president"))) notFound();
-  const [queue, pt, hcAll, rq] = await Promise.all([approvalQueue(), partTimeQueue(), holidayChangeQueue(), ruleQueue()]);
+  const month = monthOf((await searchParams).month, jstToday());
+  const [queue, pt, hcAll, rq, kpis, job] = await Promise.all([approvalQueue(), partTimeQueue(), holidayChangeQueue(), ruleQueue(), storeKpis(month), lastJobRun()]);
   const hc = hcAll.filter((q) => q.step_kind === "president_final");
   const paid = queue.filter((q) => q.kind === "PAID");
   const urgent = pt.filter((q) => q.category === "help").length;
   return (
     <>
       <h1 className="text-xl font-black text-brand-800">社長ダッシュボード</h1>
+      <Link href="/approvals" className={`flex flex-wrap items-baseline gap-3 rounded-xl border-2 px-4 py-3 ${paid.length + pt.length + hc.length + rq.length ? "border-brand-600 bg-brand-50" : "border-stone-200 bg-white"}`}>
+        <span className="text-sm font-bold text-stone-600">承認待ち</span>
+        <span className="text-3xl font-black text-brand-800">{paid.length + pt.length + hc.length + rq.length}<span className="text-base">件</span></span>
+        {urgent ? <span className="rounded bg-red-600 px-2 py-0.5 text-sm font-bold text-white">うち緊急 {urgent}件</span> : null}
+        <span className="text-xs text-stone-600">有給 {paid.length}・アルバイト {pt.length}・振休変更 {hc.length}・規定 {rq.length}</span>
+        <span className="ml-auto text-sm font-bold text-brand-700">承認画面へ ›</span>
+      </Link>
       <Card className={paid.length ? "border-brand-600" : ""}>
         <CardHeader><CardTitle>有給の承認待ち（{paid.length}件）</CardTitle><Button asChild size="sm"><Link href="/approvals">承認画面へ</Link></Button></CardHeader>
         <CardContent>
@@ -81,6 +93,8 @@ export default async function PresidentPage() {
           </ul>
         </CardContent>
       </Card>
+      <KpiTable rows={kpis} month={month} basePath="/president" title="全院の状況" />
+      <p className="text-xs text-stone-500">毎日の自動処理（通知・取得済みの反映）：{job ? `${formatJstDateTime(job.started_at)} に実行${job.error ? `（失敗：${job.error}）` : job.finished_at ? "（正常に終了）" : "（実行中）"}` : "まだ実行されていません"}</p>
       <Card>
         <CardHeader><CardTitle>管理</CardTitle></CardHeader>
         <CardContent className="flex flex-wrap gap-2">
