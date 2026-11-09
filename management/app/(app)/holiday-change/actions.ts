@@ -2,7 +2,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { requireMe } from "@/server/session";
+import { requireMe, requireRecentLogin } from "@/server/session";
 import { friendlyDbError } from "@/lib/db-error";
 import { back } from "@/server/redirect-with";
 
@@ -51,6 +51,7 @@ export async function withdrawHolidayChange(fd: FormData) {
 }
 
 export async function decideHolidayChange(fd: FormData) {
+  await requireRecentLogin(String(fd.get("back_to") || "/approvals"));
   await requireMe();
   const backTo = String(fd.get("back_to") || "/approvals");
   const action = String(fd.get("action"));

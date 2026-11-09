@@ -2,7 +2,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { requirePermission, ForbiddenError } from "@/server/session";
+import { requirePermission, ForbiddenError, requireRecentLogin } from "@/server/session";
 import { friendlyDbError } from "@/lib/db-error";
 import { firstError, formToObject } from "@/lib/validation";
 import { back } from "@/server/redirect-with";
@@ -23,6 +23,7 @@ const adjustSchema = z.object({
   reason: z.string().trim().min(2, "修正理由を入れてください").max(300),
 });
 export async function adjustLeave(fd: FormData) {
+  await requireRecentLogin("/admin/leave");
   const userId = String(fd.get("user_id") ?? "");
   const path = `/staff/${userId}/leave`;
   await guard(path);

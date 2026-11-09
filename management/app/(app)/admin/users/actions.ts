@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { requirePermission, ForbiddenError } from "@/server/session";
+import { requirePermission, ForbiddenError, requireRecentLogin } from "@/server/session";
 import { userSchema, assignmentSchema, globalRoleSchema, firstError, formToObject } from "@/lib/validation";
 import { generateInitialPassword } from "@/lib/password";
 import { friendlyDbError } from "@/lib/db-error";
@@ -29,6 +29,7 @@ async function guardRedirect(path: string) {
 
 // スタッフ登録＋ID・PASSの発行（POSで使っているIDなら、そのアカウントに紐づける）
 export async function registerUser(_prev: IssueState, fd: FormData): Promise<IssueState> {
+  await requireRecentLogin("/admin/users/new");
   const denied = await guardState();
   if (denied) return { error: denied };
   const raw = formToObject(fd);
@@ -62,6 +63,7 @@ export async function registerUser(_prev: IssueState, fd: FormData): Promise<Iss
 
 // PASSの再発行（新しいPASSは画面に1回だけ表示し、保存しない）
 export async function reissuePassword(_prev: IssueState, fd: FormData): Promise<IssueState> {
+  await requireRecentLogin("/admin/users");
   const denied = await guardState();
   if (denied) return { error: denied };
   const userId = String(fd.get("user_id") ?? "");

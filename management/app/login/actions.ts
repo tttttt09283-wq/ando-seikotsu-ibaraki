@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { loginIdDomain } from "@/lib/supabase/env";
 import { toAuthEmail } from "@/lib/login-id";
+import { safeNext } from "@/lib/reauth";
 
 export type LoginState = { error?: string };
 
@@ -19,7 +20,7 @@ export async function signIn(_prev: LoginState, fd: FormData): Promise<LoginStat
     await supabase.auth.signOut();
     return { error: "このIDは業務管理システムに登録されていません。社長に登録を依頼してください" };
   }
-  redirect("/");
+  redirect(safeNext(String(fd.get("next") ?? "")));
 }
 
 export async function signOut() {

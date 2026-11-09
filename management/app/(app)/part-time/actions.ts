@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { requireMe } from "@/server/session";
+import { requireMe, requireRecentLogin } from "@/server/session";
 import { friendlyDbError } from "@/lib/db-error";
 import { formToObject, firstError } from "@/lib/validation";
 import { back } from "@/server/redirect-with";
@@ -84,6 +84,7 @@ export async function cancelPartTime(fd: FormData) {
 }
 
 export async function decidePartTime(fd: FormData) {
+  await requireRecentLogin(String(fd.get("back_to") || "/approvals"));
   await requireMe();
   const backTo = String(fd.get("back_to") || "/approvals");
   const action = String(fd.get("action"));

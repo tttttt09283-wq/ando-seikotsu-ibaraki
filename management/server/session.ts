@@ -3,6 +3,7 @@ import { cache } from "react";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Me } from "@/lib/roles";
+import { needsReauth, reauthHours } from "@/lib/reauth";
 
 // ログイン中の自分（mgmt.me()）。退職・停止中や未登録なら null
 export const getMe = cache(async (): Promise<Me | null> => {
@@ -49,4 +50,14 @@ export async function requirePermission(permission: string, storeId?: string | n
   const me = await requireMe();
   if (!(await can(permission, storeId))) throw new ForbiddenError("この操作を行う権限がありません");
   return me;
+}
+
+// 承認・残数の修正・規定の公開・ID/PASSの発行などの前に呼ぶ。最後にPASSでログインしてから時間が経っていたら、再ログインを求める
+export async function requireRecentLogin(backTo: string): Promise<void> {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) redirect("/login");
+  if (needsReauth(user.last_sign_in_at, new Date(), reauthHours(process.env.REAUTH_HOURS))) {
+    redirect(`/login?e=reauth&next=${encodeURIComponent(backTo.startsWith("/") ? backTo : "/")}`);
+  }
 }

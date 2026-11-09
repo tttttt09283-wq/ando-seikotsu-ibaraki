@@ -7,11 +7,12 @@ import { SubmitButton } from "@/components/submit-button";
 import { ActionForm } from "@/components/action-form";
 import { useFields } from "@/components/use-fields";
 
-export function LoginForm({ notice }: { notice?: string }) {
+export function LoginForm({ notice, next }: { notice?: string; next?: string }) {
   const [state, action, pending] = useActionState<LoginState, FormData>(signIn, {});
   const { bind } = useFields();
   return (
     <ActionForm action={action} pending={pending} className="grid gap-4">
+      {next ? <input type="hidden" name="next" value={next} /> : null}
       {notice ? <Alert tone="warn">{notice}</Alert> : null}
       {state.error ? <Alert tone="danger">{state.error}</Alert> : null}
       <Field label="ログインID" htmlFor="login_id" hint="POSと同じIDです（例：tanaka）">

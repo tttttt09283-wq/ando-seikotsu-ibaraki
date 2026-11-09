@@ -143,3 +143,17 @@ describe("ダッシュボードの KPI", () => {
     expect([shiftMonth("2026-01", -1), shiftMonth("2026-12", 1)]).toEqual(["2025-12", "2027-01"]);
   });
 });
+
+import { needsReauth, reauthHours, safeNext } from "./reauth";
+describe("重要な操作の前の再ログイン", () => {
+  const now = new Date("2026-11-10T12:00:00Z");
+  test("最後のログインから12時間を超えたら再ログイン", () => {
+    expect(needsReauth("2026-11-10T01:00:00Z", now, 12)).toBe(false);
+    expect(needsReauth("2026-11-09T23:59:00Z", now, 12)).toBe(true);
+    expect(needsReauth(null, now, 12)).toBe(true);
+  });
+  test("時間の設定と戻り先", () => {
+    expect([reauthHours(undefined), reauthHours("24"), reauthHours("0"), reauthHours("x")]).toEqual([12, 24, 12, 12]);
+    expect([safeNext("/approvals"), safeNext("//evil.example"), safeNext("https://x"), safeNext(null)]).toEqual(["/approvals", "/", "/", "/"]);
+  });
+});

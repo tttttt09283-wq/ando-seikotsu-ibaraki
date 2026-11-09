@@ -2,7 +2,7 @@
 
 あんど整骨院グループの社内業務管理アプリ。設計は [../docs](../docs/requirements.md)。
 
-**現在：PHASE 9（ダッシュボード・定期処理）まで。本番のデータベース・公開・実データ登録は未実施（承認後に行う）。**
+**現在：PHASE 10（総合テスト・セキュリティ検証・導入手順）まで完了。本番への反映は承認待ち（手順：[docs/rollout.md](../docs/rollout.md)、結果：[docs/test-results.md](../docs/test-results.md)）。本番のデータベース・公開・実データ登録は未実施（承認後に行う）。**
 
 ## できること（PHASE 2）
 
@@ -93,6 +93,14 @@
 | `/api/cron/daily` | 毎日 9:00 JST（`vercel.json` の Cron）。取得済みの反映・議事録期限・有給の期限接近（60日）・期限切れの振休・タスクの期限・月曜は年5日。`CRON_SECRET` で呼び出し元を確かめ、サービスロールで `mgmt.run_daily_jobs()` を呼ぶ |
 
 本番では Vercel の環境変数に `CRON_SECRET`（長いランダムな文字列）と `SUPABASE_SERVICE_ROLE_KEY` を設定する。
+
+## PHASE 10 で追加したもの
+
+- セキュリティ・POSとの共用・性能の自動テスト（`supabase/tests/security.test.mjs`）、本番の戻し方の確認（`rollback.test.mjs`）
+- 承認・規定の公開・残数の修正・CSV取り込み・ID/PASSの発行の前の**再ログイン**（最後のログインから12時間。`REAUTH_HOURS`）
+- 院長の退職・異動で承認する人がいなくなった振休を社長・GMに通知（「承認者不在」）
+- 本番用の SQL（`supabase/production/`：POS の店舗の紐づけ・最初の社長の登録のひな形・戻し方）
+- 導入手順 `docs/rollout.md`、受け入れテスト `docs/acceptance-checklist.md`、テスト結果 `docs/test-results.md`
 
 ## 構成
 

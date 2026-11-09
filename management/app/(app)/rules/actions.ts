@@ -2,7 +2,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { requireMe } from "@/server/session";
+import { requireMe, requireRecentLogin } from "@/server/session";
 import { friendlyDbError } from "@/lib/db-error";
 import { back } from "@/server/redirect-with";
 
@@ -72,10 +72,11 @@ async function simple(fd: FormData, fn: string, ok: string, to: "edit" | "view" 
 }
 export async function withdrawVersion(fd: FormData) { await simple(fd, "withdraw_rule_version", "取り下げて下書きに戻しました"); }
 export async function deleteDraft(fd: FormData) { await simple(fd, "delete_rule_draft", "改定案を削除しました", "view"); }
-export async function publishVersion(fd: FormData) { await simple(fd, "publish_rule_version", "公開しました。対象の人に通知しました", "view"); }
+export async function publishVersion(fd: FormData) { await requireRecentLogin(`/rules/${ruleNo(fd)}/edit`); await simple(fd, "publish_rule_version", "公開しました。対象の人に通知しました", "view"); }
 export async function acknowledgeRule(fd: FormData) { await simple(fd, "acknowledge_rule", "確認しました。ありがとうございます", "view"); }
 
 export async function decideRule(fd: FormData) {
+  await requireRecentLogin(String(fd.get("back_to") || "/approvals"));
   await requireMe();
   const backTo = String(fd.get("back_to") || "/approvals");
   const action = String(fd.get("action"));

@@ -2,7 +2,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { requirePermission, ForbiddenError, can } from "@/server/session";
+import { requirePermission, ForbiddenError, can, requireRecentLogin } from "@/server/session";
 import { decodeCsvBytes, parseCsv, rowsToRecords } from "@/lib/csv";
 import { validateBalanceRecords } from "@/lib/leave/import-balance";
 import { validateStaffRecords, type StaffRowData } from "@/lib/import-staff";
@@ -78,6 +78,7 @@ export async function uploadCsv(fd: FormData) {
 
 // 残数の取り込み（DB の import_commit：1トランザクション）
 export async function commitBalance(fd: FormData) {
+  await requireRecentLogin("/admin/import");
   const id = String(fd.get("batch_id"));
   const path = `${PATH}/${id}`;
   if (!(await can("leave.import"))) back(path, "err", "CSVを取り込む権限がありません");
@@ -103,6 +104,7 @@ export async function rollbackBalance(fd: FormData) {
 export type StaffImportState = { error?: string; results?: { rowNo: number; name: string; loginId: string; password: string | null; linkedExisting: boolean; error?: string }[] };
 
 export async function commitStaff(_prev: StaffImportState, fd: FormData): Promise<StaffImportState> {
+  await requireRecentLogin("/admin/import");
   const id = String(fd.get("batch_id"));
   if (!(await can("master.manage"))) return { error: "スタッフを登録する権限がありません" };
   const supabase = await createClient();

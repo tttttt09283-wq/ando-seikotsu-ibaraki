@@ -2,7 +2,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { requireMe } from "@/server/session";
+import { requireMe, requireRecentLogin } from "@/server/session";
 import { friendlyDbError } from "@/lib/db-error";
 import { normalizeDates, REJECT_CATEGORIES } from "@/lib/leave/requests";
 import { back } from "@/server/redirect-with";
@@ -65,6 +65,7 @@ export async function resubmitLeave(fd: FormData) {
 
 // 承認・差戻し・却下（権限・自己承認・順序・バージョンの判定は DB の decide_leave_step が行う）
 export async function decideLeave(fd: FormData) {
+  await requireRecentLogin(String(fd.get("back_to") || "/approvals"));
   await requireMe();
   const backTo = String(fd.get("back_to") || "/approvals");
   const action = String(fd.get("action"));
