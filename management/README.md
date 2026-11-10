@@ -142,3 +142,8 @@ npm run test:db     # DBテスト：ローカルの PostgreSQL 16 を一時的�
 3. 社長のアカウントを用意し、`mgmt.users` と `mgmt.user_roles`（PRESIDENT）を SQL で1件だけ登録（以降は画面から登録）
 4. Vercel に新しいプロジェクトを作り、Root Directory を `management` にする。環境変数：`NEXT_PUBLIC_SUPABASE_URL`・`NEXT_PUBLIC_SUPABASE_ANON_KEY`・`SUPABASE_SERVICE_ROLE_KEY`・`LOGIN_ID_DOMAIN`
 5. 既存サイト（リポジトリ直下）は `.vercelignore` で `management/` と `docs/` を公開しない。新しいプロジェクトのデプロイで `management/` が除外されていないことを確認する
+
+## 検証用URL（Vercel・ダミーデータ）
+
+検証用 Supabase（`gvtcnarctjqcrgxoifjf`）につないだ試用の Vercel プロジェクト。Root Directory は `management`、ブランチは `claude/youthful-hopper-te8xlt`。
+環境変数は `NEXT_PUBLIC_SUPABASE_URL`・`NEXT_PUBLIC_SUPABASE_ANON_KEY`・`LOGIN_ID_DOMAIN` の3つだけ（サービスロールキー・`CRON_SECRET` は入れない：ID/PASSの発行と定期処理は動かない）。
