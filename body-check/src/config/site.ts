@@ -45,10 +45,9 @@ export const siteConfig = {
   lineAddFriendUrl: "https://lin.ee/UmNuuyy",
   /**
    * シェアされた人に「LINE友だち追加」を必須にするための LIFF ID（LINE Developers で作るアプリのID）。
-   *   未設定のあいだは、「友だち追加してから始める」流れ（追加したかは確かめられない）で動きます。
-   *   設定すると、LINEログイン＋友だちかどうかの確認をしてからでないと始められません。
+   *   LINEログイン＋友だちかどうかの確認をしてからでないと始められません（空にすると「友だち追加してから始める」流れ）。
    */
-  liffId: (process.env.NEXT_PUBLIC_LIFF_ID || "").trim(),
+  liffId: (process.env.NEXT_PUBLIC_LIFF_ID || "2010529910-aRlaZ403").trim(), // エンドポイント https://ando-body-check.vercel.app/s
 } as const;
 
 export { readBookingUrl };
