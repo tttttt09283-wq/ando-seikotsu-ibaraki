@@ -182,3 +182,8 @@ select count(*) from bookings where from_body_check and not cancelled;
 - AI姿勢チェックは、開いたときだけ `cdn.jsdelivr.net` から MediaPipe Pose を読み込みます。判定基準は院内の「体のチェック（AI姿勢分析）」と同じです。
 - `/demo` はメニュー画面を開くので、4つすべてをデモで試せます。
 
+## 10. LINE配信・QRコード用のURL
+
+- **https://ando-body-check.vercel.app/age** … 開くとすぐカラダ年齢チェックの最初の質問（年齢など）から始まります（`/check` へ移動）。メニュー画面は通りません。
+- LINEでこのURLを送ると、「あなたの姿勢・体幹は何歳？」の画像付きカードで表示されます（画像：`public/og-check.png`、文言：`src/app/(app)/check/page.tsx`）。
+- 公開URLが変わったときは、環境変数 `NEXT_PUBLIC_SITE_URL` を設定すると、カードの画像のURLもそれに合わせます。
