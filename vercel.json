@@ -35,6 +35,10 @@
       "destination": "/nail-goods.html"
     },
     {
+      "source": "/hq",
+      "destination": "/hq.html"
+    },
+    {
       "source": "/mandala",
       "destination": "/mandala.html"
     }
