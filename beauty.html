@@ -545,7 +545,7 @@ function App(){
           <label style={C.label}>当院を何でお知りになりましたか？<span style={{color:"#9ca3af",marginLeft:4,fontWeight:500}}>任意</span></label>
           <select value={form.howKnow} onChange={function(e){var v=e.target.value;setForm(function(x){return Object.assign({},x,{howKnow:v});});}} style={C.input}>
             <option value="">選択してください</option>
-            {["Instagram","Threads","Google検索","チラシ①","チラシ②","看板","通りがかり","紹介","LINE","その他"].map(function(o){return <option key={o}>{o}</option>;})}
+            {["Instagram","Threads","Google検索","ティッシュ","看板","通りがかり","紹介","LINE","その他"].map(function(o){return <option key={o}>{o}</option>;})}
           </select>
         </div>}
       </div>}

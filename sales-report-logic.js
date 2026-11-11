@@ -107,7 +107,8 @@
     {key:"sns",label:"SNS（Threads等）",re:/threads|sns|tiktok|facebook|line|x\(|twitter|youtube/i},
     {key:"hotpepper",label:"ホットペッパー",re:/ホットペッパー|hot\s?pepper/i},
     {key:"ekiten",label:"エキテン",re:/エキテン/},
-    {key:"flyer",label:"チラシ",re:/チラシ|ポスティング|ティッシュ/},
+    {key:"tissue",label:"ティッシュ",re:/ティッシュ/},
+    {key:"flyer",label:"チラシ",re:/チラシ|ポスティング/},
     {key:"walkby",label:"通りがかり・看板",re:/通りがかり|看板|近所|通勤/},
     {key:"other",label:"その他",re:/./},
   ];
