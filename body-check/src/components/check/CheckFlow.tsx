@@ -12,7 +12,7 @@ import { CheckIllustration } from "@/components/Illustrations";
 import { buttonStyles, Spinner } from "@/components/ui";
 import { createInitialState, loadState, saveState, type CheckState } from "@/lib/storage";
 import { isDemo } from "@/lib/demo";
-import { readRef, readSource, sendTally } from "@/lib/tally";
+import { appSourceFromUa, readRef, readSource, sendTally } from "@/lib/tally";
 import type { Answers, CheckId } from "@/types";
 import { ConsentContent, SafetyContent, StopNotice } from "./SafetyParts";
 import { StepShell } from "./StepShell";
@@ -51,8 +51,9 @@ export function CheckFlow() {
   useEffect(() => {
     const saved = loadState();
     const base = saved && !saved.completedAt ? saved : createInitialState();
-    // LINE配信（/age → ?src=line）・QRコード（/qr → ?src=qr）など、どこから開いたかを集計用に覚えておく
-    const src = readSource(window.location.search);
+    // LINE配信（/age → ?src=line）・QRコード（/qr → ?src=qr）・Threads（/th）・Instagram（/ig）など、どこから開いたかを集計用に覚えておく
+    // URLに印が無くても、InstagramやThreadsのアプリ内で開いていればそれとして数える
+    const src = readSource(window.location.search) ?? appSourceFromUa(navigator.userAgent || "");
     // シェアされたURLから来た場合は、シェアしてくれた人の紹介コードも覚えておく（来院特典・集計用）
     const ref = readRef(window.location.search);
     let next = base;

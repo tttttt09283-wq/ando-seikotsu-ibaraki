@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTally, isInLine, readRef, readSource } from "./tally";
+import { appSourceFromUa, buildTally, isInLine, readRef, readSource } from "./tally";
 import { createInitialState } from "./storage";
 import { calculateResult } from "./scoring";
 import { estimateBodyAge } from "./bodyAge";
@@ -12,6 +12,14 @@ describe("readSource（どこから開いたか）", () => {
     expect(readSource("?src=<script>")).toBe("script");
     expect(readSource("")).toBeNull();
     expect(readSource("?src=")).toBeNull();
+  });
+});
+
+describe("appSourceFromUa（Instagram・Threadsのアプリ内か）", () => {
+  it("アプリのブラウザを見分ける", () => {
+    expect(appSourceFromUa("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Instagram 320.0.0.0")).toBe("instagram");
+    expect(appSourceFromUa("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Barcelona 330.0.0")).toBe("threads");
+    expect(appSourceFromUa("Mozilla/5.0 (iPhone) Safari/604.1")).toBeNull();
   });
 });
 

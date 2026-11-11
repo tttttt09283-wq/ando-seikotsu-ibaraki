@@ -66,6 +66,13 @@ export function readSource(search: string): string | null {
   }
 }
 
+/** URLに ?src= が無いとき、InstagramやThreadsのアプリの中で開いていれば、それを「どこから」にする */
+export function appSourceFromUa(ua: string): string | null {
+  if (/\bInstagram\b/i.test(ua)) return "instagram";
+  if (/\bBarcelona\b/i.test(ua)) return "threads"; // ThreadsアプリのブラウザはこのUAになる
+  return null;
+}
+
 /** LINEのアプリの中で開いているか */
 export function isInLine(ua: string): boolean {
   return /\bLine\//i.test(ua);
