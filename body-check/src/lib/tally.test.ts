@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTally, isInLine, readSource } from "./tally";
+import { buildTally, isInLine, readRef, readSource } from "./tally";
 import { createInitialState } from "./storage";
 import { calculateResult } from "./scoring";
 import { estimateBodyAge } from "./bodyAge";
@@ -26,7 +26,7 @@ describe("buildTally（送る内容）", () => {
   const state = { ...createInitialState(), source: "line", profile: { age: 45, ageGroup: "40s" as const, sex: "male" as const, symptoms: ["low_back" as const] } };
   it("開始：匿名ID・年齢・性別・症状・どこからだけ（結果は送らない）", () => {
     const b = buildTally("start", state, null, null, "Line/14.0");
-    expect(b).toEqual({ session_id: state.sessionId, event: "start", source: "line", in_line: true, age: 45, sex: "male", symptoms: ["low_back"] });
+    expect(b).toEqual({ session_id: state.sessionId, event: "start", source: "line", in_line: true, nickname: null, share_code: state.sessionId.replace(/-/g, "").slice(0, 10), referred_by: null, age: 45, sex: "male", symptoms: ["low_back"] });
   });
   it("完了：姿勢・体幹年齢・項目ごとの年齢・スコア・ランクを追加", () => {
     const answers: Answers = { plank: { status: "answered", value: 70 }, legs: { status: "answered", value: 27 } };
@@ -39,8 +39,19 @@ describe("buildTally（送る内容）", () => {
     expect(b.rank).toBe(result.rank);
     expect(b.in_line).toBe(false);
   });
-  it("個人を特定できる情報（名前・電話）は含めない", () => {
+  it("電話・メール・LINEのアカウントは含めない（お名前は任意のニックネームだけ）", () => {
     const keys = Object.keys(buildTally("complete", state, calculateResult({}), null));
-    expect(keys.some((k) => /name|phone|mail|line_user/.test(k))).toBe(false);
+    expect(keys.some((k) => /phone|mail|line_user|patient_name/.test(k))).toBe(false);
+  });
+  it("シェアから来た人：紹介コードを送り、どこからは share", () => {
+    const b = buildTally("start", { ...state, source: null, ref: "abc12345", profile: { ...state.profile, nickname: "はなこ" } });
+    expect(b.referred_by).toBe("abc12345");
+    expect(b.source).toBe("share");
+    expect(b.nickname).toBe("はなこ");
+  });
+  it("紹介コードの読み取りは英小文字・数字の6〜16文字だけ", () => {
+    expect(readRef("?ref=ABC12345")).toBe("abc12345");
+    expect(readRef("?ref=ab")).toBeNull();
+    expect(readRef("?ref=abc-123456")).toBeNull();
   });
 });

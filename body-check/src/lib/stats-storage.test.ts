@@ -64,12 +64,12 @@ describe("sanitizeState（ブラウザ内保存データの確認）", () => {
       answers: { legs: { status: "answered", value: 10 }, hack: { status: "skipped" }, balance: "bad" },
     };
     const r = sanitizeState(s)!;
-    expect(r.profile).toEqual({ age: null, ageGroup: null, sex: null, symptoms: ["low_back"] });
+    expect(r.profile).toEqual({ nickname: null, age: null, ageGroup: null, sex: null, symptoms: ["low_back"] });
     expect(Object.keys(r.answers)).toEqual(["legs"]);
   });
   it("実年齢から年代を決め直す", () => {
     const s = { ...createInitialState(), profile: { age: 47, ageGroup: "20s", sex: "male", symptoms: [] } };
-    expect(sanitizeState(s)!.profile).toEqual({ age: 47, ageGroup: "40s", sex: "male", symptoms: [] });
+    expect(sanitizeState(s)!.profile).toEqual({ nickname: null, age: 47, ageGroup: "40s", sex: "male", symptoms: [] });
   });
 });
 
@@ -83,5 +83,25 @@ describe("readBookingUrl（予約URLの設定）", () => {
   });
   it("https のURLは使える", () => {
     expect(readBookingUrl("https://example.com/booking")).toBe("https://example.com/booking");
+  });
+});
+
+describe("ニックネーム・紹介コード", () => {
+  it("ニックネームは前後の空白・< > を除き20文字まで", async () => {
+    const { cleanNickname } = await import("./storage");
+    expect(cleanNickname("  はな<こ>  ")).toBe("はなこ");
+    expect(cleanNickname("   ")).toBeNull();
+    expect(cleanNickname("あ".repeat(30))).toHaveLength(20);
+  });
+  it("保存データのニックネーム・紹介コードを読み直す（不正な紹介コードは捨てる）", () => {
+    const s = { ...createInitialState(), profile: { nickname: " はなこ ", age: 40, symptoms: [] }, ref: "abc12345" };
+    const r = sanitizeState(s)!;
+    expect(r.profile.nickname).toBe("はなこ");
+    expect(r.ref).toBe("abc12345");
+    expect(sanitizeState({ ...s, ref: "<x>" })!.ref).toBeNull();
+  });
+  it("紹介コードは匿名IDの英数字10文字", async () => {
+    const { shareCodeOf } = await import("./storage");
+    expect(shareCodeOf("18E809A8-eb5a-434c-9248-bce8b0766b86")).toBe("18e809a8eb");
   });
 });

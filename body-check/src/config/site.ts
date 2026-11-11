@@ -28,6 +28,27 @@ export const siteConfig = {
   bookingUrl: readBookingUrl(process.env.NEXT_PUBLIC_BOOKING_URL),
   /** 匿名統計の送信を有効にするか（環境変数 NEXT_PUBLIC_STATS_ENABLED=true で有効） */
   statsEnabled: process.env.NEXT_PUBLIC_STATS_ENABLED === "true",
+  /** 公開URL（シェアのリンクに使う）。環境変数 NEXT_PUBLIC_SITE_URL で変えられます */
+  siteUrl: (process.env.NEXT_PUBLIC_SITE_URL || "https://ando-body-check.vercel.app").replace(/\/$/, ""),
+
+  // ===== 来院特典・シェア・LINE =====
+  /**
+   * ★来院したときの特典の文言（結果画面と、シェアされたページに表示します）。
+   *   内容が決まったら、ここを書き換えてください（例：「初回の施術料 1,000円引き」）。
+   */
+  benefit: {
+    title: "来院特典",
+    text: "このチェックの結果画面を受付で見せていただくと、特典をご用意しています。内容は受付でご案内します。",
+    note: "※チェックをした日から1か月以内のご来院が対象です",
+  },
+  /** LINE公式アカウントの友だち追加URL（予約ページなどと同じもの） */
+  lineAddFriendUrl: "https://lin.ee/UmNuuyy",
+  /**
+   * シェアされた人に「LINE友だち追加」を必須にするための LIFF ID（LINE Developers で作るアプリのID）。
+   *   未設定のあいだは、「友だち追加してから始める」流れ（追加したかは確かめられない）で動きます。
+   *   設定すると、LINEログイン＋友だちかどうかの確認をしてからでないと始められません。
+   */
+  liffId: (process.env.NEXT_PUBLIC_LIFF_ID || "").trim(),
 } as const;
 
 export { readBookingUrl };

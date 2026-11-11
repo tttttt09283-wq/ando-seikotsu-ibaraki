@@ -21,6 +21,7 @@ import { useIsDemo } from "@/lib/useDemo";
 import { sendTally } from "@/lib/tally";
 import type { CheckId, ScoreResult } from "@/types";
 import { RadarScoreChart } from "./RadarScoreChart";
+import { BenefitCard, ShareSection } from "./ShareAndBenefit";
 import { SelfCareCard } from "./SelfCareCard";
 
 function formatDate(iso: string): string {
@@ -113,8 +114,11 @@ export function ResultView() {
           bodyAgeUnavailableReason={bodyAgeUnavailableReason}
           date={formatDate(state.completedAt)}
           ageLabel={state.profile.age !== null ? `${state.profile.age}歳` : undefined}
+          nickname={state.profile.nickname ?? null}
         />
         <Messages result={result} />
+        {!demo && <BenefitCard state={state} date={formatDate(state.completedAt)} />}
+        <ShareSection state={state} bodyAge={bodyAge} />
         <StrengthsAndImprovements result={result} />
         <DetailedItemList result={result} feedback={feedback} />
         <ConsultSection feedback={feedback} symptoms={symptomLabels} url={bookingUrl} onClick={onBookingClick} />
@@ -168,12 +172,13 @@ function ScoreGauge({ total }: { total: number }) {
 }
 
 /** スクリーンショットしたくなる、メインの結果カード（姿勢・体幹年齢） */
-function BodyAgeBlock({ bodyAge, unavailableReason }: { bodyAge: BodyAgeResult | null; unavailableReason: string | null }) {
+function BodyAgeBlock({ bodyAge, unavailableReason, nickname }: { bodyAge: BodyAgeResult | null; unavailableReason: string | null; nickname: string | null }) {
+  const who = nickname ? `${nickname}さん` : "あなた";
   if (!bodyAge) {
     return (
       <div className="relative mt-4 rounded-3xl bg-white/15 p-4 text-center">
         <h1 id="score-heading" className="text-sm font-bold">
-          あなたの姿勢・体幹年齢
+          {who}の姿勢・体幹年齢
         </h1>
         <p className="mt-1 text-xs leading-relaxed">{unavailableReason}</p>
       </div>
@@ -182,8 +187,8 @@ function BodyAgeBlock({ bodyAge, unavailableReason }: { bodyAge: BodyAgeResult |
   const tone = bodyAge.comparison === "younger" ? "text-brand-600" : bodyAge.comparison === "older" ? "text-navy-700" : "text-brand-600";
   return (
     <div className="relative mt-4 rounded-3xl bg-white px-4 py-5 text-center text-navy-900 shadow-lg">
-      <h1 id="score-heading" className="whitespace-nowrap text-[13px] font-bold text-brand-700">
-        あなたの姿勢・体幹年齢は
+      <h1 id="score-heading" className="text-[13px] font-bold text-brand-700">
+        {who}の姿勢・体幹年齢は
       </h1>
       <p className="mt-2 font-black leading-none">
         <span className={cx("animate-pop-in inline-block whitespace-nowrap text-[3.5rem] tabular-nums", tone)}>{bodyAge.age}</span>
@@ -219,12 +224,14 @@ function ScoreCard({
   bodyAgeUnavailableReason,
   date,
   ageLabel,
+  nickname,
 }: {
   result: ScoreResult;
   bodyAge: BodyAgeResult | null;
   bodyAgeUnavailableReason: string | null;
   date: string;
   ageLabel?: string;
+  nickname: string | null;
 }) {
   const rank = RANKS.find((r) => r.id === result.rank);
   return (
@@ -239,7 +246,7 @@ function ScoreCard({
         <span>{siteConfig.serviceName}</span>
         <span className="whitespace-nowrap">{date}</span>
       </div>
-      <BodyAgeBlock bodyAge={bodyAge} unavailableReason={bodyAgeUnavailableReason} />
+      <BodyAgeBlock bodyAge={bodyAge} unavailableReason={bodyAgeUnavailableReason} nickname={nickname} />
 
       <h2 className="relative mt-6 text-center text-base font-bold tracking-wider">カラダコンディションスコア</h2>
 

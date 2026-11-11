@@ -13,7 +13,7 @@ export default function PrivacyPage() {
 
         <Card className="space-y-2 text-base leading-relaxed">
           <h2 className="text-lg font-black">取得しない情報</h2>
-          <p>お名前・電話番号・メールアドレス・LINEのアカウント情報など、個人を特定できる情報は取得しません。ログインも不要です。</p>
+          <p>電話番号・メールアドレス・LINEのアカウント情報など、個人を特定できる情報は取得しません。ログインも不要です。お名前の入力は任意で、ニックネームでもかまいません。</p>
         </Card>
 
         <Card className="space-y-2 text-base leading-relaxed">
@@ -26,9 +26,16 @@ export default function PrivacyPage() {
         <Card className="space-y-2 text-base leading-relaxed">
           <h2 className="text-lg font-black">利用数の集計（匿名）</h2>
           <p>
-            何人の方がチェックを始めたか・最後まで行ったかを数えるため、個人を特定できない形で次の情報を当院に送ります：チェックの開始・完了の日時、どこから開いたか（LINE・QRコードなど）、年齢、性別、気になる症状、チェックの結果（姿勢・体幹年齢・スコア・ランク）、予約ボタンを押したかどうか。
+            何人の方がチェックを始めたか・最後まで行ったかを数えるため、次の情報を当院に送ります：チェックの開始・完了の日時、どこから開いたか（LINE・QRコード・シェアなど）、入力したお名前（任意・ニックネーム可）、年齢、性別、気になる症状、チェックの結果（姿勢・体幹年齢・スコア・ランク）、予約ボタンを押したか・結果をシェアしたか、紹介コード。
           </p>
-          <p>お名前・電話番号・メールアドレス・LINEのアカウント情報は送りません。集計した情報は当院のスタッフだけが見られ、サービスの改善とご案内の参考にのみ使います。</p>
+          <p>電話番号・メールアドレス・LINEのアカウント情報は送りません。集計した情報は当院のスタッフだけが見られ、サービスの改善・来院特典の確認・ご案内の参考にのみ使います。</p>
+        </Card>
+
+        <Card className="space-y-2 text-base leading-relaxed">
+          <h2 className="text-lg font-black">結果をシェアした場合</h2>
+          <p>
+            シェアしたURLを開いた方には、あなたが入力したお名前（ニックネーム）と姿勢・体幹年齢だけが表示されます。ほかの回答内容は表示されません。シェアされた方は、当院のLINE公式アカウントを友だち追加してからチェックを始めます。
+          </p>
         </Card>
 
         <Card className="space-y-2 text-base leading-relaxed">

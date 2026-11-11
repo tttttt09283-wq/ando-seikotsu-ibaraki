@@ -12056,6 +12056,8 @@ function BodyCheckStatsPanel({bookings,todayStr}){
   const [to,setTo]=React.useState(todayStr);
   const [rows,setRows]=React.useState(null);
   const [err,setErr]=React.useState("");
+  const [codeQ,setCodeQ]=React.useState("");   // 特典コード・お名前で探す
+  const [found,setFound]=React.useState(null); // 特典コードで探した結果（期間に関係なく）
   const a=from<=to?from:to, b=from<=to?to:from;
   const load=React.useCallback(()=>{
     setRows(null); setErr("");
@@ -12079,8 +12081,8 @@ function BodyCheckStatsPanel({bookings,todayStr}){
   const pairs=done.filter(r=>typeof r.body_age==="number"&&typeof r.age==="number");
   const avgDiff=pairs.length?Math.round(pairs.reduce((s,r)=>s+(r.body_age-r.age),0)/pairs.length*10)/10:null;
   const pct=(n,d)=>d?Math.round(n/d*100):0;
-  const SRC_LABEL={line:"LINE配信（/age）",qr:"QRコード（/qr）",web:"その他（URL直接など）"};
-  const bySrc={}; list.forEach(r=>{ const k=r.source==="line"||r.source==="qr"?r.source:(r.in_line?"line_other":"web"); bySrc[k]=bySrc[k]||{n:0,done:0}; bySrc[k].n++; if(r.completed_at) bySrc[k].done++; });
+  const SRC_LABEL={line:"LINE配信（/age）",qr:"QRコード（/qr）",share:"シェア（友達・家族から）",web:"その他（URL直接など）"};
+  const bySrc={}; list.forEach(r=>{ const k=r.referred_by?"share":r.source==="line"||r.source==="qr"?r.source:(r.in_line?"line_other":"web"); bySrc[k]=bySrc[k]||{n:0,done:0}; bySrc[k].n++; if(r.completed_at) bySrc[k].done++; });
   const SRC_LABEL2={...SRC_LABEL,line_other:"LINEの中で開いた（その他のURL）"};
   const ageGroupOf=v=>typeof v!=="number"?"不明":v<20?"10代":v>=70?"70代以上":`${Math.floor(v/10)*10}代`;
   const AGE_ORDER=["10代","20代","30代","40代","50代","60代","70代以上","不明"];
@@ -12090,6 +12092,25 @@ function BodyCheckStatsPanel({bookings,todayStr}){
   const byRank={S:0,A:0,B:0,C:0}; done.forEach(r=>{ if(byRank[r.rank]!=null) byRank[r.rank]++; });
   const byDay={}; list.forEach(r=>{ const d=jst(r.started_at).slice(0,10); byDay[d]=byDay[d]||{n:0,done:0,book:0}; byDay[d].n++; if(r.completed_at) byDay[d].done++; if(r.booking_clicked) byDay[d].book++; });
   const days=Object.keys(byDay).sort().reverse();
+  // シェア（紹介）
+  const sharedPeople=list.filter(r=>(r.share_count||0)>0);
+  const shareTimes=list.reduce((t,r)=>t+(r.share_count||0),0);
+  const viaShare=list.filter(r=>r.referred_by);
+  const viaShareDone=viaShare.filter(r=>r.completed_at);
+  const nickByCode={}; list.forEach(r=>{ if(r.share_code) nickByCode[r.share_code]=r.nickname||"（名前なし）"; });
+  const benefitCode=r=>r.share_code?String(r.share_code).slice(0,6).toUpperCase():"-";
+  async function findCode(){
+    const q=codeQ.trim(); if(!q) return; setFound(null);
+    const isCode=/^[A-Za-z0-9]{6}$/.test(q);
+    const f=isCode?`?share_code=like.${encodeURIComponent(q.toLowerCase())}*&order=started_at.desc&limit=20`:`?nickname=ilike.*${encodeURIComponent(q)}*&order=started_at.desc&limit=20`;
+    const r=await sb.select("body_check_results",f).catch(()=>[]);
+    let rowsF=Array.isArray(r)?r:[];
+    // 紹介元のお名前も出す
+    const refs=[...new Set(rowsF.map(x=>x.referred_by).filter(Boolean))];
+    let refNick={};
+    if(refs.length){ const rr=await sb.select("body_check_results",`?share_code=in.(${refs.join(",")})&select=share_code,nickname`).catch(()=>[]); if(Array.isArray(rr)) rr.forEach(x=>{ refNick[x.share_code]=x.nickname||"（名前なし）"; }); }
+    setFound(rowsF.map(x=>({...x,refNick:x.referred_by?(refNick[x.referred_by]||"不明"):null})));
+  }
 
   const card={background:"white",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px rgba(0,0,0,.06)",marginBottom:12};
   const h={fontSize:13,fontWeight:800,color:"#1e3a5f",marginBottom:10};
@@ -12105,7 +12126,7 @@ function BodyCheckStatsPanel({bookings,todayStr}){
     <div style={{maxWidth:900,margin:"0 auto"}}>
       <div style={card}>
         <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f"}}>🧍 カラダ年齢チェックの集計</div>
-        <div style={{fontSize:12,color:"#64748b",marginTop:4,lineHeight:1.6}}>LINE配信・QRコードなどから「カラダ年齢チェック」を行った人を自動で数えます（お名前・電話番号などの個人情報は記録していません）。</div>
+        <div style={{fontSize:12,color:"#64748b",marginTop:4,lineHeight:1.6}}>LINE配信・QRコード・シェアなどから「カラダ年齢チェック」を行った人を自動で数えます（お名前は患者様が任意で入れたニックネームです。電話番号などは記録していません）。</div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginTop:10}}>
           {PRESETS.map(([l,f])=>{ const [x,y]=f(); const on=a===x&&b===y; return <button key={l} type="button" onClick={()=>{ setFrom(x); setTo(y); }} style={{padding:"5px 12px",borderRadius:16,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",border:"1.5px solid "+(on?"#1e3a5f":"#e2e8f0"),background:on?"#1e3a5f":"white",color:on?"white":"#475569"}}>{l}</button>; })}
           <input type="date" aria-label="集計の開始日" value={from} onChange={e=>e.target.value&&setFrom(e.target.value)} style={{padding:"5px 8px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13}}/>
@@ -12123,6 +12144,10 @@ function BodyCheckStatsPanel({bookings,todayStr}){
             {big("LINEから",`${fromLine.length}人`,`全体の ${pct(fromLine.length,list.length)}%`,"#06a34a")}
             {big("予約ボタンを押した人",`${booked.length}人`,`完了した人の ${pct(booked.length,done.length)}%`,"#b45309")}
             {big("実際の予約（チェック経由）",`${realBookings.length}件`,"この期間に受けた予約","#7c3aed")}
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:8}}>
+            {big("結果をシェアした人",`${sharedPeople.length}人`,`シェア ${shareTimes}回`,"#0891b2")}
+            {big("シェアから始めた人",`${viaShare.length}人`,`うち完了 ${viaShareDone.length}人`,"#db2777")}
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:8}}>
             {big("平均の姿勢・体幹年齢",bodyAges.length?`${avg(bodyAges)}歳`:"-",`${bodyAges.length}人の平均`)}
@@ -12145,6 +12170,34 @@ function BodyCheckStatsPanel({bookings,todayStr}){
             <span><b>性別：</b>{Object.entries(bySex).map(([k,v])=>`${k} ${v}人`).join("／")||"-"}</span>
             <span><b>ランク：</b>{Object.entries(byRank).map(([k,v])=>`${k} ${v}人`).join("／")}</span>
           </div>
+        </div>
+        <div style={card}>
+          <div style={h}>🎁 来院特典の確認（特典コード・お名前で探す）</div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            <input value={codeQ} onChange={e=>setCodeQ(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter") findCode(); }} placeholder="特典コード（6文字）またはお名前" aria-label="特典コードまたはお名前" style={{flex:"1 1 220px",padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14}}/>
+            <button type="button" onClick={findCode} style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#1e3a5f",color:"white",fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>探す</button>
+          </div>
+          <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>患者様の結果画面に出ている「特典コード」で、チェックをした日・結果・紹介元を確かめられます（期間に関係なく探します）。</div>
+          {found&&(found.length===0?<div style={{fontSize:13,color:"#94a3b8",marginTop:8}}>見つかりませんでした</div>:
+            <div style={{overflowX:"auto",marginTop:8}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:560}}><thead><tr>{["特典コード","お名前","チェック日","年齢","姿勢・体幹年齢","紹介元"].map(x=><th key={x} style={{...th,textAlign:"left"}}>{x}</th>)}</tr></thead><tbody>
+              {found.map(r=><tr key={r.session_id}><td style={{...td,textAlign:"left",fontWeight:800,letterSpacing:2}}>{benefitCode(r)}</td><td style={{...td,textAlign:"left"}}>{r.nickname||"（名前なし）"}</td><td style={{...td,textAlign:"left"}}>{jst(r.started_at).slice(0,10)}</td><td style={{...td,textAlign:"left"}}>{r.age!=null?r.age+"歳":"-"}</td><td style={{...td,textAlign:"left",fontWeight:800}}>{r.body_age!=null?r.body_age+"歳":r.completed_at?"-":"途中"}</td><td style={{...td,textAlign:"left"}}>{r.refNick?`💌 ${r.refNick} さん`:"-"}</td></tr>)}
+            </tbody></table></div>)}
+        </div>
+        <div style={card}>
+          <div style={h}>最近の記録（{list.length}件）</div>
+          {list.length===0?<div style={{fontSize:13,color:"#94a3b8"}}>この期間の記録はまだありません</div>:
+          <div style={{overflowX:"auto",maxHeight:420,overflowY:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:680}}><thead><tr>{["日時","お名前","年齢","姿勢・体幹年齢","特典コード","どこから","シェア","紹介元"].map(x=><th key={x} style={{...th,textAlign:"left",position:"sticky",top:0}}>{x}</th>)}</tr></thead><tbody>
+            {list.slice(0,200).map(r=><tr key={r.session_id}>
+              <td style={{...td,textAlign:"left"}}>{jst(r.started_at).slice(5,16).replace("T"," ").replace("-","/")}</td>
+              <td style={{...td,textAlign:"left",fontWeight:700}}>{r.nickname||<span style={{color:"#94a3b8"}}>（名前なし）</span>}</td>
+              <td style={{...td,textAlign:"left"}}>{r.age!=null?r.age+"歳":"-"}</td>
+              <td style={{...td,textAlign:"left",fontWeight:800}}>{r.body_age!=null?r.body_age+"歳":r.completed_at?"-":<span style={{color:"#d97706"}}>途中</span>}</td>
+              <td style={{...td,textAlign:"left",letterSpacing:2}}>{benefitCode(r)}</td>
+              <td style={{...td,textAlign:"left"}}>{r.referred_by?"シェア":r.source==="line"?"LINE配信":r.source==="qr"?"QR":r.in_line?"LINE":"その他"}</td>
+              <td style={{...td,textAlign:"left"}}>{r.share_count?`${r.share_count}回`:"-"}</td>
+              <td style={{...td,textAlign:"left"}}>{r.referred_by?`💌 ${nickByCode[r.referred_by]||"期間外の人"}`:"-"}</td>
+            </tr>)}
+          </tbody></table></div>}
         </div>
         <div style={card}>
           <div style={h}>日別</div>
