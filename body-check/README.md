@@ -209,6 +209,6 @@ select count(*) from bookings where from_body_check and not cancelled;
 
 1. LINE Developers で、予約ページと同じプロバイダーの **LINEログインチャネル** を開く（「リンクされたLINE公式アカウント」が院の公式アカウントになっていること）
 2. 「LIFF」タブ →「追加」：サイズ Full ／ エンドポイントURL `https://ando-body-check.vercel.app/s` ／ Scope `profile` ／ **友だち追加オプション：On（Aggressive）**
-3. 発行された LIFF ID を、Vercel（ando-body-check）の環境変数 `NEXT_PUBLIC_LIFF_ID` に入れて再デプロイ
+3. 発行された LIFF ID を `src/config/site.ts` の `liffId`（または Vercel の環境変数 `NEXT_PUBLIC_LIFF_ID`）に入れる（設定済み：`2010529910-aRlaZ403`）
    → シェアされた人はLINEログインし、公式アカウントの友だちでないと「チェックを始める」が出ません。
    未設定のあいだは「① 友だち追加 → ② 始める」の順に押す流れ（追加したかは確かめられない）で動きます。
