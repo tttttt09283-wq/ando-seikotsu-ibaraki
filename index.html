@@ -16388,6 +16388,10 @@ function Dashboard({user,onLogout}){
 
   // メニューは「よく使うもの」を上に、使う頻度の低いものは「その他・設定」にまとめて最初は閉じておく
   const SIDEBAR_GROUPS = [
+    // 株式会社Enejoy Hand の本部システム（全院の業績・集客・人材・経理・教育・組織・出店・年間計画・マンダラ）。管理者だけ
+    ...(isAdmin?[{id:"hq",label:"本部（Enejoy Hand）",color:"#0f2744",items:[
+      {id:"hq_system",label:"🏢 本部システム（全院の俯瞰・管理）",icon:"trending",special:"",action:()=>window.open("/hq","_blank")},
+    ]}]:[]),
     {id:"booking",label:"予約・患者",color:"#2563eb",items:[
       {id:"add",label:"新規予約",icon:"plus",special:"btn-add",action:()=>openAdd()},
       {id:"checkin",label:"来院受付",icon:"scan",special:""},

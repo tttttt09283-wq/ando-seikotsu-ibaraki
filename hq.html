@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>本部システム - 株式会社Enejoy Hand</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="/hq-logic.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#eef2f7;color:#1e293b;}
+.topbar{position:sticky;top:0;z-index:20;background:linear-gradient(135deg,#0f2744,#1e4d8c);color:white;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;}
+.topbar .co{font-size:10px;letter-spacing:2px;opacity:.6;}
+.topbar h1{font-size:17px;font-weight:800;}
+.topbar .acts{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+.tb{padding:7px 12px;border-radius:18px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.1);color:white;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;text-decoration:none;}
+.layout{display:flex;min-height:calc(100vh - 58px);}
+.side{width:220px;flex-shrink:0;background:white;border-right:1px solid #e2e8f0;padding:10px 8px;position:sticky;top:58px;height:calc(100vh - 58px);overflow-y:auto;}
+.side button{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border:none;background:none;border-radius:10px;font-size:14px;font-weight:700;color:#334155;cursor:pointer;font-family:inherit;text-align:left;margin-bottom:2px;}
+.side button:hover{background:#f1f5f9;}
+.side button.sel{background:#1e3a5f;color:white;}
+.side .badge{margin-left:auto;background:#dc2626;color:white;border-radius:9px;font-size:10px;padding:1px 6px;}
+.side .sep{font-size:10px;color:#94a3b8;font-weight:800;letter-spacing:1px;padding:12px 12px 4px;}
+.main{flex:1;min-width:0;padding:16px;max-width:1280px;}
+.h2{font-size:19px;font-weight:800;color:#0f2744;margin-bottom:4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.lead{font-size:12.5px;color:#64748b;margin-bottom:14px;line-height:1.7;}
+.card{background:white;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);margin-bottom:14px;overflow:hidden;}
+.card-h{padding:11px 16px;border-bottom:1px solid #f1f5f9;font-weight:800;font-size:14px;color:#1e3a5f;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;}
+.card-b{padding:14px 16px;}
+.grid{display:grid;gap:12px;}
+.g4{grid-template-columns:repeat(auto-fit,minmax(190px,1fr));}
+.g2{grid-template-columns:repeat(auto-fit,minmax(340px,1fr));}
+.tile{background:white;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:14px 16px;cursor:default;}
+.tile.link{cursor:pointer;}
+.tile.link:hover{box-shadow:0 0 0 2px #93c5fd;}
+.tile .k{font-size:11.5px;color:#64748b;font-weight:700;}
+.tile .v{font-size:24px;font-weight:800;color:#0f2744;margin-top:4px;}
+.tile .s{font-size:11.5px;color:#64748b;margin-top:2px;}
+.ok{color:#047857;} .ng{color:#b91c1c;} .warn{color:#b45309;}
+.muted{color:#94a3b8;font-size:13px;}
+.small{font-size:11.5px;color:#64748b;}
+.center{text-align:center;padding:40px;color:#64748b;}
+.err{background:#fef2f2;color:#b91c1c;padding:10px 12px;border-radius:8px;font-size:13px;margin-bottom:10px;line-height:1.6;}
+.note{background:#eff6ff;color:#1e40af;padding:10px 12px;border-radius:8px;font-size:12.5px;margin-bottom:12px;line-height:1.7;}
+.alert{padding:9px 12px;border-radius:10px;font-size:13px;margin-bottom:6px;line-height:1.6;display:flex;gap:8px;align-items:flex-start;cursor:pointer;}
+.alert.ng{background:#fef2f2;border:1px solid #fecaca;color:#991b1b;}
+.alert.warn{background:#fffbeb;border:1px solid #fde68a;color:#92400e;}
+.alert.info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af;}
+.bar{height:8px;background:#e2e8f0;border-radius:4px;overflow:hidden;min-width:60px;}
+.bar>i{display:block;height:100%;background:#f59e0b;}
+.bar.ok>i{background:#16a34a;} .bar.ng>i{background:#dc2626;} .bar.blue>i{background:#2563eb;}
+table{width:100%;border-collapse:collapse;font-size:12.5px;}
+th{background:#f8fafc;padding:7px 8px;text-align:right;font-weight:800;color:#64748b;border-bottom:2px solid #e2e8f0;white-space:nowrap;}
+td{padding:6px 8px;text-align:right;border-bottom:1px solid #f1f5f9;white-space:nowrap;vertical-align:middle;}
+th.l,td.l{text-align:left;}
+td.wrap{white-space:normal;}
+tr.total td{font-weight:800;background:#f8fafc;}
+.scroll{overflow-x:auto;}
+input,select,textarea{padding:6px 8px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;font-family:inherit;background:white;color:#1e293b;}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#3b82f6;}
+textarea{width:100%;min-height:64px;line-height:1.6;}
+input.w100{width:100%;}
+input.num{width:110px;text-align:right;}
+input[type=checkbox]{width:17px;height:17px;vertical-align:middle;cursor:pointer;}
+.btn{padding:8px 14px;border-radius:8px;border:none;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;}
+.btn-blue{background:#1e3a5f;color:white;}
+.btn-gray{background:white;color:#334155;border:1.5px solid #cbd5e1;}
+.btn-sm{padding:5px 10px;font-size:12px;}
+.btn-del{background:none;border:none;color:#94a3b8;cursor:pointer;font-size:15px;padding:2px 6px;}
+.btn-del:hover{color:#dc2626;}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
+.chip{padding:6px 13px;border-radius:18px;border:1.5px solid #e2e8f0;background:white;color:#374151;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;}
+.chip.sel{background:#1e3a5f;color:white;border-color:#1e3a5f;}
+.tag{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:800;background:#f1f5f9;color:#475569;}
+.tag.blue{background:#dbeafe;color:#1e40af;} .tag.green{background:#dcfce7;color:#166534;} .tag.amber{background:#fef3c7;color:#92400e;} .tag.red{background:#fee2e2;color:#991b1b;} .tag.violet{background:#ede9fe;color:#5b21b6;}
+.saving{position:fixed;right:16px;bottom:16px;background:#1e293b;color:white;padding:8px 14px;border-radius:18px;font-size:12px;font-weight:700;z-index:50;opacity:0;transition:opacity .2s;pointer-events:none;}
+.saving.show{opacity:.92;}
+.saving.bad{background:#b91c1c;}
+/* 組織図 */
+.org{display:flex;flex-direction:column;align-items:center;gap:0;}
+.onode{background:white;border:2px solid #cbd5e1;border-radius:12px;padding:8px 14px;text-align:center;min-width:150px;box-shadow:0 1px 3px rgba(0,0,0,.06);}
+.onode .r{font-size:10.5px;color:#64748b;font-weight:800;}
+.onode .n{font-size:14px;font-weight:800;color:#0f2744;}
+.onode.top{border-color:#0f2744;background:linear-gradient(160deg,#eff6ff,#dbeafe);}
+.onode.gm{border-color:#1d4ed8;}
+.onode.bm{border-color:#0891b2;}
+.vline{width:2px;height:18px;background:#cbd5e1;margin:0 auto;}
+.orow{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;align-items:flex-start;}
+.area{border:2px dashed #bae6fd;border-radius:14px;padding:12px;background:#f0f9ff;display:flex;flex-direction:column;align-items:center;}
+.area.direct{border-color:#e2e8f0;background:#f8fafc;}
+.clin{background:white;border:1.5px solid #e2e8f0;border-radius:12px;padding:10px 12px;min-width:170px;max-width:220px;}
+.clin .cn{font-weight:800;font-size:13.5px;color:#0f2744;border-bottom:1px solid #f1f5f9;padding-bottom:5px;margin-bottom:6px;}
+.clin .p{font-size:12px;padding:2px 0;display:flex;justify-content:space-between;gap:6px;}
+.clin .p .g{font-size:10.5px;color:#64748b;font-weight:700;}
+/* マンダラ */
+.mgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;}
+.mcell{border:2px solid #e2e8f0;border-radius:10px;padding:8px;min-height:96px;background:white;display:flex;flex-direction:column;gap:4px;}
+.mcell.c{background:linear-gradient(160deg,#f0fdf4,#dcfce7);border-color:#16a34a;}
+.mcell .t{font-weight:800;font-size:12px;line-height:1.35;}
+.mcell .n{font-size:11px;color:#475569;}
+.st{display:inline-block;padding:1px 7px;border-radius:9px;font-size:10.5px;font-weight:800;}
+.st-未着手{background:#f1f5f9;color:#64748b;} .st-取組中{background:#fef3c7;color:#92400e;} .st-達成{background:#dcfce7;color:#166534;}
+/* 年間計画 */
+.months{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px;}
+.month{background:white;border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.08);padding:10px 12px;}
+.month.now{box-shadow:0 0 0 2px #2563eb;}
+.month .mh{font-weight:800;color:#0f2744;font-size:14px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;}
+.ev{display:flex;gap:6px;align-items:center;padding:4px 0;border-bottom:1px dashed #f1f5f9;font-size:12.5px;}
+.ev input[type=text]{flex:1;min-width:0;}
+.ev.done input[type=text]{text-decoration:line-through;color:#94a3b8;}
+/* 出店 */
+.plan{border:1.5px solid #e2e8f0;border-radius:12px;padding:12px 14px;margin-bottom:12px;background:white;}
+.form{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px 12px;margin-bottom:10px;}
+.form label{display:block;font-size:11px;font-weight:800;color:#64748b;margin-bottom:3px;}
+.form input,.form select{width:100%;}
+.ms{display:flex;gap:8px;align-items:center;padding:4px 0;font-size:13px;}
+.ms input[type=text]{flex:1;min-width:0;}
+.ms.done input[type=text]{text-decoration:line-through;color:#94a3b8;}
+.ms.late input[type=date]{border-color:#fca5a5;background:#fef2f2;}
+iframe.embed{width:100%;height:80vh;border:none;border-radius:12px;background:white;box-shadow:0 1px 3px rgba(0,0,0,.08);}
+/* ログイン */
+.login{max-width:380px;margin:60px auto;background:white;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,.12);overflow:hidden;}
+.login .lh{background:linear-gradient(135deg,#0f2744,#1e4d8c);color:white;padding:22px;text-align:center;}
+.login .lb{padding:22px;display:flex;flex-direction:column;gap:10px;}
+.login input{width:100%;padding:11px 12px;font-size:15px;}
+.login .btn{padding:12px;font-size:15px;}
+@media (max-width:860px){
+  .layout{flex-direction:column;}
+  .side{width:auto;height:auto;position:sticky;top:0;display:flex;overflow-x:auto;padding:6px;gap:4px;border-right:none;border-bottom:1px solid #e2e8f0;z-index:15;}
+  .side button{width:auto;white-space:nowrap;padding:8px 11px;font-size:13px;margin:0;}
+  .side .sep{display:none;}
+  .topbar{position:static;}
+  .main{padding:12px;}
+  .g2{grid-template-columns:1fr;}
+  .g4{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
+  .tile{padding:10px 12px;} .tile .v{font-size:19px;}
+}
+@media print{ .side,.topbar,.saving,.noprint{display:none !important;} .main{padding:0;} body{background:white;} }
+</style>
+</head>
+<body>
+<div id="app"><div class="center">読み込み中...</div></div>
+<div class="saving" id="saving"></div>
+<script>
+const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
+const LOGIN_ID_DOMAIN = "ando.jp";
+// /incentive・/mandala と同じログイン（同じタブの sessionStorage）。本部の画面の中で開く評価・マンダラもそのまま使える
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
+});
+
+const app = document.getElementById("app");
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const yen = (v) => (v === null || v === undefined || !isFinite(v)) ? "-" : (v < 0 ? "-¥" : "¥") + Math.abs(Math.round(v)).toLocaleString("ja-JP");
+const man = (v) => (v === null || v === undefined || !isFinite(v)) ? "-" : `${(Math.round(v / 1000) / 10).toLocaleString("ja-JP")}万円`;
+const pct = (r, d = 1) => (r === null || r === undefined || !isFinite(r)) ? "-" : `${(Math.round(r * 100 * 10 ** d) / 10 ** d).toFixed(d)}%`;
+const rateCls = (r) => r === null || r === undefined ? "" : r >= 1 ? "ok" : r >= 0.8 ? "warn" : "ng";
+const bar = (r, cls) => r === null || r === undefined ? "" : `<div class="bar ${cls || (r >= 1 ? "ok" : r < 0.8 ? "ng" : "")}"><i style="width:${Math.max(0, Math.min(100, r * 100))}%"></i></div>`;
+const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
+const jstToday = () => new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10);
+const todayStr = jstToday();
+const thisMonth = todayStr.slice(0, 7);
+const monthLabel = (k) => { const [y, m] = k.split("-"); return `${y}年${Number(m)}月`; };
+
+// ===== 状態 =====
+const S = {
+  user: null, sec: lsGet("hq_sec") || "dashboard",
+  model: null, modelErr: null,
+  docs: {}, docsErr: null,
+  bookings: null, bookingsErr: null, stores: [],
+  mandala: null, mandalaErr: null, mandalaMonth: thisMonth,
+  ui: {},
+};
+if (!HQ.SECTIONS.some((s) => s.id === S.sec)) S.sec = "dashboard";
+
+// ===== 通信 =====
+async function token() {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  return session ? session.access_token : null;
+}
+async function rest(path, opt = {}) {
+  const t = await token();
+  if (!t) { S.user = null; render(); throw new Error("ログインの有効期限が切れました。ログインし直してください"); }
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    method: opt.method || "GET",
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${t}`, "Content-Type": "application/json", ...(opt.headers || {}) },
+    body: opt.body ? JSON.stringify(opt.body) : undefined,
+  });
+  const text = await res.text();
+  const json = text ? JSON.parse(text) : null;
+  if (!res.ok) throw new Error((json && (json.message || json.error)) || `HTTP ${res.status}`);
+  return json;
+}
+async function selectAll(table, query) {
+  const out = [];
+  for (let off = 0; ; off += 1000) {
+    const rows = await rest(`${table}?${query}&order=id.asc&limit=1000&offset=${off}`);
+    out.push(...rows);
+    if (rows.length < 1000) return out;
+  }
+}
+async function apiGet(path) {
+  const t = await token();
+  const res = await fetch(path, { headers: { Authorization: `Bearer ${t}` } });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `読み込みに失敗しました（HTTP ${res.status}）`);
+  return json;
+}
+
+// ===== 本部の台帳（hq_docs） =====
+const DOC_KEYS = ["org", "people", "accounting", "education", "career", "expansion", "annual", "marketing"];
+const saveTimers = {};
+function doc(key) {
+  if (!S.docs[key]) S.docs[key] = {};
+  return S.docs[key];
+}
+function flash(msg, bad) {
+  const el = document.getElementById("saving");
+  el.textContent = msg; el.className = "saving show" + (bad ? " bad" : "");
+  clearTimeout(flash.t); flash.t = setTimeout(() => { el.className = "saving" + (bad ? " bad" : ""); }, bad ? 5000 : 1400);
+}
+function saveDoc(key) {
+  clearTimeout(saveTimers[key]);
+  flash("保存中…");
+  saveTimers[key] = setTimeout(async () => {
+    try {
+      await rest("hq_docs?on_conflict=key", {
+        method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+        body: { key, data: doc(key), updated_at: new Date().toISOString(), updated_by: S.user ? S.user.name : null },
+      });
+      flash("✓ 保存しました");
+    } catch (e) { flash("保存できませんでした：" + e.message, true); }
+  }, 500);
+}
+// パス "plans.#id.milestones.0.done" をたどる（#id は配列の中の id で探す）
+function walk(obj, parts, create) {
+  let cur = obj;
+  for (const p of parts) {
+    if (cur === null || cur === undefined) return undefined;
+    if (p.startsWith("#")) cur = Array.isArray(cur) ? cur.find((x) => x && x.id === p.slice(1)) : undefined;
+    else {
+      if ((cur[p] === undefined || cur[p] === null) && create) cur[p] = {};
+      cur = cur[p];
+    }
+  }
+  return cur;
+}
+function setPath(key, path, value) {
+  const parts = path.split(".");
+  const last = parts.pop();
+  const parent = walk(doc(key), parts, true);
+  if (!parent) return;
+  if (last.startsWith("#")) return;
+  parent[last] = value;
+}
+function arr(key, path) {
+  const parts = path.split(".");
+  const last = parts.pop();
+  const parent = walk(doc(key), parts, true);
+  if (!Array.isArray(parent[last])) parent[last] = [];
+  return parent[last];
+}
+function addItem(key, path, item) { arr(key, path).push(item); saveDoc(key); render(); }
+function removeItem(key, path, id, label) {
+  if (!confirm(`「${label || "この行"}」を削除しますか？`)) return;
+  const a = arr(key, path); const i = a.findIndex((x) => x.id === id);
+  if (i >= 0) a.splice(i, 1);
+  saveDoc(key); render();
+}
+// 入力欄（変更したら保存。data-r があれば画面を描き直す）
+function inp(key, path, value, o = {}) {
+  const type = o.type || "text";
+  return `<input type="${type}" data-doc="${key}" data-path="${esc(path)}" ${o.num ? 'data-num="1" inputmode="numeric"' : ""} ${o.r ? 'data-r="1"' : ""} class="${o.cls || (o.num ? "num" : "")}" ${o.ph ? `placeholder="${esc(o.ph)}"` : ""} ${o.style ? `style="${o.style}"` : ""} value="${esc(value ?? "")}"/>`;
+}
+function sel(key, path, value, options, o = {}) {
+  return `<select data-doc="${key}" data-path="${esc(path)}" data-r="1" ${o.style ? `style="${o.style}"` : ""}>${o.blank !== undefined ? `<option value="">${esc(o.blank)}</option>` : ""}${options.map((x) => { const [v, l] = Array.isArray(x) ? x : [x, x]; return `<option value="${esc(v)}" ${String(v) === String(value ?? "") ? "selected" : ""}>${esc(l)}</option>`; }).join("")}</select>`;
+}
+function chk(key, path, checked) {
+  return `<input type="checkbox" data-doc="${key}" data-path="${esc(path)}" data-r="1" ${checked ? "checked" : ""}/>`;
+}
+function area(key, path, value, ph) {
+  return `<textarea data-doc="${key}" data-path="${esc(path)}" ${ph ? `placeholder="${esc(ph)}"` : ""}>${esc(value ?? "")}</textarea>`;
+}
+document.addEventListener("change", (e) => {
+  const el = e.target;
+  if (!el.dataset || !el.dataset.doc) return;
+  let v = el.type === "checkbox" ? el.checked : el.value;
+  if (el.dataset.num) v = v === "" ? null : Number(String(v).replace(/[,，¥円\s]/g, ""));
+  if (el.dataset.num && v !== null && !isFinite(v)) { alert("数字で入力してください"); return; }
+  setPath(el.dataset.doc, el.dataset.path, v);
+  saveDoc(el.dataset.doc);
+  if (el.dataset.r) render();
+});
+
+// ===== 読み込み =====
+async function loadAll() {
+  render();
+  const jobs = [
+    apiGet("/api/incentive").then((m) => { S.model = m; S.modelErr = null; }).catch((e) => { S.modelErr = e.message; }),
+    rest("hq_docs?select=key,data").then((rows) => { S.docs = {}; (rows || []).forEach((r) => { S.docs[r.key] = r.data || {}; }); S.docsErr = null; })
+      .catch((e) => { S.docsErr = /hq_docs/.test(e.message) ? "本部の保存先（hq_docs テーブル）がまだありません。sql/2026-11-11_hq_docs.sql を Supabase で実行してください" : e.message; }),
+    rest("stores?select=id,name,active").then((r) => { S.stores = r || []; }).catch(() => {}),
+    selectAll("bookings", "select=id,patient_name,date,store_id,how_know,cancelled,is_training").then((b) => { S.bookings = b; }).catch((e) => { S.bookingsErr = e.message; }),
+  ];
+  await Promise.all(jobs.map((j) => j.then(render)));
+}
+async function refreshModel() {
+  S.model = null; S.modelErr = null; render();
+  try { S.model = await apiGet("/api/incentive?refresh=1"); } catch (e) { S.modelErr = e.message; }
+  render();
+}
+async function loadMandala() {
+  S.mandala = "loading"; S.mandalaErr = null;
+  try { S.mandala = await apiGet(`/api/mandala?month=${S.mandalaMonth}`); } catch (e) { S.mandala = null; S.mandalaErr = e.message; }
+  render();
+}
+
+// ===== 共通の計算 =====
+function people() { return (S.model && S.model.people) || []; }
+function clinicNames() { return ((S.model && S.model.clinics) || []).map((c) => c.name); }
+function perf() { return S.model ? HQ.performance(S.model.clinics, S.model.latestMonth) : null; }
+function storesById() { return Object.fromEntries((S.stores || []).map((s) => [s.id, String(s.name).replace(/^あんど整骨院[\s　]*/, "")])); }
+function np() { return S.bookings ? HQ.newPatients(S.bookings, storesById()) : null; }
+function accDoc() { const a = doc("accounting"); if (!a.routines) a.routines = HQ.DEFAULT_ROUTINES.map((r) => ({ ...r })); return a; }
+function orgDoc() { const o = doc("org"); if (!o.depts) o.depts = HQ.DEFAULT_DEPTS.map((d) => ({ ...d })); return o; }
+function alertsNow() {
+  if (!S.model) return [];
+  return HQ.alerts({ model: S.model, perf: perf(), docs: { ...S.docs, accounting: accDoc() }, todayStr, monthKey: thisMonth });
+}
+function latestLabel() {
+  if (!S.model || !S.model.latestMonth) return "-";
+  return monthLabel(HQ.monthKeyInFiscal(S.model.fiscalYear, S.model.latestMonth));
+}
+function needModel() {
+  if (S.modelErr) return `<div class="err">台帳（キャリア制度・人件費42%管理台帳）を読み込めませんでした：${esc(S.modelErr)}<br><button class="btn btn-gray btn-sm" style="margin-top:6px;" onclick="refreshModel()">もう一度読み込む</button></div>`;
+  if (!S.model) return `<div class="center">台帳を読み込み中...</div>`;
+  return "";
+}
+function go(sec) { S.sec = sec; lsSet("hq_sec", sec); render(); window.scrollTo(0, 0); }
+function ui(k, v) { S.ui[k] = v; render(); }
+function personName(key) { const p = people().find((x) => x.key === key); return p ? p.name : key; }
+function personOptions() { return [...people()].sort((a, b) => HQ.gradeRank(a.grade) - HQ.gradeRank(b.grade)).map((p) => [p.key, `${p.name}（${p.grade || "-"}・${(p.clinics || []).join("・") || "所属なし"}）`]); }
+function staffNames() { return people().map((p) => p.name); }
+
+// ===== 画面 =====
+function render() {
+  if (!S.user) { renderLogin(); return; }
+  if (S.user.denied) {
+    app.innerHTML = `${topbar()}<div class="login"><div class="lh"><b>本部システム</b></div><div class="lb"><div class="err">このアカウント（${esc(S.user.email)}）には本部システムの権限がありません。本部システムは管理者（社長・本部）のアカウントだけが使えます。</div><button class="btn btn-gray" onclick="logout()">ログアウト</button></div></div>`;
+    return;
+  }
+  const y = window.scrollY;
+  const active = document.activeElement;
+  const focusKey = active && active.dataset && active.dataset.path ? `${active.dataset.doc}|${active.dataset.path}` : null;
+  const al = alertsNow();
+  const badge = (id) => { const n = al.filter((a) => a.section === id && a.level !== "info").length; return n ? `<span class="badge">${n}</span>` : ""; };
+  const side = HQ.SECTIONS.map((s, i) => `${i === 1 ? '<div class="sep">部門</div>' : ""}${i === 6 ? '<div class="sep">組織・計画</div>' : ""}<button class="${S.sec === s.id ? "sel" : ""}" onclick="go('${s.id}')"><span>${s.icon}</span>${esc(s.label)}${s.id === "dashboard" ? (al.filter((a) => a.level === "ng").length ? `<span class="badge">${al.filter((a) => a.level === "ng").length}</span>` : "") : badge(s.id)}</button>`).join("");
+  const fn = { dashboard: secDashboard, performance: secPerformance, marketing: secMarketing, people: secPeople, accounting: secAccounting, education: secEducation, org: secOrg, career: secCareer, expansion: secExpansion, annual: secAnnual, mandala: secMandala }[S.sec];
+  let body;
+  try { body = fn(); } catch (e) { console.error(e); body = `<div class="err">表示できませんでした：${esc(e.message)}</div>`; }
+  app.innerHTML = `${topbar()}<div class="layout"><nav class="side">${side}</nav><main class="main">${S.docsErr ? `<div class="err">${esc(S.docsErr)}</div>` : ""}${body}</main></div>`;
+  window.scrollTo(0, y);
+  if (focusKey) {
+    const [d, p] = focusKey.split("|");
+    const el = [...document.querySelectorAll("[data-path]")].find((x) => x.dataset.doc === d && x.dataset.path === p);
+    if (el) el.focus();
+  }
+}
+function topbar() {
+  return `<div class="topbar"><div><div class="co">${esc(HQ.COMPANY_NAME)}</div><h1>🏢 本部システム</h1></div>
+    <div class="acts noprint">
+      <a class="tb" href="/" target="_blank">📅 予約管理</a>
+      <a class="tb" href="/incentive" target="_blank">💴 評価・インセンティブ</a>
+      ${S.user ? `<button class="tb" onclick="refreshModel()">🔄 台帳を再読込</button><span style="font-size:12px;opacity:.85;">${esc(S.user.name || S.user.email)}</span><button class="tb" onclick="logout()">ログアウト</button>` : ""}
+    </div></div>`;
+}
+
+// ---------- ダッシュボード ----------
+function secDashboard() {
+  const head = `<div class="h2">📊 ダッシュボード</div><div class="lead">${esc(HQ.COMPANY_NAME)}の全院・全部門を1画面で俯瞰します。数字は台帳（最新月：${esc(latestLabel())}）と予約システムから自動で集計しています。</div>`;
+  const nm = needModel();
+  if (nm) return head + nm;
+  const p = perf();
+  const labor = HQ.laborSummary(S.model);
+  const npRows = np();
+  const npNow = npRows ? (npRows.find((r) => r.month === thisMonth) || { total: 0 }).total : null;
+  const npPrev = npRows ? (npRows.find((r) => r.month === HQ.shiftMonth(thisMonth, -1)) || { total: 0 }).total : null;
+  const exp = (doc("expansion").plans || []).filter((x) => x.status !== "開業済み" && x.status !== "見送り");
+  const nextOpen = exp.filter((x) => x.openDate).sort((a, b) => a.openDate.localeCompare(b.openDate))[0];
+  const cand = doc("people").candidates || [];
+  const activeCand = cand.filter((c) => !["入社", "辞退・不採用"].includes(c.status)).length;
+  const tr = HQ.trainingStats(doc("education").trainings, people());
+  const tiles = [
+    ["performance", "全社売上（" + latestLabel() + "）", man(p.latest && p.latest.actual), `予算 ${man(p.latest && p.latest.budget)}・達成率 <b class="${rateCls(p.latest && p.latest.rate)}">${pct(p.latest && p.latest.rate)}</b>`],
+    ["performance", `年度累計（${S.model.fiscalYear}年度）`, man(p.total.actual), `年間予算の <b>${pct(p.total.yearProgress)}</b>・累計達成率 <b class="${rateCls(p.total.rate)}">${pct(p.total.rate)}</b>`],
+    ["accounting", "人件費率" + (labor ? `（${labor.label}）` : ""), labor ? `<span class="${labor.over ? "ng" : "ok"}">${pct(labor.rate)}</span>` : "-", `上限 42%・残り枠 ${labor ? yen(labor.room) : "-"}`],
+    ["marketing", "新患数（今月・予約システム）", npNow === null ? "…" : `${npNow}名`, `先月 ${npPrev === null ? "-" : npPrev + "名"}`],
+    ["people", "在籍スタッフ", `${people().length}名`, `${clinicNames().length}院・採用選考中 ${activeCand}名`],
+    ["expansion", "出店計画", `${exp.length}件`, nextOpen ? `次の開業：${esc(nextOpen.name || "")}（${esc(nextOpen.openDate)}）` : "開業予定日の入った計画はありません"],
+    ["education", "研修", `${tr.done}/${tr.total}件`, `実施済み／登録・予定 ${tr.planned}件`],
+    ["annual", "今月の年間計画", `${(doc("annual").events || []).filter((e) => e.month === thisMonth).length}件`, `未完了 ${(doc("annual").events || []).filter((e) => e.month === thisMonth && !e.done).length}件`],
+  ].map(([sec, k, v, s]) => `<div class="tile link" onclick="go('${sec}')"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
+  const al = alertsNow();
+  const alertsHtml = al.length ? al.map((a) => `<div class="alert ${a.level}" onclick="go('${a.section}')"><span>${a.level === "ng" ? "🚨" : a.level === "warn" ? "⚠️" : "📌"}</span><span>${esc(a.text)}</span></div>`).join("") : `<div class="muted">いま注意が必要な項目はありません 👍</div>`;
+  const clin = p.rows.map((r) => `<tr><td class="l"><b>${esc(r.name)}</b><div class="small">${esc(r.manager || "院長未設定")}${r.bm ? "・BM " + esc(r.bm) : ""}</div></td>
+    <td>${man(r.latest && r.latest.actual)}</td><td class="${rateCls(r.latest && r.latest.rate)}"><b>${pct(r.latest && r.latest.rate)}</b></td><td style="width:120px;">${bar(r.latest && r.latest.rate)}</td>
+    <td class="${rateCls(r.rate)}">${pct(r.rate)}</td><td class="${r.laborRate > HQ.LABOR_CAP_RATE ? "ng" : ""}">${S.model.canSeeLabor ? pct(r.laborRate) : "-"}</td></tr>`).join("");
+  const routines = HQ.routineStatus(accDoc().routines, accDoc().done, thisMonth, todayStr).filter((r) => !r.done).slice(0, 6);
+  const events = (doc("annual").events || []).filter((e) => e.month === thisMonth);
+  return head + `<div class="grid g4" style="margin-bottom:14px;">${tiles}</div>
+    <div class="grid g2">
+      <div class="card"><div class="card-h">🚨 アラート（${al.length}件）</div><div class="card-b">${alertsHtml}</div></div>
+      <div class="card"><div class="card-h">🗓 今月（${monthLabel(thisMonth)}）のやること</div><div class="card-b">
+        <div class="small" style="font-weight:800;margin-bottom:4px;">年間計画</div>
+        ${events.length ? events.map((e) => `<div class="ev ${e.done ? "done" : ""}">${chk("annual", `events.#${e.id}.done`, e.done)}<span class="tag">${esc(e.cat || "全社")}</span><span>${esc(e.title)}</span><span class="small" style="margin-left:auto;">${esc(e.owner || "")}</span></div>`).join("") : `<div class="muted">登録がありません（「年間計画」から追加）</div>`}
+        <div class="small" style="font-weight:800;margin:10px 0 4px;">経理・事務（未完了）</div>
+        ${routines.length ? routines.map((r) => `<div class="ev">${chk("accounting", `done.${thisMonth}.${r.id}`, false)}<span class="${r.overdue ? "ng" : ""}">${esc(r.title)}</span><span class="small ${r.overdue ? "ng" : ""}" style="margin-left:auto;">${r.due.slice(5).replace("-", "/")}まで</span></div>`).join("") : `<div class="muted">今月の定例はすべて完了しています</div>`}
+      </div></div>
+    </div>
+    <div class="card"><div class="card-h"><span>🏥 院別の状況（${esc(latestLabel())}）</span><button class="btn btn-gray btn-sm" onclick="go('performance')">業績の詳細 →</button></div><div class="card-b scroll">
+      <table><tr><th class="l">院</th><th>売上</th><th>達成率</th><th></th><th>年度累計達成率</th><th>人件費率</th></tr>${clin}
+      <tr class="total"><td class="l">全社</td><td>${man(p.latest && p.latest.actual)}</td><td class="${rateCls(p.latest && p.latest.rate)}">${pct(p.latest && p.latest.rate)}</td><td>${bar(p.latest && p.latest.rate)}</td><td class="${rateCls(p.total.rate)}">${pct(p.total.rate)}</td><td>${labor ? pct(labor.rate) : "-"}</td></tr></table>
+    </div></div>`;
+}
+
+// ---------- 業績 ----------
+function secPerformance() {
+  const head = `<div class="h2">📈 業績</div><div class="lead">院ごとの売上予算と実績（7月始まりの年度）。数字は「進捗売上実績」シート・台帳から自動で読み込みます。</div>`;
+  const nm = needModel();
+  if (nm) return head + nm;
+  const p = perf();
+  const fy = S.model.fiscalYear;
+  const view = S.ui.perfView || "actual";
+  const cell = (m) => {
+    if (!m) return "<td>-</td>";
+    const r = m.budget && m.actual !== null && m.actual !== undefined ? m.actual / m.budget : null;
+    if (view === "budget") return `<td>${man(m.budget)}</td>`;
+    if (view === "rate") return `<td class="${rateCls(r)}">${pct(r, 0)}</td>`;
+    return `<td>${m.actual === null || m.actual === undefined ? '<span class="muted">-</span>' : man(m.actual)}</td>`;
+  };
+  const rows = S.model.clinics.map((c) => `<tr><td class="l"><b>${esc(c.name)}</b></td>${HQ.FISCAL_MONTHS.map((m) => cell(c.months.find((x) => x.month === m))).join("")}
+    <td><b>${view === "budget" ? man(p.rows.find((r) => r.name === c.name).yearBudget) : view === "rate" ? `<span class="${rateCls(p.rows.find((r) => r.name === c.name).rate)}">${pct(p.rows.find((r) => r.name === c.name).rate, 0)}</span>` : man(p.rows.find((r) => r.name === c.name).actual)}</b></td></tr>`).join("");
+  const total = `<tr class="total"><td class="l">全社</td>${p.monthly.map((m) => view === "budget" ? `<td>${man(m.budget)}</td>` : view === "rate" ? `<td class="${rateCls(m.rate)}">${pct(m.rate, 0)}</td>` : `<td>${man(m.actual)}</td>`).join("")}<td>${view === "budget" ? man(p.total.yearBudget) : view === "rate" ? pct(p.total.rate, 0) : man(p.total.actual)}</td></tr>`;
+  const max = Math.max(1, ...p.monthly.map((m) => Math.max(m.budget || 0, m.actual || 0)));
+  const chart = `<div style="display:flex;align-items:flex-end;gap:6px;height:170px;padding-top:10px;">${p.monthly.map((m) => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0;">
+      <div style="display:flex;align-items:flex-end;gap:2px;height:140px;width:100%;justify-content:center;">
+        <div title="予算 ${yen(m.budget)}" style="width:40%;max-width:18px;background:#cbd5e1;border-radius:3px 3px 0 0;height:${(m.budget || 0) / max * 100}%;"></div>
+        <div title="実績 ${yen(m.actual)}" style="width:40%;max-width:18px;background:${m.rate === null ? "#e2e8f0" : m.rate >= 1 ? "#16a34a" : m.rate >= 0.8 ? "#f59e0b" : "#dc2626"};border-radius:3px 3px 0 0;height:${(m.actual || 0) / max * 100}%;"></div>
+      </div><div class="small">${m.month}月</div></div>`).join("")}</div>
+    <div class="small" style="margin-top:6px;"><span style="display:inline-block;width:10px;height:10px;background:#cbd5e1;border-radius:2px;"></span> 予算　<span style="display:inline-block;width:10px;height:10px;background:#16a34a;border-radius:2px;"></span> 実績（達成）　<span style="display:inline-block;width:10px;height:10px;background:#f59e0b;border-radius:2px;"></span> 80〜99%　<span style="display:inline-block;width:10px;height:10px;background:#dc2626;border-radius:2px;"></span> 80%未満</div>`;
+  const ytd = p.rows.map((r) => `<tr><td class="l"><b>${esc(r.name)}</b></td><td class="l">${esc(r.manager || "-")}</td><td class="l">${esc(r.bm || "-")}</td><td>${man(r.budget)}</td><td>${man(r.actual)}</td><td class="${rateCls(r.rate)}"><b>${pct(r.rate)}</b></td><td style="width:110px;">${bar(r.rate)}</td><td>${man(r.yearBudget)}</td><td>${pct(r.yearProgress)}</td></tr>`).join("");
+  return head + `<div class="grid g4" style="margin-bottom:14px;">
+      <div class="tile"><div class="k">${esc(latestLabel())} 全社売上</div><div class="v">${man(p.latest && p.latest.actual)}</div><div class="s">達成率 <b class="${rateCls(p.latest && p.latest.rate)}">${pct(p.latest && p.latest.rate)}</b></div></div>
+      <div class="tile"><div class="k">${fy}年度 累計</div><div class="v">${man(p.total.actual)}</div><div class="s">累計予算 ${man(p.total.budget)}・<b class="${rateCls(p.total.rate)}">${pct(p.total.rate)}</b></div></div>
+      <div class="tile"><div class="k">年間予算</div><div class="v">${man(p.total.yearBudget)}</div><div class="s">進捗 ${pct(p.total.yearProgress)}</div>${bar(p.total.yearProgress, "blue")}</div>
+      <div class="tile"><div class="k">年間予算までの残り</div><div class="v">${man(p.total.yearBudget - p.total.actual)}</div><div class="s">残り${12 - (HQ.FISCAL_MONTHS.indexOf(S.model.latestMonth) + 1)}ヶ月</div></div>
+    </div>
+    <div class="card"><div class="card-h">全社の月別 予算と実績（${fy}年度）</div><div class="card-b">${chart}</div></div>
+    <div class="card"><div class="card-h"><span>院別 × 月</span><div class="chips" style="margin:0;">${[["actual", "実績"], ["budget", "予算"], ["rate", "達成率"]].map(([k, l]) => `<button class="chip ${view === k ? "sel" : ""}" onclick="ui('perfView','${k}')">${l}</button>`).join("")}</div></div><div class="card-b scroll">
+      <table><tr><th class="l">院</th>${HQ.FISCAL_MONTHS.map((m) => `<th>${m}月</th>`).join("")}<th>${view === "budget" ? "年間" : "累計"}</th></tr>${rows}${total}</table></div></div>
+    <div class="card"><div class="card-h">院別の年度累計（${esc(latestLabel())}まで）</div><div class="card-b scroll">
+      <table><tr><th class="l">院</th><th class="l">院長</th><th class="l">BM</th><th>累計予算</th><th>累計実績</th><th>達成率</th><th></th><th>年間予算</th><th>年間進捗</th></tr>${ytd}</table></div></div>`;
+}
+
+// ---------- 集客 ----------
+function secMarketing() {
+  const d = doc("marketing");
+  const head = `<div class="h2">📣 集客</div><div class="lead">新患数と来院経路（予約システムの初回来院から自動集計）、集客施策の費用対効果（CPA＝費用÷獲得数）を管理します。</div>`;
+  let npHtml;
+  if (S.bookingsErr) npHtml = `<div class="err">予約を読み込めませんでした：${esc(S.bookingsErr)}</div>`;
+  else if (!S.bookings) npHtml = `<div class="muted">読み込み中...</div>`;
+  else {
+    const rows = np();
+    const keys = Array.from({ length: 12 }, (_, i) => HQ.shiftMonth(thisMonth, i - 11));
+    const stores = [...new Set(rows.flatMap((r) => Object.keys(r.byStore)))];
+    const recent = rows.filter((r) => keys.includes(r.month));
+    const chTotal = {};
+    recent.forEach((r) => Object.entries(r.byChannel).forEach(([k, v]) => { chTotal[k] = (chTotal[k] || 0) + v; }));
+    const chs = Object.entries(chTotal).sort((a, b) => b[1] - a[1]);
+    const allNew = recent.reduce((a, r) => a + r.total, 0);
+    const get = (k) => rows.find((r) => r.month === k) || { total: 0, byStore: {}, byChannel: {} };
+    const max = Math.max(1, ...keys.map((k) => get(k).total));
+    npHtml = `<div style="display:flex;align-items:flex-end;gap:5px;height:130px;margin-bottom:8px;">${keys.map((k) => `<div style="flex:1;text-align:center;min-width:0;"><div class="small" style="font-weight:800;color:#0f2744;">${get(k).total || ""}</div><div style="background:${k === thisMonth ? "#2563eb" : "#93c5fd"};height:${get(k).total / max * 100}px;border-radius:3px 3px 0 0;"></div><div class="small">${Number(k.slice(5))}月</div></div>`).join("")}</div>
+      <div class="scroll"><table><tr><th class="l">店舗</th>${keys.map((k) => `<th>${Number(k.slice(5))}月</th>`).join("")}<th>12ヶ月</th></tr>
+      ${stores.map((s) => `<tr><td class="l">${esc(s)}</td>${keys.map((k) => `<td>${get(k).byStore[s] || ""}</td>`).join("")}<td><b>${recent.reduce((a, r) => a + (r.byStore[s] || 0), 0)}</b></td></tr>`).join("")}
+      <tr class="total"><td class="l">合計</td>${keys.map((k) => `<td>${get(k).total || ""}</td>`).join("")}<td>${allNew}</td></tr></table></div>
+      <div style="margin-top:14px;font-weight:800;font-size:13px;color:#1e3a5f;">来院経路（直近12ヶ月）</div>
+      <div class="scroll"><table><tr><th class="l">経路</th><th>人数</th><th>割合</th><th></th><th>今月</th></tr>
+      ${chs.map(([k, v]) => `<tr><td class="l">${esc(k)}</td><td>${v}</td><td>${pct(v / allNew)}</td><td style="width:160px;">${bar(v / chs[0][1], "blue")}</td><td>${get(thisMonth).byChannel[k] || ""}</td></tr>`).join("") || `<tr><td class="l muted" colspan="5">データがありません</td></tr>`}</table></div>
+      <div class="small" style="margin-top:6px;">※ 予約システムを使っている院（${esc((S.stores || []).map((s) => String(s.name).replace(/^あんど整骨院[\s　]*/, "")).join("・"))}）の分です。その他の院の新患数は台帳（評価・インセンティブ）で確認できます。</div>`;
+  }
+  const cs = HQ.campaignStats(d.campaigns);
+  const camp = (d.campaigns || []).slice().sort((a, b) => String(b.month || "").localeCompare(String(a.month || ""))).map((c) => {
+    const r = cs.rows.find((x) => x.id === c.id);
+    return `<tr><td class="l">${inp("marketing", `campaigns.#${c.id}.month`, c.month, { type: "month", r: 1 })}</td>
+      <td class="l">${sel("marketing", `campaigns.#${c.id}.clinic`, c.clinic, ["全社", ...clinicNames()], { blank: "-" })}</td>
+      <td class="l">${inp("marketing", `campaigns.#${c.id}.channel`, c.channel, { ph: "チラシ・Web広告など", r: 1, style: "width:130px;" })}</td>
+      <td class="l">${inp("marketing", `campaigns.#${c.id}.title`, c.title, { ph: "施策の内容", style: "width:200px;" })}</td>
+      <td>${inp("marketing", `campaigns.#${c.id}.cost`, c.cost, { num: 1, r: 1 })}</td>
+      <td>${inp("marketing", `campaigns.#${c.id}.acquired`, c.acquired, { num: 1, r: 1, style: "width:70px;" })}</td>
+      <td><b>${r && r.cpa !== null ? yen(r.cpa) : "-"}</b></td>
+      <td class="l">${inp("marketing", `campaigns.#${c.id}.memo`, c.memo, { ph: "メモ", style: "width:160px;" })}</td>
+      <td><button class="btn-del" onclick="removeItem('marketing','campaigns','${c.id}','${esc(c.title || "施策")}')">✕</button></td></tr>`;
+  }).join("");
+  return head + `<div class="card"><div class="card-h">新患数の推移（直近12ヶ月）</div><div class="card-b">${npHtml}</div></div>
+    <div class="card"><div class="card-h"><span>集客施策と費用対効果</span><button class="btn btn-blue btn-sm" onclick="addItem('marketing','campaigns',{id:HQ.uid('c'),month:thisMonth,clinic:'',channel:'',title:'',cost:null,acquired:null,memo:''})">＋ 施策を追加</button></div><div class="card-b">
+      <div class="grid g4" style="margin-bottom:12px;">
+        <div class="tile" style="box-shadow:none;background:#f8fafc;"><div class="k">費用の合計</div><div class="v">${yen(cs.cost)}</div></div>
+        <div class="tile" style="box-shadow:none;background:#f8fafc;"><div class="k">獲得数の合計</div><div class="v">${cs.acquired}名</div></div>
+        <div class="tile" style="box-shadow:none;background:#f8fafc;"><div class="k">平均CPA</div><div class="v">${cs.acquired ? yen(cs.cost / cs.acquired) : "-"}</div></div>
+      </div>
+      ${cs.channels.length ? `<div class="scroll" style="margin-bottom:12px;"><table><tr><th class="l">経路</th><th>施策数</th><th>費用</th><th>獲得</th><th>CPA</th></tr>${cs.channels.map((c) => `<tr><td class="l"><b>${esc(c.channel)}</b></td><td>${c.count}</td><td>${yen(c.cost)}</td><td>${c.acquired}</td><td><b>${c.cpa === null ? "-" : yen(c.cpa)}</b></td></tr>`).join("")}</table></div>` : ""}
+      <div class="scroll"><table><tr><th class="l">月</th><th class="l">院</th><th class="l">経路</th><th class="l">施策</th><th>費用（円）</th><th>獲得</th><th>CPA</th><th class="l">メモ</th><th></th></tr>${camp || `<tr><td class="l muted" colspan="9">「＋ 施策を追加」から、チラシ・広告・イベントなどの施策を登録してください</td></tr>`}</table></div>
+    </div></div>`;
+}
+
+// ---------- 人材 ----------
+function secPeople() {
+  const d = doc("people");
+  const head = `<div class="h2">👥 人材</div><div class="lead">在籍スタッフ・院ごとの人員の過不足・採用の進み具合を管理します。スタッフと等級は台帳（評価シート）から自動で読み込みます。</div>`;
+  const nm = needModel();
+  const filter = S.ui.peopleClinic || "";
+  let staffHtml = nm;
+  if (!nm) {
+    const counts = HQ.gradeCounts(people());
+    const st = HQ.staffing(people(), clinicNames(), d.headcount);
+    const list = [...people()].filter((p) => !filter || (p.clinics || []).includes(filter)).sort((a, b) => HQ.gradeRank(a.grade) - HQ.gradeRank(b.grade));
+    staffHtml = `<div class="grid g4" style="margin-bottom:14px;">
+        <div class="tile"><div class="k">在籍（台帳）</div><div class="v">${people().length}名</div><div class="s">${clinicNames().length}院</div></div>
+        ${["G6", "G5", "G4"].map((g) => `<div class="tile"><div class="k">${g} ${HQ.gradeRole(g)}</div><div class="v">${counts[g] || 0}名</div></div>`).join("")}
+        <div class="tile"><div class="k">G1〜G3（施術スタッフ）</div><div class="v">${(counts.G1 || 0) + (counts.G2 || 0) + (counts.G3 || 0)}名</div><div class="s">短時間・受付・パート ${(counts["-S"] || 0) + (counts["-R"] || 0) + (counts["-P"] || 0)}名</div></div>
+      </div>
+      <div class="card"><div class="card-h">院ごとの人員（必要人数は本部で入力）</div><div class="card-b scroll"><table><tr><th class="l">院</th><th>在籍</th><th>必要人数</th><th>過不足</th><th class="l">メンバー</th></tr>
+        ${st.map((s) => `<tr><td class="l"><b>${esc(s.name)}</b></td><td>${s.count}名</td><td>${inp("people", `headcount.${s.name}`, d.headcount && d.headcount[s.name], { num: 1, r: 1, style: "width:70px;" })}</td>
+          <td class="${s.gap === null ? "" : s.gap < 0 ? "ng" : "ok"}"><b>${s.gap === null ? "-" : s.gap > 0 ? "+" + s.gap : s.gap}</b></td>
+          <td class="l wrap small">${people().filter((p) => (p.clinics || []).includes(s.name)).sort((a, b) => HQ.gradeRank(a.grade) - HQ.gradeRank(b.grade)).map((p) => `${esc(p.name)}<span class="muted">(${esc(p.grade || "-")})</span>`).join("、")}</td></tr>`).join("")}
+      </table></div></div>
+      <div class="card"><div class="card-h"><span>スタッフ一覧</span><div class="chips" style="margin:0;"><button class="chip ${!filter ? "sel" : ""}" onclick="ui('peopleClinic','')">すべて</button>${clinicNames().map((c) => `<button class="chip ${filter === c ? "sel" : ""}" onclick="ui('peopleClinic','${esc(c)}')">${esc(c)}</button>`).join("")}</div></div><div class="card-b scroll">
+        <table><tr><th class="l">氏名</th><th class="l">等級</th><th class="l">役割</th><th class="l">所属院</th><th>直近の個人売上</th></tr>
+        ${list.map((p) => { const ms = (p.monthlySales || []).filter((m) => m.total !== null); const last = ms[ms.length - 1]; return `<tr><td class="l"><b>${esc(p.name)}</b></td><td class="l"><span class="tag ${p.grade === "G6" || p.grade === "G5" ? "violet" : p.grade === "G4" ? "blue" : ""}">${esc(p.grade || "-")}</span></td><td class="l">${esc(p.role || HQ.gradeRole(p.grade))}</td><td class="l">${esc((p.clinics || []).join("・") || "-")}</td><td>${last ? `${man(last.total)} <span class="small">(${last.month}月)</span>` : "-"}</td></tr>`; }).join("")}
+        </table></div></div>`;
+  }
+  const f = HQ.recruitFunnel(d.candidates);
+  const cand = (d.candidates || []).map((c) => `<tr><td class="l">${inp("people", `candidates.#${c.id}.name`, c.name, { ph: "氏名", style: "width:120px;" })}</td>
+    <td class="l">${sel("people", `candidates.#${c.id}.position`, c.position, ["施術スタッフ（正社員）", "施術スタッフ（パート）", "受付・事務", "美容スタッフ", "院長候補", "その他"], { blank: "-" })}</td>
+    <td class="l">${sel("people", `candidates.#${c.id}.clinic`, c.clinic, clinicNames(), { blank: "未定" })}</td>
+    <td class="l">${inp("people", `candidates.#${c.id}.source`, c.source, { ph: "求人媒体・紹介など", style: "width:130px;" })}</td>
+    <td class="l">${inp("people", `candidates.#${c.id}.applied`, c.applied, { type: "date" })}</td>
+    <td class="l">${sel("people", `candidates.#${c.id}.status`, c.status, HQ.RECRUIT_STATUSES)}</td>
+    <td class="l">${inp("people", `candidates.#${c.id}.memo`, c.memo, { ph: "面接日・評価など", style: "width:180px;" })}</td>
+    <td><button class="btn-del" onclick="removeItem('people','candidates','${c.id}','${esc(c.name || "候補者")}')">✕</button></td></tr>`).join("");
+  return head + staffHtml + `<div class="card"><div class="card-h"><span>採用の進み具合</span><button class="btn btn-blue btn-sm" onclick="addItem('people','candidates',{id:HQ.uid('r'),name:'',position:'',clinic:'',source:'',applied:todayStr,status:'応募',memo:''})">＋ 応募者を追加</button></div><div class="card-b">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;">${HQ.RECRUIT_STATUSES.map((s, i) => `<div style="flex:1;min-width:90px;background:${i === 4 ? "#dcfce7" : i === 5 ? "#f1f5f9" : "#eff6ff"};border-radius:10px;padding:8px 10px;text-align:center;"><div class="small">${s}</div><div style="font-size:20px;font-weight:800;color:#0f2744;">${f[s]}</div></div>`).join("")}</div>
+    <div class="scroll"><table><tr><th class="l">氏名</th><th class="l">職種</th><th class="l">配属予定</th><th class="l">経路</th><th class="l">応募日</th><th class="l">状態</th><th class="l">メモ</th><th></th></tr>${cand || `<tr><td class="l muted" colspan="8">応募者はまだいません</td></tr>`}</table></div>
+  </div></div>`;
+}
+
+// ---------- 経理・事務 ----------
+function secAccounting() {
+  const a = accDoc();
+  const head = `<div class="h2">🧾 経理・事務</div><div class="lead">人件費42%の管理、毎月の定例（レセプト・給与・納付など）のチェック、支払い予定をまとめて管理します。</div>`;
+  const nm = needModel();
+  let labor = nm;
+  if (!nm) {
+    const halves = S.model.company || [];
+    labor = `<div class="card"><div class="card-h"><span>全社の人件費（42%枠）</span><a class="btn btn-gray btn-sm" href="/incentive" target="_blank">支給額の入力は評価・インセンティブへ →</a></div><div class="card-b scroll">
+      ${halves.length ? `<table><tr><th class="l">期間</th><th>経過</th><th>売上</th><th>人件費（社保込）</th><th>人件費率</th><th>42%枠</th><th>残り枠</th><th>インセンティブ込み</th></tr>
+      ${halves.map((h) => `<tr><td class="l"><b>${esc(h.label)}</b></td><td>${h.monthsElapsed}ヶ月</td><td>${yen(h.sales)}</td><td>${yen(h.labor)}</td><td class="${h.laborRate > HQ.LABOR_CAP_RATE ? "ng" : "ok"}"><b>${pct(h.laborRate)}</b></td><td>${yen(h.cap)}</td><td class="${h.room < 0 ? "ng" : ""}">${yen(h.room)}</td><td>${pct(h.laborRateWithIncentive)}</td></tr>`).join("")}</table>
+      ${halves.flatMap((h) => h.months || []).length ? `<div style="margin-top:12px;font-weight:800;font-size:13px;color:#1e3a5f;">月別</div><table><tr><th class="l">月</th><th>売上</th><th>支給合計（社保抜き）</th><th>人件費（社保込）</th><th>人件費率</th></tr>${halves.flatMap((h) => h.months || []).map((m) => `<tr><td class="l">${m.month}月</td><td>${yen(m.sales)}</td><td>${m.paid === null ? '<span class="muted">未入力</span>' : yen(m.paid)}</td><td>${yen(m.labor)}${m.laborEstimated ? '<span class="small">（推定）</span>' : ""}</td><td class="${m.rate > HQ.LABOR_CAP_RATE ? "ng" : ""}">${pct(m.rate)}</td></tr>`).join("")}</table>` : ""}`
+        : `<div class="muted">全社の人件費は社長・GMのアカウントで表示されます</div>`}
+      <div style="margin-top:12px;font-weight:800;font-size:13px;color:#1e3a5f;">院別の固定人件費</div>
+      <table><tr><th class="l">院</th><th>固定人件費（社保込）</th><th>最新月の売上</th><th>人件費率</th><th>42%の上限額</th></tr>${S.model.clinics.map((c) => { const last = c.months.find((m) => m.month === S.model.latestMonth); return `<tr><td class="l">${esc(c.name)}</td><td>${yen(c.fixedLabor)}</td><td>${yen(last && last.actual)}</td><td class="${c.laborRate > HQ.LABOR_CAP_RATE ? "ng" : "ok"}"><b>${pct(c.laborRate)}</b></td><td>${yen(c.laborCap)}</td></tr>`; }).join("")}</table>
+    </div></div>`;
+  }
+  const mk = S.ui.accMonth || thisMonth;
+  const rs = HQ.routineStatus(a.routines, a.done, mk, todayStr);
+  const doneN = rs.filter((r) => r.done).length;
+  const editing = S.ui.accEdit;
+  const routineHtml = editing
+    ? `<table><tr><th class="l">項目</th><th class="l">区分</th><th>期限（毎月◯日）</th><th></th></tr>${a.routines.map((r) => `<tr><td class="l">${inp("accounting", `routines.#${r.id}.title`, r.title, { cls: "w100" })}</td><td class="l">${inp("accounting", `routines.#${r.id}.cat`, r.cat, { style: "width:90px;" })}</td><td>${inp("accounting", `routines.#${r.id}.day`, r.day, { num: 1, style: "width:60px;" })}</td><td><button class="btn-del" onclick="removeItem('accounting','routines','${r.id}','${esc(r.title)}')">✕</button></td></tr>`).join("")}</table>
+       <div style="display:flex;gap:8px;margin-top:10px;"><button class="btn btn-gray btn-sm" onclick="addItem('accounting','routines',{id:HQ.uid('r'),title:'',cat:'',day:25})">＋ 項目を追加</button><button class="btn btn-blue btn-sm" onclick="ui('accEdit',false)">編集を終わる</button></div>`
+    : `${rs.map((r) => `<div class="ev ${r.done ? "done" : ""}">${chk("accounting", `done.${mk}.${r.id}`, r.done)}<span class="tag">${esc(r.cat || "-")}</span><span class="${r.overdue ? "ng" : ""}" style="${r.done ? "text-decoration:line-through;color:#94a3b8;" : ""}">${esc(r.title)}</span><span class="small ${r.overdue ? "ng" : ""}" style="margin-left:auto;">${r.due.slice(5).replace("-", "/")}${r.overdue ? " 期限切れ" : ""}</span></div>`).join("")}`;
+  const pays = (a.payments || []).slice().sort((x, y) => String(x.due || "9").localeCompare(String(y.due || "9")));
+  const payHtml = pays.map((p) => `<tr class="${p.done ? "" : p.due && p.due < todayStr ? "late" : ""}"><td class="l">${chk("accounting", `payments.#${p.id}.done`, p.done)}</td>
+    <td class="l">${inp("accounting", `payments.#${p.id}.due`, p.due, { type: "date", r: 1 })}</td>
+    <td class="l">${inp("accounting", `payments.#${p.id}.title`, p.title, { ph: "支払先・内容", style: "width:200px;" })}</td>
+    <td class="l">${sel("accounting", `payments.#${p.id}.clinic`, p.clinic, ["本部", ...clinicNames()], { blank: "-" })}</td>
+    <td>${inp("accounting", `payments.#${p.id}.amount`, p.amount, { num: 1, r: 1 })}</td>
+    <td class="l ${!p.done && p.due && p.due < todayStr ? "ng" : ""}">${p.done ? '<span class="tag green">支払済み</span>' : p.due && p.due < todayStr ? '<span class="tag red">期限切れ</span>' : ""}</td>
+    <td><button class="btn-del" onclick="removeItem('accounting','payments','${p.id}','${esc(p.title || "支払い")}')">✕</button></td></tr>`).join("");
+  const unpaid = pays.filter((p) => !p.done).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  return head + labor + `<div class="grid g2">
+    <div class="card"><div class="card-h"><span>毎月の定例（${monthLabel(mk)}：${doneN}/${rs.length} 完了）</span><span style="display:flex;gap:6px;align-items:center;"><button class="btn btn-gray btn-sm" onclick="ui('accMonth','${HQ.shiftMonth(mk, -1)}')">◀</button><button class="btn btn-gray btn-sm" onclick="ui('accMonth','${HQ.shiftMonth(mk, 1)}')">▶</button>${editing ? "" : `<button class="btn btn-gray btn-sm" onclick="ui('accEdit',true)">✏️ 項目を編集</button>`}</span></div><div class="card-b">${bar(rs.length ? doneN / rs.length : 0, "blue")}<div style="margin-top:8px;">${routineHtml}</div></div></div>
+    <div class="card"><div class="card-h"><span>支払い予定（未払い ${yen(unpaid)}）</span><button class="btn btn-blue btn-sm" onclick="addItem('accounting','payments',{id:HQ.uid('p'),due:todayStr,title:'',clinic:'',amount:null,done:false})">＋ 追加</button></div><div class="card-b scroll">
+      <table><tr><th class="l">済</th><th class="l">期限</th><th class="l">内容</th><th class="l">院</th><th>金額</th><th></th><th></th></tr>${payHtml || `<tr><td class="l muted" colspan="7">支払い予定はありません</td></tr>`}</table></div></div>
+  </div>
+  <div class="card"><div class="card-h">事務の連絡・メモ</div><div class="card-b">${area("accounting", "memo", a.memo, "税理士・社労士への連絡事項、決算に向けた準備など")}</div></div>`;
+}
+
+// ---------- 教育 ----------
+function secEducation() {
+  const d = doc("education");
+  const head = `<div class="h2">🎓 教育</div><div class="lead">研修・勉強会の計画と、スタッフごとの受講状況を管理します。日々の学習カリキュラムは予約管理の「スタッフ → 学習カリキュラム」でも確認できます。</div>`;
+  const list = (d.trainings || []).slice().sort((a, b) => String(a.date || "9").localeCompare(String(b.date || "9")));
+  const st = HQ.trainingStats(d.trainings, people());
+  const open = S.ui.eduOpen;
+  const rows = list.map((t) => {
+    const n = (t.attendees || []).length;
+    const tgt = people().filter((p) => (HQ.trainingStats([t], [p]).perPerson[0] || {}).target).length;
+    return `<tr><td class="l">${inp("education", `trainings.#${t.id}.date`, t.date, { type: "date", r: 1 })}</td>
+      <td class="l">${inp("education", `trainings.#${t.id}.title`, t.title, { ph: "研修名（例：問診・初回カウンセリング）", style: "width:220px;" })}</td>
+      <td class="l">${sel("education", `trainings.#${t.id}.kind`, t.kind, ["技術", "接遇", "問診・説明", "マネジメント", "保険・事務", "コンプライアンス", "その他"], { blank: "-" })}</td>
+      <td class="l">${inp("education", `trainings.#${t.id}.target`, t.target, { ph: "全員 / G1,G2", r: 1, style: "width:100px;" })}</td>
+      <td class="l">${inp("education", `trainings.#${t.id}.teacher`, t.teacher, { ph: "講師", style: "width:100px;" })}</td>
+      <td class="l">${sel("education", `trainings.#${t.id}.status`, t.status, HQ.TRAINING_STATUSES)}</td>
+      <td><button class="btn btn-gray btn-sm" onclick="ui('eduOpen','${open === t.id ? "" : t.id}')">受講 ${n}/${tgt}名</button></td>
+      <td><button class="btn-del" onclick="removeItem('education','trainings','${t.id}','${esc(t.title || "研修")}')">✕</button></td></tr>
+      ${open === t.id ? `<tr><td colspan="8" class="l wrap" style="background:#f8fafc;"><div class="small" style="margin-bottom:6px;">受講した人にチェック（対象：${esc(t.target || "全員")}）</div><div style="display:flex;flex-wrap:wrap;gap:6px 14px;">
+        ${[...people()].sort((a, b) => HQ.gradeRank(a.grade) - HQ.gradeRank(b.grade)).map((p) => `<label style="font-size:12.5px;display:flex;gap:4px;align-items:center;"><input type="checkbox" ${(t.attendees || []).includes(p.key) ? "checked" : ""} onchange="toggleAttendee('${t.id}','${esc(p.key)}',this.checked)"/>${esc(p.name)}<span class="muted">(${esc(p.grade || "-")})</span></label>`).join("")}
+      </div><div style="margin-top:8px;">${inp("education", `trainings.#${t.id}.memo`, t.memo, { ph: "内容・資料のURL・振り返り", cls: "w100" })}</div></td></tr>` : ""}`;
+  }).join("");
+  const pp = st.perPerson.filter((p) => p.target).sort((a, b) => (a.rate ?? 1) - (b.rate ?? 1));
+  return head + `<div class="grid g4" style="margin-bottom:14px;">
+      <div class="tile"><div class="k">登録された研修</div><div class="v">${st.total}件</div></div>
+      <div class="tile"><div class="k">実施済み</div><div class="v">${st.done}件</div></div>
+      <div class="tile"><div class="k">予定</div><div class="v">${st.planned}件</div></div>
+      <div class="tile"><div class="k">平均受講率</div><div class="v">${pp.length ? pct(pp.reduce((a, p) => a + (p.rate || 0), 0) / pp.length, 0) : "-"}</div></div>
+    </div>
+    <div class="card"><div class="card-h"><span>研修計画</span><button class="btn btn-blue btn-sm" onclick="addItem('education','trainings',{id:HQ.uid('t'),date:todayStr,title:'',kind:'',target:'全員',teacher:'',status:'予定',attendees:[],memo:''})">＋ 研修を追加</button></div><div class="card-b scroll">
+      <table><tr><th class="l">日付</th><th class="l">研修名</th><th class="l">種類</th><th class="l">対象等級</th><th class="l">講師</th><th class="l">状態</th><th>受講</th><th></th></tr>${rows || `<tr><td class="l muted" colspan="8">「＋ 研修を追加」から研修・勉強会を登録してください</td></tr>`}</table></div></div>
+    <div class="card"><div class="card-h">スタッフ別の受講状況（受講率の低い順）</div><div class="card-b scroll">${S.model ? `<table><tr><th class="l">氏名</th><th class="l">等級</th><th>対象の研修</th><th>受講</th><th>受講率</th><th></th></tr>${pp.map((p) => `<tr><td class="l">${esc(p.name)}</td><td class="l">${esc(p.grade || "-")}</td><td>${p.target}</td><td>${p.attended}</td><td class="${p.rate < 0.8 ? "ng" : "ok"}"><b>${pct(p.rate, 0)}</b></td><td style="width:140px;">${bar(p.rate)}</td></tr>`).join("") || `<tr><td class="l muted" colspan="6">研修を登録すると表示されます</td></tr>`}</table>` : needModel()}</div></div>
+    <div class="card"><div class="card-h">教育方針・技術の標準化メモ</div><div class="card-b">${area("education", "policy", d.policy, "例：入社3ヶ月で基本手技の実技チェック合格、G3は自費フルメニュー、院長は問診指導 など")}</div></div>`;
+}
+function toggleAttendee(id, key, on) {
+  const t = (doc("education").trainings || []).find((x) => x.id === id);
+  if (!t) return;
+  t.attendees = (t.attendees || []).filter((k) => k !== key);
+  if (on) t.attendees.push(key);
+  saveDoc("education"); render();
+}
+
+// ---------- 組織図 ----------
+function secOrg() {
+  const o = orgDoc();
+  const head = `<div class="h2">🏢 組織図</div><div class="lead">代表 → GM → BM（エリア） → 院長 → スタッフ の体制図です。院・等級・エリアは台帳から自動で作られます。本部の部門と責任者はここで設定します。</div>`;
+  const nm = needModel();
+  let tree = nm;
+  if (!nm) {
+    const org = HQ.buildOrg(S.model, { ceo: o.ceo, depts: o.depts });
+    const pn = (p) => `<div class="p"><span>${esc(p.name)}</span><span class="g">${esc(p.grade || "-")}</span></div>`;
+    const clin = (c) => `<div class="clin"><div class="cn">🏥 ${esc(c.name)}</div>${c.managers.length ? c.managers.map((m) => `<div class="p"><b>院長 ${esc(m.name)}</b><span class="g">G4</span></div>`).join("") : '<div class="p ng" style="font-size:11.5px;">院長 未配置</div>'}${c.staff.map(pn).join("")}<div class="small" style="margin-top:4px;text-align:right;">${c.managers.length + c.staff.length}名</div></div>`;
+    tree = `<div class="org">
+      <div class="onode top"><div class="r">代表取締役</div><div class="n">${esc(org.ceo || "（未設定）")}</div></div>
+      <div class="vline"></div>
+      <div class="orow" style="margin-bottom:0;">
+        <div class="onode" style="border-color:#7c3aed;"><div class="r">本部</div><div class="n">${o.depts.length}部門</div></div>
+        ${org.gms.map((g) => `<div class="onode gm"><div class="r">GM（G6）</div><div class="n">${esc(g.name)}</div></div>`).join("") || `<div class="onode gm"><div class="r">GM（G6）</div><div class="n muted">未配置</div></div>`}
+      </div>
+      <div class="vline"></div>
+      <div class="orow">
+        ${org.areas.map((a) => `<div class="area"><div class="onode bm"><div class="r">BM（エリア）</div><div class="n">${esc(a.bmName || "-")}</div></div><div class="vline"></div><div class="orow">${a.clinics.map(clin).join("")}</div></div>`).join("")}
+        ${org.direct.length ? `<div class="area direct"><div class="onode"><div class="r">本部直轄</div><div class="n">${org.direct.length}院</div></div><div class="vline"></div><div class="orow">${org.direct.map(clin).join("")}</div></div>` : ""}
+      </div>
+      ${org.others.length ? `<div class="small" style="margin-top:12px;">所属院が台帳に無い人：${org.others.map((p) => esc(p.name) + "（" + esc(p.grade || "-") + "）").join("、")}</div>` : ""}
+    </div>`;
+  }
+  const depts = o.depts.map((d) => `<tr><td class="l">${inp("org", `depts.#${d.id}.name`, d.name, { style: "width:230px;" })}</td>
+    <td class="l">${inp("org", `depts.#${d.id}.head`, d.head, { ph: "責任者", style: "width:120px;" })}</td>
+    <td class="l">${inp("org", `depts.#${d.id}.members`, d.members, { ph: "メンバー（、区切り）", style: "width:180px;" })}</td>
+    <td class="l">${inp("org", `depts.#${d.id}.mission`, d.mission, { ph: "役割・責任", style: "width:300px;" })}</td>
+    <td><button class="btn-del" onclick="removeItem('org','depts','${d.id}','${esc(d.name)}')">✕</button></td></tr>`).join("");
+  return head + `<div class="card noprint"><div class="card-b" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><b style="font-size:13px;">代表取締役</b>${inp("org", "ceo", o.ceo, { ph: "氏名", r: 1, style: "width:180px;" })}<button class="btn btn-gray btn-sm" style="margin-left:auto;" onclick="window.print()">🖨 印刷</button></div></div>
+    <div class="card"><div class="card-h">体制図</div><div class="card-b scroll">${tree}</div></div>
+    <div class="card"><div class="card-h"><span>本部の部門と責任者</span><button class="btn btn-blue btn-sm noprint" onclick="addItem('org','depts',{id:HQ.uid('d'),name:'',head:'',members:'',mission:''})">＋ 部門を追加</button></div><div class="card-b scroll">
+      <table><tr><th class="l">部門</th><th class="l">責任者</th><th class="l">メンバー</th><th class="l">役割</th><th></th></tr>${depts}</table></div></div>`;
+}
+
+// ---------- キャリア ----------
+function secCareer() {
+  const d = doc("career");
+  const head = `<div class="h2">🧗 キャリア</div><div class="lead">G1新人〜G6GMのキャリアラダー（G3からマネジメント／スペシャリストの2コース）と、等級ごとの人数・昇格候補を管理します。月次評価・昇降格の判定は「評価・インセンティブ」で行います。</div>`;
+  const nm = needModel();
+  if (nm) return head + nm;
+  const ladder = HQ.careerLadder(people(), d.notes);
+  const max = Math.max(1, ...ladder.map((g) => g.count));
+  const ladderHtml = `<table><tr><th class="l">等級</th><th class="l">役割</th><th class="l">コース</th><th>人数</th><th></th><th class="l">昇格候補</th></tr>
+    ${ladder.map((g) => `<tr><td class="l"><b>${g.id}</b></td><td class="l">${esc(g.role)}</td><td class="l small">${esc(g.track)}</td><td>${g.count}名</td><td style="width:140px;">${bar(g.count / max, "blue")}</td><td class="l wrap">${g.candidates.map((c) => `<span class="tag amber" title="${esc(c.memo)}">${esc(c.name)}（${esc(c.grade)}→${g.id}）</span>`).join(" ") || '<span class="muted">-</span>'}</td></tr>`).join("")}</table>
+    <div class="small" style="margin-top:8px;line-height:1.7;">マネジメント：G3 副院長 → G4 院長 → G5 BM → G6 GM／スペシャリスト：S1 シニア（G3相当）→ S2 エキスパート（G4相当）→ S3 マスター（G5相当）</div>`;
+  const notes = d.notes || {};
+  const list = [...people()].sort((a, b) => HQ.gradeRank(a.grade) - HQ.gradeRank(b.grade));
+  const rows = list.map((p) => { const n = notes[p.key] || {}; return `<tr><td class="l"><b>${esc(p.name)}</b></td><td class="l">${esc(p.grade || "-")}</td><td class="l">${esc((p.clinics || []).join("・") || "-")}</td>
+    <td class="l">${sel("career", `notes.${p.key}.target`, n.target, HQ.GRADES.filter((g) => !g.id.startsWith("-")).map((g) => [g.id, `${g.id} ${g.role}`]).concat([["S1", "S1 シニア"], ["S2", "S2 エキスパート"], ["S3", "S3 マスター"]]), { blank: "-" })}</td>
+    <td class="l">${inp("career", `notes.${p.key}.when`, n.when, { type: "month" })}</td>
+    <td class="l">${inp("career", `notes.${p.key}.memo`, n.memo, { ph: "強み・課題・育成プラン", style: "width:280px;" })}</td></tr>`; }).join("");
+  const showEmbed = S.ui.careerEmbed;
+  return head + `<div class="card"><div class="card-h">キャリアラダーと人数</div><div class="card-b scroll">${ladderHtml}</div></div>
+    <div class="card"><div class="card-h">一人ひとりのキャリアプラン（目指す等級・時期）</div><div class="card-b scroll"><table><tr><th class="l">氏名</th><th class="l">いまの等級</th><th class="l">所属</th><th class="l">目指す等級</th><th class="l">目標時期</th><th class="l">育成メモ</th></tr>${rows}</table></div></div>
+    <div class="card"><div class="card-h"><span>評価・インセンティブ（月次評価・昇降格・コース）</span><span style="display:flex;gap:6px;"><button class="btn btn-gray btn-sm" onclick="ui('careerEmbed',${!showEmbed})">${showEmbed ? "閉じる" : "この画面で開く"}</button><a class="btn btn-gray btn-sm" href="/incentive" target="_blank">別タブで開く ↗</a></span></div>${showEmbed ? `<div class="card-b"><iframe class="embed" src="/incentive"></iframe></div>` : ""}</div>`;
+}
+
+// ---------- 出店計画 ----------
+function secExpansion() {
+  const d = doc("expansion");
+  const plans = d.plans || [];
+  const head = `<div class="h2">📍 出店計画</div><div class="lead">新店の候補エリア・物件・資金・開業準備を、マイルストーンで管理します。</div>`;
+  const active = plans.filter((p) => p.status !== "開業済み" && p.status !== "見送り");
+  const totalCost = active.reduce((s, p) => s + (Number(p.initialCost) || 0), 0);
+  const totalTarget = active.reduce((s, p) => s + (Number(p.monthlyTarget) || 0), 0);
+  const timeline = plans.filter((p) => p.openDate).sort((a, b) => a.openDate.localeCompare(b.openDate));
+  const cards = plans.map((p) => {
+    const pr = HQ.expansionProgress(p, todayStr);
+    const stIdx = HQ.EXPANSION_STATUSES.indexOf(p.status);
+    const pay = Number(p.initialCost) && Number(p.monthlyProfit) > 0 ? Math.ceil(Number(p.initialCost) / Number(p.monthlyProfit)) : null;
+    return `<div class="plan"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><b style="font-size:16px;color:#0f2744;">📍 ${esc(p.name || "（名称未設定）")}</b><span class="tag ${p.status === "開業済み" ? "green" : p.status === "見送り" ? "" : stIdx >= 3 ? "blue" : "amber"}">${esc(p.status || "構想")}</span>${pr.daysToOpen !== null && p.status !== "開業済み" ? `<span class="tag ${pr.daysToOpen < 0 ? "red" : "violet"}">開業まで ${pr.daysToOpen}日</span>` : ""}${pr.overdue ? `<span class="tag red">期限切れ ${pr.overdue}件</span>` : ""}</div>
+        <button class="btn-del" onclick="removeItem('expansion','plans','${p.id}','${esc(p.name || "出店計画")}')">✕ 削除</button></div>
+      <div class="form">
+        <div><label>院名（仮）</label>${inp("expansion", `plans.#${p.id}.name`, p.name, { r: 1 })}</div>
+        <div><label>エリア・住所</label>${inp("expansion", `plans.#${p.id}.area`, p.area)}</div>
+        <div><label>状態</label>${sel("expansion", `plans.#${p.id}.status`, p.status, HQ.EXPANSION_STATUSES)}</div>
+        <div><label>開業予定日</label>${inp("expansion", `plans.#${p.id}.openDate`, p.openDate, { type: "date", r: 1 })}</div>
+        <div><label>担当</label>${inp("expansion", `plans.#${p.id}.owner`, p.owner)}</div>
+        <div><label>院長候補</label>${inp("expansion", `plans.#${p.id}.manager`, p.manager)}</div>
+        <div><label>初期費用（円）</label>${inp("expansion", `plans.#${p.id}.initialCost`, p.initialCost, { num: 1, r: 1, cls: "" })}</div>
+        <div><label>月商目標（円）</label>${inp("expansion", `plans.#${p.id}.monthlyTarget`, p.monthlyTarget, { num: 1, r: 1, cls: "" })}</div>
+        <div><label>月の利益見込み（円）</label>${inp("expansion", `plans.#${p.id}.monthlyProfit`, p.monthlyProfit, { num: 1, r: 1, cls: "" })}</div>
+        <div><label>投資回収</label><div style="padding:7px 0;font-weight:800;">${pay ? `約${pay}ヶ月` : "-"}</div></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;"><b style="font-size:13px;">マイルストーン ${pr.done}/${pr.total}</b><div style="flex:1;">${bar(pr.rate || 0, "blue")}</div>${pr.next ? `<span class="small">次：${esc(pr.next.title)}${pr.next.due ? "（" + esc(pr.next.due) + "）" : ""}</span>` : ""}</div>
+      ${(p.milestones || []).map((m) => `<div class="ms ${m.done ? "done" : !m.done && m.due && m.due < todayStr ? "late" : ""}">${chk("expansion", `plans.#${p.id}.milestones.#${m.id}.done`, m.done)}${inp("expansion", `plans.#${p.id}.milestones.#${m.id}.title`, m.title)}${inp("expansion", `plans.#${p.id}.milestones.#${m.id}.due`, m.due, { type: "date", r: 1 })}<button class="btn-del" onclick="removeItem('expansion','plans.#${p.id}.milestones','${m.id}','${esc(m.title)}')">✕</button></div>`).join("")}
+      <button class="btn btn-gray btn-sm" style="margin-top:6px;" onclick="addItem('expansion','plans.#${p.id}.milestones',{id:HQ.uid('m'),title:'',due:'',done:false})">＋ マイルストーン</button>
+      <div style="margin-top:10px;">${area("expansion", `plans.#${p.id}.memo`, p.memo, "商圏・競合・物件の条件・資金計画のメモ")}</div>
+    </div>`;
+  }).join("");
+  return head + `<div class="grid g4" style="margin-bottom:14px;">
+      <div class="tile"><div class="k">進行中の計画</div><div class="v">${active.length}件</div><div class="s">開業済み ${plans.filter((p) => p.status === "開業済み").length}件</div></div>
+      <div class="tile"><div class="k">初期費用の合計（進行中）</div><div class="v">${man(totalCost)}</div></div>
+      <div class="tile"><div class="k">月商目標の合計（進行中）</div><div class="v">${man(totalTarget)}</div></div>
+      <div class="tile"><div class="k">次の開業</div><div class="v" style="font-size:18px;">${timeline.filter((p) => p.status !== "開業済み" && p.status !== "見送り")[0] ? esc(timeline.filter((p) => p.status !== "開業済み" && p.status !== "見送り")[0].name || "-") : "-"}</div><div class="s">${timeline.filter((p) => p.status !== "開業済み" && p.status !== "見送り")[0] ? esc(timeline.filter((p) => p.status !== "開業済み" && p.status !== "見送り")[0].openDate) : ""}</div></div>
+    </div>
+    ${timeline.length ? `<div class="card"><div class="card-h">開業スケジュール</div><div class="card-b scroll"><table><tr><th class="l">開業予定日</th><th class="l">院名</th><th class="l">エリア</th><th class="l">状態</th><th>準備の進み具合</th><th></th></tr>${timeline.map((p) => { const pr = HQ.expansionProgress(p, todayStr); return `<tr><td class="l"><b>${esc(p.openDate)}</b></td><td class="l">${esc(p.name || "-")}</td><td class="l">${esc(p.area || "-")}</td><td class="l">${esc(p.status || "構想")}</td><td>${pct(pr.rate, 0)}</td><td style="width:140px;">${bar(pr.rate || 0, "blue")}</td></tr>`; }).join("")}</table></div></div>` : ""}
+    <div style="margin-bottom:12px;"><button class="btn btn-blue" onclick="newPlan()">＋ 出店計画を追加</button></div>
+    ${cards || `<div class="card"><div class="card-b muted">まだ出店計画がありません。「＋ 出店計画を追加」で、標準のマイルストーン（商圏調査〜開業）付きの計画を作れます。</div></div>`}`;
+}
+function newPlan() {
+  const id = HQ.uid("s");
+  addItem("expansion", "plans", { id, name: "", area: "", status: "構想", openDate: "", owner: "", manager: "", initialCost: null, monthlyTarget: null, monthlyProfit: null, memo: "", milestones: HQ.newMilestones(id) });
+}
+
+// ---------- 年間計画 ----------
+function secAnnual() {
+  const d = doc("annual");
+  const curFy = HQ.fiscalYearOf(thisMonth);
+  const fy = Number(S.ui.fy || curFy);
+  const y = (d.years && d.years[fy]) || {};
+  const months = HQ.annualByMonth(d.events, fy);
+  const all = months.flatMap((m) => m.items);
+  const done = all.filter((e) => e.done).length;
+  const catF = S.ui.annualCat || "";
+  const goals = (y.goals || []).map((g) => `<tr><td class="l">${inp("annual", `years.${fy}.goals.#${g.id}.title`, g.title, { ph: "目標（例：全社売上）", style: "width:220px;" })}</td><td class="l">${inp("annual", `years.${fy}.goals.#${g.id}.target`, g.target, { ph: "目標値（例：2億円）", style: "width:150px;" })}</td><td class="l">${inp("annual", `years.${fy}.goals.#${g.id}.owner`, g.owner, { ph: "責任者", style: "width:110px;" })}</td><td class="l">${inp("annual", `years.${fy}.goals.#${g.id}.result`, g.result, { ph: "結果・進捗", style: "width:200px;" })}</td><td><button class="btn-del" onclick="removeItem('annual','years.${fy}.goals','${g.id}','${esc(g.title)}')">✕</button></td></tr>`).join("");
+  const catColor = { 全社: "", 業績: "green", 集客: "blue", 人材: "violet", "経理・事務": "amber", 教育: "violet", 出店: "red", イベント: "blue" };
+  const monthCards = months.map((m) => {
+    const items = m.items.filter((e) => !catF || e.cat === catF);
+    return `<div class="month ${m.month === thisMonth ? "now" : ""}"><div class="mh"><span>${Number(m.month.slice(5))}月 <span class="small">${m.month.slice(0, 4)}</span></span><button class="btn btn-gray btn-sm" onclick="addItem('annual','events',{id:HQ.uid('e'),month:'${m.month}',title:'',cat:'${catF || "全社"}',owner:'',done:false})">＋</button></div>
+      ${items.map((e) => `<div class="ev ${e.done ? "done" : ""}">${chk("annual", `events.#${e.id}.done`, e.done)}<select data-doc="annual" data-path="events.#${e.id}.cat" data-r="1" style="width:84px;padding:3px 4px;font-size:11px;" class="tag ${catColor[e.cat] || ""}">${HQ.ANNUAL_CATS.map((c) => `<option ${c === e.cat ? "selected" : ""}>${c}</option>`).join("")}</select>${inp("annual", `events.#${e.id}.title`, e.title, { ph: "予定・施策" })}<button class="btn-del" onclick="removeItem('annual','events','${e.id}','${esc(e.title)}')">✕</button></div>`).join("") || '<div class="muted" style="font-size:12px;">予定なし</div>'}
+    </div>`;
+  }).join("");
+  return head2() + `<div class="card"><div class="card-b" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <button class="btn btn-gray btn-sm" onclick="ui('fy',${fy - 1})">◀</button><b style="font-size:16px;">${fy}年度（${fy}年7月〜${fy + 1}年6月）</b><button class="btn btn-gray btn-sm" onclick="ui('fy',${fy + 1})">▶</button>
+      ${fy !== curFy ? `<button class="btn btn-gray btn-sm" onclick="ui('fy',${curFy})">今年度</button>` : ""}
+      <span class="small" style="margin-left:auto;">予定 ${all.length}件・完了 ${done}件</span><div style="width:140px;">${bar(all.length ? done / all.length : 0, "blue")}</div>
+      <button class="btn btn-gray btn-sm noprint" onclick="window.print()">🖨 印刷</button></div></div>
+    <div class="grid g2">
+      <div class="card"><div class="card-h">年度の方針・スローガン</div><div class="card-b">${area("annual", `years.${fy}.policy`, y.policy, "今年度の全社方針・重点テーマ")}</div></div>
+      <div class="card"><div class="card-h"><span>年度の目標</span><button class="btn btn-blue btn-sm" onclick="addItem('annual','years.${fy}.goals',{id:HQ.uid('g'),title:'',target:'',owner:'',result:''})">＋ 目標</button></div><div class="card-b scroll"><table><tr><th class="l">目標</th><th class="l">目標値</th><th class="l">責任者</th><th class="l">結果・進捗</th><th></th></tr>${goals || `<tr><td class="l muted" colspan="5">売上・新患数・出店数・採用数などの年度目標を入れてください</td></tr>`}</table></div></div>
+    </div>
+    <div class="chips"><button class="chip ${!catF ? "sel" : ""}" onclick="ui('annualCat','')">すべて</button>${HQ.ANNUAL_CATS.map((c) => `<button class="chip ${catF === c ? "sel" : ""}" onclick="ui('annualCat','${c}')">${c}</button>`).join("")}</div>
+    <div class="months">${monthCards}</div>`;
+  function head2() { return `<div class="h2">🗓 年間計画</div><div class="lead">年度（7月〜翌6月）の方針・目標と、月ごとの予定（全社・業績・集客・人材・経理・教育・出店・イベント）を管理します。今月の未完了はダッシュボードに出ます。</div>`; }
+}
+
+// ---------- マンダラチャート ----------
+function secMandala() {
+  const head = `<div class="h2">🧭 マンダラチャート</div><div class="lead">会社・各院のマンダラ（中心＝目標KGI、周り8マス＝重点の取り組み）を一覧で確認します。マスの編集・月のチェック・個人KDIの紐づけは下の「マンダラを編集」から行えます。</div>`;
+  if (S.mandala === null && !S.mandalaErr) setTimeout(loadMandala, 0);
+  const monthNav = `<div class="card"><div class="card-b" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><button class="btn btn-gray btn-sm" onclick="S.mandalaMonth=HQ.shiftMonth(S.mandalaMonth,-1);loadMandala()">◀</button><b>${monthLabel(S.mandalaMonth)}</b><button class="btn btn-gray btn-sm" onclick="S.mandalaMonth=HQ.shiftMonth(S.mandalaMonth,1);loadMandala()">▶</button>
+    <span style="margin-left:auto;display:flex;gap:6px;"><button class="btn btn-blue btn-sm" onclick="ui('mandalaEmbed',${!S.ui.mandalaEmbed})">${S.ui.mandalaEmbed ? "編集画面を閉じる" : "✏️ マンダラを編集"}</button><a class="btn btn-gray btn-sm" href="/mandala" target="_blank">別タブ ↗</a></span></div></div>`;
+  const embed = S.ui.mandalaEmbed ? `<iframe class="embed" src="/mandala" style="margin-bottom:14px;"></iframe>` : "";
+  if (S.mandalaErr) return head + monthNav + embed + `<div class="err">マンダラを読み込めませんでした：${esc(S.mandalaErr)}<br><button class="btn btn-gray btn-sm" style="margin-top:6px;" onclick="loadMandala()">もう一度</button></div>`;
+  if (!S.mandala || S.mandala === "loading") return head + monthNav + embed + `<div class="center">読み込み中...</div>`;
+  const charts = S.mandala.charts || [];
+  const pick = S.ui.mandalaScope || (charts[0] && charts[0].scope);
+  const ch = charts.find((c) => c.scope === pick) || charts[0];
+  const order = [1, 2, 3, 8, 0, 4, 7, 6, 5]; // 中心を真ん中に、周りを時計回り
+  const cellHtml = (c) => !c ? `<div class="mcell"></div>` : `<div class="mcell ${c.cell === 0 ? "c" : ""}"><div class="t">${esc(c.title || "（未設定）")}</div>
+    ${c.metric ? `<div class="n">${c.value === null || c.value === undefined ? "-" : (c.unit === "円" ? yen(c.value) : c.value + (c.unit || ""))}${c.target ? ` / 目標 ${c.unit === "円" ? yen(c.target) : c.target + (c.unit || "")}` : ""}</div>${c.achievement !== null && c.achievement !== undefined ? bar(c.achievement / 100) : ""}` : ""}
+    ${c.cell !== 0 ? `<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:auto;"><span class="st st-${esc(c.status)}">${esc(c.status)}</span>${c.kdi && c.kdi.length ? `<span class="small">KDI ${c.kdi.length}件${c.kdiRate !== null && c.kdiRate !== undefined ? "・" + c.kdiRate + "%" : ""}</span>` : '<span class="small warn">KDIなし</span>'}</div>` : ""}</div>`;
+  const summary = charts.map((c) => {
+    const outer = c.cells.filter((x) => x.cell !== 0 && x.title);
+    const doneN = outer.filter((x) => x.status === "達成").length;
+    const doing = outer.filter((x) => x.status === "取組中").length;
+    const center = c.cells.find((x) => x.cell === 0) || {};
+    return `<tr style="cursor:pointer;" onclick="ui('mandalaScope','${esc(c.scope)}')"><td class="l"><b>${esc(c.label)}</b></td><td class="l">${esc(center.title || "-")}</td><td class="${center.achievement >= 100 ? "ok" : center.achievement !== null && center.achievement !== undefined ? "ng" : ""}">${center.achievement === null || center.achievement === undefined ? "-" : center.achievement + "%"}</td><td>${doneN}</td><td>${doing}</td><td>${outer.length - doneN - doing}</td><td>${(c.alerts || []).length ? `<span class="tag red">${c.alerts.length}</span>` : "-"}</td></tr>`;
+  }).join("");
+  return head + monthNav + embed + `<div class="card"><div class="card-h">会社・院のマンダラ一覧（${monthLabel(S.mandalaMonth)}）</div><div class="card-b scroll"><table><tr><th class="l">対象</th><th class="l">中心の目標（KGI）</th><th>達成率</th><th>達成</th><th>取組中</th><th>未着手</th><th>アラート</th></tr>${summary}</table></div></div>
+    ${ch ? `<div class="chips">${charts.map((c) => `<button class="chip ${c.scope === ch.scope ? "sel" : ""}" onclick="ui('mandalaScope','${esc(c.scope)}')">${esc(c.label)}</button>`).join("")}</div>
+    <div class="grid g2"><div class="card"><div class="card-h">${esc(ch.label)}のマンダラ（${esc(ch.fy)}年度）</div><div class="card-b"><div class="mgrid">${order.map((i) => cellHtml(ch.cells.find((c) => c.cell === i))).join("")}</div></div></div>
+    <div class="card"><div class="card-h">改善アラート</div><div class="card-b">${(ch.alerts || []).map((a) => `<div class="alert ${a.level === "ng" ? "ng" : "warn"}" style="cursor:default;">${esc(a.text)}</div>`).join("") || '<div class="muted">アラートはありません</div>'}</div></div></div>` : `<div class="muted">マンダラがありません</div>`}`;
+}
+
+// ===== ログイン =====
+function renderLogin(err) {
+  app.innerHTML = `${topbar()}<div class="login"><div class="lh"><div style="font-size:11px;letter-spacing:2px;opacity:.7;">${esc(HQ.COMPANY_NAME)}</div><div style="font-size:20px;font-weight:800;margin-top:4px;">🏢 本部システム</div></div>
+    <form class="lb" onsubmit="event.preventDefault();doLogin()">
+      ${err ? `<div class="err">${esc(err)}</div>` : ""}
+      <input id="lid" placeholder="ID またはメールアドレス" autocomplete="username"/>
+      <input id="lpw" type="password" placeholder="パスワード" autocomplete="current-password"/>
+      <button class="btn btn-blue" type="submit" id="lbtn">ログイン</button>
+      <div class="small" style="line-height:1.7;">予約管理と同じ管理者アカウントでログインします。本部システムは管理者（社長・本部）だけが使えます。</div>
+    </form></div>`;
+  setTimeout(() => { const el = document.getElementById("lid"); if (el) el.focus(); }, 0);
+}
+async function doLogin() {
+  let id = document.getElementById("lid").value.trim();
+  const pw = document.getElementById("lpw").value;
+  if (!id || !pw) return renderLogin("IDとパスワードを入力してください");
+  if (!id.includes("@")) id = `${id}@${LOGIN_ID_DOMAIN}`;
+  document.getElementById("lbtn").textContent = "確認中…";
+  const { error } = await supabaseClient.auth.signInWithPassword({ email: id, password: pw });
+  if (error) return renderLogin("IDまたはパスワードが違います");
+  await afterLogin();
+}
+async function afterLogin() {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if (!session) { S.user = null; render(); return; }
+  const email = session.user.email;
+  let ok = false, name = email;
+  try {
+    ok = await rest("rpc/is_hq", { method: "POST", body: {} });
+    const me = await rest(`clinic_staff?select=name,role&auth_uid=eq.${session.user.id}`);
+    if (me && me[0]) name = me[0].name;
+  } catch (e) { ok = false; }
+  S.user = { email, name, denied: ok !== true };
+  if (ok === true) loadAll(); else render();
+}
+async function logout() {
+  await supabaseClient.auth.signOut();
+  S.user = null; S.model = null; S.docs = {}; S.bookings = null; S.mandala = null;
+  render();
+}
+
+afterLogin();
+</script>
+</body>
+</html>
