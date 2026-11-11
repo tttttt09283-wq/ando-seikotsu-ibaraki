@@ -12,6 +12,7 @@ import { CheckIllustration } from "@/components/Illustrations";
 import { buttonStyles, Spinner } from "@/components/ui";
 import { createInitialState, loadState, saveState, type CheckState } from "@/lib/storage";
 import { isDemo } from "@/lib/demo";
+import { readSource, sendTally } from "@/lib/tally";
 import type { Answers, CheckId } from "@/types";
 import { ConsentContent, SafetyContent, StopNotice } from "./SafetyParts";
 import { StepShell } from "./StepShell";
@@ -49,7 +50,10 @@ export function CheckFlow() {
   // 最初に、保存されている途中データを読み込む（結果まで終わっている場合は新しく始める）
   useEffect(() => {
     const saved = loadState();
-    setState(saved && !saved.completedAt ? saved : saveState(createInitialState()));
+    const base = saved && !saved.completedAt ? saved : createInitialState();
+    // LINE配信（/age → ?src=line）・QRコード（/qr → ?src=qr）など、どこから開いたかを集計用に覚えておく
+    const src = readSource(window.location.search);
+    setState(saveState(src && !base.source ? { ...base, source: src } : base));
   }, []);
 
   const update = useCallback((patch: Partial<CheckState>) => {
@@ -117,6 +121,13 @@ export function CheckFlow() {
           onSubmit={(profile) => {
             setError(null);
             update({ profile, step: stepIndex + 1 });
+            // 「チェックを始めた人」として1回だけ数える（匿名）
+            if (!state.tallyStarted) {
+              const next = { ...state, profile };
+              void sendTally("start", next).then((ok) => {
+                if (ok) setState((prev) => (prev ? saveState({ ...prev, tallyStarted: true }) : prev));
+              });
+            }
           }}
           render={shell({ progressLabel: "はじめに", badge: "STEP 0", title: "あなたについて教えてください" })}
         />

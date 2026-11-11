@@ -12040,6 +12040,127 @@ function AcuPatientsPanel({payments,bookings,patientMarks,onMarkSaved,user,today
   );
 }
 
+// ===== カラダ年齢チェック（LINE配信など）の利用数の自動集計 =====
+// body-check アプリが匿名で送る記録（body_check_results）を、期間を選んで数える。個人情報は持たない
+function BodyCheckStatsPanel({bookings,todayStr}){
+  const ymd=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  const t0=new Date(todayStr+"T00:00:00");
+  const PRESETS=[
+    ["今日",()=>[todayStr,todayStr]],
+    ["今週",()=>{ const s=new Date(t0); s.setDate(s.getDate()-((s.getDay()+6)%7)); return [ymd(s),todayStr]; }],
+    ["今月",()=>[todayStr.slice(0,8)+"01",todayStr]],
+    ["先月",()=>{ const s=new Date(t0.getFullYear(),t0.getMonth()-1,1), e=new Date(t0.getFullYear(),t0.getMonth(),0); return [ymd(s),ymd(e)]; }],
+    ["直近30日",()=>{ const s=new Date(t0); s.setDate(s.getDate()-29); return [ymd(s),todayStr]; }],
+  ];
+  const [from,setFrom]=React.useState(todayStr.slice(0,8)+"01");
+  const [to,setTo]=React.useState(todayStr);
+  const [rows,setRows]=React.useState(null);
+  const [err,setErr]=React.useState("");
+  const a=from<=to?from:to, b=from<=to?to:from;
+  const load=React.useCallback(()=>{
+    setRows(null); setErr("");
+    // 日本時間の0時〜翌日0時で区切る
+    const next=new Date(b+"T00:00:00"); next.setDate(next.getDate()+1);
+    sb.select("body_check_results",`?started_at=gte.${encodeURIComponent(a+"T00:00:00+09:00")}&started_at=lt.${encodeURIComponent(ymd(next)+"T00:00:00+09:00")}&order=started_at.desc`)
+      .then(r=>{ if(Array.isArray(r)) setRows(r); else { setRows([]); setErr((r&&r.message)||"読み込めませんでした"); } })
+      .catch(e=>{ setRows([]); setErr(e.message||"読み込めませんでした"); });
+  },[a,b]);
+  React.useEffect(()=>{ load(); },[load]);
+
+  const jst=iso=>{ const d=new Date(new Date(iso).getTime()+9*3600e3); return d.toISOString(); };
+  const list=rows||[];
+  const done=list.filter(r=>r.completed_at);
+  const fromLine=list.filter(r=>r.source==="line"||r.in_line);
+  const booked=list.filter(r=>r.booking_clicked);
+  // 実際の予約（カラダチェック経由の予約。予約を受けた日で数える）
+  const realBookings=(bookings||[]).filter(x=>x.from_body_check&&!x.is_training&&x.created_at&&jst(x.created_at).slice(0,10)>=a&&jst(x.created_at).slice(0,10)<=b);
+  const avg=arr=>arr.length?Math.round(arr.reduce((s,v)=>s+v,0)/arr.length*10)/10:null;
+  const bodyAges=done.map(r=>r.body_age).filter(v=>typeof v==="number");
+  const pairs=done.filter(r=>typeof r.body_age==="number"&&typeof r.age==="number");
+  const avgDiff=pairs.length?Math.round(pairs.reduce((s,r)=>s+(r.body_age-r.age),0)/pairs.length*10)/10:null;
+  const pct=(n,d)=>d?Math.round(n/d*100):0;
+  const SRC_LABEL={line:"LINE配信（/age）",qr:"QRコード（/qr）",web:"その他（URL直接など）"};
+  const bySrc={}; list.forEach(r=>{ const k=r.source==="line"||r.source==="qr"?r.source:(r.in_line?"line_other":"web"); bySrc[k]=bySrc[k]||{n:0,done:0}; bySrc[k].n++; if(r.completed_at) bySrc[k].done++; });
+  const SRC_LABEL2={...SRC_LABEL,line_other:"LINEの中で開いた（その他のURL）"};
+  const ageGroupOf=v=>typeof v!=="number"?"不明":v<20?"10代":v>=70?"70代以上":`${Math.floor(v/10)*10}代`;
+  const AGE_ORDER=["10代","20代","30代","40代","50代","60代","70代以上","不明"];
+  const byAge={}; list.forEach(r=>{ const k=ageGroupOf(r.age); byAge[k]=byAge[k]||{n:0,done:0,body:[],diff:[]}; byAge[k].n++; if(r.completed_at){ byAge[k].done++; if(typeof r.body_age==="number"){ byAge[k].body.push(r.body_age); if(typeof r.age==="number") byAge[k].diff.push(r.body_age-r.age); } } });
+  const SEX={female:"女性",male:"男性",unspecified:"回答しない"};
+  const bySex={}; list.forEach(r=>{ const k=SEX[r.sex]||"不明"; bySex[k]=(bySex[k]||0)+1; });
+  const byRank={S:0,A:0,B:0,C:0}; done.forEach(r=>{ if(byRank[r.rank]!=null) byRank[r.rank]++; });
+  const byDay={}; list.forEach(r=>{ const d=jst(r.started_at).slice(0,10); byDay[d]=byDay[d]||{n:0,done:0,book:0}; byDay[d].n++; if(r.completed_at) byDay[d].done++; if(r.booking_clicked) byDay[d].book++; });
+  const days=Object.keys(byDay).sort().reverse();
+
+  const card={background:"white",borderRadius:12,padding:"14px 16px",boxShadow:"0 1px 4px rgba(0,0,0,.06)",marginBottom:12};
+  const h={fontSize:13,fontWeight:800,color:"#1e3a5f",marginBottom:10};
+  const big=(label,value,sub,color)=>(
+    <div style={{flex:"1 1 150px",background:"#f8fafc",borderRadius:10,padding:"10px 12px",minWidth:0}}>
+      <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>{label}</div>
+      <div style={{fontSize:24,fontWeight:900,color:color||"#1e293b",marginTop:2}}>{value}</div>
+      {sub&&<div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>{sub}</div>}
+    </div>);
+  const th={padding:"6px 8px",textAlign:"right",whiteSpace:"nowrap",background:"#f1f5f9",color:"#475569",fontSize:12};
+  const td={padding:"6px 8px",textAlign:"right",borderTop:"1px solid #f1f5f9",fontSize:13,whiteSpace:"nowrap"};
+  return(
+    <div style={{maxWidth:900,margin:"0 auto"}}>
+      <div style={card}>
+        <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f"}}>🧍 カラダ年齢チェックの集計</div>
+        <div style={{fontSize:12,color:"#64748b",marginTop:4,lineHeight:1.6}}>LINE配信・QRコードなどから「カラダ年齢チェック」を行った人を自動で数えます（お名前・電話番号などの個人情報は記録していません）。</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginTop:10}}>
+          {PRESETS.map(([l,f])=>{ const [x,y]=f(); const on=a===x&&b===y; return <button key={l} type="button" onClick={()=>{ setFrom(x); setTo(y); }} style={{padding:"5px 12px",borderRadius:16,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",border:"1.5px solid "+(on?"#1e3a5f":"#e2e8f0"),background:on?"#1e3a5f":"white",color:on?"white":"#475569"}}>{l}</button>; })}
+          <input type="date" aria-label="集計の開始日" value={from} onChange={e=>e.target.value&&setFrom(e.target.value)} style={{padding:"5px 8px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13}}/>
+          〜
+          <input type="date" aria-label="集計の終了日" value={to} onChange={e=>e.target.value&&setTo(e.target.value)} style={{padding:"5px 8px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13}}/>
+          <button type="button" onClick={load} style={{padding:"5px 10px",borderRadius:8,border:"1.5px solid #e2e8f0",background:"white",fontSize:12,fontWeight:700,cursor:"pointer"}}>↻ 更新</button>
+        </div>
+      </div>
+      {rows===null?<div style={{...card,textAlign:"center",color:"#94a3b8"}}>読み込み中…</div>:<>
+        {err&&<div style={{...card,color:"#dc2626",fontWeight:700}}>読み込めませんでした：{err}</div>}
+        <div style={card}>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {big("チェックを始めた人",`${list.length}人`,"年齢などを入力した人")}
+            {big("最後まで行った人",`${done.length}人`,`完了率 ${pct(done.length,list.length)}%`,"#0e8893")}
+            {big("LINEから",`${fromLine.length}人`,`全体の ${pct(fromLine.length,list.length)}%`,"#06a34a")}
+            {big("予約ボタンを押した人",`${booked.length}人`,`完了した人の ${pct(booked.length,done.length)}%`,"#b45309")}
+            {big("実際の予約（チェック経由）",`${realBookings.length}件`,"この期間に受けた予約","#7c3aed")}
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:8}}>
+            {big("平均の姿勢・体幹年齢",bodyAges.length?`${avg(bodyAges)}歳`:"-",`${bodyAges.length}人の平均`)}
+            {big("実年齢との差（平均）",avgDiff==null?"-":`${avgDiff>0?"+":""}${avgDiff}歳`,avgDiff==null?"":avgDiff<0?"実年齢より若い":"実年齢より上",avgDiff!=null&&avgDiff<0?"#059669":"#dc2626")}
+          </div>
+        </div>
+        <div style={card}>
+          <div style={h}>どこから開いたか</div>
+          {list.length===0?<div style={{fontSize:13,color:"#94a3b8"}}>この期間の記録はまだありません</div>:
+          <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><th style={{...th,textAlign:"left"}}>開いた場所</th><th style={th}>始めた</th><th style={th}>完了</th><th style={th}>完了率</th></tr></thead><tbody>
+            {Object.entries(bySrc).sort((x,y)=>y[1].n-x[1].n).map(([k,v])=><tr key={k}><td style={{...td,textAlign:"left",fontWeight:700}}>{SRC_LABEL2[k]||k}</td><td style={td}>{v.n}人</td><td style={td}>{v.done}人</td><td style={td}>{pct(v.done,v.n)}%</td></tr>)}
+          </tbody></table>}
+        </div>
+        <div style={card}>
+          <div style={h}>年代別</div>
+          <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:460}}><thead><tr><th style={{...th,textAlign:"left"}}>年代</th><th style={th}>始めた</th><th style={th}>完了</th><th style={th}>平均の姿勢・体幹年齢</th><th style={th}>実年齢との差</th></tr></thead><tbody>
+            {AGE_ORDER.filter(k=>byAge[k]).map(k=>{ const v=byAge[k]; const d=avg(v.diff); return <tr key={k}><td style={{...td,textAlign:"left",fontWeight:700}}>{k}</td><td style={td}>{v.n}人</td><td style={td}>{v.done}人</td><td style={td}>{v.body.length?`${avg(v.body)}歳`:"-"}</td><td style={{...td,color:d==null?"#94a3b8":d<0?"#059669":"#dc2626",fontWeight:700}}>{d==null?"-":`${d>0?"+":""}${d}歳`}</td></tr>; })}
+          </tbody></table></div>
+          <div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:10,fontSize:12.5}}>
+            <span><b>性別：</b>{Object.entries(bySex).map(([k,v])=>`${k} ${v}人`).join("／")||"-"}</span>
+            <span><b>ランク：</b>{Object.entries(byRank).map(([k,v])=>`${k} ${v}人`).join("／")}</span>
+          </div>
+        </div>
+        <div style={card}>
+          <div style={h}>日別</div>
+          {days.length===0?<div style={{fontSize:13,color:"#94a3b8"}}>この期間の記録はまだありません</div>:
+          <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><th style={{...th,textAlign:"left"}}>日付</th><th style={th}>始めた</th><th style={th}>完了</th><th style={th}>予約ボタン</th></tr></thead><tbody>
+            {days.map(d=><tr key={d}><td style={{...td,textAlign:"left"}}>{d.slice(5).replace("-","/")}（{"日月火水木金土"[new Date(d+"T00:00:00").getDay()]}）</td><td style={td}>{byDay[d].n}人</td><td style={td}>{byDay[d].done}人</td><td style={td}>{byDay[d].book}人</td></tr>)}
+          </tbody></table>}
+        </div>
+        <div style={{fontSize:11,color:"#94a3b8",lineHeight:1.6,padding:"0 4px 12px"}}>
+          ※ 同じ人が別のスマホ・別のブラウザで行うと、別の人として数えます。LINE配信のURLは https://ando-body-check.vercel.app/age 、QRコードは /qr を使うと「どこから開いたか」が分かれます。
+        </div>
+      </>}
+    </div>
+  );
+}
+
 function ChurnAlertPanel({bookings,todayStr}){
   // 期間ごとの区分（日数の範囲）とデフォルトの文面
   const CHURN_BANDS=[
@@ -16235,6 +16356,7 @@ function Dashboard({user,onLogout}){
     ]},
     {id:"marketing",label:"集客・フォロー",color:"#0891b2",items:[
       {id:"churn_alert",label:"離反防止アラート",icon:"bell",special:""},
+      {id:"body_check_stats",label:"カラダ年齢チェックの集計",icon:"trending",special:""},
       {id:"acu_patients",label:"鍼灸保険対応者（同意書の期限）",icon:"users",special:""},
       {id:"pass_holders",label:"回数券・FP 来院フォロー",icon:"receipt",special:""},
       {id:"referral_mgmt",label:"紹介キャンペーン管理",icon:"users",special:""},
@@ -16883,6 +17005,7 @@ function Dashboard({user,onLogout}){
 
           {/* 離反防止アラート */}
           {view==="churn_alert"&&<ChurnAlertPanel bookings={bookings} todayStr={todayStr}/>}
+          {view==="body_check_stats"&&<BodyCheckStatsPanel bookings={bookings} todayStr={todayStr}/>}
           {view==="acu_patients"&&<AcuPatientsPanel payments={paymentsNet} bookings={bookings} patientMarks={patientMarks} onMarkSaved={updatePatientMark} user={user} todayStr={todayStr} onOpenPatient={openPatientByName}/>}
                     {view==="line_link_check"&&<LineLinkCheckPanel bookings={bookings}/>}
                              {view==="staff_kpi"&&<StaffKPIPanel onOpenPatient={openPatientByName} bookings={bookings} payments={paymentsNet} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr} trainingMode={trainingMode}/>}
