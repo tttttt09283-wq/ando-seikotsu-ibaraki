@@ -184,6 +184,15 @@ select count(*) from bookings where from_body_check and not cancelled;
 
 ## 10. LINE配信・QRコード用のURL
 
-- **https://ando-body-check.vercel.app/age** … 開くとすぐカラダ年齢チェックの最初の質問（年齢など）から始まります（`/check` へ移動）。メニュー画面は通りません。
+- **https://ando-body-check.vercel.app/age** … LINE配信用。開くとすぐカラダ年齢チェックの最初の質問（年齢など）から始まります（`/check?src=line` へ移動）。メニュー画面は通りません。
+- **https://ando-body-check.vercel.app/qr** … 店頭のQRコード用（`/check?src=qr`）。集計で「どこから開いたか」を分けるためのURLです。
 - LINEでこのURLを送ると、「あなたの姿勢・体幹は何歳？」の画像付きカードで表示されます（画像：`public/og-check.png`、文言：`src/app/(app)/check/page.tsx`）。
 - 公開URLが変わったときは、環境変数 `NEXT_PUBLIC_SITE_URL` を設定すると、カードの画像のURLもそれに合わせます。
+
+## 11. 利用数の自動集計（匿名）
+
+- チェックを始めたとき（最初の質問の「次へ」）・結果が出たとき・予約ボタンを押したときに、匿名の記録を予約システムのデータベース（Supabase の `body_check_results`）へ送ります（`src/lib/tally.ts`）。
+- 送る内容：匿名のセッションID・どこから開いたか（`?src=`）・LINEのアプリ内か・年齢・性別・気になる症状・姿勢・体幹年齢・項目ごとの年齢・スコア・ランク・予約ボタンを押したか。**氏名・電話番号などは送りません。**
+- 書き込みは関数 `record_body_check()` だけ（ブラウザ用の公開キーで呼べる入口）。表は院のスタッフ（ログイン中）しか読めません。
+- 見る場所：予約管理システムの「集客・フォロー」→「カラダ年齢チェックの集計」（期間を選んで、始めた人・完了・LINEから・予約ボタン・実際の予約・年代別・日別など）。
+- デモ中（`/demo`）は送りません。プライバシーのページ（`/privacy`）にも説明を載せています。

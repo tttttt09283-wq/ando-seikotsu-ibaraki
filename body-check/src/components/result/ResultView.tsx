@@ -18,6 +18,7 @@ import { recommendSelfCare } from "@/lib/selfcare";
 import { buildCompletionEvent, sendStats } from "@/lib/stats";
 import { clearState, loadState, saveState, type CheckState } from "@/lib/storage";
 import { useIsDemo } from "@/lib/useDemo";
+import { sendTally } from "@/lib/tally";
 import type { CheckId, ScoreResult } from "@/types";
 import { RadarScoreChart } from "./RadarScoreChart";
 import { SelfCareCard } from "./SelfCareCard";
@@ -38,6 +39,17 @@ export function ResultView() {
   }, []);
 
   const result = useMemo(() => (state?.completedAt ? calculateResult(state.answers) : null), [state]);
+
+  // 「最後までやった人」として結果を1回だけ数える（匿名。院の管理画面で集計）
+  const tallyRef = useRef(false);
+  useEffect(() => {
+    if (!state || !result || state.tallyCompleted || tallyRef.current) return;
+    tallyRef.current = true;
+    const bodyAge = estimateBodyAge(state.answers, state.profile.sex, state.profile.age);
+    void sendTally("complete", state, result, bodyAge).then((ok) => {
+      if (ok) setState((prev) => (prev ? saveState({ ...prev, tallyCompleted: true }) : prev));
+    });
+  }, [state, result]);
 
   // 同意がある場合のみ、匿名統計を1回だけ送信
   useEffect(() => {
@@ -86,6 +98,7 @@ export function ResultView() {
 
   const onBookingClick = () => {
     if (!state.bookingClicked) setState(saveState({ ...state, bookingClicked: true }));
+    if (!state.bookingClicked) void sendTally("booking", state);
     if (siteConfig.statsEnabled && state.consent === "granted") {
       void sendStats({ type: "booking_click", sessionId: state.sessionId });
     }

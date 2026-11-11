@@ -31,6 +31,11 @@ export interface CheckState {
   completedAt: string | null;
   statsSent: boolean;
   bookingClicked: boolean;
+  /** どこから開いたか（?src=line など。集計用） */
+  source: string | null;
+  /** 利用数の集計に「開始」「完了」を送ったか（同じ内容を何度も送らないため） */
+  tallyStarted: boolean;
+  tallyCompleted: boolean;
   updatedAt: string;
 }
 
@@ -50,6 +55,9 @@ export function createInitialState(): CheckState {
     completedAt: null,
     statsSent: false,
     bookingClicked: false,
+    source: null,
+    tallyStarted: false,
+    tallyCompleted: false,
     updatedAt: new Date().toISOString(),
   };
 }
@@ -108,6 +116,9 @@ export function sanitizeState(raw: unknown, now: number = Date.now()): CheckStat
     completedAt: typeof r.completedAt === "string" ? r.completedAt : null,
     statsSent: r.statsSent === true,
     bookingClicked: r.bookingClicked === true,
+    source: typeof r.source === "string" && /^[a-z0-9_-]{1,20}$/.test(r.source) ? r.source : null,
+    tallyStarted: r.tallyStarted === true,
+    tallyCompleted: r.tallyCompleted === true,
     updatedAt: r.updatedAt,
   };
 }
