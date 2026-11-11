@@ -186,6 +186,9 @@ select count(*) from bookings where from_body_check and not cancelled;
 
 - **https://ando-body-check.vercel.app/age** … LINE配信用。開くとすぐカラダ年齢チェックの最初の質問（年齢など）から始まります（`/check?src=line` へ移動）。メニュー画面は通りません。
 - **https://ando-body-check.vercel.app/qr** … 店頭のQRコード用（`/check?src=qr`）。集計で「どこから開いたか」を分けるためのURLです。
+- **https://ando-body-check.vercel.app/th** … Threads投稿用（`/check?src=threads`）。
+- **https://ando-body-check.vercel.app/ig** … Instagram用（プロフィールのリンク・ストーリーズのリンクなど。`/check?src=instagram`）。
+  ※URLに印が無くても、InstagramやThreadsのアプリ内で開いた場合は自動でそれぞれに数えます。
 - LINEでこのURLを送ると、「あなたの姿勢・体幹は何歳？」の画像付きカードで表示されます（画像：`public/og-check.png`、文言：`src/app/(app)/check/page.tsx`）。
 - 公開URLが変わったときは、環境変数 `NEXT_PUBLIC_SITE_URL` を設定すると、カードの画像のURLもそれに合わせます。
 

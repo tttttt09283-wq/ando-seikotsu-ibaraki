@@ -12081,8 +12081,11 @@ function BodyCheckStatsPanel({bookings,todayStr}){
   const pairs=done.filter(r=>typeof r.body_age==="number"&&typeof r.age==="number");
   const avgDiff=pairs.length?Math.round(pairs.reduce((s,r)=>s+(r.body_age-r.age),0)/pairs.length*10)/10:null;
   const pct=(n,d)=>d?Math.round(n/d*100):0;
-  const SRC_LABEL={line:"LINE配信（/age）",qr:"QRコード（/qr）",share:"シェア（友達・家族から）",web:"その他（URL直接など）"};
-  const bySrc={}; list.forEach(r=>{ const k=r.referred_by?"share":r.source==="line"||r.source==="qr"?r.source:(r.in_line?"line_other":"web"); bySrc[k]=bySrc[k]||{n:0,done:0}; bySrc[k].n++; if(r.completed_at) bySrc[k].done++; });
+  const SRC_LABEL={line:"LINE配信（/age）",qr:"QRコード（/qr）",threads:"Threads（/th）",instagram:"Instagram（/ig）",share:"シェア（友達・家族から）",web:"その他（URL直接など）"};
+  const srcKey=r=>r.referred_by?"share":["line","qr","threads","instagram"].includes(r.source)?r.source:(r.in_line?"line_other":"web");
+  const SRC_SHORT={share:"シェア",line:"LINE配信",qr:"QR",threads:"Threads",instagram:"Instagram",line_other:"LINE",web:"その他"};
+  const bySrc={}; list.forEach(r=>{ const k=srcKey(r); bySrc[k]=bySrc[k]||{n:0,done:0,book:0}; bySrc[k].n++; if(r.completed_at) bySrc[k].done++; if(r.booking_clicked) bySrc[k].book++; });
+  const fromSns=list.filter(r=>!r.referred_by&&(r.source==="threads"||r.source==="instagram"));
   const SRC_LABEL2={...SRC_LABEL,line_other:"LINEの中で開いた（その他のURL）"};
   const ageGroupOf=v=>typeof v!=="number"?"不明":v<20?"10代":v>=70?"70代以上":`${Math.floor(v/10)*10}代`;
   const AGE_ORDER=["10代","20代","30代","40代","50代","60代","70代以上","不明"];
@@ -12126,7 +12129,7 @@ function BodyCheckStatsPanel({bookings,todayStr}){
     <div style={{maxWidth:900,margin:"0 auto"}}>
       <div style={card}>
         <div style={{fontWeight:800,fontSize:16,color:"#1e3a5f"}}>🧍 カラダ年齢チェックの集計</div>
-        <div style={{fontSize:12,color:"#64748b",marginTop:4,lineHeight:1.6}}>LINE配信・QRコード・シェアなどから「カラダ年齢チェック」を行った人を自動で数えます（お名前は患者様が任意で入れたニックネームです。電話番号などは記録していません）。</div>
+        <div style={{fontSize:12,color:"#64748b",marginTop:4,lineHeight:1.6}}>LINE配信・QRコード・Threads・Instagram・シェアなどから「カラダ年齢チェック」を行った人を自動で数えます（お名前は患者様が任意で入れたニックネームです。電話番号などは記録していません）。</div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginTop:10}}>
           {PRESETS.map(([l,f])=>{ const [x,y]=f(); const on=a===x&&b===y; return <button key={l} type="button" onClick={()=>{ setFrom(x); setTo(y); }} style={{padding:"5px 12px",borderRadius:16,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",border:"1.5px solid "+(on?"#1e3a5f":"#e2e8f0"),background:on?"#1e3a5f":"white",color:on?"white":"#475569"}}>{l}</button>; })}
           <input type="date" aria-label="集計の開始日" value={from} onChange={e=>e.target.value&&setFrom(e.target.value)} style={{padding:"5px 8px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13}}/>
@@ -12142,6 +12145,7 @@ function BodyCheckStatsPanel({bookings,todayStr}){
             {big("チェックを始めた人",`${list.length}人`,"年齢などを入力した人")}
             {big("最後まで行った人",`${done.length}人`,`完了率 ${pct(done.length,list.length)}%`,"#0e8893")}
             {big("LINEから",`${fromLine.length}人`,`全体の ${pct(fromLine.length,list.length)}%`,"#06a34a")}
+            {big("Threads・Instagramから",`${fromSns.length}人`,`Threads ${(bySrc.threads||{n:0}).n}人／Instagram ${(bySrc.instagram||{n:0}).n}人`,"#c026d3")}
             {big("予約ボタンを押した人",`${booked.length}人`,`完了した人の ${pct(booked.length,done.length)}%`,"#b45309")}
             {big("実際の予約（チェック経由）",`${realBookings.length}件`,"この期間に受けた予約","#7c3aed")}
           </div>
@@ -12157,8 +12161,8 @@ function BodyCheckStatsPanel({bookings,todayStr}){
         <div style={card}>
           <div style={h}>どこから開いたか</div>
           {list.length===0?<div style={{fontSize:13,color:"#94a3b8"}}>この期間の記録はまだありません</div>:
-          <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><th style={{...th,textAlign:"left"}}>開いた場所</th><th style={th}>始めた</th><th style={th}>完了</th><th style={th}>完了率</th></tr></thead><tbody>
-            {Object.entries(bySrc).sort((x,y)=>y[1].n-x[1].n).map(([k,v])=><tr key={k}><td style={{...td,textAlign:"left",fontWeight:700}}>{SRC_LABEL2[k]||k}</td><td style={td}>{v.n}人</td><td style={td}>{v.done}人</td><td style={td}>{pct(v.done,v.n)}%</td></tr>)}
+          <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><th style={{...th,textAlign:"left"}}>開いた場所</th><th style={th}>始めた</th><th style={th}>完了</th><th style={th}>完了率</th><th style={th}>予約ボタン</th></tr></thead><tbody>
+            {Object.entries(bySrc).sort((x,y)=>y[1].n-x[1].n).map(([k,v])=><tr key={k}><td style={{...td,textAlign:"left",fontWeight:700}}>{SRC_LABEL2[k]||k}</td><td style={td}>{v.n}人</td><td style={td}>{v.done}人</td><td style={td}>{pct(v.done,v.n)}%</td><td style={td}>{v.book}人</td></tr>)}
           </tbody></table>}
         </div>
         <div style={card}>
@@ -12193,7 +12197,7 @@ function BodyCheckStatsPanel({bookings,todayStr}){
               <td style={{...td,textAlign:"left"}}>{r.age!=null?r.age+"歳":"-"}</td>
               <td style={{...td,textAlign:"left",fontWeight:800}}>{r.body_age!=null?r.body_age+"歳":r.completed_at?"-":<span style={{color:"#d97706"}}>途中</span>}</td>
               <td style={{...td,textAlign:"left",letterSpacing:2}}>{benefitCode(r)}</td>
-              <td style={{...td,textAlign:"left"}}>{r.referred_by?"シェア":r.source==="line"?"LINE配信":r.source==="qr"?"QR":r.in_line?"LINE":"その他"}</td>
+              <td style={{...td,textAlign:"left"}}>{SRC_SHORT[srcKey(r)]}</td>
               <td style={{...td,textAlign:"left"}}>{r.share_count?`${r.share_count}回`:"-"}</td>
               <td style={{...td,textAlign:"left"}}>{r.referred_by?`💌 ${nickByCode[r.referred_by]||"期間外の人"}`:"-"}</td>
             </tr>)}
