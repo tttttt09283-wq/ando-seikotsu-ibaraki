@@ -1,2 +1,6 @@
+# 既存の公開ページ（リポジトリ直下のプロジェクト）に、設計資料をアップロードしない
 docs/
-management/
+# 新システム（management/）は Root Directory を management にした別の Vercel プロジェクトで公開する。
+# ここで management/ を除くと、そのプロジェクトでも中身が消えてビルドできなくなる（Vercel はリポジトリ直下の .vercelignore も読む）。
+# そのため除かない。main に取り込む前に、既存の公開ページに management/ のソースが置かれないよう対応を決める（docs/rollout.md §1）。
+management/supabase/
