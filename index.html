@@ -11886,6 +11886,15 @@ function TeamLinkPanel({user,isAdmin,onUnreadChange}){
 // 会計で区分を「鍼灸併用」「鍼灸のみ」「保険診療＋鍼灸併用」にした患者様を一覧にし、同意書の期限を入れて管理する。
 // 期限は patient_marks.acu_consent_until（患者様ごと）
 const ACU_CONSENT_SOON_DAYS=30; // 期限まであと何日で「もうすぐ」にするか
+const ACU_CONSENT_MONTHS=6;      // 鍼灸の同意書の有効期間（同意日から半年）
+// 同意日 → 期限（同意日の6か月後の同じ日。月末で日が無いときはその月の末日）
+function acuConsentUntilFrom(consentDate){
+  if(!consentDate) return "";
+  const [y,m,d]=consentDate.split("-").map(Number);
+  const last=new Date(Date.UTC(y,m-1+ACU_CONSENT_MONTHS+1,0)).getUTCDate();
+  const t=new Date(Date.UTC(y,m-1+ACU_CONSENT_MONTHS,Math.min(d,last)));
+  return t.toISOString().slice(0,10);
+}
 function acuConsentStatus(until,todayStr){
   if(!until) return {key:"none",label:"期限未入力",color:"#64748b",bg:"#f1f5f9"};
   const days=Math.round((Date.parse(until+"T00:00:00")-Date.parse(todayStr+"T00:00:00"))/86400000);
@@ -11951,7 +11960,7 @@ function AcuPatientsPanel({payments,bookings,patientMarks,onMarkSaved,user,today
   return(
     <div style={{padding:16,maxWidth:1100,margin:"0 auto"}}>
       <div style={{fontSize:22,fontWeight:900,color:"#0f172a",marginBottom:4}}>鍼灸保険対応者</div>
-      <div style={{fontSize:12,color:"#64748b",marginBottom:14}}>会計で「鍼灸併用」「鍼灸のみ」（保険診療＋鍼灸併用を含む）を選んだ患者様の一覧です。同意書の期限を入れておくと、期限切れ・{ACU_CONSENT_SOON_DAYS}日以内の方が上に出ます。</div>
+      <div style={{fontSize:12,color:"#64748b",marginBottom:14}}>会計で「鍼灸併用」「鍼灸のみ」（保険診療＋鍼灸併用を含む）を選んだ患者様の一覧です。同意日を入れると、期限（同意日から{ACU_CONSENT_MONTHS}か月）が自動で入ります。期限切れ・{ACU_CONSENT_SOON_DAYS}日以内の方が上に出ます。</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:6,alignItems:"center",marginBottom:12}}>
         {chip("all",`すべて ${list.length}人`,"#0f766e")}
         {chip("expired",`期限切れ ${counts.expired}人`,"#b91c1c")}
@@ -11984,7 +11993,14 @@ function AcuPatientsPanel({payments,bookings,patientMarks,onMarkSaved,user,today
                   <td style={{padding:"9px 10px",whiteSpace:"nowrap"}}>{r.lastVisit}</td>
                   <td style={{padding:"9px 10px",whiteSpace:"nowrap"}}>{r.next?`${r.next.date} ${r.next.time||""}`:<span style={{color:"#b45309"}}>なし</span>}</td>
                   <td style={{padding:"9px 10px",whiteSpace:"nowrap"}}>
-                    <input type="date" value={draft} onChange={e=>setDrafts(prev=>({...prev,[r.key]:e.target.value}))} aria-label={`${r.name}の同意書の期限`} style={{padding:"6px 8px",border:"1.5px solid "+(changed?"#f59e0b":"#e2e8f0"),borderRadius:8,fontFamily:"inherit"}}/>
+                    <div style={{display:"flex",alignItems:"center",gap:4,marginBottom:3}}>
+                      <span style={{fontSize:11,color:"#64748b",width:36}}>同意日</span>
+                      <input type="date" onChange={e=>{ const u=acuConsentUntilFrom(e.target.value); if(u) setDrafts(prev=>({...prev,[r.key]:u})); }} aria-label={`${r.name}の同意日`} title={`同意日を入れると、期限（${ACU_CONSENT_MONTHS}か月後）が入ります`} style={{padding:"4px 6px",border:"1.5px solid #e2e8f0",borderRadius:8,fontFamily:"inherit",fontSize:12}}/>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:4}}>
+                      <span style={{fontSize:11,color:"#64748b",width:36}}>期限</span>
+                      <input type="date" value={draft} onChange={e=>setDrafts(prev=>({...prev,[r.key]:e.target.value}))} aria-label={`${r.name}の同意書の期限`} style={{padding:"6px 8px",border:"1.5px solid "+(changed?"#f59e0b":"#e2e8f0"),borderRadius:8,fontFamily:"inherit"}}/>
+                    </div>
                     <div style={{marginTop:3}}><span style={{fontSize:11,fontWeight:800,color:r.status.color,background:r.status.bg,borderRadius:6,padding:"1px 6px"}}>{r.status.label}</span></div>
                   </td>
                   <td style={{padding:"9px 10px"}}>
