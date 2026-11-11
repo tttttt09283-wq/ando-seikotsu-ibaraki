@@ -2195,6 +2195,20 @@ function StaffSalesRow({row,maxStaffSales,fmt,isExpanded,onToggle,selStatsStoreI
 // ===== 保険請求用：当日のカルテ番号一覧 =====
 // 指定した日に来院（予約）した保険対応の患者様のカルテ番号を、番号順に一覧で確認・コピーできる。
 // カルテ番号は患者様ごとに1つで、その患者様のどの予約に登録されていても拾う（編集画面で全予約に反映される仕様のため）。
+// カルテ番号一覧の区分（色分け）。会計の区分（会計前は予約のメニュー名）から決める
+const KARTE_KINDS=[
+  {key:"manual",label:"手技療法",color:"#1d4ed8",bg:"#dbeafe"},
+  {key:"combined",label:"鍼灸併用",color:"#7e22ce",bg:"#f3e8ff"},
+  {key:"acuOnly",label:"鍼灸のみ",color:"#047857",bg:"#d1fae5"},
+  {key:"self",label:"自費診療のみ",color:"#c2410c",bg:"#ffedd5"},
+];
+function karteKindOf(types,insAmount,menu){
+  const t=[...types].join(" ")+" "+String(menu||"");
+  if(/鍼灸のみ/.test(t)) return "acuOnly";
+  if(/鍼灸併用/.test(t)) return "combined"; // 保険診療＋鍼灸併用も鍼灸併用
+  if(/手技療法/.test(t)||insAmount>0||/[1-3１-３]割/.test(String(menu||""))) return "manual";
+  return "self";
+}
 function KarteListPanel({bookings,payments,stores,todayStr}){
   const fmt=n=>"¥"+Number(n||0).toLocaleString();
   const firstStoreId=(stores&&stores[0]&&stores[0].id)||1;
@@ -2214,6 +2228,9 @@ function KarteListPanel({bookings,payments,stores,todayStr}){
       if(k) karteByPatient[patientKey(b)]=k;
     });
     const payByBooking=mergePaymentsByBooking(payments);
+    // 予約ごとの会計の区分（同じ予約の会計が複数あれば全部）
+    const typesByBooking={};
+    (payments||[]).forEach(p=>{ if(p.booking_id!=null&&p.insurance_type&&!p.is_refund) (typesByBooking[p.booking_id]=typesByBooking[p.booking_id]||new Set()).add(p.insurance_type); });
     const list=bookings
       .filter(b=>b.date===date&&!b.cancelled&&(b.store_id||firstStoreId)===storeId)
       .map(b=>{
@@ -2221,7 +2238,9 @@ function KarteListPanel({bookings,payments,stores,todayStr}){
         const insAmount=pay?(pay.insurance_amount||0):0;
         // 会計前でも、保険メニュー（◯割）で予約している方は保険対応とみなす
         const insured=insAmount>0||/[1-3１-３]割/.test(b.menu||"");
-        return{b,karte:karteByPatient[patientKey(b)]||"",insAmount,paid:!!pay,insured};
+        // 会計済みなら会計の区分、会計前は予約のメニュー名で区分を決める
+        const kind=karteKindOf(pay?(typesByBooking[b.id]||new Set()):new Set(),insAmount,pay?"":b.menu);
+        return{b,karte:karteByPatient[patientKey(b)]||"",insAmount,paid:!!pay,insured:insured||kind!=="self",kind};
       })
       .filter(r=>!onlyInsured||r.insured);
     // 同じ患者様が同日に複数枠ある場合は1行にまとめる
@@ -2266,6 +2285,7 @@ function KarteListPanel({bookings,payments,stores,todayStr}){
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:10,fontSize:12,fontWeight:700}}>
         <span style={{background:"#eff6ff",color:"#1d4ed8",padding:"3px 12px",borderRadius:20}}>{result.length}名</span>
         {missing>0&&<span style={{background:"#fef2f2",color:"#dc2626",padding:"3px 12px",borderRadius:20}}>⚠ カルテ番号が未登録：{missing}名</span>}
+        {KARTE_KINDS.map(k=><span key={k.key} style={{background:k.bg,color:k.color,padding:"3px 12px",borderRadius:20,border:`1.5px solid ${k.color}`}}>{k.label}：{result.filter(r=>r.kind===k.key).length}名</span>)}
       </div>
       {result.length===0?(
         <div style={{textAlign:"center",color:"#94a3b8",padding:"28px 0",fontSize:13}}>この日の{onlyInsured?"保険対応の":""}来院はありません</div>
@@ -2276,9 +2296,12 @@ function KarteListPanel({bookings,payments,stores,todayStr}){
               <th style={th}>カルテNo.</th><th style={th}>患者名</th><th style={th}>時間</th><th style={th}>メニュー</th><th style={th}>担当</th><th style={{...th,textAlign:"right"}}>保険窓口</th><th style={th}>会計</th>
             </tr></thead>
             <tbody>
-              {result.map(r=>(
+              {result.map(r=>{ const k=KARTE_KINDS.find(x=>x.key===r.kind)||KARTE_KINDS[3]; return(
                 <tr key={r.b.id}>
-                  <td style={{...td,fontWeight:800,fontSize:15,color:r.karte?"#0f172a":"#dc2626"}}>{r.karte||"未登録"}</td>
+                  <td style={{...td,fontWeight:800,fontSize:15,color:r.karte?k.color:"#dc2626",background:k.bg,borderLeft:`5px solid ${k.color}`}}>
+                    {r.karte||"未登録"}
+                    <div style={{fontSize:10,fontWeight:800,color:k.color}}>{k.label}</div>
+                  </td>
                   <td style={td}>{r.b.patient_name}</td>
                   <td style={td}>{r.b.time}</td>
                   <td style={{...td,fontSize:12,color:"#64748b"}}>{r.b.menu}</td>
@@ -2286,13 +2309,14 @@ function KarteListPanel({bookings,payments,stores,todayStr}){
                   <td style={{...td,textAlign:"right"}}>{r.paid?fmt(r.insAmount):"-"}</td>
                   <td style={td}>{r.paid?<span style={{color:"#059669",fontWeight:700}}>済</span>:<span style={{color:"#94a3b8"}}>未</span>}</td>
                 </tr>
-              ))}
+              );})}
             </tbody>
           </table>
         </div>
       )}
       <div style={{fontSize:11,color:"#94a3b8",marginTop:10,lineHeight:1.6}}>
-        カルテ番号は「患者管理」の患者情報編集で登録できます（その患者様の全予約に反映されます）。
+        カルテ番号は「患者管理」の患者情報編集で登録できます（その患者様の全予約に反映されます）。<br/>
+        色分けは会計で選んだ区分（保険診療＋鍼灸併用は「鍼灸併用」）。会計前の方は予約のメニュー名で分けています。自費診療のみの方は「保険対応のみ」を外すと表示されます。
       </div>
     </div>
   );
