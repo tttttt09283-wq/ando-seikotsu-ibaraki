@@ -20,6 +20,8 @@ type Options = {
   asOf?: IsoDate;
   actorUserId?: string | null;
   now?: Date;
+  /** true の場合は判定のみ（挿入・更新・監査ログなし）。「フォロー条件」画面のプレビュー用 */
+  dryRun?: boolean;
 };
 
 const CHUNK = 500;
@@ -82,6 +84,11 @@ export async function generateFollowupTasks(admin: AdminClient, opts: Options): 
         created_by: opts.actorUserId ?? null,
       });
     }
+  }
+
+  if (opts.dryRun) {
+    result.created = rows.length;
+    return result;
   }
 
   // 2) 挿入（重複は DB の一意制約で無視）

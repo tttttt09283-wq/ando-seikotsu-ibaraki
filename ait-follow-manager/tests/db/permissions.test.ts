@@ -100,8 +100,15 @@ describe("権限外操作ができない", () => {
       .from("memberships")
       .insert({ user_id: IDS.users.manager, organization_id: IDS.orgs.demo, store_id: null, role: "org_admin" });
     expect(error?.code).toBe("42501");
-    const { error: updErr } = await manager.from("memberships").update({ role: "org_admin" } as never).eq("user_id", IDS.users.manager);
-    expect(updErr?.code).toBe("42501");
+    await manager.from("memberships").update({ role: "org_admin" }).eq("user_id", IDS.users.manager);
+    await manager.from("memberships").update({ role: "store_manager" }).eq("user_id", IDS.users.staff);
+    const { rows } = await sql().query("select user_id, role from memberships where user_id = any($1) order by role", [
+      [IDS.users.manager, IDS.users.staff],
+    ]);
+    expect(rows).toEqual([
+      { user_id: IDS.users.staff, role: "staff" },
+      { user_id: IDS.users.manager, role: "store_manager" },
+    ]);
   });
 
   it("監査ログは組織管理者のみ閲覧できる", async () => {

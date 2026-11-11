@@ -39,6 +39,12 @@ export type Database = {
       foreignKeyName: "appointments_organization_id_customer_id_fkey"
       columns: ["organization_id","customer_id"]
 isOneToOne: false
+      referencedRelation: "customer_overview"
+      referencedColumns: ["organization_id","id"]
+    },{
+      foreignKeyName: "appointments_organization_id_customer_id_fkey"
+      columns: ["organization_id","customer_id"]
+isOneToOne: false
       referencedRelation: "customers"
       referencedColumns: ["organization_id","id"]
     },{
@@ -85,6 +91,12 @@ isOneToOne: false
       foreignKeyName: "consent_records_organization_id_customer_id_fkey"
       columns: ["organization_id","customer_id"]
 isOneToOne: false
+      referencedRelation: "customer_overview"
+      referencedColumns: ["organization_id","id"]
+    },{
+      foreignKeyName: "consent_records_organization_id_customer_id_fkey"
+      columns: ["organization_id","customer_id"]
+isOneToOne: false
       referencedRelation: "customers"
       referencedColumns: ["organization_id","id"]
     }
@@ -105,6 +117,12 @@ isOneToOne: false
       foreignKeyName: "contact_logs_organization_id_customer_id_fkey"
       columns: ["organization_id","customer_id"]
 isOneToOne: false
+      referencedRelation: "customer_overview"
+      referencedColumns: ["organization_id","id"]
+    },{
+      foreignKeyName: "contact_logs_organization_id_customer_id_fkey"
+      columns: ["organization_id","customer_id"]
+isOneToOne: false
       referencedRelation: "customers"
       referencedColumns: ["organization_id","id"]
     },{
@@ -119,6 +137,12 @@ isOneToOne: false
 isOneToOne: false
       referencedRelation: "message_templates"
       referencedColumns: ["organization_id","id"]
+    },{
+      foreignKeyName: "contact_logs_staff_id_fkey"
+      columns: ["staff_id"]
+isOneToOne: false
+      referencedRelation: "users"
+      referencedColumns: ["id"]
     },{
       foreignKeyName: "contact_logs_task_id_fkey"
       columns: ["task_id"]
@@ -149,6 +173,12 @@ isOneToOne: false
       foreignKeyName: "customer_notes_organization_id_customer_id_fkey"
       columns: ["organization_id","customer_id"]
 isOneToOne: false
+      referencedRelation: "customer_overview"
+      referencedColumns: ["organization_id","id"]
+    },{
+      foreignKeyName: "customer_notes_organization_id_customer_id_fkey"
+      columns: ["organization_id","customer_id"]
+isOneToOne: false
       referencedRelation: "customers"
       referencedColumns: ["organization_id","id"]
     }
@@ -166,6 +196,12 @@ isOneToOne: false
                   }
                   Relationships: [
                     {
+      foreignKeyName: "customer_tags_organization_id_customer_id_fkey"
+      columns: ["organization_id","customer_id"]
+isOneToOne: false
+      referencedRelation: "customer_overview"
+      referencedColumns: ["organization_id","id"]
+    },{
       foreignKeyName: "customer_tags_organization_id_customer_id_fkey"
       columns: ["organization_id","customer_id"]
 isOneToOne: false
@@ -261,6 +297,12 @@ isOneToOne: false
 isOneToOne: false
       referencedRelation: "users"
       referencedColumns: ["id"]
+    },{
+      foreignKeyName: "followup_tasks_organization_id_customer_id_fkey"
+      columns: ["organization_id","customer_id"]
+isOneToOne: false
+      referencedRelation: "customer_overview"
+      referencedColumns: ["organization_id","id"]
     },{
       foreignKeyName: "followup_tasks_organization_id_customer_id_fkey"
       columns: ["organization_id","customer_id"]
@@ -495,6 +537,12 @@ isOneToOne: false
       foreignKeyName: "visits_organization_id_customer_id_fkey"
       columns: ["organization_id","customer_id"]
 isOneToOne: false
+      referencedRelation: "customer_overview"
+      referencedColumns: ["organization_id","id"]
+    },{
+      foreignKeyName: "visits_organization_id_customer_id_fkey"
+      columns: ["organization_id","customer_id"]
+isOneToOne: false
       referencedRelation: "customers"
       referencedColumns: ["organization_id","id"]
     },{
@@ -514,7 +562,39 @@ isOneToOne: false
                 }
           }
           Views: {
-            [_ in never]: never
+            "customer_overview": {
+                  Row: {
+                    "assigned_staff_id": string | null,"contact_status": string,"created_at": string,"customer_code": string,"email": string | null,"family_name": string,"family_name_kana": string,"first_visit_on": string | null,"given_name": string,"given_name_kana": string,"id": string,"last_visit_on": string | null,"next_appointment_at": string | null,"open_task_count": number | null,"organization_id": string,"overdue_task_count": number | null,"phone": string | null,"search_text": string | null,"store_id": string,"tag_ids": (string)[] | null
+                  }
+                  ComputedFields: never
+                  Insert: {
+                           "assigned_staff_id"?: string | null,"contact_status"?: string | null,"created_at"?: string | null,"customer_code"?: string | null,"email"?: string | null,"family_name"?: string | null,"family_name_kana"?: string | null,"first_visit_on"?: string | null,"given_name"?: string | null,"given_name_kana"?: string | null,"id"?: string | null,"last_visit_on"?: string | null,"next_appointment_at"?: never,"open_task_count"?: never,"organization_id"?: string | null,"overdue_task_count"?: never,"phone"?: string | null,"search_text"?: string | null,"store_id"?: string | null,"tag_ids"?: never
+                         }
+                        Update: {
+                           "assigned_staff_id"?: string | null,"contact_status"?: string | null,"created_at"?: string | null,"customer_code"?: string | null,"email"?: string | null,"family_name"?: string | null,"family_name_kana"?: string | null,"first_visit_on"?: string | null,"given_name"?: string | null,"given_name_kana"?: string | null,"id"?: string | null,"last_visit_on"?: string | null,"next_appointment_at"?: never,"open_task_count"?: never,"organization_id"?: string | null,"overdue_task_count"?: never,"phone"?: string | null,"search_text"?: string | null,"store_id"?: string | null,"tag_ids"?: never
+                         }
+                        Relationships: [
+                    {
+      foreignKeyName: "customers_assigned_staff_id_fkey"
+      columns: ["assigned_staff_id"]
+isOneToOne: false
+      referencedRelation: "users"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "customers_organization_id_fkey"
+      columns: ["organization_id"]
+isOneToOne: false
+      referencedRelation: "organizations"
+      referencedColumns: ["id"]
+    },{
+      foreignKeyName: "customers_organization_id_store_id_fkey"
+      columns: ["organization_id","store_id"]
+isOneToOne: false
+      referencedRelation: "stores"
+      referencedColumns: ["organization_id","id"]
+    }
+                  ]
+                }
           }
           Functions: {
             "analytics_summary":
