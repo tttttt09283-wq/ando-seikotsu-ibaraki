@@ -11882,6 +11882,124 @@ function TeamLinkPanel({user,isAdmin,onUnreadChange}){
   );
 }
 
+// ===== 鍼灸保険対応者（集客・フォロー） =====
+// 会計で区分を「鍼灸併用」「鍼灸のみ」「保険診療＋鍼灸併用」にした患者様を一覧にし、同意書の期限を入れて管理する。
+// 期限は patient_marks.acu_consent_until（患者様ごと）
+const ACU_CONSENT_SOON_DAYS=30; // 期限まであと何日で「もうすぐ」にするか
+function acuConsentStatus(until,todayStr){
+  if(!until) return {key:"none",label:"期限未入力",color:"#64748b",bg:"#f1f5f9"};
+  const days=Math.round((Date.parse(until+"T00:00:00")-Date.parse(todayStr+"T00:00:00"))/86400000);
+  if(days<0) return {key:"expired",label:`期限切れ（${-days}日前）`,color:"#b91c1c",bg:"#fee2e2",days};
+  if(days<=ACU_CONSENT_SOON_DAYS) return {key:"soon",label:`あと${days}日`,color:"#b45309",bg:"#fef3c7",days};
+  return {key:"ok",label:`あと${days}日`,color:"#047857",bg:"#d1fae5",days};
+}
+function AcuPatientsPanel({payments,bookings,patientMarks,onMarkSaved,user,todayStr,onOpenPatient}){
+  const [filter,setFilter]=React.useState("all");
+  const [q,setQ]=React.useState("");
+  const [drafts,setDrafts]=React.useState({}); // {patient_key: "YYYY-MM-DD"}
+  const [saving,setSaving]=React.useState(null);
+  const [msg,setMsg]=React.useState("");
+  const list=React.useMemo(()=>{
+    const m={};
+    (payments||[]).forEach(p=>{
+      if(p.is_refund||!/鍼灸/.test(String(p.insurance_type||""))) return;
+      const key=patientMarkKey(p.patient_name); if(!key) return;
+      const r=m[key]=m[key]||{key,name:p.patient_name,count:0,first:p.payment_date,last:p.payment_date,types:new Set(),visits:new Set()};
+      const v=p.booking_id!=null?"b"+p.booking_id:"p"+p.id;
+      if(!r.visits.has(v)){ r.visits.add(v); r.count++; }
+      if(p.payment_date<r.first) r.first=p.payment_date;
+      if(p.payment_date>r.last){ r.last=p.payment_date; r.name=p.patient_name; }
+      r.types.add(p.insurance_type);
+    });
+    const byName={};
+    (bookings||[]).forEach(b=>{ const k=patientMarkKey(b.patient_name); if(m[k]) (byName[k]=byName[k]||[]).push(b); });
+    return Object.values(m).map(r=>{
+      const bks=(byName[r.key]||[]).filter(b=>!b.cancelled);
+      const phone=(bks.find(b=>b.phone)||{}).phone||"";
+      const next=bks.filter(b=>b.date>todayStr).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))[0]||null;
+      const lastVisit=bks.filter(b=>b.date<=todayStr).map(b=>b.date).sort().pop()||r.last;
+      const mark=patientMarks[r.key]||{};
+      const until=mark.acu_consent_until||null;
+      return {...r,phone,next,lastVisit,until,status:acuConsentStatus(until,todayStr)};
+    });
+  },[payments,bookings,patientMarks,todayStr]);
+  const order={expired:0,soon:1,none:2,ok:3};
+  const shown=list
+    .filter(r=>filter==="all"||r.status.key===filter)
+    .filter(r=>!q.trim()||r.name.includes(q.trim())||(r.phone||"").replace(/-/g,"").includes(q.replace(/-/g,"").trim()))
+    .sort((a,b)=>(order[a.status.key]-order[b.status.key])||String(a.until||"").localeCompare(String(b.until||""))||b.last.localeCompare(a.last));
+  const counts=Object.fromEntries(["expired","soon","none","ok"].map(k=>[k,list.filter(r=>r.status.key===k).length]));
+
+  async function saveUntil(r){
+    const v=drafts[r.key]!==undefined?drafts[r.key]:(r.until||"");
+    setSaving(r.key); setMsg("");
+    try{
+      const row=await savePatientMark(r.name,{acu_consent_until:v||null},user&&user.id);
+      onMarkSaved(row);
+      setDrafts(prev=>{ const n={...prev}; delete n[r.key]; return n; });
+      setMsg(`${r.name} 様の同意書の期限を保存しました`);
+    }catch(e){
+      setMsg("⚠ "+(/acu_consent_until/.test(e.message||"")?"同意書の期限を保存する欄がまだデータベースにありません。管理者に連絡してください":(e.message||"保存できませんでした")));
+    }
+    setSaving(null);
+  }
+  const chip=(k,label,color)=>(
+    <button key={k} onClick={()=>setFilter(k)} style={{padding:"7px 12px",borderRadius:16,border:"1.5px solid "+(filter===k?color:"#e2e8f0"),background:filter===k?color:"white",color:filter===k?"white":"#374151",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>{label}</button>
+  );
+  const typeLabel=t=>t==="手技療法＋鍼灸併用"?"保険診療＋鍼灸併用":t;
+
+  return(
+    <div style={{padding:16,maxWidth:1100,margin:"0 auto"}}>
+      <div style={{fontSize:22,fontWeight:900,color:"#0f172a",marginBottom:4}}>鍼灸保険対応者</div>
+      <div style={{fontSize:12,color:"#64748b",marginBottom:14}}>会計で「鍼灸併用」「鍼灸のみ」（保険診療＋鍼灸併用を含む）を選んだ患者様の一覧です。同意書の期限を入れておくと、期限切れ・{ACU_CONSENT_SOON_DAYS}日以内の方が上に出ます。</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:6,alignItems:"center",marginBottom:12}}>
+        {chip("all",`すべて ${list.length}人`,"#0f766e")}
+        {chip("expired",`期限切れ ${counts.expired}人`,"#b91c1c")}
+        {chip("soon",`${ACU_CONSENT_SOON_DAYS}日以内 ${counts.soon}人`,"#b45309")}
+        {chip("none",`期限未入力 ${counts.none}人`,"#64748b")}
+        {chip("ok",`期限内 ${counts.ok}人`,"#047857")}
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="名前・電話番号で検索" aria-label="検索" style={{marginLeft:"auto",padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontFamily:"inherit",fontSize:13}}/>
+      </div>
+      {msg&&<div style={{fontSize:13,fontWeight:700,color:msg.startsWith("⚠")?"#b91c1c":"#047857",marginBottom:8}}>{msg}</div>}
+      <div style={{background:"white",borderRadius:12,border:"1px solid #e2e8f0",overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead>
+            <tr style={{background:"#f8fafc"}}>
+              {["患者様","区分","鍼灸の来院","前回来院","次回予約","同意書の期限",""].map(h=><th key={h} style={{padding:"9px 10px",textAlign:"left",fontSize:12,color:"#475569",borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap"}}>{h}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {shown.length===0&&<tr><td colSpan={7} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>該当する患者様はいません</td></tr>}
+            {shown.map(r=>{
+              const draft=drafts[r.key]!==undefined?drafts[r.key]:(r.until||"");
+              const changed=draft!==(r.until||"");
+              return(
+                <tr key={r.key} style={{borderBottom:"1px solid #f1f5f9"}}>
+                  <td style={{padding:"9px 10px"}}>
+                    <button onClick={()=>onOpenPatient&&onOpenPatient(r.name)} style={{background:"none",border:"none",padding:0,fontWeight:800,color:"#1d4ed8",cursor:"pointer",fontFamily:"inherit",fontSize:14,textDecoration:"underline"}}>{r.name}</button>
+                    {r.phone&&<div style={{fontSize:11,color:"#64748b"}}>{r.phone}</div>}
+                  </td>
+                  <td style={{padding:"9px 10px",fontSize:12}}>{[...r.types].map(typeLabel).join("・")}</td>
+                  <td style={{padding:"9px 10px",whiteSpace:"nowrap"}}>{r.count}回<div style={{fontSize:11,color:"#64748b"}}>初回 {r.first}</div></td>
+                  <td style={{padding:"9px 10px",whiteSpace:"nowrap"}}>{r.lastVisit}</td>
+                  <td style={{padding:"9px 10px",whiteSpace:"nowrap"}}>{r.next?`${r.next.date} ${r.next.time||""}`:<span style={{color:"#b45309"}}>なし</span>}</td>
+                  <td style={{padding:"9px 10px",whiteSpace:"nowrap"}}>
+                    <input type="date" value={draft} onChange={e=>setDrafts(prev=>({...prev,[r.key]:e.target.value}))} aria-label={`${r.name}の同意書の期限`} style={{padding:"6px 8px",border:"1.5px solid "+(changed?"#f59e0b":"#e2e8f0"),borderRadius:8,fontFamily:"inherit"}}/>
+                    <div style={{marginTop:3}}><span style={{fontSize:11,fontWeight:800,color:r.status.color,background:r.status.bg,borderRadius:6,padding:"1px 6px"}}>{r.status.label}</span></div>
+                  </td>
+                  <td style={{padding:"9px 10px"}}>
+                    <button onClick={()=>saveUntil(r)} disabled={!changed||saving===r.key} style={{padding:"7px 12px",borderRadius:8,border:"none",background:changed?"#0f766e":"#cbd5e1",color:"white",fontWeight:800,fontSize:12,cursor:changed?"pointer":"default",fontFamily:"inherit"}}>{saving===r.key?"保存中…":"保存"}</button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function ChurnAlertPanel({bookings,todayStr}){
   // 期間ごとの区分（日数の範囲）とデフォルトの文面
   const CHURN_BANDS=[
@@ -16077,6 +16195,7 @@ function Dashboard({user,onLogout}){
     ]},
     {id:"marketing",label:"集客・フォロー",color:"#0891b2",items:[
       {id:"churn_alert",label:"離反防止アラート",icon:"bell",special:""},
+      {id:"acu_patients",label:"鍼灸保険対応者（同意書の期限）",icon:"users",special:""},
       {id:"pass_holders",label:"回数券・FP 来院フォロー",icon:"receipt",special:""},
       {id:"referral_mgmt",label:"紹介キャンペーン管理",icon:"users",special:""},
       {id:"reviews",label:"口コミの推移・近隣店舗",icon:"trending",special:""},
@@ -16724,6 +16843,7 @@ function Dashboard({user,onLogout}){
 
           {/* 離反防止アラート */}
           {view==="churn_alert"&&<ChurnAlertPanel bookings={bookings} todayStr={todayStr}/>}
+          {view==="acu_patients"&&<AcuPatientsPanel payments={paymentsNet} bookings={bookings} patientMarks={patientMarks} onMarkSaved={updatePatientMark} user={user} todayStr={todayStr} onOpenPatient={openPatientByName}/>}
                     {view==="line_link_check"&&<LineLinkCheckPanel bookings={bookings}/>}
                              {view==="staff_kpi"&&<StaffKPIPanel onOpenPatient={openPatientByName} bookings={bookings} payments={paymentsNet} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr} trainingMode={trainingMode}/>}
                              {view==="staff_summary"&&<StaffSummaryPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}
