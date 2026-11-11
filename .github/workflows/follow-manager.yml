@@ -1,0 +1,52 @@
+# A.I.T Follow Manager の CI（ait-follow-manager/ 配下の変更時のみ実行。既存サイトには影響しない）
+name: follow-manager
+
+on:
+  pull_request:
+    paths: ["ait-follow-manager/**", ".github/workflows/follow-manager.yml"]
+  push:
+    branches: [main]
+    paths: ["ait-follow-manager/**", ".github/workflows/follow-manager.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: follow-manager-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: ait-follow-manager
+    env:
+      APP_ENV: development
+      SITE_URL: http://localhost:3000
+      CRON_SECRET: ci-cron-secret-0123456789abcdef
+      REQUIRE_ADMIN_MFA: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ait-follow-manager/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+
+      - name: ローカル Supabase 起動
+        run: npm run db:start
+      - name: 接続情報を環境変数に設定
+        run: |
+          npx supabase status -o env | sed -n 's/^API_URL=/SUPABASE_URL=/p; s/^ANON_KEY=/SUPABASE_ANON_KEY=/p; s/^SERVICE_ROLE_KEY=/SUPABASE_SERVICE_ROLE_KEY=/p; s/^DB_URL=/DATABASE_URL=/p' | tr -d '"' >> "$GITHUB_ENV"
+      - run: npm run db:reset
+      - run: npm run test:db
+
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e

@@ -355,3 +355,17 @@ Phase 1 から用意しておくもの：
 
 `messaging_channels` / `customer_channel_identities` は **Phase 1 では作成しない**方針を推奨
 （未使用テーブルの RLS 設定漏れリスクを避けるため）。Phase 2 のマイグレーションで追加する。
+
+## 5. 実装時の追加・変更（2026-11-11）
+
+| 項目 | 内容 |
+|---|---|
+| `organization_counters` | 顧客番号の自動採番（`C000001` 形式、組織ごと） |
+| `followup_tasks.title` / `template_id` | タスク名（ルール名）と既定テンプレート |
+| `followup_tasks_dedupe` | `unique (organization_id, rule_id, customer_id, period_key)`（手動タスクは rule_id が null のため対象外） |
+| `customer_overview` ビュー | 一覧・絞り込み用（次回予約・未対応件数・期限切れ件数・タグ）。`security_invoker` で RLS 適用 |
+| 列単位 GRANT | `contact_status`・初回/最終来店日・`deleted_at` 等はユーザーが直接更新できない（トリガー・関数のみ） |
+| 監査トリガー | `app.audit_row_change()`：変更列名のみ記録（値は記録しない、status 等の区分値のみ前後を記録） |
+| Phase 2 テーブル | 方針どおり未作成（11_phase2-line.md） |
+
+マイグレーション：`supabase/migrations/2026111100{01..05}00_*.sql`
