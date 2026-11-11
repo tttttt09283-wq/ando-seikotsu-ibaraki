@@ -1,8 +1,9 @@
 /**
  * ===== 利用数の自動集計（匿名） =====
  * 「何人がチェックを始めたか・最後までやったか・予約ボタンを押したか」を、院の管理画面で数えられるようにします。
- * 送るのは、匿名のセッションID・年齢・性別・気になる症状・結果（姿勢・体幹年齢・スコア）・どこから開いたか だけです。
- * 氏名・電話番号・メールなど、個人を特定できる情報は送りません。
+ * 送るのは、匿名のセッションID・お名前（任意のニックネーム）・年齢・性別・気になる症状・結果（姿勢・体幹年齢・スコア）・
+ * どこから開いたか・紹介コード（シェアのURL用）・シェアしてくれた人の紹介コード だけです。
+ * 電話番号・メール・LINEのアカウント情報は送りません。
  *
  * 保存先：あんど整骨院の予約システムのデータベース（Supabase）の body_check_results。
  * 書き込みは record_body_check() という決まった入口だけで、ほかの人の記録を読むことはできません（読めるのは院のスタッフだけ）。
@@ -10,7 +11,8 @@
  */
 import { isDemo } from "./demo";
 import type { BodyAgeResult } from "./bodyAge";
-import type { CheckState } from "./storage";
+import { shareCodeOf, type CheckState } from "./storage";
+import { siteConfig } from "@/config/site";
 import type { ScoreResult } from "@/types";
 
 /** 公開してよい値（予約ページなどでも使っている、ブラウザから使う用の鍵）。書き込みは決まった入口だけに限定しています */
@@ -18,7 +20,39 @@ const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
 const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
 
-export type TallyEvent = "start" | "complete" | "booking";
+export type TallyEvent = "start" | "complete" | "booking" | "share";
+
+/** 紹介コード（?ref=…）を読み取る。英小文字・数字の6〜16文字だけ */
+export function readRef(search: string): string | null {
+  try {
+    const v = (new URLSearchParams(search).get("ref") || "").toLowerCase();
+    return /^[a-z0-9]{6,16}$/.test(v) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 結果をシェアするURL（友達・家族はこのURLから始める）。LIFFを設定していればLINEで開くURLにする */
+export function shareUrlFor(code: string): string {
+  if (siteConfig.liffId) return `https://liff.line.me/${siteConfig.liffId}?ref=${code}`;
+  return `${siteConfig.siteUrl}/s?ref=${code}`;
+}
+
+/** シェアした人のニックネームと姿勢・体幹年齢（シェアされたページに出す）。見つからなければ null */
+export async function fetchSharedResult(code: string): Promise<{ nickname: string | null; body_age: number | null } | null> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/get_shared_body_check`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ p_code: code }),
+    });
+    if (!res.ok) return null;
+    const j = await res.json();
+    return j && typeof j === "object" ? j : null;
+  } catch {
+    return null;
+  }
+}
 
 /** どこから開いたか（URLの ?src=line など）。英小文字・数字・_・- だけ、20文字まで */
 export function readSource(search: string): string | null {
@@ -42,8 +76,11 @@ export function buildTally(event: TallyEvent, state: CheckState, result?: ScoreR
   const body: Record<string, unknown> = {
     session_id: state.sessionId,
     event,
-    source: state.source ?? "web",
+    source: state.source ?? (state.ref ? "share" : "web"),
     in_line: isInLine(ua),
+    nickname: state.profile.nickname ?? null,
+    share_code: shareCodeOf(state.sessionId),
+    referred_by: state.ref,
     age: state.profile.age,
     sex: state.profile.sex,
     symptoms: state.profile.symptoms,

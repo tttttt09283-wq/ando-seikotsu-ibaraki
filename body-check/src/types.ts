@@ -42,6 +42,8 @@ export type { SexId } from "@/config/bodyAge";
 import type { SexId } from "@/config/bodyAge";
 
 export interface Profile {
+  /** お名前（ニックネーム・匿名でもOK。任意・20文字まで。結果画面とシェアに表示） */
+  nickname?: string | null;
   /** 実年齢（姿勢・体幹年齢と比べるために使用） */
   age: number | null;
   /** 年代（実年齢から自動で決める。匿名統計用） */

@@ -16,6 +16,7 @@ import {
 } from "@/config/checks";
 import { SEX_OPTIONS, type SexId } from "@/config/bodyAge";
 import { balanceOptionIdForSeconds, isValidLegsCount, isValidPlankSeconds, parseCount } from "@/lib/scoring";
+import { cleanNickname } from "@/lib/storage";
 import { Card, OptionCard } from "@/components/ui";
 import type { BalanceValue, CheckAnswer, Profile, SymptomId } from "@/types";
 import { Stopwatch } from "./Stopwatch";
@@ -47,6 +48,7 @@ function Fieldset({ legend, hint, children }: { legend: string; hint?: string; c
 // ---------------------------------------------------------------------------
 
 export function ProfileStep({ initial, onSubmit, render }: StepRenderProps<Profile>) {
+  const [nickname, setNickname] = useState(initial?.nickname ?? "");
   const [ageText, setAgeText] = useState(initial?.age != null ? String(initial.age) : "");
   const [sex, setSex] = useState<SexId | null>(initial?.sex ?? null);
   const [symptoms, setSymptoms] = useState<SymptomId[]>(initial?.symptoms ?? []);
@@ -67,12 +69,28 @@ export function ProfileStep({ initial, onSubmit, render }: StepRenderProps<Profi
     if (age === null || age < AGE_INPUT.min || age > AGE_INPUT.max) return `年齢は${AGE_INPUT.min}〜${AGE_INPUT.max}の数字で入力してください`;
     if (!sex) return "性別を選んでください（「回答しない」も選べます）";
     if (symptoms.length === 0) return "気になる症状を1つ以上選んでください（ない場合は「特になし」）";
-    onSubmit({ age, ageGroup: ageGroupOf(age), sex, symptoms });
+    onSubmit({ nickname: cleanNickname(nickname), age, ageGroup: ageGroupOf(age), sex, symptoms });
     return null;
   };
 
   return render(
     <div className="space-y-6">
+      <Card>
+        <label htmlFor="nickname" className="mb-1 block text-lg font-black">
+          お名前<span className="ml-2 text-sm font-bold text-slate-600">（ニックネームでもOK・任意）</span>
+        </label>
+        <input
+          id="nickname"
+          type="text"
+          autoComplete="nickname"
+          maxLength={20}
+          value={nickname}
+          onChange={(e) => setNickname(e.target.value)}
+          placeholder="例：はなこ"
+          className="h-12 w-full rounded-2xl border-2 border-slate-300 bg-white px-4 text-lg font-bold focus:border-brand-500 focus:outline-none"
+        />
+        <p className="mt-1 text-xs text-slate-600">結果画面に「〇〇さんの姿勢・体幹年齢」と表示されます。空欄でも大丈夫です。</p>
+      </Card>
       <Card>
         <label htmlFor="age" className="mb-2 block text-lg font-black">
           年齢
@@ -132,7 +150,7 @@ export function ProfileStep({ initial, onSubmit, render }: StepRenderProps<Profi
           </div>
         </Fieldset>
       </Card>
-      <p className="text-center text-xs text-slate-600">お名前・電話番号・メールアドレスの入力は不要です。</p>
+      <p className="text-center text-xs text-slate-600">電話番号・メールアドレスの入力は不要です（お名前も任意です）。</p>
     </div>,
     tryNext,
   );

@@ -12,7 +12,7 @@ import { CheckIllustration } from "@/components/Illustrations";
 import { buttonStyles, Spinner } from "@/components/ui";
 import { createInitialState, loadState, saveState, type CheckState } from "@/lib/storage";
 import { isDemo } from "@/lib/demo";
-import { readSource, sendTally } from "@/lib/tally";
+import { readRef, readSource, sendTally } from "@/lib/tally";
 import type { Answers, CheckId } from "@/types";
 import { ConsentContent, SafetyContent, StopNotice } from "./SafetyParts";
 import { StepShell } from "./StepShell";
@@ -53,7 +53,12 @@ export function CheckFlow() {
     const base = saved && !saved.completedAt ? saved : createInitialState();
     // LINE配信（/age → ?src=line）・QRコード（/qr → ?src=qr）など、どこから開いたかを集計用に覚えておく
     const src = readSource(window.location.search);
-    setState(saveState(src && !base.source ? { ...base, source: src } : base));
+    // シェアされたURLから来た場合は、シェアしてくれた人の紹介コードも覚えておく（来院特典・集計用）
+    const ref = readRef(window.location.search);
+    let next = base;
+    if (src && !next.source) next = { ...next, source: src };
+    if (ref && !next.ref) next = { ...next, ref };
+    setState(saveState(next));
   }, []);
 
   const update = useCallback((patch: Partial<CheckState>) => {

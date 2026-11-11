@@ -33,6 +33,8 @@ export interface CheckState {
   bookingClicked: boolean;
   /** どこから開いたか（?src=line など。集計用） */
   source: string | null;
+  /** シェアしてくれた人の紹介コード（?ref=…。シェアされたページから来た場合） */
+  ref: string | null;
   /** 利用数の集計に「開始」「完了」を送ったか（同じ内容を何度も送らないため） */
   tallyStarted: boolean;
   tallyCompleted: boolean;
@@ -44,10 +46,21 @@ function newSessionId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/** お名前（ニックネーム）を整える：前後の空白・記号 < > を除き、20文字まで。空なら null */
+export function cleanNickname(v: string): string | null {
+  const s = v.replace(/[<>\u0000-\u001f]/g, "").trim().slice(0, 20);
+  return s || null;
+}
+
+/** この人の紹介コード（結果をシェアするURLに付ける）。匿名IDの英数字の先頭10文字 */
+export function shareCodeOf(sessionId: string): string {
+  return sessionId.toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 10);
+}
+
 export function createInitialState(): CheckState {
   return {
     sessionId: newSessionId(),
-    profile: { age: null, ageGroup: null, sex: null, symptoms: [] },
+    profile: { nickname: null, age: null, ageGroup: null, sex: null, symptoms: [] },
     answers: {},
     safetyAgreed: false,
     consent: null,
@@ -56,6 +69,7 @@ export function createInitialState(): CheckState {
     statsSent: false,
     bookingClicked: false,
     source: null,
+    ref: null,
     tallyStarted: false,
     tallyCompleted: false,
     updatedAt: new Date().toISOString(),
@@ -84,7 +98,9 @@ export function sanitizeState(raw: unknown, now: number = Date.now()): CheckStat
   const rawAge = r.profile?.age;
   const age =
     typeof rawAge === "number" && Number.isInteger(rawAge) && rawAge >= AGE_INPUT.min && rawAge <= AGE_INPUT.max ? rawAge : null;
+  const nick = typeof r.profile?.nickname === "string" ? cleanNickname(r.profile.nickname) : null;
   const profile: Profile = {
+    nickname: nick,
     age,
     ageGroup:
       age !== null
@@ -117,6 +133,7 @@ export function sanitizeState(raw: unknown, now: number = Date.now()): CheckStat
     statsSent: r.statsSent === true,
     bookingClicked: r.bookingClicked === true,
     source: typeof r.source === "string" && /^[a-z0-9_-]{1,20}$/.test(r.source) ? r.source : null,
+    ref: typeof r.ref === "string" && /^[a-z0-9]{6,16}$/.test(r.ref) ? r.ref : null,
     tallyStarted: r.tallyStarted === true,
     tallyCompleted: r.tallyCompleted === true,
     updatedAt: r.updatedAt,
