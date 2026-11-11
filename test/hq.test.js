@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
 const ctx = {};
-vm.runInNewContext(readFileSync(new URL("../hq-logic.js", import.meta.url), "utf8"), ctx);
+vm.runInNewContext(readFileSync(new URL("../hq/hq-logic.js", import.meta.url), "utf8"), ctx);
 const HQ = ctx.HQ;
 const plain = (v) => JSON.parse(JSON.stringify(v));
 

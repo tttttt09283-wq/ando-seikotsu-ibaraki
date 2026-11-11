@@ -117,7 +117,7 @@ input[type=checkbox]{width:17px;height:17px;vertical-align:middle;cursor:pointer
 .ms input[type=text]{flex:1;min-width:0;}
 .ms.done input[type=text]{text-decoration:line-through;color:#94a3b8;}
 .ms.late input[type=date]{border-color:#fca5a5;background:#fef2f2;}
-iframe.embed{width:100%;height:80vh;border:none;border-radius:12px;background:white;box-shadow:0 1px 3px rgba(0,0,0,.08);}
+.mcell.edit{cursor:pointer;} .mcell.edit:hover{border-color:#86efac;} .mcell.sel{border-color:#15803d;box-shadow:0 0 0 3px #bbf7d0;}
 /* ログイン */
 .login{max-width:380px;margin:60px auto;background:white;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,.12);overflow:hidden;}
 .login .lh{background:linear-gradient(135deg,#0f2744,#1e4d8c);color:white;padding:22px;text-align:center;}
@@ -145,7 +145,9 @@ iframe.embed{width:100%;height:80vh;border:none;border-radius:12px;background:wh
 const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjdGxpcnhjd2l0Y3VwYWV3aXl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzOTI1NTgsImV4cCI6MjA5Nzk2ODU1OH0.ym1WINmz3W7T2HWvtzWkQcKs96RB5JU1JZL7EiMz704";
 const LOGIN_ID_DOMAIN = "ando.jp";
-// /incentive・/mandala と同じログイン（同じタブの sessionStorage）。本部の画面の中で開く評価・マンダラもそのまま使える
+// 予約管理システム（別システム）。評価・インセンティブ・学習カリキュラムなどはそちらを別タブで開く
+const BOOKING_ORIGIN = "https://ando-seikotsu-ibaraki.vercel.app";
+// 本部システムは予約管理とは別の Vercel プロジェクト。アカウント（Supabase）は同じ管理者アカウントを使う
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: { storage: window.sessionStorage, persistSession: true, autoRefreshToken: true }
 });
@@ -298,7 +300,7 @@ document.addEventListener("change", (e) => {
 async function loadAll() {
   render();
   const jobs = [
-    apiGet("/api/incentive").then((m) => { S.model = m; S.modelErr = null; }).catch((e) => { S.modelErr = e.message; }),
+    apiGet("/api/ledger").then((m) => { S.model = m; S.modelErr = null; }).catch((e) => { S.modelErr = e.message; }),
     rest("hq_docs?select=key,data").then((rows) => { S.docs = {}; (rows || []).forEach((r) => { S.docs[r.key] = r.data || {}; }); S.docsErr = null; })
       .catch((e) => { S.docsErr = /hq_docs/.test(e.message) ? "本部の保存先（hq_docs テーブル）がまだありません。sql/2026-11-11_hq_docs.sql を Supabase で実行してください" : e.message; }),
     rest("stores?select=id,name,active").then((r) => { S.stores = r || []; }).catch(() => {}),
@@ -308,7 +310,7 @@ async function loadAll() {
 }
 async function refreshModel() {
   S.model = null; S.modelErr = null; render();
-  try { S.model = await apiGet("/api/incentive?refresh=1"); } catch (e) { S.modelErr = e.message; }
+  try { S.model = await apiGet("/api/ledger?refresh=1"); } catch (e) { S.modelErr = e.message; }
   render();
 }
 async function loadMandala() {
@@ -371,8 +373,8 @@ function render() {
 function topbar() {
   return `<div class="topbar"><div><div class="co">${esc(HQ.COMPANY_NAME)}</div><h1>🏢 本部システム</h1></div>
     <div class="acts noprint">
-      <a class="tb" href="/" target="_blank">📅 予約管理</a>
-      <a class="tb" href="/incentive" target="_blank">💴 評価・インセンティブ</a>
+      <a class="tb" href="${BOOKING_ORIGIN}/" target="_blank" rel="noopener">📅 予約管理 ↗</a>
+      <a class="tb" href="${BOOKING_ORIGIN}/incentive" target="_blank" rel="noopener">💴 評価・インセンティブ ↗</a>
       ${S.user ? `<button class="tb" onclick="refreshModel()">🔄 台帳を再読込</button><span style="font-size:12px;opacity:.85;">${esc(S.user.name || S.user.email)}</span><button class="tb" onclick="logout()">ログアウト</button>` : ""}
     </div></div>`;
 }
@@ -565,7 +567,7 @@ function secAccounting() {
   let labor = nm;
   if (!nm) {
     const halves = S.model.company || [];
-    labor = `<div class="card"><div class="card-h"><span>全社の人件費（42%枠）</span><a class="btn btn-gray btn-sm" href="/incentive" target="_blank">支給額の入力は評価・インセンティブへ →</a></div><div class="card-b scroll">
+    labor = `<div class="card"><div class="card-h"><span>全社の人件費（42%枠）</span><a class="btn btn-gray btn-sm" href="${BOOKING_ORIGIN}/incentive" target="_blank" rel="noopener">支給額の入力は評価・インセンティブへ ↗</a></div><div class="card-b scroll">
       ${halves.length ? `<table><tr><th class="l">期間</th><th>経過</th><th>売上</th><th>人件費（社保込）</th><th>人件費率</th><th>42%枠</th><th>残り枠</th><th>インセンティブ込み</th></tr>
       ${halves.map((h) => `<tr><td class="l"><b>${esc(h.label)}</b></td><td>${h.monthsElapsed}ヶ月</td><td>${yen(h.sales)}</td><td>${yen(h.labor)}</td><td class="${h.laborRate > HQ.LABOR_CAP_RATE ? "ng" : "ok"}"><b>${pct(h.laborRate)}</b></td><td>${yen(h.cap)}</td><td class="${h.room < 0 ? "ng" : ""}">${yen(h.room)}</td><td>${pct(h.laborRateWithIncentive)}</td></tr>`).join("")}</table>
       ${halves.flatMap((h) => h.months || []).length ? `<div style="margin-top:12px;font-weight:800;font-size:13px;color:#1e3a5f;">月別</div><table><tr><th class="l">月</th><th>売上</th><th>支給合計（社保抜き）</th><th>人件費（社保込）</th><th>人件費率</th></tr>${halves.flatMap((h) => h.months || []).map((m) => `<tr><td class="l">${m.month}月</td><td>${yen(m.sales)}</td><td>${m.paid === null ? '<span class="muted">未入力</span>' : yen(m.paid)}</td><td>${yen(m.labor)}${m.laborEstimated ? '<span class="small">（推定）</span>' : ""}</td><td class="${m.rate > HQ.LABOR_CAP_RATE ? "ng" : ""}">${pct(m.rate)}</td></tr>`).join("")}</table>` : ""}`
@@ -602,7 +604,7 @@ function secAccounting() {
 // ---------- 教育 ----------
 function secEducation() {
   const d = doc("education");
-  const head = `<div class="h2">🎓 教育</div><div class="lead">研修・勉強会の計画と、スタッフごとの受講状況を管理します。日々の学習カリキュラムは予約管理の「スタッフ → 学習カリキュラム」でも確認できます。</div>`;
+  const head = `<div class="h2">🎓 教育</div><div class="lead">研修・勉強会の計画と、スタッフごとの受講状況を管理します。日々の学習カリキュラムは予約管理システムの「スタッフ → 学習カリキュラム」で確認できます。</div>`;
   const list = (d.trainings || []).slice().sort((a, b) => String(a.date || "9").localeCompare(String(b.date || "9")));
   const st = HQ.trainingStats(d.trainings, people());
   const open = S.ui.eduOpen;
@@ -694,10 +696,9 @@ function secCareer() {
     <td class="l">${sel("career", `notes.${p.key}.target`, n.target, HQ.GRADES.filter((g) => !g.id.startsWith("-")).map((g) => [g.id, `${g.id} ${g.role}`]).concat([["S1", "S1 シニア"], ["S2", "S2 エキスパート"], ["S3", "S3 マスター"]]), { blank: "-" })}</td>
     <td class="l">${inp("career", `notes.${p.key}.when`, n.when, { type: "month" })}</td>
     <td class="l">${inp("career", `notes.${p.key}.memo`, n.memo, { ph: "強み・課題・育成プラン", style: "width:280px;" })}</td></tr>`; }).join("");
-  const showEmbed = S.ui.careerEmbed;
   return head + `<div class="card"><div class="card-h">キャリアラダーと人数</div><div class="card-b scroll">${ladderHtml}</div></div>
     <div class="card"><div class="card-h">一人ひとりのキャリアプラン（目指す等級・時期）</div><div class="card-b scroll"><table><tr><th class="l">氏名</th><th class="l">いまの等級</th><th class="l">所属</th><th class="l">目指す等級</th><th class="l">目標時期</th><th class="l">育成メモ</th></tr>${rows}</table></div></div>
-    <div class="card"><div class="card-h"><span>評価・インセンティブ（月次評価・昇降格・コース）</span><span style="display:flex;gap:6px;"><button class="btn btn-gray btn-sm" onclick="ui('careerEmbed',${!showEmbed})">${showEmbed ? "閉じる" : "この画面で開く"}</button><a class="btn btn-gray btn-sm" href="/incentive" target="_blank">別タブで開く ↗</a></span></div>${showEmbed ? `<div class="card-b"><iframe class="embed" src="/incentive"></iframe></div>` : ""}</div>`;
+    <div class="card"><div class="card-h"><span>評価・インセンティブ（月次評価・昇降格・コース）</span><a class="btn btn-gray btn-sm" href="${BOOKING_ORIGIN}/incentive" target="_blank" rel="noopener">評価・インセンティブを開く ↗</a></div><div class="card-b small">月次評価・昇降格の判定・キャリアコースの選択・個人KDIは、評価・インセンティブ（予約管理システム側）で行います。結果は台帳に保存され、この本部システムの人数・等級に反映されます。</div></div>`;
 }
 
 // ---------- 出店計画 ----------
@@ -782,32 +783,89 @@ function secAnnual() {
 }
 
 // ---------- マンダラチャート ----------
+// 会社・院のマンダラ（台帳の「マンダラ」シート）。本部の中でマスの編集と月のチェックができる
+const MANDALA_METRICS = {
+  company: { company_budget: "全社 売上予算達成率（%）", company_sales: "全社 売上（円）", company_labor: "全社 人件費率（%・以下）" },
+  clinic: { clinic_budget: "売上予算達成率（%）", clinic_sales: "売上（円）", clinic_labor: "人件費率（%・以下）", clinic_new_count: "新患数（名）", clinic_new_close: "初回成約率（%）", clinic_new_continue: "継続率（%）", clinic_patient_care: "患者対応チェック実施率（%）" },
+};
+async function apiPost(path, body) {
+  const t = await token();
+  if (!t) { S.user = null; render(); throw new Error("ログインの有効期限が切れました。ログインし直してください"); }
+  const res = await fetch(path, { method: "POST", headers: { Authorization: `Bearer ${t}`, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `保存できませんでした（HTTP ${res.status}）`);
+  return json;
+}
+function editMandalaCell(scope, cell) {
+  const ch = (S.mandala.charts || []).find((c) => c.scope === scope);
+  const c = ch && ch.cells.find((x) => x.cell === cell);
+  if (!c) return;
+  S.ui.mEdit = { scope, cell, title: c.title || "", metric: c.metric || "", target: c.target ?? "", unit: c.unit || "", direction: c.direction || "以上", owner: c.owner || "", memo: c.memo || "", status: c.status || "未着手", statusMemo: c.statusMemo || "" };
+  render();
+}
+function mDraft(k, v) { if (S.ui.mEdit) S.ui.mEdit[k] = v; }
+async function saveMandalaCell() {
+  const e = S.ui.mEdit;
+  if (!e) return;
+  if (!String(e.title).trim()) { alert("タイトルを入れてください"); return; }
+  flash("保存中…");
+  try {
+    const before = (S.mandala.charts || []).find((c) => c.scope === e.scope).cells.find((x) => x.cell === e.cell);
+    let json = await apiPost("/api/mandala", { action: "saveCell", month: S.mandalaMonth, scope: e.scope, cell: e.cell, title: e.title, metric: e.metric, target: e.target, unit: e.unit, direction: e.direction, owner: e.owner, memo: e.memo });
+    if (e.cell !== 0 && (e.status !== (before.status || "未着手") || e.statusMemo !== (before.statusMemo || ""))) {
+      json = await apiPost("/api/mandala", { action: "setStatus", month: S.mandalaMonth, scope: e.scope, cell: e.cell, status: e.status, memo: e.statusMemo });
+    }
+    S.mandala = json; S.ui.mEdit = null;
+    flash("✓ 台帳に保存しました");
+  } catch (err) { flash(err.message, true); alert(err.message); }
+  render();
+}
+function mandalaEditor(ch) {
+  const e = S.ui.mEdit;
+  if (!e || e.scope !== ch.scope) return "";
+  const metrics = ch.scope === "会社" ? MANDALA_METRICS.company : MANDALA_METRICS.clinic;
+  const f = (k, v, o = {}) => `<input ${o.type ? `type="${o.type}"` : ""} value="${esc(v)}" oninput="mDraft('${k}',this.value)" style="width:100%;" ${o.ph ? `placeholder="${esc(o.ph)}"` : ""}/>`;
+  return `<div class="card"><div class="card-h"><span>✏️ ${esc(ch.label)}：${e.cell === 0 ? "中心（目標・KGI）" : `マス${e.cell}`} を編集</span><button class="btn-del" onclick="S.ui.mEdit=null;render()">✕</button></div><div class="card-b">
+    <div class="form">
+      <div style="grid-column:1/-1;"><label>タイトル（40字まで）</label>${f("title", e.title)}</div>
+      <div><label>指標（自動で数字を取る）</label><select onchange="mDraft('metric',this.value);render()" style="width:100%;"><option value="">手入力・数字なし</option>${Object.entries(metrics).map(([k, l]) => `<option value="${k}" ${e.metric === k ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></div>
+      <div><label>目標値</label>${f("target", e.target, { ph: "数字" })}</div>
+      ${e.metric ? "" : `<div><label>単位</label>${f("unit", e.unit, { ph: "円・%・名・件" })}</div><div><label>向き</label><select onchange="mDraft('direction',this.value)" style="width:100%;"><option ${e.direction !== "以下" ? "selected" : ""}>以上</option><option ${e.direction === "以下" ? "selected" : ""}>以下</option></select></div>`}
+      <div><label>担当</label>${f("owner", e.owner)}</div>
+      ${e.cell !== 0 ? `<div><label>${monthLabel(S.mandalaMonth)}の状態</label><select onchange="mDraft('status',this.value)" style="width:100%;">${["未着手", "取組中", "達成"].map((x) => `<option ${e.status === x ? "selected" : ""}>${x}</option>`).join("")}</select></div>
+      <div style="grid-column:1/-1;"><label>${monthLabel(S.mandalaMonth)}のチェックのメモ</label>${f("statusMemo", e.statusMemo)}</div>` : ""}
+      <div style="grid-column:1/-1;"><label>メモ（やること・進め方）</label><textarea oninput="mDraft('memo',this.value)">${esc(e.memo)}</textarea></div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;"><button class="btn btn-gray" onclick="S.ui.mEdit=null;render()">キャンセル</button><button class="btn btn-blue" onclick="saveMandalaCell()">台帳に保存</button></div>
+  </div></div>`;
+}
 function secMandala() {
-  const head = `<div class="h2">🧭 マンダラチャート</div><div class="lead">会社・各院のマンダラ（中心＝目標KGI、周り8マス＝重点の取り組み）を一覧で確認します。マスの編集・月のチェック・個人KDIの紐づけは下の「マンダラを編集」から行えます。</div>`;
+  const head = `<div class="h2">🧭 マンダラチャート</div><div class="lead">会社・各院のマンダラ（中心＝目標KGI、周り8マス＝重点の取り組み）。マスを押すと、タイトル・指標・目標・担当と、その月の状態（未着手・取組中・達成）を編集できます。保存先は台帳の「マンダラ」シートです。</div>`;
   if (S.mandala === null && !S.mandalaErr) setTimeout(loadMandala, 0);
-  const monthNav = `<div class="card"><div class="card-b" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><button class="btn btn-gray btn-sm" onclick="S.mandalaMonth=HQ.shiftMonth(S.mandalaMonth,-1);loadMandala()">◀</button><b>${monthLabel(S.mandalaMonth)}</b><button class="btn btn-gray btn-sm" onclick="S.mandalaMonth=HQ.shiftMonth(S.mandalaMonth,1);loadMandala()">▶</button>
-    <span style="margin-left:auto;display:flex;gap:6px;"><button class="btn btn-blue btn-sm" onclick="ui('mandalaEmbed',${!S.ui.mandalaEmbed})">${S.ui.mandalaEmbed ? "編集画面を閉じる" : "✏️ マンダラを編集"}</button><a class="btn btn-gray btn-sm" href="/mandala" target="_blank">別タブ ↗</a></span></div></div>`;
-  const embed = S.ui.mandalaEmbed ? `<iframe class="embed" src="/mandala" style="margin-bottom:14px;"></iframe>` : "";
-  if (S.mandalaErr) return head + monthNav + embed + `<div class="err">マンダラを読み込めませんでした：${esc(S.mandalaErr)}<br><button class="btn btn-gray btn-sm" style="margin-top:6px;" onclick="loadMandala()">もう一度</button></div>`;
-  if (!S.mandala || S.mandala === "loading") return head + monthNav + embed + `<div class="center">読み込み中...</div>`;
+  const monthNav = `<div class="card"><div class="card-b" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><button class="btn btn-gray btn-sm" onclick="S.mandalaMonth=HQ.shiftMonth(S.mandalaMonth,-1);S.ui.mEdit=null;loadMandala()">◀</button><b>${monthLabel(S.mandalaMonth)}</b><button class="btn btn-gray btn-sm" onclick="S.mandalaMonth=HQ.shiftMonth(S.mandalaMonth,1);S.ui.mEdit=null;loadMandala()">▶</button>
+    <span class="small" style="margin-left:auto;">個人KDIの紐づけは<a href="${BOOKING_ORIGIN}/mandala" target="_blank" rel="noopener">マンダラ・KDI管理 ↗</a>で行います</span></div></div>`;
+  if (S.mandalaErr) return head + monthNav + `<div class="err">マンダラを読み込めませんでした：${esc(S.mandalaErr)}<br><button class="btn btn-gray btn-sm" style="margin-top:6px;" onclick="loadMandala()">もう一度</button></div>`;
+  if (!S.mandala || S.mandala === "loading") return head + monthNav + `<div class="center">読み込み中...</div>`;
   const charts = S.mandala.charts || [];
   const pick = S.ui.mandalaScope || (charts[0] && charts[0].scope);
   const ch = charts.find((c) => c.scope === pick) || charts[0];
   const order = [1, 2, 3, 8, 0, 4, 7, 6, 5]; // 中心を真ん中に、周りを時計回り
-  const cellHtml = (c) => !c ? `<div class="mcell"></div>` : `<div class="mcell ${c.cell === 0 ? "c" : ""}"><div class="t">${esc(c.title || "（未設定）")}</div>
-    ${c.metric ? `<div class="n">${c.value === null || c.value === undefined ? "-" : (c.unit === "円" ? yen(c.value) : c.value + (c.unit || ""))}${c.target ? ` / 目標 ${c.unit === "円" ? yen(c.target) : c.target + (c.unit || "")}` : ""}</div>${c.achievement !== null && c.achievement !== undefined ? bar(c.achievement / 100) : ""}` : ""}
+  const editing = S.ui.mEdit;
+  const cellHtml = (c) => !c ? `<div class="mcell"></div>` : `<div class="mcell edit ${c.cell === 0 ? "c" : ""} ${editing && editing.scope === ch.scope && editing.cell === c.cell ? "sel" : ""}" ${ch.canEdit === false ? "" : `onclick="editMandalaCell('${esc(ch.scope)}',${c.cell})"`}><div class="t">${esc(c.title || "（未設定）")}</div>
+    ${c.metric || c.target ? `<div class="n">${c.value === null || c.value === undefined ? "-" : (c.unit === "円" ? yen(c.value) : c.value + (c.unit || ""))}${c.target ? ` / 目標 ${c.unit === "円" ? yen(c.target) : c.target + (c.unit || "")}` : ""}</div>${c.achievement !== null && c.achievement !== undefined ? bar(c.achievement / 100) : ""}` : ""}
+    ${c.owner ? `<div class="n">担当：${esc(c.owner)}</div>` : ""}
     ${c.cell !== 0 ? `<div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;margin-top:auto;"><span class="st st-${esc(c.status)}">${esc(c.status)}</span>${c.kdi && c.kdi.length ? `<span class="small">KDI ${c.kdi.length}件${c.kdiRate !== null && c.kdiRate !== undefined ? "・" + c.kdiRate + "%" : ""}</span>` : '<span class="small warn">KDIなし</span>'}</div>` : ""}</div>`;
   const summary = charts.map((c) => {
     const outer = c.cells.filter((x) => x.cell !== 0 && x.title);
     const doneN = outer.filter((x) => x.status === "達成").length;
     const doing = outer.filter((x) => x.status === "取組中").length;
     const center = c.cells.find((x) => x.cell === 0) || {};
-    return `<tr style="cursor:pointer;" onclick="ui('mandalaScope','${esc(c.scope)}')"><td class="l"><b>${esc(c.label)}</b></td><td class="l">${esc(center.title || "-")}</td><td class="${center.achievement >= 100 ? "ok" : center.achievement !== null && center.achievement !== undefined ? "ng" : ""}">${center.achievement === null || center.achievement === undefined ? "-" : center.achievement + "%"}</td><td>${doneN}</td><td>${doing}</td><td>${outer.length - doneN - doing}</td><td>${(c.alerts || []).length ? `<span class="tag red">${c.alerts.length}</span>` : "-"}</td></tr>`;
+    return `<tr style="cursor:pointer;" onclick="S.ui.mEdit=null;ui('mandalaScope','${esc(c.scope)}')"><td class="l"><b>${esc(c.label)}</b></td><td class="l">${esc(center.title || "-")}</td><td class="${center.achievement >= 100 ? "ok" : center.achievement !== null && center.achievement !== undefined ? "ng" : ""}">${center.achievement === null || center.achievement === undefined ? "-" : center.achievement + "%"}</td><td>${doneN}</td><td>${doing}</td><td>${outer.length - doneN - doing}</td><td>${(c.alerts || []).length ? `<span class="tag red">${c.alerts.length}</span>` : "-"}</td></tr>`;
   }).join("");
-  return head + monthNav + embed + `<div class="card"><div class="card-h">会社・院のマンダラ一覧（${monthLabel(S.mandalaMonth)}）</div><div class="card-b scroll"><table><tr><th class="l">対象</th><th class="l">中心の目標（KGI）</th><th>達成率</th><th>達成</th><th>取組中</th><th>未着手</th><th>アラート</th></tr>${summary}</table></div></div>
-    ${ch ? `<div class="chips">${charts.map((c) => `<button class="chip ${c.scope === ch.scope ? "sel" : ""}" onclick="ui('mandalaScope','${esc(c.scope)}')">${esc(c.label)}</button>`).join("")}</div>
+  return head + monthNav + `<div class="card"><div class="card-h">会社・院のマンダラ一覧（${monthLabel(S.mandalaMonth)}）</div><div class="card-b scroll"><table><tr><th class="l">対象</th><th class="l">中心の目標（KGI）</th><th>達成率</th><th>達成</th><th>取組中</th><th>未着手</th><th>アラート</th></tr>${summary}</table></div></div>
+    ${ch ? `<div class="chips">${charts.map((c) => `<button class="chip ${c.scope === ch.scope ? "sel" : ""}" onclick="S.ui.mEdit=null;ui('mandalaScope','${esc(c.scope)}')">${esc(c.label)}</button>`).join("")}</div>
     <div class="grid g2"><div class="card"><div class="card-h">${esc(ch.label)}のマンダラ（${esc(ch.fy)}年度）</div><div class="card-b"><div class="mgrid">${order.map((i) => cellHtml(ch.cells.find((c) => c.cell === i))).join("")}</div></div></div>
-    <div class="card"><div class="card-h">改善アラート</div><div class="card-b">${(ch.alerts || []).map((a) => `<div class="alert ${a.level === "ng" ? "ng" : "warn"}" style="cursor:default;">${esc(a.text)}</div>`).join("") || '<div class="muted">アラートはありません</div>'}</div></div></div>` : `<div class="muted">マンダラがありません</div>`}`;
+    <div>${mandalaEditor(ch)}<div class="card"><div class="card-h">改善アラート</div><div class="card-b">${(ch.alerts || []).map((a) => `<div class="alert ${a.level === "ng" ? "ng" : "warn"}" style="cursor:default;">${esc(a.text)}</div>`).join("") || '<div class="muted">アラートはありません</div>'}</div></div></div></div>` : `<div class="muted">マンダラがありません</div>`}`;
 }
 
 // ===== ログイン =====
@@ -818,7 +876,7 @@ function renderLogin(err) {
       <input id="lid" placeholder="ID またはメールアドレス" autocomplete="username"/>
       <input id="lpw" type="password" placeholder="パスワード" autocomplete="current-password"/>
       <button class="btn btn-blue" type="submit" id="lbtn">ログイン</button>
-      <div class="small" style="line-height:1.7;">予約管理と同じ管理者アカウントでログインします。本部システムは管理者（社長・本部）だけが使えます。</div>
+      <div class="small" style="line-height:1.7;">予約管理と同じ管理者アカウント（ID・パスワード）でログインします。本部システムは管理者（社長・本部）だけが使えます。</div>
     </form></div>`;
   setTimeout(() => { const el = document.getElementById("lid"); if (el) el.focus(); }, 0);
 }
