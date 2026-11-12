@@ -12,7 +12,7 @@ import { CheckIllustration } from "@/components/Illustrations";
 import { buttonStyles, Spinner } from "@/components/ui";
 import { createInitialState, loadState, saveState, type CheckState } from "@/lib/storage";
 import { isDemo } from "@/lib/demo";
-import { appSourceFromUa, readRef, readSource, sendTally } from "@/lib/tally";
+import { appSourceFromUa, readRef, readSource, sendTally, sendView } from "@/lib/tally";
 import type { Answers, CheckId } from "@/types";
 import { ConsentContent, SafetyContent, StopNotice } from "./SafetyParts";
 import { StepShell } from "./StepShell";
@@ -60,6 +60,8 @@ export function CheckFlow() {
     if (src && !next.source) next = { ...next, source: src };
     if (ref && !next.ref) next = { ...next, ref };
     setState(saveState(next));
+    // 「URLを開いた回数」として数える（匿名）。シェアのページ（/s）から進んできた場合は、/s を開いたときに数えているので数えない
+    if (readSource(window.location.search) !== "share") void sendView("check");
   }, []);
 
   const update = useCallback((patch: Partial<CheckState>) => {
