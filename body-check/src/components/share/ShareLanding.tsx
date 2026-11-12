@@ -14,7 +14,7 @@ import { useRouter } from "next/navigation";
 import { siteConfig } from "@/config/site";
 import { Footer, Spinner } from "@/components/ui";
 import { buttonStyles, cx } from "@/components/styles";
-import { fetchSharedResult, readRef } from "@/lib/tally";
+import { fetchSharedResult, readRef, sendView } from "@/lib/tally";
 
 type Liff = {
   init: (o: { liffId: string }) => Promise<void>;
@@ -56,6 +56,8 @@ export function ShareLanding() {
     const r = readRef(window.location.search);
     setRef(r);
     if (r) void fetchSharedResult(r).then(setShared);
+    // 「URLを開いた回数」として数える（匿名）
+    void sendView("share");
   }, []);
 
   // LIFF：ログイン → 友だちかどうかを確認

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { appSourceFromUa, buildTally, isInLine, readRef, readSource } from "./tally";
+import { appSourceFromUa, buildTally, buildView, isInLine, readRef, readSource, visitorId } from "./tally";
 import { createInitialState } from "./storage";
 import { calculateResult } from "./scoring";
 import { estimateBodyAge } from "./bodyAge";
@@ -61,5 +61,26 @@ describe("buildTally（送る内容）", () => {
     expect(readRef("?ref=ABC12345")).toBe("abc12345");
     expect(readRef("?ref=ab")).toBeNull();
     expect(readRef("?ref=abc-123456")).toBeNull();
+  });
+});
+
+describe("URLを開いた回数（匿名）", () => {
+  const mem = () => {
+    const m = new Map<string, string>();
+    return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v) };
+  };
+  it("端末ごとの匿名IDは、一度作ったら同じものを使う", () => {
+    const s = mem();
+    const a = visitorId(s);
+    expect(a).toMatch(/^[A-Za-z0-9-]{8,64}$/);
+    expect(visitorId(s)).toBe(a);
+    expect(visitorId(null)).toMatch(/^[A-Za-z0-9-]{8,64}$/);
+  });
+  it("どこから開いたかを付ける（?src= → アプリ内 → シェア → その他）", () => {
+    expect(buildView("check", "visitor-1234", "?src=line")).toEqual({ visitor_id: "visitor-1234", page: "check", source: "line", in_line: false });
+    expect(buildView("check", "visitor-1234", "", "Mozilla/5.0 Instagram 320.0").source).toBe("instagram");
+    expect(buildView("share", "visitor-1234", "?ref=abcdef1234").source).toBe("share");
+    const v = buildView("check", "visitor-1234", "", "Mozilla/5.0 Line/14.0.0");
+    expect([v.source, v.in_line]).toEqual(["web", true]);
   });
 });

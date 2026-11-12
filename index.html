@@ -12055,6 +12055,7 @@ function BodyCheckStatsPanel({bookings,todayStr}){
   const [from,setFrom]=React.useState(todayStr.slice(0,8)+"01");
   const [to,setTo]=React.useState(todayStr);
   const [rows,setRows]=React.useState(null);
+  const [views,setViews]=React.useState([]); // URLを開いた記録（body_check_views）
   const [err,setErr]=React.useState("");
   const [codeQ,setCodeQ]=React.useState("");   // 特典コード・お名前で探す
   const [found,setFound]=React.useState(null); // 特典コードで探した結果（期間に関係なく）
@@ -12066,6 +12067,10 @@ function BodyCheckStatsPanel({bookings,todayStr}){
     sb.select("body_check_results",`?started_at=gte.${encodeURIComponent(a+"T00:00:00+09:00")}&started_at=lt.${encodeURIComponent(ymd(next)+"T00:00:00+09:00")}&order=started_at.desc`)
       .then(r=>{ if(Array.isArray(r)) setRows(r); else { setRows([]); setErr((r&&r.message)||"読み込めませんでした"); } })
       .catch(e=>{ setRows([]); setErr(e.message||"読み込めませんでした"); });
+    // URLを開いた回数（チェックのページ・シェアされたページを開くたびに1件。匿名）
+    setViews([]);
+    sb.select("body_check_views",`?select=viewed_at,visitor_id,page,source,in_line&viewed_at=gte.${encodeURIComponent(a+"T00:00:00+09:00")}&viewed_at=lt.${encodeURIComponent(ymd(next)+"T00:00:00+09:00")}&order=viewed_at.desc`)
+      .then(r=>{ if(Array.isArray(r)) setViews(r); }).catch(()=>{});
   },[a,b]);
   React.useEffect(()=>{ load(); },[load]);
 
@@ -12094,6 +12099,14 @@ function BodyCheckStatsPanel({bookings,todayStr}){
   const bySex={}; list.forEach(r=>{ const k=SEX[r.sex]||"不明"; bySex[k]=(bySex[k]||0)+1; });
   const byRank={S:0,A:0,B:0,C:0}; done.forEach(r=>{ if(byRank[r.rank]!=null) byRank[r.rank]++; });
   const byDay={}; list.forEach(r=>{ const d=jst(r.started_at).slice(0,10); byDay[d]=byDay[d]||{n:0,done:0,book:0}; byDay[d].n++; if(r.completed_at) byDay[d].done++; if(r.booking_clicked) byDay[d].book++; });
+  // URLを開いた回数・開いた人（同じ端末・同じ日は1人）
+  const viewKey=v=>["line","qr","threads","instagram","share"].includes(v.source)?v.source:(v.in_line?"line_other":"web");
+  const visitorDay=v=>`${v.visitor_id}|${jst(v.viewed_at).slice(0,10)}`;
+  const openPeople=new Set(views.map(visitorDay)).size;
+  const viewBySrc={}; views.forEach(v=>{ const k=viewKey(v); viewBySrc[k]=viewBySrc[k]||{opens:0,people:new Set()}; viewBySrc[k].opens++; viewBySrc[k].people.add(visitorDay(v)); });
+  const viewByDay={}; views.forEach(v=>{ const d=jst(v.viewed_at).slice(0,10); viewByDay[d]=viewByDay[d]||{opens:0,people:new Set()}; viewByDay[d].opens++; viewByDay[d].people.add(v.visitor_id); });
+  Object.keys(viewByDay).forEach(d=>{ if(!byDay[d]) byDay[d]={n:0,done:0,book:0}; });
+  const srcKeys=[...new Set([...Object.keys(bySrc),...Object.keys(viewBySrc)])].sort((x,y)=>((viewBySrc[y]||{opens:0}).opens-(viewBySrc[x]||{opens:0}).opens)||((bySrc[y]||{n:0}).n-(bySrc[x]||{n:0}).n));
   const days=Object.keys(byDay).sort().reverse();
   // シェア（紹介）
   const sharedPeople=list.filter(r=>(r.share_count||0)>0);
@@ -12141,6 +12154,11 @@ function BodyCheckStatsPanel({bookings,todayStr}){
       {rows===null?<div style={{...card,textAlign:"center",color:"#94a3b8"}}>読み込み中…</div>:<>
         {err&&<div style={{...card,color:"#dc2626",fontWeight:700}}>読み込めませんでした：{err}</div>}
         <div style={card}>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:8}}>
+            {big("URLを開いた回数",`${views.length}回`,"チェック・シェアのページを開いた回数","#0f766e")}
+            {big("URLを開いた人",`${openPeople}人`,"同じスマホ・同じ日は1人","#2563eb")}
+            {big("開いた人のうち始めた人",openPeople?`${pct(list.length,openPeople)}%`:"-",`開いた ${openPeople}人 → 始めた ${list.length}人`,"#475569")}
+          </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             {big("チェックを始めた人",`${list.length}人`,"年齢などを入力した人")}
             {big("最後まで行った人",`${done.length}人`,`完了率 ${pct(done.length,list.length)}%`,"#0e8893")}
@@ -12160,10 +12178,10 @@ function BodyCheckStatsPanel({bookings,todayStr}){
         </div>
         <div style={card}>
           <div style={h}>どこから開いたか</div>
-          {list.length===0?<div style={{fontSize:13,color:"#94a3b8"}}>この期間の記録はまだありません</div>:
-          <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><th style={{...th,textAlign:"left"}}>開いた場所</th><th style={th}>始めた</th><th style={th}>完了</th><th style={th}>完了率</th><th style={th}>予約ボタン</th></tr></thead><tbody>
-            {Object.entries(bySrc).sort((x,y)=>y[1].n-x[1].n).map(([k,v])=><tr key={k}><td style={{...td,textAlign:"left",fontWeight:700}}>{SRC_LABEL2[k]||k}</td><td style={td}>{v.n}人</td><td style={td}>{v.done}人</td><td style={td}>{pct(v.done,v.n)}%</td><td style={td}>{v.book}人</td></tr>)}
-          </tbody></table>}
+          {srcKeys.length===0?<div style={{fontSize:13,color:"#94a3b8"}}>この期間の記録はまだありません</div>:
+          <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:560}}><thead><tr><th style={{...th,textAlign:"left"}}>開いた場所</th><th style={th}>開いた回数</th><th style={th}>開いた人</th><th style={th}>始めた</th><th style={th}>始めた率</th><th style={th}>完了</th><th style={th}>完了率</th><th style={th}>予約ボタン</th></tr></thead><tbody>
+            {srcKeys.map(k=>{ const v=bySrc[k]||{n:0,done:0,book:0}; const o=viewBySrc[k]; return <tr key={k}><td style={{...td,textAlign:"left",fontWeight:700}}>{SRC_LABEL2[k]||k}</td><td style={td}>{o?o.opens:0}回</td><td style={td}>{o?o.people.size:0}人</td><td style={td}>{v.n}人</td><td style={td}>{o&&o.people.size?`${pct(v.n,o.people.size)}%`:"-"}</td><td style={td}>{v.done}人</td><td style={td}>{pct(v.done,v.n)}%</td><td style={td}>{v.book}人</td></tr>; })}
+          </tbody></table></div>}
         </div>
         <div style={card}>
           <div style={h}>年代別</div>
@@ -12206,12 +12224,12 @@ function BodyCheckStatsPanel({bookings,todayStr}){
         <div style={card}>
           <div style={h}>日別</div>
           {days.length===0?<div style={{fontSize:13,color:"#94a3b8"}}>この期間の記録はまだありません</div>:
-          <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><th style={{...th,textAlign:"left"}}>日付</th><th style={th}>始めた</th><th style={th}>完了</th><th style={th}>予約ボタン</th></tr></thead><tbody>
-            {days.map(d=><tr key={d}><td style={{...td,textAlign:"left"}}>{d.slice(5).replace("-","/")}（{"日月火水木金土"[new Date(d+"T00:00:00").getDay()]}）</td><td style={td}>{byDay[d].n}人</td><td style={td}>{byDay[d].done}人</td><td style={td}>{byDay[d].book}人</td></tr>)}
+          <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr><th style={{...th,textAlign:"left"}}>日付</th><th style={th}>開いた回数</th><th style={th}>開いた人</th><th style={th}>始めた</th><th style={th}>完了</th><th style={th}>予約ボタン</th></tr></thead><tbody>
+            {days.map(d=><tr key={d}><td style={{...td,textAlign:"left"}}>{d.slice(5).replace("-","/")}（{"日月火水木金土"[new Date(d+"T00:00:00").getDay()]}）</td><td style={td}>{viewByDay[d]?viewByDay[d].opens:0}回</td><td style={td}>{viewByDay[d]?viewByDay[d].people.size:0}人</td><td style={td}>{byDay[d].n}人</td><td style={td}>{byDay[d].done}人</td><td style={td}>{byDay[d].book}人</td></tr>)}
           </tbody></table>}
         </div>
         <div style={{fontSize:11,color:"#94a3b8",lineHeight:1.6,padding:"0 4px 12px"}}>
-          ※ 同じ人が別のスマホ・別のブラウザで行うと、別の人として数えます。LINE配信のURLは https://ando-body-check.vercel.app/age 、QRコードは /qr を使うと「どこから開いたか」が分かれます。
+          ※ 「URLを開いた回数」は2026年11月12日から数えています（それより前の分はありません）。同じ人が別のスマホ・別のブラウザで行うと、別の人として数えます。LINE配信のURLは https://ando-body-check.vercel.app/age 、QRコードは /qr を使うと「どこから開いたか」が分かれます。
         </div>
       </>}
     </div>
