@@ -1,0 +1,50 @@
+@import "tailwindcss";
+
+/*
+ * 白・黒・落ち着いたグレーを基調にした、余白の多いシンプルなデザイン
+ */
+@theme {
+  --color-ink: #141414;
+  --color-ink-soft: #3a3a3a;
+  --color-mist: #6f6f6f;
+  --color-line: #e3e1dd;
+  --color-paper: #ffffff;
+  --color-stone: #f6f5f3;
+  --color-stone-2: #eeece8;
+  --color-ok: #2f5d46;
+  --color-warn: #8a5a12;
+  --color-ng: #8b2a2a;
+
+  --font-sans: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", "Meiryo", system-ui, sans-serif;
+  --font-serif: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", "Times New Roman", serif;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+body {
+  font-family: var(--font-sans);
+  letter-spacing: 0.02em;
+  line-height: 1.8;
+  min-height: 100dvh;
+}
+.font-serif {
+  font-family: var(--font-serif);
+}
+.tracking-brand {
+  letter-spacing: 0.24em;
+}
+:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
+dialog::backdrop {
+  background: rgb(20 20 20 / 0.45);
+}
+input,
+select,
+textarea {
+  font-size: 16px; /* iOS の自動ズーム防止 */
+}

@@ -1,2 +1,3 @@
 # 予約管理システムのデプロイには本部システム（hq/）を含めない。本部は別の Vercel プロジェクト（Root Directory = hq）
 /hq
+/iwanaga-booking
