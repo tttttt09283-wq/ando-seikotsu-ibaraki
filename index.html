@@ -14,6 +14,7 @@
 <script src="/staff-goals-logic.js"></script>
 <script src="/sales-report-logic.js"></script>
 <script src="/attendance-logic.js"></script>
+<script src="/petty-cash-logic.js"></script>
 <script>
 //
 // StarWebPrintBuilder API
@@ -2820,6 +2821,23 @@ function MoneyCalcPanel({bookings,payments,refunds,stores,todayStr,user,training
     }catch(e){setPMsg("記録に失敗しました："+e.message);}
     setPSaving(false);
   }
+  // ===== 小口現金のデータ抽出（CSV。Excelでそのまま開ける） =====
+  const [pxOpen,setPxOpen]=React.useState(false);
+  const [pxFrom,setPxFrom]=React.useState(monthStart);
+  const [pxTo,setPxTo]=React.useState(todayStr);
+  function exportPetty(from,to){
+    const a=from<=to?from:to, b=from<=to?to:from;
+    const list=petty.filter(e=>!!e.is_training===!!trainingMode&&(e.store_id||firstStoreId)===storeId);
+    const st=(stores||[]).find(x=>x.id===storeId);
+    const storeName=st?String(st.name).replace(/^あんど整骨院[\s\u3000]*/,""):"";
+    const rows=PettyCash.pettyCsvRows(list,a,b,storeName);
+    const csv=PettyCash.toCsv(PettyCash.HEADERS,rows);
+    const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8;"});
+    const url=URL.createObjectURL(blob);
+    const link=document.createElement("a");
+    link.href=url; link.download=`小口現金_${storeName||"店舗"}_${a===b?a:a+"〜"+b}${trainingMode?"_練習":""}.csv`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(url);
+  }
   async function delPetty(e){
     if(!window.confirm(`${e.entry_date}「${e.item}」${fmt(e.amount)} を削除しますか？`)) return;
     try{await sb.delete("petty_cash_entries",e.id);setPetty(p=>p.filter(x=>x.id!==e.id));}catch(err){window.alert("削除に失敗しました");}
@@ -2993,7 +3011,21 @@ function MoneyCalcPanel({bookings,payments,refunds,stores,todayStr,user,training
           <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
             <div style={{...h,marginBottom:0,flex:1}}>小口現金出納帳</div>
             <input type="month" value={pMonth} onChange={e=>setPMonth(e.target.value)} style={inp}/>
+            <button onClick={()=>setPxOpen(v=>!v)} style={{padding:"8px 14px",borderRadius:8,border:"none",background:"#059669",color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>⬇ データを抽出（CSV）</button>
           </div>
+          {pxOpen&&(
+            <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"10px 12px",marginBottom:10}}>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                <button onClick={()=>{ const [y,m]=pMonth.split("-").map(Number); exportPetty(pMonth+"-01",`${pMonth}-${String(new Date(y,m,0).getDate()).padStart(2,"0")}`); }} style={{padding:"7px 12px",borderRadius:8,border:"1.5px solid #059669",background:"white",color:"#047857",fontWeight:800,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>表示中の月（{Number(pMonth.slice(0,4))}年{Number(pMonth.slice(5))}月）</button>
+                <span style={{fontSize:12.5,fontWeight:700,color:"#475569",marginLeft:6}}>期間を選ぶ：</span>
+                <input type="date" aria-label="抽出の開始日" value={pxFrom} onChange={e=>e.target.value&&setPxFrom(e.target.value)} style={inp}/>
+                <span>〜</span>
+                <input type="date" aria-label="抽出の終了日" value={pxTo} onChange={e=>e.target.value&&setPxTo(e.target.value)} style={inp}/>
+                <button onClick={()=>exportPetty(pxFrom,pxTo)} style={{padding:"7px 14px",borderRadius:8,border:"none",background:"#059669",color:"white",fontWeight:800,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>この期間を抽出</button>
+              </div>
+              <div style={{fontSize:11.5,color:"#64748b",marginTop:6,lineHeight:1.6}}>日付・区分（入金／出金）・内容・分類・入金・出金・残高・レシートの有無・メモ・記録した人を、Excelで開けるCSVで保存します。先頭に前期からの繰越、最後に期間の合計と分類別の出金が入ります。{trainingMode?"（トレーニングモード中なので練習用の記録を抽出します）":""}</div>
+            </div>
+          )}
           <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
             {big("前月からの繰越",fmt(pettyCalc.carry))}
             {big("入金",fmt(pettyCalc.inSum),"#059669")}
