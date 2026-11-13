@@ -13,6 +13,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="/staff-goals-logic.js"></script>
 <script src="/sales-report-logic.js"></script>
+<script src="/attendance-logic.js"></script>
 <script>
 //
 // StarWebPrintBuilder API
@@ -574,7 +575,7 @@ const sb = {
 // ===== 全端末で共有する設定（月次シフト・休暇残・売上目標） =====
 // 以前はブラウザ（localStorage）にだけ保存していたため、端末ごとに設定し直す必要があった。
 // サーバー（app_settings）を正として、localStorage はその写し（すぐ読めるようにするための控え）として使う。
-const SHARED_SETTING_PREFIXES=["shifts_","shifthalf_","holiday_balance","ando_sales_target_"];
+const SHARED_SETTING_PREFIXES=["shifts_","shifthalf_","holiday_balance","ando_sales_target_","attendance_rules"];
 // ===== 半日出勤（シフト表の「午前出勤」＝午後休み／「午後出勤」＝午前休み） =====
 // 午前・午後の時間帯は、設定「shift_half_times」（平日／土日・祝それぞれ）。未設定なら HALF_SHIFT_DEFAULT_TIMES
 const HALF_SHIFT={"午前出勤":"am","午後出勤":"pm"};
@@ -14631,6 +14632,53 @@ function ReferralMgmtPanel({bookings,payments}){
     </div>
   );
 }
+// ===== 勤怠のルール（早朝・休憩なしの基準、アルバイト）と祝日 =====
+// ルールは共有設定「attendance_rules」（全端末で同じ）。祝日は臨時休業・営業時間変更のメモ（祝日・振替休日など）から判定する
+function readAttendanceRules(){
+  try{ return Attendance.normRules(JSON.parse(localStorage.getItem("attendance_rules")||"{}")); }catch(e){ return Attendance.normRules({}); }
+}
+function useAttendanceContext(){
+  const ver=useSharedSettingsVersion();
+  const rules=React.useMemo(()=>readAttendanceRules(),[ver]);
+  const [holidays,setHolidays]=React.useState(()=>new Set());
+  React.useEffect(()=>{
+    sharedSettings.pull().catch(()=>{});
+    sb.select("temp_closures","?select=date,memo").then(rows=>{ if(Array.isArray(rows)) setHolidays(Attendance.holidaySetFrom(rows)); }).catch(()=>{});
+  },[]);
+  return {rules,holidays};
+}
+// 早朝出勤・休憩が取れなかったときの理由を入れてもらうダイアログ（理由が空のままでは進めない）
+function AttendanceReasonModal({ask,onSubmit,onCancel,saving}){
+  const [text,setText]=React.useState("");
+  const examples=ask.kind==="early"?["開院準備","施術の予約対応","研修・ミーティング","掃除・片付け"]:["予約が続いて休めなかった","急患の対応","人手が足りなかった","休憩の打刻を忘れた"];
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.55)",zIndex:10000,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div role="dialog" aria-label={ask.title} style={{background:"white",borderRadius:16,padding:"20px 22px",width:"100%",maxWidth:420}}>
+        <div style={{fontWeight:800,fontSize:16,color:ask.kind==="early"?"#b45309":"#b91c1c",marginBottom:6}}>{ask.kind==="early"?"🌅 ":"☕ "}{ask.title}</div>
+        <div style={{fontSize:13,color:"#475569",lineHeight:1.7,marginBottom:10}}>{ask.message}</div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+          {examples.map(x=><button key={x} type="button" onClick={()=>setText(x)} style={{padding:"4px 10px",borderRadius:14,border:"1.5px solid #e2e8f0",background:text===x?"#1e3a5f":"white",color:text===x?"white":"#475569",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{x}</button>)}
+        </div>
+        <textarea autoFocus value={text} onChange={e=>setText(e.target.value)} placeholder="理由を入力してください（必須）" rows={3}
+          style={{width:"100%",padding:"9px 11px",border:"1.5px solid #e2e8f0",borderRadius:10,fontSize:14,fontFamily:"inherit",boxSizing:"border-box",resize:"vertical"}}/>
+        <div style={{display:"flex",gap:8,marginTop:14}}>
+          <button type="button" onClick={onCancel} disabled={saving} style={{marginLeft:"auto",padding:"10px 18px",borderRadius:10,border:"1.5px solid #e2e8f0",background:"white",color:"#334155",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>やめる</button>
+          <button type="button" disabled={saving||!text.trim()} onClick={()=>onSubmit(text.trim().slice(0,200))} style={{padding:"10px 22px",borderRadius:10,border:"none",background:text.trim()?"#1e3a5f":"#cbd5e1",color:"white",fontSize:13,fontWeight:800,cursor:text.trim()?"pointer":"default",fontFamily:"inherit"}}>{saving?"保存中...":ask.okLabel||"理由を付けて打刻する"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+// 理由の表示（一覧用）
+function AttendanceIssueBadges({record,rules,holidays}){
+  const iss=Attendance.issuesOf(record,rules,holidays);
+  if(!iss.early&&!iss.noBreak) return null;
+  const chip=(label,reason,missing,bg,fg)=><div style={{fontSize:11,fontWeight:700,color:missing?"#b91c1c":fg,background:missing?"#fee2e2":bg,borderRadius:6,padding:"2px 6px",marginTop:2,whiteSpace:"normal",maxWidth:220}}>{label}：{missing?"理由が未入力":reason}</div>;
+  return(<>
+    {iss.early&&chip(`🌅 早朝（${iss.limit}より前）`,record.early_reason,iss.earlyMissing,"#fef3c7","#92400e")}
+    {iss.noBreak&&chip("☕ 休憩なし",record.break_reason,iss.breakMissing,"#fef3c7","#92400e")}
+  </>);
+}
 function AttendancePunchPanel({currentUser,isAdmin}){
   const [records,setRecords]=React.useState([]);
   const [loading,setLoading]=React.useState(true);
@@ -14639,6 +14687,8 @@ function AttendancePunchPanel({currentUser,isAdmin}){
   const [saving,setSaving]=React.useState(false);
   const [selectedStaffId,setSelectedStaffId]=React.useState(currentUser.id); // 打刻する対象スタッフ（誰でも選べる）
   const [editing,setEditing]=React.useState(null); // 編集中の記録（新規追加の場合は id:null）
+  const {rules,holidays}=useAttendanceContext();
+  const [reasonAsk,setReasonAsk]=React.useState(null); // 早朝・休憩なしの理由を聞いているとき {kind,title,message,run(reason)}
   const todayStrLocal=fmtDate(new Date());
   const selectedStaff=STAFF_ACCOUNTS.find(s=>s.id===selectedStaffId)||currentUser;
 
@@ -14660,24 +14710,45 @@ function AttendancePunchPanel({currentUser,isAdmin}){
   const forgotten=records.filter(r=>r.clock_in&&!r.clock_out&&r.date<todayStrLocal);
 
   async function clockIn(){
-    setSaving(true);
-    try{
-      await sb.insert("attendance_records",{staff_id:selectedStaffId,date:todayStrLocal,clock_in:new Date().toISOString(),breaks:[]});
-      fetchRecords();
-    }catch(e){}
-    setSaving(false);
+    const nowIso=new Date().toISOString();
+    const doIn=async(reason)=>{
+      setSaving(true);
+      try{
+        await sb.insert("attendance_records",{staff_id:selectedStaffId,date:todayStrLocal,clock_in:nowIso,breaks:[],...(reason?{early_reason:reason}:{})});
+        setReasonAsk(null);
+        fetchRecords();
+      }catch(e){ alert("打刻できませんでした："+(e.message||"")); }
+      setSaving(false);
+    };
+    // 早朝（平日9:15・休日8:15より前など）は理由を入れてから打刻する
+    if(Attendance.isEarly(todayStrLocal,nowIso,rules,holidays)){
+      const limit=Attendance.earlyLimit(todayStrLocal,rules,holidays);
+      setReasonAsk({kind:"early",title:"早朝出勤の理由",message:`${Attendance.isHolidayDate(todayStrLocal,holidays)?"休日（土日・祝日）":"平日"}は ${limit} より前の出勤に理由が必要です。${selectedStaff.name} さんの早く出勤した理由を入れてください。`,run:doIn});
+      return;
+    }
+    doIn(null);
   }
   async function clockOut(){
     if(!myOpenRecord) return;
-    setSaving(true);
-    try{
-      // 休憩中のまま退勤した場合は、休憩を自動で終了させる
-      const nowIso=new Date().toISOString();
-      const bs=breaksOf(myOpenRecord).map(b=>(b.start&&!b.end)?{...b,end:nowIso}:b);
-      await sb.update("attendance_records",myOpenRecord.id,{clock_out:nowIso,breaks:bs});
-      fetchRecords();
-    }catch(e){}
-    setSaving(false);
+    // 休憩中のまま退勤した場合は、休憩を自動で終了させる
+    const nowIso=new Date().toISOString();
+    const bs=breaksOf(myOpenRecord).map(b=>(b.start&&!b.end)?{...b,end:nowIso}:b);
+    const doOut=async(reason)=>{
+      setSaving(true);
+      try{
+        await sb.update("attendance_records",myOpenRecord.id,{clock_out:nowIso,breaks:bs,...(reason?{break_reason:reason}:{})});
+        setReasonAsk(null);
+        fetchRecords();
+      }catch(e){ alert("打刻できませんでした："+(e.message||"")); }
+      setSaving(false);
+    };
+    // 休憩が基準より短い（休憩が取れていない）ときは理由を入れてから退勤する
+    const after={...myOpenRecord,clock_out:nowIso,breaks:bs};
+    if(Attendance.needsBreakReason(after,rules)&&!String(myOpenRecord.break_reason||"").trim()){
+      setReasonAsk({kind:"break",title:"休憩が取れなかった理由",okLabel:"理由を付けて退勤する",message:`今日の実働は ${Attendance.fmtMinutes(Attendance.workMinutes(after))}、休憩は ${Attendance.breakMinutes(after)}分です（実働${rules.breakAfterHours}時間を超える日は休憩${rules.breakMinMinutes}分以上）。休憩が取れなかった理由を入れてください。`,run:doOut});
+      return;
+    }
+    doOut(null);
   }
   async function startBreak(){
     if(!myOpenRecord) return;
@@ -14754,10 +14825,11 @@ function AttendancePunchPanel({currentUser,isAdmin}){
       id:r.id,staff_id:r.staff_id,date:r.date,
       clockIn:isoToHM(r.clock_in),clockOut:isoToHM(r.clock_out),
       breaks:breaksOf(r).map(b=>({start:isoToHM(b.start),end:isoToHM(b.end)})),
+      earlyReason:r.early_reason||"",breakReason:r.break_reason||"",
     });
   }
   function openAdd(){
-    setEditing({id:null,staff_id:selectedStaffId,date:todayStrLocal,clockIn:"09:00",clockOut:"18:00",breaks:[]});
+    setEditing({id:null,staff_id:selectedStaffId,date:todayStrLocal,clockIn:"10:00",clockOut:"19:00",breaks:[],earlyReason:"",breakReason:""});
   }
   async function saveEdit(){
     const e=editing;
@@ -14767,6 +14839,9 @@ function AttendancePunchPanel({currentUser,isAdmin}){
       if(!b.start){ alert("休憩の開始時刻を入力してください"); return; }
       if(b.end&&b.end<=b.start){ alert("休憩の終了時刻は開始時刻より後にしてください"); return; }
     }
+    const iss=editIssues(e);
+    if(iss.early&&!e.earlyReason.trim()){ alert(`早朝出勤（${iss.limit}より前）の理由を入力してください`); return; }
+    if(iss.noBreak&&!e.breakReason.trim()){ alert(`休憩が${rules.breakMinMinutes}分より短い日です。休憩が取れなかった理由を入力してください`); return; }
     setSaving(true);
     try{
       const payload={
@@ -14774,6 +14849,8 @@ function AttendancePunchPanel({currentUser,isAdmin}){
         clock_in:hmToIso(e.date,e.clockIn),
         clock_out:hmToIso(e.date,e.clockOut),
         breaks:e.breaks.map(b=>({start:hmToIso(e.date,b.start),end:hmToIso(e.date,b.end)})),
+        early_reason:iss.early?e.earlyReason.trim().slice(0,200):null,
+        break_reason:iss.noBreak?e.breakReason.trim().slice(0,200):null,
       };
       if(e.id==null) await sb.insert("attendance_records",payload);
       else await sb.update("attendance_records",e.id,payload);
@@ -14781,6 +14858,12 @@ function AttendancePunchPanel({currentUser,isAdmin}){
       fetchRecords();
     }catch(err){ alert("保存に失敗しました"); }
     setSaving(false);
+  }
+  // 編集中の内容で、早朝・休憩なしに当たるか
+  function editIssues(e){
+    const rec={date:e.date,clock_in:hmToIso(e.date,e.clockIn),clock_out:hmToIso(e.date,e.clockOut),
+      breaks:e.breaks.filter(b=>b.start).map(b=>({start:hmToIso(e.date,b.start),end:hmToIso(e.date,b.end)}))};
+    return Attendance.issuesOf(rec,rules,holidays);
   }
   async function deleteRecord(){
     if(!editing||editing.id==null) return;
@@ -14803,13 +14886,13 @@ function AttendancePunchPanel({currentUser,isAdmin}){
     document.body.removeChild(a);URL.revokeObjectURL(url);
   }
   function exportCSV(){
-    const headers=["スタッフ","日付","出勤","退勤","休憩の時刻","休憩(時間)","実働(時間)"];
+    const headers=["スタッフ","日付","出勤","退勤","休憩の時刻","休憩(時間)","実働(時間)","早朝の理由","休憩なしの理由"];
     const sorted=[...monthRecords].sort((a,b)=>a.date.localeCompare(b.date)||(a.staff_id-b.staff_id));
     const rows=sorted.map(r=>{
       const s=STAFF_ACCOUNTS.find(x=>x.id===r.staff_id)||{name:"不明"};
       const h=hoursOf(r);
       const breakTimes=breaksOf(r).map(b=>`${fmtTime(b.start)}〜${b.end?fmtTime(b.end):"休憩中"}`).join(" / ");
-      return[s.name,r.date,fmtTime(r.clock_in),fmtTime(r.clock_out),breakTimes,breakHoursOf(r).toFixed(2),h!=null?h.toFixed(2):""];
+      return[s.name,r.date,fmtTime(r.clock_in),fmtTime(r.clock_out),breakTimes,breakHoursOf(r).toFixed(2),h!=null?h.toFixed(2):"",r.early_reason||"",r.break_reason||""];
     });
     downloadCSV("勤怠記録_"+(rangeMode==="date"?fromD+"〜"+toD:(fromM===toM?fromM:fromM+"〜"+toM))+".csv",toCSV(rows,headers));
   }
@@ -14980,7 +15063,7 @@ function AttendancePunchPanel({currentUser,isAdmin}){
                         <span style={{fontSize:11,color:"#a16207"}}>合計 {fmtHM(bh)}</span>
                       </div>
                     ):"—"}</td>
-                    <td style={{padding:"8px 10px",fontWeight:700}}>{h!=null?h.toFixed(2)+"時間":"—"}</td>
+                    <td style={{padding:"8px 10px",fontWeight:700}}>{h!=null?h.toFixed(2)+"時間":"—"}<AttendanceIssueBadges record={r} rules={rules} holidays={holidays}/></td>
                     <td style={{padding:"8px 10px"}}>
                       <button onClick={()=>openEdit(r)} style={{padding:"4px 12px",borderRadius:6,border:"1.5px solid #cbd5e1",background:"white",color:"#334155",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>編集</button>
                     </td>
@@ -14992,6 +15075,7 @@ function AttendancePunchPanel({currentUser,isAdmin}){
         </div>
       </div>
 
+      {reasonAsk&&<AttendanceReasonModal ask={reasonAsk} saving={saving} onCancel={()=>setReasonAsk(null)} onSubmit={reason=>reasonAsk.run(reason)}/>}
       {editing&&(
         <div style={{position:"fixed",inset:0,background:"rgba(15,23,42,.5)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>!saving&&setEditing(null)}>
           <div onClick={e=>e.stopPropagation()} style={{background:"white",borderRadius:16,padding:"20px 22px",width:"100%",maxWidth:420,maxHeight:"90vh",overflowY:"auto"}}>
@@ -15019,6 +15103,16 @@ function AttendancePunchPanel({currentUser,isAdmin}){
               </div>
             ))}
             <button onClick={()=>setEditing(p=>({...p,breaks:[...p.breaks,{start:"12:00",end:"13:00"}]}))} style={{padding:"6px 14px",borderRadius:8,border:"1.5px dashed #d97706",background:"white",color:"#92400e",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>＋ 休憩を追加</button>
+            {(()=>{ const iss=editIssues(editing); return(<>
+              {iss.early&&<div style={{marginTop:14}}>
+                <div style={{fontSize:12,fontWeight:800,color:"#b45309",marginBottom:4}}>🌅 早朝出勤の理由（{iss.limit}より前の出勤）<span style={{color:"#dc2626"}}>必須</span></div>
+                <input value={editing.earlyReason} onChange={e=>setEditing(p=>({...p,earlyReason:e.target.value}))} placeholder="例：開院準備" style={{...inp,width:"100%",boxSizing:"border-box"}}/>
+              </div>}
+              {iss.noBreak&&<div style={{marginTop:12}}>
+                <div style={{fontSize:12,fontWeight:800,color:"#b91c1c",marginBottom:4}}>☕ 休憩が取れなかった理由（休憩{rules.breakMinMinutes}分未満）<span style={{color:"#dc2626"}}>必須</span></div>
+                <input value={editing.breakReason} onChange={e=>setEditing(p=>({...p,breakReason:e.target.value}))} placeholder="例：予約が続いて休めなかった" style={{...inp,width:"100%",boxSizing:"border-box"}}/>
+              </div>}
+            </>); })()}
             <div style={{display:"flex",gap:8,marginTop:20}}>
               {editing.id!=null&&isAdmin&&<button onClick={deleteRecord} disabled={saving} style={{padding:"10px 14px",borderRadius:10,border:"none",background:"#fee2e2",color:"#dc2626",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>削除</button>}
               <button onClick={()=>setEditing(null)} disabled={saving} style={{marginLeft:"auto",padding:"10px 18px",borderRadius:10,border:"1.5px solid #e2e8f0",background:"white",color:"#334155",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>キャンセル</button>
@@ -15041,6 +15135,7 @@ function AttendanceMonthly({currentUser,isAdmin}){
   const [fill,setFill]=React.useState({inT:"09:00",outT:"18:00",bs:"12:00",be:"13:00",days:[1,2,3,4,5,6]}); // 一括入力の標準時間・対象曜日（0=日）
   const todayStr=fmtDate(new Date());
   const staff=STAFF_ACCOUNTS.find(s=>s.id===staffId)||currentUser;
+  const {rules,holidays}=useAttendanceContext();
 
   function load(){
     setLoading(true);
@@ -15070,9 +15165,9 @@ function AttendanceMonthly({currentUser,isAdmin}){
   // 記録が読み込まれた/人・月が変わったら、入力欄の初期値を作り直す
   const origOf=ds=>{
     const rs=recsByDate[ds]||[];
-    if(rs.length!==1) return {inT:"",outT:"",bs:"",be:""};
+    if(rs.length!==1) return {inT:"",outT:"",bs:"",be:"",er:"",br:""};
     const r=rs[0], b=breaksOf(r)[0]||{};
-    return {inT:isoToHM(r.clock_in),outT:isoToHM(r.clock_out),bs:isoToHM(b.start),be:isoToHM(b.end)};
+    return {inT:isoToHM(r.clock_in),outT:isoToHM(r.clock_out),bs:isoToHM(b.start),be:isoToHM(b.end),er:r.early_reason||"",br:r.break_reason||""};
   };
   React.useEffect(()=>{
     const d={};
@@ -15084,7 +15179,16 @@ function AttendanceMonthly({currentUser,isAdmin}){
   const setCell=(ds,key,val)=>setDraft(p=>({...p,[ds]:{...(p[ds]||origOf(ds)),[key]:val}}));
   // 同じ日に複数の記録がある日は、ここでは編集せず（「打刻・履歴」の編集から修正）表示だけにする
   const locked=ds=>(recsByDate[ds]||[]).length>1;
-  const sameRow=(a,b)=>a.inT===b.inT&&a.outT===b.outT&&a.bs===b.bs&&a.be===b.be;
+  const sameRow=(a,b)=>a.inT===b.inT&&a.outT===b.outT&&a.bs===b.bs&&a.be===b.be&&(a.er||"")===(b.er||"")&&(a.br||"")===(b.br||"");
+  // 入力中の内容で、早朝・休憩なしに当たるか（2回目以降の休憩も含めて判定）
+  function rowIssues(row,ds){
+    if(!row.inT) return {early:false,noBreak:false};
+    const ex=(recsByDate[ds]||[])[0];
+    const rest=ex?breaksOf(ex).slice(1):[];
+    const rec={date:ds,clock_in:hmToIso(ds,row.inT),clock_out:hmToIso(ds,row.outT),
+      breaks:[...((row.bs&&row.be)?[{start:hmToIso(ds,row.bs),end:hmToIso(ds,row.be)}]:[]),...rest]};
+    return Attendance.issuesOf(rec,rules,holidays);
+  }
   const changedDates=dates.filter(ds=>!locked(ds)&&draft[ds]&&!sameRow(draft[ds],origOf(ds)));
 
   // 2回目以降の休憩（打刻で記録されたもの）の合計時間。表では編集できないが、実働・休憩の計算には含める
@@ -15138,7 +15242,7 @@ function AttendanceMonthly({currentUser,isAdmin}){
         if(!fill.days.includes(dow)) return;
         const cur=next[ds]||origOf(ds);
         if(cur.inT||cur.outT) return; // すでに入力がある日は上書きしない
-        next[ds]={inT:fill.inT,outT:fill.outT,bs:fill.bs,be:fill.be};
+        next[ds]={inT:fill.inT,outT:fill.outT,bs:fill.bs,be:fill.be,er:"",br:""};
       });
       return next;
     });
@@ -15154,6 +15258,8 @@ function AttendanceMonthly({currentUser,isAdmin}){
       if(r.bs&&r.be&&r.be<=r.bs){ alert(`${ds}：休憩の終了は開始より後の時刻にしてください`); return; }
     }
     if(changedDates.length===0) return;
+    const noReason=changedDates.filter(ds=>{ const r=draft[ds]; const iss=rowIssues(r,ds); return (iss.early&&!(r.er||"").trim())||(iss.noBreak&&!(r.br||"").trim()); });
+    if(noReason.length&&!confirm(`早朝出勤・休憩なしの理由が未入力の日が ${noReason.length}日あります（${noReason.map(ds=>Number(ds.slice(8))+"日").join("・")}）。\n「勤怠表」に「理由が未入力」と表示されます。このまま保存しますか？`)) return;
     const delCount=changedDates.filter(ds=>!draft[ds].inT&&!draft[ds].outT).length;
     if(!confirm(`${staff.name}さんの ${changedDates.length}日分を保存します。`+(delCount>0?`\n（うち${delCount}日分は空欄なので記録を削除します）`:"")+"\nよろしいですか？")) return;
     setSaving(true);
@@ -15169,10 +15275,13 @@ function AttendanceMonthly({currentUser,isAdmin}){
         // 2つ目以降の休憩（打刻で記録されたもの）は残し、1つ目だけを入力内容に置き換える
         const restBreaks=existing?breaksOf(existing).slice(1):[];
         const firstBreak=(r.bs&&r.be)?[{start:hmToIso(ds,r.bs),end:hmToIso(ds,r.be)}]:[];
+        const iss=rowIssues(r,ds);
         const payload={
           staff_id:staffId,date:ds,
           clock_in:hmToIso(ds,r.inT),clock_out:hmToIso(ds,r.outT),
           breaks:[...firstBreak,...restBreaks],
+          early_reason:iss.early&&(r.er||"").trim()?(r.er||"").trim().slice(0,200):null,
+          break_reason:iss.noBreak&&(r.br||"").trim()?(r.br||"").trim().slice(0,200):null,
         };
         if(existing) await sb.update("attendance_records",existing.id,payload);
         else await sb.insert("attendance_records",payload);
@@ -15242,12 +15351,12 @@ function AttendanceMonthly({currentUser,isAdmin}){
           <table style={{width:"100%",borderCollapse:"collapse",minWidth:760}}>
             <thead>
               <tr style={{background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}>
-                {["日付","出勤","退勤","休憩開始","休憩終了","実働"].map(h=><th key={h} style={th}>{h}</th>)}
+                {["日付","出勤","退勤","休憩開始","休憩終了","実働","早朝・休憩なしの理由"].map(h=><th key={h} style={th}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {loading?(
-                <tr><td colSpan={6} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>読み込み中...</td></tr>
+                <tr><td colSpan={7} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>読み込み中...</td></tr>
               ):dates.map(ds=>{
                 const dow=new Date(ds+"T00:00:00").getDay();
                 const isLocked=locked(ds);
@@ -15261,7 +15370,7 @@ function AttendanceMonthly({currentUser,isAdmin}){
                   return(
                     <tr key={ds} style={{background:"#f8fafc"}}>
                       <td style={{...td,fontWeight:700,color:dc}}>{Number(ds.slice(8))}（{DOW[dow]}）</td>
-                      <td colSpan={5} style={{...td,color:"#64748b",fontSize:12}}>この日は打刻が{rs.length}件あります：{rs.map(r=>`${isoToHM(r.clock_in)}〜${r.clock_out?isoToHM(r.clock_out):"勤務中"}`).join(" / ")}（「打刻・履歴」の編集から修正できます）</td>
+                      <td colSpan={6} style={{...td,color:"#64748b",fontSize:12}}>この日は打刻が{rs.length}件あります：{rs.map(r=>`${isoToHM(r.clock_in)}〜${r.clock_out?isoToHM(r.clock_out):"勤務中"}`).join(" / ")}（「打刻・履歴」の編集から修正できます）</td>
                     </tr>
                   );
                 }
@@ -15273,6 +15382,12 @@ function AttendanceMonthly({currentUser,isAdmin}){
                     <td style={td}><input type="time" value={row.bs} onChange={e=>setCell(ds,"bs",e.target.value)} style={inp}/></td>
                     <td style={td}><input type="time" value={row.be} onChange={e=>setCell(ds,"be",e.target.value)} style={inp}/></td>
                     <td style={{...td,fontWeight:700}}>{h!=null?fmtHM(h):(row.inT&&!row.outT?<span style={{color:"#d97706"}}>退勤未入力</span>:"—")}{extraBreakHours(ds)>0&&<span style={{marginLeft:6,fontSize:10,color:"#92400e",fontWeight:700}}>（打刻の休憩+{fmtHM(extraBreakHours(ds))}含む）</span>}</td>
+                    {(()=>{ const iss=rowIssues(row,ds); if(!iss.early&&!iss.noBreak) return <td style={{...td,color:"#cbd5e1"}}>—</td>;
+                      const ri={...inp,width:170,borderColor:"#fca5a5"};
+                      return <td style={{...td,whiteSpace:"normal"}}>
+                        {iss.early&&<div style={{marginBottom:iss.noBreak?4:0}}><div style={{fontSize:10.5,fontWeight:800,color:"#b45309"}}>🌅 早朝（{iss.limit}より前）</div><input value={row.er||""} onChange={e=>setCell(ds,"er",e.target.value)} placeholder="理由（必須）" style={{...ri,borderColor:(row.er||"").trim()?"#e2e8f0":"#fca5a5"}}/></div>}
+                        {iss.noBreak&&<div><div style={{fontSize:10.5,fontWeight:800,color:"#b91c1c"}}>☕ 休憩なし（{rules.breakMinMinutes}分未満）</div><input value={row.br||""} onChange={e=>setCell(ds,"br",e.target.value)} placeholder="理由（必須）" style={{...ri,borderColor:(row.br||"").trim()?"#e2e8f0":"#fca5a5"}}/></div>}
+                      </td>; })()}
                   </tr>
                 );
               })}
@@ -15290,6 +15405,190 @@ function AttendanceMonthly({currentUser,isAdmin}){
   );
 }
 
+// ===== 勤怠表：スタッフ個々のシフト（出勤・退勤・出勤・退勤・勤務時間）を月ごとに確認する =====
+// 1回目の休憩で前半と後半に分けて表示。公休日はシフト表の「休み」の日数、振休残日はシフト表の「振替残」＋「祝振替残」。
+// 早朝出勤・休憩が取れなかった日は、理由をここからも入力できる（未入力は赤で表示）。
+function AttendanceSheet({currentUser,isAdmin}){
+  const {rules,holidays}=useAttendanceContext();
+  const ver=useSharedSettingsVersion();
+  const [records,setRecords]=React.useState(null);
+  const [weekly,setWeekly]=React.useState([]);
+  const [ym,setYm]=React.useState(()=>fmtDate(new Date()).slice(0,7));
+  const [who,setWho]=React.useState("all");
+  const [onlyIssues,setOnlyIssues]=React.useState(false);
+  const [showRules,setShowRules]=React.useState(false);
+  const [draftRules,setDraftRules]=React.useState(null);
+  const [savingId,setSavingId]=React.useState(null);
+  function load(){
+    sb.select("attendance_records","?order=date.asc,clock_in.asc").then(r=>setRecords(Array.isArray(r)?r:[])).catch(()=>setRecords([]));
+  }
+  React.useEffect(()=>{ load(); sb.select("staff_weekly_shifts","?select=staff_id,day_of_week,is_working").then(r=>{ if(Array.isArray(r)) setWeekly(r); }).catch(()=>{}); },[]);
+  const shifts=React.useMemo(()=>{ try{ return JSON.parse(localStorage.getItem(`shifts_${ym}`)||"{}")||{}; }catch(e){ return {}; } },[ym,ver]);
+  const balance=React.useMemo(()=>{ try{ return JSON.parse(localStorage.getItem("holiday_balance")||"{}")||{}; }catch(e){ return {}; } },[ver]);
+  const staffList=STAFF_ACCOUNTS.filter(s=>!s.eventOnly&&!String(s.name).startsWith("（未使用）"));
+  const shown=who==="all"?staffList:staffList.filter(s=>String(s.id)===String(who));
+  const partSet=new Set(rules.partTimers);
+  const sheets=React.useMemo(()=>{
+    const out={};
+    if(records) staffList.forEach(s=>{ out[s.id]=Attendance.sheetFor(s.id,ym,records,{shifts,weekly,rules,holidays}); });
+    return out;
+  },[records,ym,shifts,weekly,rules,holidays]);
+  const [y,m]=ym.split("-").map(Number);
+  const shiftMonth=d=>{ const t=new Date(y,m-1+d,1); setYm(`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}`); };
+  const DOW=["日","月","火","水","木","金","土"];
+  const ABBR={"休み":"公休","有休":"有休","振替":"振休","祝振替":"祝振休","午前出勤":"午前出勤","午後出勤":"午後出勤","出勤":""};
+
+  async function saveReason(rec,field,value){
+    const v=String(value||"").trim().slice(0,200);
+    if(v===(rec[field]||"")) return;
+    setSavingId(rec.id+field);
+    try{ await sb.update("attendance_records",rec.id,{[field]:v||null}); setRecords(rs=>rs.map(r=>r.id===rec.id?{...r,[field]:v||null}:r)); }
+    catch(e){ alert("理由を保存できませんでした："+(e.message||"")); }
+    setSavingId(null);
+  }
+  async function saveRules(){
+    const r=Attendance.normRules(draftRules);
+    const ok=await sharedSettings.saveNow({attendance_rules:JSON.stringify(r)});
+    if(ok){ setShowRules(false); setDraftRules(null); } else alert("保存できませんでした（ログインし直して、もう一度保存してください）");
+  }
+
+  const box={background:"white",borderRadius:12,boxShadow:"0 1px 4px rgba(0,0,0,.06)",marginBottom:14,overflow:"hidden"};
+  const th={padding:"7px 10px",textAlign:"left",fontWeight:800,color:"#334155",fontSize:12.5,whiteSpace:"nowrap",border:"1px solid #e2e8f0",background:"#f8fafc"};
+  const td={padding:"5px 10px",fontSize:13,whiteSpace:"nowrap",border:"1px solid #e2e8f0"};
+  const inp={padding:"5px 7px",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:13,fontFamily:"inherit"};
+
+  const staffTable=s=>{
+    const sh=sheets[s.id]; if(!sh) return null;
+    const rows=sh.rows.filter(r=>!onlyIssues||r.items.some(it=>it.issues.early||it.issues.noBreak));
+    return(
+      <div key={s.id} style={{...box,breakInside:"avoid"}}>
+        <div style={{padding:"10px 14px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",borderBottom:"1px solid #f1f5f9"}}>
+          <span style={{fontWeight:800,fontSize:15,color:s.color||"#1e3a5f"}}>{s.name}</span>
+          {partSet.has(s.id)&&<span style={{fontSize:11,fontWeight:800,background:"#ede9fe",color:"#5b21b6",borderRadius:10,padding:"1px 8px"}}>アルバイト</span>}
+          <span style={{fontSize:12,color:"#64748b",marginLeft:"auto"}}>出勤 {sh.days}日・勤務 {Attendance.fmtMinutes(sh.totalMinutes)}</span>
+          {sh.missing>0&&<span style={{fontSize:12,fontWeight:800,color:"#b91c1c",background:"#fee2e2",borderRadius:10,padding:"1px 8px"}}>理由が未入力 {sh.missing}件</span>}
+        </div>
+        <div style={{overflowX:"auto"}}>
+          <table style={{borderCollapse:"collapse",width:"100%",minWidth:760}}>
+            <thead><tr>{["名前","日付","出勤時間","退勤時間","出勤時間","退勤時間","勤務時間","早朝・休憩の確認"].map((h,i)=><th key={i} style={th}>{h}</th>)}</tr></thead>
+            <tbody>
+              {rows.length===0&&<tr><td colSpan={8} style={{...td,textAlign:"center",color:"#94a3b8"}}>{onlyIssues?"確認が必要な日はありません":"記録がありません"}</td></tr>}
+              {rows.map((r,ri)=>{
+                const dow=new Date(r.date+"T00:00:00").getDay();
+                const dc=r.holiday&&dow!==6?"#dc2626":dow===6?"#2563eb":"#1e293b";
+                const dateCell=<td style={{...td,color:dc,fontWeight:700}}>{Number(r.date.slice(5,7))}/{Number(r.date.slice(8))}（{DOW[dow]}）{r.holiday&&dow!==0&&dow!==6&&<span style={{fontSize:10,marginLeft:3}}>祝</span>}</td>;
+                const nameCell=<td style={{...td,fontWeight:800,color:ri===0?"#1e293b":"transparent"}}>{ri===0?s.name:""}</td>;
+                if(!r.items.length){
+                  const lbl=ABBR[r.shift]||"";
+                  return <tr key={r.date} style={{background:lbl?"#f8fafc":"white"}}>{nameCell}{dateCell}<td colSpan={5} style={{...td,color:"#94a3b8",fontSize:12}}>{lbl}</td><td style={td}></td></tr>;
+                }
+                return r.items.map((it,k)=>{
+                  const rec=it.record, iss=it.issues;
+                  return(
+                    <tr key={rec.id} style={{background:iss.earlyMissing||iss.breakMissing?"#fff7f7":"white"}}>
+                      {k===0?nameCell:<td style={td}></td>}
+                      {k===0?dateCell:<td style={td}></td>}
+                      <td style={{...td,color:iss.early?"#b45309":"#1e293b",fontWeight:iss.early?800:400}}>{it.segments[0].in}</td>
+                      <td style={td}>{it.segments[0].out||(it.open?<span style={{color:"#d97706"}}>勤務中</span>:"")}</td>
+                      <td style={td}>{it.segments[1].in}</td>
+                      <td style={td}>{it.segments[1].out}</td>
+                      <td style={{...td,fontWeight:800}}>{it.work!=null?Attendance.fmtMinutes(it.work):""}</td>
+                      <td style={{...td,whiteSpace:"normal",minWidth:220}}>
+                        {iss.early&&<div style={{marginBottom:iss.noBreak?6:0}}>
+                          <div style={{fontSize:10.5,fontWeight:800,color:"#b45309"}}>🌅 早朝（{iss.limit}より前）</div>
+                          <input defaultValue={rec.early_reason||""} onBlur={e=>saveReason(rec,"early_reason",e.target.value)} placeholder="理由を入力（必須）" disabled={savingId===rec.id+"early_reason"} style={{...inp,width:"100%",boxSizing:"border-box",borderColor:iss.earlyMissing?"#fca5a5":"#e2e8f0"}}/>
+                        </div>}
+                        {iss.noBreak&&<div>
+                          <div style={{fontSize:10.5,fontWeight:800,color:"#b91c1c"}}>☕ 休憩なし（休憩{Attendance.breakMinutes(rec)}分）</div>
+                          <input defaultValue={rec.break_reason||""} onBlur={e=>saveReason(rec,"break_reason",e.target.value)} placeholder="理由を入力（必須）" disabled={savingId===rec.id+"break_reason"} style={{...inp,width:"100%",boxSizing:"border-box",borderColor:iss.breakMissing?"#fca5a5":"#e2e8f0"}}/>
+                        </div>}
+                      </td>
+                    </tr>
+                  );
+                });
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  const full=shown.filter(s=>!partSet.has(s.id)), part=shown.filter(s=>partSet.has(s.id));
+  const dr=draftRules||rules;
+  return(
+    <div style={{maxWidth:1100,margin:"0 auto"}}>
+      <div style={{...box,padding:"14px 16px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f"}}>📋 勤怠表（スタッフ個々のシフト）</div>
+          <button onClick={()=>shiftMonth(-1)} style={{padding:"5px 12px",borderRadius:8,border:"1.5px solid #e2e8f0",background:"white",cursor:"pointer"}}>◀</button>
+          <span style={{fontWeight:800,fontSize:15}}>{y}年{m}月</span>
+          <button onClick={()=>shiftMonth(1)} style={{padding:"5px 12px",borderRadius:8,border:"1.5px solid #e2e8f0",background:"white",cursor:"pointer"}}>▶</button>
+          <select value={who} onChange={e=>setWho(e.target.value)} aria-label="表示するスタッフ" style={{...inp,fontWeight:700}}>
+            <option value="all">全員</option>
+            {staffList.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <label style={{display:"flex",alignItems:"center",gap:4,fontSize:12.5,fontWeight:700,color:"#475569",cursor:"pointer"}}><input type="checkbox" checked={onlyIssues} onChange={e=>setOnlyIssues(e.target.checked)}/>早朝・休憩なしの日だけ</label>
+          <span style={{marginLeft:"auto",display:"flex",gap:6}}>
+            {isAdmin&&<button onClick={()=>{ setShowRules(v=>!v); setDraftRules(null); }} style={{padding:"7px 14px",borderRadius:8,border:"1.5px solid #cbd5e1",background:"white",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>⚙️ ルール設定</button>}
+            <button onClick={()=>window.print()} style={{padding:"7px 14px",borderRadius:8,border:"1.5px solid #cbd5e1",background:"white",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>🖨 印刷</button>
+          </span>
+        </div>
+        <div style={{fontSize:12,color:"#64748b",marginTop:8,lineHeight:1.7}}>
+          早朝＝平日 <b>{rules.earlyWeekday}</b>・休日（土日・祝日）<b>{rules.earlyHoliday}</b> より前の出勤。休憩なし＝実働 <b>{rules.breakAfterHours}時間</b> を超える日に休憩が <b>{rules.breakMinMinutes}分</b> 未満。どちらも理由の入力が必要です（打刻のときにも聞かれます）。
+        </div>
+        {showRules&&isAdmin&&(
+          <div style={{marginTop:12,padding:"12px 14px",background:"#f8fafc",borderRadius:10,border:"1px solid #e2e8f0"}}>
+            <div style={{display:"flex",gap:14,flexWrap:"wrap",alignItems:"center",fontSize:13}}>
+              <label>平日の早朝の基準 <input type="time" value={dr.earlyWeekday} onChange={e=>setDraftRules({...dr,earlyWeekday:e.target.value})} style={inp}/></label>
+              <label>休日（土日・祝日）の早朝の基準 <input type="time" value={dr.earlyHoliday} onChange={e=>setDraftRules({...dr,earlyHoliday:e.target.value})} style={inp}/></label>
+              <label>実働 <input type="number" min="0" max="24" step="0.5" value={dr.breakAfterHours} onChange={e=>setDraftRules({...dr,breakAfterHours:e.target.value})} style={{...inp,width:64}}/> 時間を超えたら、休憩 <input type="number" min="0" max="240" step="5" value={dr.breakMinMinutes} onChange={e=>setDraftRules({...dr,breakMinMinutes:e.target.value})} style={{...inp,width:64}}/> 分以上</label>
+            </div>
+            <div style={{marginTop:10,fontSize:13}}>
+              <b>アルバイト</b>（勤怠表で別の欄に出します）：
+              {staffList.map(s=><label key={s.id} style={{marginLeft:10,display:"inline-flex",alignItems:"center",gap:3,cursor:"pointer"}}><input type="checkbox" checked={(dr.partTimers||[]).includes(s.id)} onChange={e=>setDraftRules({...dr,partTimers:e.target.checked?[...(dr.partTimers||[]),s.id]:(dr.partTimers||[]).filter(x=>x!==s.id)})}/>{s.name}</label>)}
+            </div>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:10}}>
+              <button onClick={()=>{ setShowRules(false); setDraftRules(null); }} style={{padding:"7px 14px",borderRadius:8,border:"1.5px solid #e2e8f0",background:"white",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>やめる</button>
+              <button onClick={saveRules} disabled={!draftRules} style={{padding:"7px 18px",borderRadius:8,border:"none",background:draftRules?"#1e3a5f":"#cbd5e1",color:"white",fontSize:12,fontWeight:800,cursor:draftRules?"pointer":"default",fontFamily:"inherit"}}>保存</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {records===null?<div style={{...box,padding:20,textAlign:"center",color:"#94a3b8"}}>読み込み中...</div>:<>
+        <div style={box}>
+          <div style={{overflowX:"auto"}}>
+            <table style={{borderCollapse:"collapse",width:"100%",minWidth:720}}>
+              <thead><tr>{["名前","公休日","振休残日","出勤日数","勤務時間","早朝","休憩なし","理由が未入力"].map((h,i)=><th key={i} style={th}>{h}</th>)}</tr></thead>
+              <tbody>
+                {[...full,...part].map((s,i)=>{ const sh=sheets[s.id]||{}; const bal=balance[s.id]||{};
+                  return(<React.Fragment key={s.id}>
+                    {i===full.length&&part.length>0&&<tr><td colSpan={8} style={{...td,fontWeight:800,background:"#f5f3ff",color:"#5b21b6"}}>アルバイト</td></tr>}
+                    <tr>
+                      <td style={{...td,fontWeight:800}}>{s.name}</td>
+                      <td style={td}>{Attendance.publicHolidayCount(s.id,ym,shifts,weekly)}日</td>
+                      <td style={td}>{Attendance.furikaeLeft(bal)}日{(Number(bal.祝振替残)||0)>0&&<span style={{fontSize:11,color:"#64748b"}}>（うち祝振替 {bal.祝振替残}日）</span>}</td>
+                      <td style={td}>{sh.days||0}日</td>
+                      <td style={{...td,fontWeight:800}}>{Attendance.fmtMinutes(sh.totalMinutes||0)}</td>
+                      <td style={{...td,color:sh.early?"#b45309":"#94a3b8"}}>{sh.early||0}回</td>
+                      <td style={{...td,color:sh.noBreak?"#b91c1c":"#94a3b8"}}>{sh.noBreak||0}回</td>
+                      <td style={{...td,fontWeight:800,color:sh.missing?"#b91c1c":"#94a3b8"}}>{sh.missing||0}件</td>
+                    </tr>
+                  </React.Fragment>);
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{fontSize:11,color:"#94a3b8",padding:"6px 12px"}}>公休日＝シフト表の「休み」の日数（その月）／振休残日＝シフト表の「振替残」＋「祝振替残」</div>
+        </div>
+        {full.map(staffTable)}
+        {part.length>0&&<div style={{fontWeight:800,fontSize:14,color:"#5b21b6",margin:"6px 4px 8px"}}>アルバイト</div>}
+        {part.map(staffTable)}
+      </>}
+    </div>
+  );
+}
 // 勤怠管理：「打刻・履歴」と「個人別 月一括管理」の切り替え
 function AttendancePanel({currentUser,isAdmin}){
   const [tab,setTab]=React.useState("punch");
@@ -15301,8 +15600,9 @@ function AttendancePanel({currentUser,isAdmin}){
       <div style={{maxWidth:1100,margin:"0 auto 14px",display:"flex",gap:8}}>
         {tabBtn("punch","⏰ 打刻・履歴")}
         {tabBtn("monthly","🗓 個人別 月一括管理")}
+        {tabBtn("sheet","📋 勤怠表")}
       </div>
-      {tab==="punch"?<AttendancePunchPanel currentUser={currentUser} isAdmin={isAdmin}/>:<AttendanceMonthly currentUser={currentUser} isAdmin={isAdmin}/>}
+      {tab==="punch"?<AttendancePunchPanel currentUser={currentUser} isAdmin={isAdmin}/>:tab==="monthly"?<AttendanceMonthly currentUser={currentUser} isAdmin={isAdmin}/>:<AttendanceSheet currentUser={currentUser} isAdmin={isAdmin}/>}
     </div>
   );
 }
