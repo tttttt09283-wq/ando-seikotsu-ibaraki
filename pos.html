@@ -542,6 +542,7 @@ function selectInsuranceType(type){
   state.insuranceRate=null;
   state.insuranceTier=null;
   state.acuTier=null;
+  state.acuAmount=null;
   render();
 }
 // ===== 保険の窓口負担を「柔整（保険診療）」と「鍼灸」に分けて保存する =====
@@ -561,6 +562,8 @@ function insuranceSplitForSave(){
   if(!type) return {ju:amt,acu:0};
   if(type==="鍼灸併用"||type==="鍼灸のみ") return {ju:0,acu:amt};
   if(type===INS_COMBINED){
+    // 保険診療・鍼灸の金額を別々に直したときは、その金額
+    if(state.acuAmount!=null&&state.acuAmount!==""){ const acu=Math.max(0,Math.min(amt,parseInt(state.acuAmount)||0)); return {ju:amt-acu,acu}; }
     // 医療助成：1,000円＝柔整500円＋鍼灸500円。それ以外（500円など）は柔整の分として扱う
     if(state.insuranceRate==="医療助成") return amt>=1000?{ju:amt-500,acu:500}:{ju:amt,acu:0};
     // 鍼灸併用で選んだ段階の金額を鍼灸に、残りを柔整に（合計を手で直したときも合計は合う）
@@ -583,6 +586,7 @@ function combinedInsuranceAmount(){
 function selectCombinedTier(part,tier){
   if(part==="鍼灸併用") state.acuTier=tier; else state.insuranceTier=tier;
   state.insuranceAmount=combinedInsuranceAmount();
+  state.acuAmount=null;
   render();
 }
 function selectInsuranceRate(rate){
@@ -597,6 +601,7 @@ function selectInsuranceRate(rate){
       state.insuranceTier=getVisitTierForType("手技療法",visitCount);
       state.acuTier=getVisitTierForType("鍼灸併用",visitCount);
       state.insuranceAmount=combinedInsuranceAmount();
+      state.acuAmount=null;
     }else{
       state.insuranceTier=getVisitTierForType(state.insuranceType,visitCount);
     }
@@ -618,6 +623,7 @@ function medicalAssistOptions(){
 function selectMedicalAssistAmount(amount){
   state.insuranceTier=null;
   state.insuranceAmount=amount;
+  state.acuAmount=null;
   render();
 }
 function stepInsuranceTier(dir){
@@ -754,6 +760,28 @@ function staffChipsHtml(val,onPick,label){
 function setJifeeStaff(i,v){ state.jifeeItems[i].staff_id=parseInt(v)||null; render(); }
 function setInsuranceStaff(v){ state.insuranceStaffId=parseInt(v)||null; render(); }
 function setAcuStaff(v){ state.acuStaffId=parseInt(v)||null; render(); }
+// 保険診療＋鍼灸併用：保険診療（柔整）と鍼灸の金額を別々に直す（保険の合計＝その和）
+function setSplitInsurance(part,v){
+  const cur=insuranceSplitForSave();
+  const n=Math.max(0,parseInt(v)||0);
+  const ju=part==="ju"?n:cur.ju, acu=part==="acu"?n:cur.acu;
+  state.acuAmount=acu;
+  state.insuranceAmount=ju+acu;
+  const lbl=document.getElementById("insTotalLabel"); if(lbl) lbl.textContent=fmt(ju+acu);
+  renderSummary();
+}
+// お会計の欄：保険診療と鍼灸を別々の行に（担当も別々）
+function insuranceSummaryRows(){
+  const ins=parseInt(state.insuranceAmount)||0;
+  if(ins<=0) return "";
+  const row=(label,staffLabel,amount)=>`<div class="summary-row"><span style="color:#666;">${label}<small style="margin-left:6px;color:#4338ca;font-weight:700;">${staffLabel}</small></span><span style="font-weight:700;">${fmt(amount)}</span></div>`;
+  if(state.insuranceType===INS_COMBINED){
+    const sp=insuranceSplitForSave();
+    return row("保険診療（柔整）",`担当 ${STAFF[insuranceStaffId()]||"-"}`,sp.ju)+row("鍼灸保険",`担当 ${STAFF[acuStaffId()]||"-"}`,sp.acu);
+  }
+  if(state.insuranceType==="鍼灸併用"||state.insuranceType==="鍼灸のみ") return row("鍼灸保険",`担当 ${STAFF[acuStaffSupported?acuStaffId():insuranceStaffId()]||"-"}`,ins);
+  return row("保険窓口負担",insuranceStaffLabel(),ins);
+}
 // サマリー・確認用の担当の表示（保険診療と鍼灸で担当が違えば両方）
 function insuranceStaffLabel(){
   if(acuStaffSupported&&insuranceHasAcu()){
@@ -794,7 +822,7 @@ function renderSummaryHtml(){
   const ins=parseInt(state.insuranceAmount)||0;
   const total=calcTotal();const paid=calcPaid();const remaining=calcRemaining();const change=calcChange();
   return`
-    ${ins>0?`<div class="summary-row"><span style="color:#666;">保険窓口負担<small style="margin-left:6px;color:#4338ca;font-weight:700;">${insuranceStaffLabel()}</small></span><span style="font-weight:700;">${fmt(ins)}</span></div>`:""}
+    ${insuranceSummaryRows()}
     ${state.jifeeItems.map(i=>`<div class="summary-row"><span style="color:#666;">${i.label}<small style="margin-left:6px;color:#4338ca;font-weight:700;">担当 ${STAFF[itemStaffId(i)]||"-"}</small></span><span style="font-weight:700;">${fmt(i.amount)}</span></div>`).join("")}
     <div class="summary-total"><span>合　計</span><span>${fmt(total)}</span></div>
     ${paid>0?`
@@ -1457,6 +1485,8 @@ async function loadExistingPayments(bookingId){
 // 会計データから画面の状態を復元する（レシートは確定時と同じ内容で出る）
 function restorePaidState(pay){
   state.insuranceAmount=parseInt(pay.insurance_amount)||0;
+  // 保険診療＋鍼灸併用は、保存した鍼灸の金額で分ける
+  state.acuAmount=(pay.insurance_type===INS_COMBINED&&pay.acu_insurance_amount!=null)?Number(pay.acu_insurance_amount)||0:null;
   if(Array.isArray(pay.jifee_items)&&pay.jifee_items.length>0){
     state.jifeeItems=pay.jifee_items.map(i=>({label:i.label,amount:parseInt(i.amount)||0,staff_id:i.staff_id||null}));
   }else if((pay.jifee_amount||0)>0){
@@ -1665,6 +1695,7 @@ function paySnapshot(p){
     payment_method:p.payment_method||"",
     jifee_items:(p.jifee_items||[]).map(i=>({label:i.label,amount:parseInt(i.amount)||0,staff_id:i.staff_id||p.staff_id||booking.staff_id||null})),
     insurance_type:p.insurance_type||null,memo:p.memo||null,
+    ...(paymentSplitSupported&&p.insurance_type===INS_COMBINED?{ju_insurance_amount:Number(p.ju_insurance_amount)||0,acu_insurance_amount:Number(p.acu_insurance_amount)||0}:{}),
     insurance_staff_id:(parseInt(p.insurance_amount)||0)>0?(p.insurance_staff_id||p.staff_id||booking.staff_id||null):null,
     ...(acuStaffSupported?{acu_insurance_staff_id:(Number(p.acu_insurance_amount)||0)>0?(p.acu_insurance_staff_id||p.insurance_staff_id||p.staff_id||booking.staff_id||null):null}:{})};
 }
@@ -1682,6 +1713,7 @@ async function saveFix(){
     jifee_items:jifeeItemsForSave(),
     insurance_type:state.insuranceType||null,
     memo:state.jifeeItems.map(i=>i.label).join("・")||null,
+    ...(paymentSplitSupported&&state.insuranceType===INS_COMBINED?{ju_insurance_amount:insuranceSplitForSave().ju,acu_insurance_amount:insuranceSplitForSave().acu}:{}),
     insurance_staff_id:insuranceStaffForSave(),
     ...(acuStaffSupported?{acu_insurance_staff_id:splitFieldsForSave().acu_insurance_staff_id??null}:{}),
   };
@@ -2023,13 +2055,21 @@ function render(){
                   </div>
                 `;
               })():""}
+              ${state.insuranceType===INS_COMBINED?(()=>{ const sp=insuranceSplitForSave(); return `
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;">
+                <div><div style="font-size:11px;font-weight:800;color:#1d4ed8;margin-bottom:3px;">保険診療（柔整）</div>
+                  <div class="ins-input" style="margin:0;"><input type="number" id="juAmount" value="${sp.ju}" placeholder="0" oninput="setSplitInsurance('ju',this.value)"/><span style="font-size:12px;color:#666;">円</span></div></div>
+                <div><div style="font-size:11px;font-weight:800;color:#047857;margin-bottom:3px;">鍼灸保険</div>
+                  <div class="ins-input" style="margin:0;"><input type="number" id="acuAmount" value="${sp.acu}" placeholder="0" oninput="setSplitInsurance('acu',this.value)"/><span style="font-size:12px;color:#666;">円</span></div></div>
+              </div>
+              <div style="font-size:11px;color:#64748b;text-align:right;margin-bottom:8px;">保険の合計 <b id="insTotalLabel">${fmt(parseInt(state.insuranceAmount)||0)}</b></div>`; })():`
               <div class="ins-input">
                 <input type="number" id="insuranceAmount" value="${state.insuranceAmount}" placeholder="0" oninput="state.insuranceAmount=this.value;renderSummary()"/>
                 <span style="font-size:12px;color:#666;">円</span>
-              </div>
-              <div class="quick-btns">
+              </div>`}
+              ${state.insuranceType===INS_COMBINED?"":`<div class="quick-btns">
                 ${[0,400,500,600,780,800,950,1100,1150,1300,1650].map(v=>`<button class="quick-btn" onclick="state.insuranceAmount=${v};document.getElementById('insuranceAmount').value=${v};renderSummary();">${v===0?"¥0":"¥"+v}</button>`).join("")}
-              </div>
+              </div>`}
               <div style="border-top:1px dashed #e5e7eb;margin-top:10px;padding-top:10px;">
                 <div style="font-size:11px;color:#94a3b8;font-weight:700;margin-bottom:6px;">諸費用（別途加算）</div>
                 <div style="display:flex;gap:6px;">
