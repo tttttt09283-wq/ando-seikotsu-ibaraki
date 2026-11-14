@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import LineSendButton from "@/components/LineSendButton";
 
 type View = {
   code: string;
@@ -87,9 +88,7 @@ export default function StatusView({ code, token }: { code: string; token: strin
       {view.status === "pending_line" && line && (
         <div className="space-y-3">
           {line.lineUrl && (
-            <a href={line.lineUrl} className="block bg-[#06C755] px-5 py-4 text-center text-sm font-bold tracking-[0.12em] text-white">
-              LINEで送信する
-            </a>
+            <LineSendButton url={line.lineUrl} />
           )}
           <textarea readOnly value={line.prefill} rows={7} className="w-full border border-line bg-stone p-3 text-xs" />
           <button type="button" onClick={() => navigator.clipboard?.writeText(line.prefill)} className="w-full border border-ink px-4 py-3 text-sm">
