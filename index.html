@@ -15,6 +15,7 @@
 <script src="/sales-report-logic.js"></script>
 <script src="/attendance-logic.js"></script>
 <script src="/petty-cash-logic.js"></script>
+<script src="/booking-segments.js"></script>
 <script>
 //
 // StarWebPrintBuilder API
@@ -807,6 +808,12 @@ function overlaps(a,b){
   const as=toMin(a.time),ae=as+(a.duration||DURATION[a.menu]||30),bs=toMin(b.time),be=bs+(b.duration||DURATION[b.menu]||30);
   return as<be&&bs<ae;
 }
+// 柔整鍼灸併用で「柔整」と「鍼灸」の担当を分けた予約は、担当ごとの部分に分けて扱う（booking-segments.js）。
+// スタッフが空いているかの判定・カレンダーの表示は、予約をこの部分に分けてから staff_id・time・duration を見る。
+function staffSegs(list){ return BookingSegments.expand(list,b=>DURATION[b.menu]||30); }
+function isSplitBooking(b){ return BookingSegments.isSplit(b); }
+// その予約の「柔整（ju）」または「鍼灸（acu）」の部分（分けていない予約はそのまま）
+function bookingSegFor(b,role){ const segs=BookingSegments.segmentsOf(b,x=>DURATION[x.menu]||30); return segs.find(x=>x._seg===role)||segs[0]; }
 
 // 「予約日」と「予約が作成された日」が同じかどうか＝当日予約かどうかを判定する
 function isSameDayBooking(b){
@@ -1389,7 +1396,7 @@ function CancelModal({booking,bookings,todayStr,storeStaffList,isAdmin,onClose,o
 
   const rebookConflict=React.useMemo(()=>{
     if(!wantRebook||!rebookDate||!rebookTime) return false;
-    return bookings.some(b=>!b.cancelled&&b.id!==booking.id&&b.staff_id===rebookStaffId&&b.date===rebookDate&&overlaps(b,{time:rebookTime,duration:booking.duration||DURATION[booking.menu]||30}));
+    return staffSegs(bookings).some(b=>!b.cancelled&&b.id!==booking.id&&b.staff_id===rebookStaffId&&b.date===rebookDate&&overlaps(b,{time:rebookTime,duration:booking.duration||DURATION[booking.menu]||30}));
   },[wantRebook,rebookDate,rebookTime,rebookStaffId,bookings,booking]);
 
   async function confirm(){
@@ -2336,7 +2343,8 @@ const SPECIAL_BOOKING_KINDS=[
 // 予約のメニュー・初診/再診・所要時間を1行で表す（美容メニューは「美容鍼／初診／80分」のように分けて表示）
 function bookingMenuSummary(b){
   if(!b) return "";
-  const dur=b.duration||DURATION[b.menu]||30;
+  // 柔整と鍼灸の担当を分けた予約は、来院全体（柔整＋鍼灸）の時間を出す
+  const dur=BookingSegments.isSplit(b)?BookingSegments.visitRange(b,x=>DURATION[x.menu]||30).minutes:(b.duration||DURATION[b.menu]||30);
   const m=String(b.menu||"").match(/^(美容鍼＋小顔矯正|美容鍼|巻き爪施術|小顔矯正)（(初診|2回目以降)）$/);
   const end=b.time?(()=>{const t=b.time.split(":").map(Number);const e=t[0]*60+t[1]+dur;return String(Math.floor(e/60)).padStart(2,"0")+":"+String(e%60).padStart(2,"0");})():"";
   return (m?`${m[1]}／${m[2]==="初診"?"初診":"2回目以降"}`:(b.menu||"メニュー未設定"))+`／${dur}分`+(end?`（${b.time}〜${end}）`:"");
@@ -5981,6 +5989,9 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
   const dayHoursForDate=form.date?getDayHours(new Date(form.date+"T00:00:00").getDay()):null;
   const dateClosedByWeekday=bh.length>0&&dayHoursForDate&&dayHoursForDate.is_open===false;
   const isSelectedDateClosed=dateClosedByTemp||dateClosedByWeekday;
+  // 柔整鍼灸併用で鍼灸の担当を分けたときの「柔整の部分」（担当選びの空き判定に使う）
+  const formJuSeg=bookingSegFor(form,"ju");
+  const formAcuSeg=isSplitBooking(form)?bookingSegFor(form,"acu"):null;
   function isTimeAllowed(t){
     if(!form.date) return true;
     if(bh.length===0) return true;
@@ -6187,7 +6198,7 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
               let isBooked=false;
               if(form.date&&form.time){
                 const laneCapacity=getLaneCount?getLaneCount(s.id,form.date):1;
-                const overlapCount=bookings.filter(b=>b.id!==editId&&b.staff_id===s.id&&b.date===form.date&&!b.cancelled&&overlaps(b,form)).length;
+                const overlapCount=staffSegs(bookings).filter(b=>b.id!==editId&&b.staff_id===s.id&&b.date===form.date&&!b.cancelled&&overlaps(b,formJuSeg)).length;
                 isBooked=overlapCount>=laneCapacity;
               }
               const selectable=working&&canDoMenu&&!isBooked;
@@ -6207,11 +6218,67 @@ function FormPanel({form,setForm,editId,conflict,setConflict,isAdmin,bookings,sa
           {form.staff_id&&staffCanDoMenus&&!staffCanDoMenus(form.staff_id,selectedMenus)&&(
             <div style={{marginTop:8,fontSize:12,color:"#dc2626",fontWeight:700}}>⚠ 選択中の担当者は、選ばれているメニューに対応していません</div>
           )}
-          {form.staff_id&&form.date&&form.time&&bookings.filter(b=>b.id!==editId&&b.staff_id===form.staff_id&&b.date===form.date&&!b.cancelled&&overlaps(b,form)).length>=(getLaneCount?getLaneCount(form.staff_id,form.date):1)&&(
+          {form.staff_id&&form.date&&form.time&&staffSegs(bookings).filter(b=>b.id!==editId&&b.staff_id===form.staff_id&&b.date===form.date&&!b.cancelled&&overlaps(b,formJuSeg)).length>=(getLaneCount?getLaneCount(form.staff_id,form.date):1)&&(
             <div style={{marginTop:8,fontSize:12,color:"#dc2626",fontWeight:700}}>⚠ 選択中の担当者はこの時間帯、既に予約枠が埋まっています</div>
           )}
         </div>
       )}
+      {/* 柔整鍼灸併用：柔整と鍼灸を別のスタッフが担当するとき（柔整→鍼灸／鍼灸→柔整） */}
+      <div className="form-group" style={{background:form.acu_staff_id?"#f5f3ff":"#fafafa",border:"1.5px solid "+(form.acu_staff_id?"#c4b5fd":"#e5e7eb"),borderRadius:10,padding:"10px 12px"}}>
+        <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:800,color:"#5b21b6",cursor:"pointer"}}>
+          <input type="checkbox" checked={!!form.acu_staff_id} onChange={e=>{
+            if(e.target.checked){
+              const other=(storeStaffList||STAFF_ACCOUNTS).find(x=>x.id!==form.staff_id&&!x.eventOnly);
+              setForm(f=>({...f,acu_staff_id:other?other.id:null,acu_order:f.acu_order||"after",acu_duration:f.acu_duration||20}));
+            }else setForm(f=>({...f,acu_staff_id:null,acu_order:null,acu_duration:null}));
+            setConflict(false);
+          }}/>
+          🪡 柔整と鍼灸の担当を分ける（柔整鍼灸併用）
+        </label>
+        {form.acu_staff_id?(
+          <div style={{marginTop:10}}>
+            <div style={{fontSize:12,fontWeight:700,color:"#475569",marginBottom:6}}>順番</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+              {[["after","柔整 → 鍼灸"],["before","鍼灸 → 柔整"]].map(([k,l])=>(
+                <button key={k} type="button" onClick={()=>{setForm(f=>({...f,acu_order:k}));setConflict(false);}} className="btn"
+                  style={{background:(form.acu_order||"after")===k?"#7c3aed":"white",color:(form.acu_order||"after")===k?"white":"#374151",border:"2px solid "+((form.acu_order||"after")===k?"#7c3aed":"#e2e8f0"),padding:"6px 14px",fontSize:13,fontWeight:700}}>{l}</button>
+              ))}
+            </div>
+            <div style={{fontSize:12,fontWeight:700,color:"#475569",marginBottom:6}}>鍼灸の担当</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+              {(storeStaffList||STAFF_ACCOUNTS).filter(x=>!x.eventOnly).map(st=>{
+                const same=st.id===form.staff_id;
+                const seg=formAcuSeg?{...formAcuSeg,staff_id:st.id}:null;
+                const dayWorking=!form.date||!isStaffWorkingOnDate?true:isStaffWorkingOnDate(st.id,new Date(form.date+"T00:00:00"));
+                const busy=!!(seg&&form.date&&form.time&&staffSegs(bookings).filter(b=>b.id!==editId&&b.staff_id===st.id&&b.date===form.date&&!b.cancelled&&overlaps(b,seg)).length>=(getLaneCount?getLaneCount(st.id,form.date):1));
+                const ok=!same&&dayWorking&&!busy;
+                const sel=form.acu_staff_id===st.id;
+                return(
+                  <button key={st.id} type="button" disabled={!ok&&!sel} onClick={()=>{if(!ok)return;setForm(f=>({...f,acu_staff_id:st.id}));setConflict(false);}} className="btn"
+                    style={{background:sel?st.color:!ok?"#f3f4f6":"white",color:sel?"white":!ok?"#d1d5db":"#374151",border:"2px solid "+(sel?st.color:!ok?"#e2e8f0":st.color+"66"),padding:"6px 12px",fontSize:13,fontWeight:700}}>
+                    {st.name}{same?"（柔整の担当）":!dayWorking?"（休み）":busy?"（予約済み）":""}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <span style={{fontSize:12,fontWeight:700,color:"#475569"}}>鍼灸の時間</span>
+              {[10,20,30,40].map(m=>(
+                <button key={m} type="button" onClick={()=>{setForm(f=>({...f,acu_duration:m}));setConflict(false);}} className="btn"
+                  style={{background:(form.acu_duration||20)===m?"#7c3aed":"white",color:(form.acu_duration||20)===m?"white":"#374151",border:"2px solid "+((form.acu_duration||20)===m?"#7c3aed":"#e2e8f0"),padding:"4px 10px",fontSize:12,fontWeight:700}}>{m}分</button>
+              ))}
+            </div>
+            {form.time&&formAcuSeg&&(
+              <div style={{marginTop:10,fontSize:12.5,color:"#4c1d95",fontWeight:700,lineHeight:1.7}}>
+                {[formJuSeg,formAcuSeg].sort((a,b)=>a.time.localeCompare(b.time)).map(sg=>`${sg.time}〜${addMinutesToTime(sg.time,sg.duration||20)} ${sg._seg==="acu"?"鍼灸":"柔整"}（${(STAFF_ACCOUNTS.find(x=>x.id===sg.staff_id)||{}).name||"未定"}）`).join(" → ")}
+              </div>
+            )}
+            {form.acu_staff_id===form.staff_id&&<div style={{marginTop:8,fontSize:12,color:"#dc2626",fontWeight:700}}>⚠ 鍼灸の担当は、柔整の担当と別のスタッフを選んでください</div>}
+          </div>
+        ):(
+          <div style={{fontSize:11.5,color:"#94a3b8",marginTop:4}}>柔整のあとに鍼灸（または鍼灸のあとに柔整）を別のスタッフが担当するときにチェックします。カレンダーでは、それぞれの担当の列に分けて表示されます。</div>
+        )}
+      </div>
       <div className="form-group">
         <label className="form-label">メニュー（複数選択可）</label>
         <div style={{display:"flex",gap:4,marginBottom:8,flexWrap:"wrap"}}>
@@ -9416,7 +9483,7 @@ function CheckInPanel({bookings,onOpenPatient,onCheckedIn,onGoToCalendar,weeklyS
     // 空いていて（同時受付枠に余裕があり）かつ元の担当ならそれを優先
     function hasRoom(staffId){
       const capacity=getLaneCount?getLaneCount(staffId,dateStr):1;
-      const overlapCount=bookings.filter(b=>!b.cancelled&&b.staff_id===staffId&&b.date===dateStr&&overlaps(b,{time:timeStr,duration:30})).length;
+      const overlapCount=staffSegs(bookings).filter(b=>!b.cancelled&&b.staff_id===staffId&&b.date===dateStr&&overlaps(b,{time:timeStr,duration:30})).length;
       return overlapCount<capacity;
     }
     const preferredOk=candidates.find(s=>s.id===preferredStaffId&&hasRoom(s.id));
@@ -16177,7 +16244,7 @@ function Dashboard({user,onLogout}){
     setConflict(false);setEditId(null);setView("form");setConvertingHoldId(null);
   }
   function openEdit(b){
-    if(!isAdmin&&b.staff_id!==user.id)return;
+    if(!isAdmin&&b.staff_id!==user.id&&b.acu_staff_id!==user.id)return;
     // トレーニングモード中にカレンダー上で見えている本番予約（is_training:false）は、
     // 練習の練習で本番データを書き換えてしまわないよう編集不可（閲覧のみ）にする
     if(trainingMode&&!b.is_training){ showToast("本番の予約はトレーニングモードでは編集できません（閲覧のみ）","delete"); return; }
@@ -16245,24 +16312,32 @@ function Dashboard({user,onLogout}){
         if(!ok) return;
       }
     }
-    const laneCapacity=getLaneCount(form.staff_id,form.date);
-    // トレーニングモード中の練習予約でも、本番予約と時間が被らないよう本番分も含めて判定する
-    const overlapCountLocal=calendarBookings.filter(b=>b.id!==editId&&b.staff_id===form.staff_id&&b.date===form.date&&!b.cancelled&&overlaps(b,form)).length;
-    if(overlapCountLocal>=laneCapacity){
-      setConflict({capacity:laneCapacity,staffId:form.staff_id,date:form.date,time:form.time,duration:form.duration,
-        items:calendarBookings.filter(b=>b.id!==editId&&b.staff_id===form.staff_id&&b.date===form.date&&!b.cancelled&&overlaps(b,form))});
-      return;
+    // 柔整鍼灸併用で鍼灸の担当を分けた予約は、柔整の部分・鍼灸の部分をそれぞれの担当の予約と比べる
+    if(form.acu_staff_id&&form.acu_staff_id===form.staff_id){ showToast("鍼灸の担当は、柔整の担当と別のスタッフを選んでください","delete"); return; }
+    const formSegs=BookingSegments.segmentsOf(form,x=>DURATION[x.menu]||30);
+    const segName=sg=>sg._seg==="acu"?"鍼灸の担当":sg._seg==="ju"?"柔整の担当":"担当";
+    for(const sg of formSegs){
+      const laneCapacity=getLaneCount(sg.staff_id,form.date);
+      // トレーニングモード中の練習予約でも、本番予約と時間が被らないよう本番分も含めて判定する
+      const hits=staffSegs(calendarBookings).filter(b=>b.id!==editId&&b.staff_id===sg.staff_id&&b.date===form.date&&!b.cancelled&&overlaps(b,sg));
+      if(hits.length>=laneCapacity){
+        setConflict({capacity:laneCapacity,staffId:sg.staff_id,date:form.date,time:sg.time,duration:sg.duration,items:hits});
+        if(sg._seg) showToast(`${segName(sg)}（${(STAFF_ACCOUNTS.find(x=>x.id===sg.staff_id)||{}).name||""}）は ${sg.time} から予約枠が埋まっています`,"delete");
+        return;
+      }
     }
     // 保存直前にもう一度サーバーへ問い合わせて、ほぼ同時に他のスタッフが同じ枠を
     // 確保してしまっていないか最終確認する（画面上のデータには多少タイムラグがあるため）
     try{
-      const freshSameDay=await sb.select("bookings",`?staff_id=eq.${form.staff_id}&date=eq.${form.date}`);
-      const overlapCountFresh=(Array.isArray(freshSameDay)?freshSameDay:[]).filter(b=>b.id!==editId&&!b.cancelled&&overlaps(b,form)).length;
-      if(overlapCountFresh>=laneCapacity){
-        setConflict({capacity:laneCapacity,staffId:form.staff_id,date:form.date,time:form.time,duration:form.duration,
-          items:(Array.isArray(freshSameDay)?freshSameDay:[]).filter(b=>b.id!==editId&&!b.cancelled&&overlaps(b,form))});
-        showToast("ちょうど別の予約が入ってしまいました。時間をご確認ください","delete");
-        return;
+      const freshDay=staffSegs(await sb.select("bookings",`?date=eq.${form.date}`).then(r=>Array.isArray(r)?r:[]));
+      for(const sg of formSegs){
+        const laneCapacity=getLaneCount(sg.staff_id,form.date);
+        const hits=freshDay.filter(b=>b.id!==editId&&!b.cancelled&&b.staff_id===sg.staff_id&&overlaps(b,sg));
+        if(hits.length>=laneCapacity){
+          setConflict({capacity:laneCapacity,staffId:sg.staff_id,date:form.date,time:sg.time,duration:sg.duration,items:hits});
+          showToast("ちょうど別の予約が入ってしまいました。時間をご確認ください","delete");
+          return;
+        }
       }
     }catch(e){
       // 確認自体が失敗した場合は、これまで通りクライアント側のチェックのみで進める
@@ -16457,7 +16532,7 @@ function Dashboard({user,onLogout}){
     }
     function hasRoom(staffId){
       const capacity=getLaneCount(staffId,newDate);
-      const overlapCount=bookings.filter(b=>b.id!==booking.id&&b.staff_id===staffId&&b.date===newDate&&!b.cancelled&&overlaps(b,{time:newTime,duration:booking.duration||DURATION[booking.menu]||30})).length;
+      const overlapCount=staffSegs(bookings).filter(b=>b.id!==booking.id&&b.staff_id===staffId&&b.date===newDate&&!b.cancelled&&overlaps(b,{time:newTime,duration:booking.duration||DURATION[booking.menu]||30})).length;
       return overlapCount<capacity;
     }
     const chosen=candidates.find(s=>hasRoom(s.id));
@@ -16477,7 +16552,7 @@ function Dashboard({user,onLogout}){
   }
   async function reassignStaffForBooking(booking,newStaffId){
     const laneCapacity=getLaneCount(newStaffId,booking.date);
-    const overlapCount=bookings.filter(b=>b.id!==booking.id&&b.staff_id===newStaffId&&b.date===booking.date&&!b.cancelled&&overlaps(b,booking)).length;
+    const overlapCount=staffSegs(bookings).filter(b=>b.id!==booking.id&&b.staff_id===newStaffId&&b.date===booking.date&&!b.cancelled&&overlaps(b,bookingSegFor(booking,"ju"))).length;
     if(overlapCount>=laneCapacity){
       showToast("その時間は選択したスタッフの予約枠が埋まっています","delete");
       return;
@@ -16495,6 +16570,7 @@ function Dashboard({user,onLogout}){
   async function attemptMoveBooking(booking,newDate,newTime,newStaffId){
     // トレーニングモード中にカレンダー上で見えている本番予約は、ドラッグ移動でも本番データを変更させない
     if(trainingMode&&!booking.is_training){ showToast("本番の予約はトレーニングモードでは移動できません（閲覧のみ）","delete"); return; }
+    if(isSplitBooking(booking)){ showToast("柔整と鍼灸の担当を分けた予約は「予約を編集」から日時・担当を変えてください","delete"); return; }
     const dateObj=new Date(newDate+"T00:00:00");
     if(!isStaffWorkingOnDate(newStaffId,dateObj)){
       showToast("移動先のスタッフはこの日休みのため移動できません","delete");
@@ -16505,14 +16581,14 @@ function Dashboard({user,onLogout}){
       return;
     }
     const laneCapacity=getLaneCount(newStaffId,newDate);
-    const overlapCountLocal=calendarBookings.filter(b=>b.id!==booking.id&&b.staff_id===newStaffId&&b.date===newDate&&!b.cancelled&&overlaps(b,{time:newTime,duration:booking.duration||DURATION[booking.menu]||30})).length;
+    const overlapCountLocal=staffSegs(calendarBookings).filter(b=>b.id!==booking.id&&b.staff_id===newStaffId&&b.date===newDate&&!b.cancelled&&overlaps(b,{time:newTime,duration:booking.duration||DURATION[booking.menu]||30})).length;
     if(overlapCountLocal>=laneCapacity){
       showToast("その時間はすでに予約枠が埋まっています","delete");
       return;
     }
     try{
       // 保存直前にもう一度サーバーへ問い合わせて最終確認（かぶり移動を防ぐ）
-      const freshSameDay=await sb.select("bookings",`?staff_id=eq.${newStaffId}&date=eq.${newDate}`);
+      const freshSameDay=staffSegs(await sb.select("bookings",`?date=eq.${newDate}`).then(r=>Array.isArray(r)?r:[])).filter(b=>b.staff_id===newStaffId);
       const overlapCountFresh=(Array.isArray(freshSameDay)?freshSameDay:[]).filter(b=>b.id!==booking.id&&!b.cancelled&&overlaps(b,{time:newTime,duration:booking.duration||DURATION[booking.menu]||30})).length;
       if(overlapCountFresh>=laneCapacity){
         showToast("ちょうど別の予約が入ってしまいました。時間をご確認ください","delete");
@@ -16557,13 +16633,13 @@ function Dashboard({user,onLogout}){
     const clamped=Math.max(10,Math.min(240,newDuration)); // 10分〜4時間の範囲に収める
     if(clamped===(booking.duration||DURATION[booking.menu]||30)) return; // 変化なし
     const laneCapacity=getLaneCount(booking.staff_id,booking.date);
-    const overlapCountLocal=calendarBookings.filter(b=>b.id!==booking.id&&b.staff_id===booking.staff_id&&b.date===booking.date&&!b.cancelled&&overlaps(b,{time:booking.time,duration:clamped})).length;
+    const overlapCountLocal=staffSegs(calendarBookings).filter(b=>b.id!==booking.id&&b.staff_id===booking.staff_id&&b.date===booking.date&&!b.cancelled&&overlaps(b,{time:booking.time,duration:clamped})).length;
     if(overlapCountLocal>=laneCapacity){
       showToast("その時間はすでに予約枠が埋まっています","delete");
       return;
     }
     try{
-      const freshSameDay=await sb.select("bookings",`?staff_id=eq.${booking.staff_id}&date=eq.${booking.date}`);
+      const freshSameDay=staffSegs(await sb.select("bookings",`?date=eq.${booking.date}`).then(r=>Array.isArray(r)?r:[])).filter(b=>b.staff_id===booking.staff_id);
       const overlapCountFresh=(Array.isArray(freshSameDay)?freshSameDay:[]).filter(b=>b.id!==booking.id&&!b.cancelled&&overlaps(b,{time:booking.time,duration:clamped})).length;
       if(overlapCountFresh>=laneCapacity){
         showToast("ちょうど別の予約が入ってしまいました。時間をご確認ください","delete");
@@ -17212,7 +17288,8 @@ function Dashboard({user,onLogout}){
                             <div style={{padding:"10px 8px",textAlign:"center",color:"#94a3b8",fontSize:12,borderBottom:"1px solid #f1f5f9"}}>この日は出勤スタッフがいません</div>
                           )}
                           {dayStaffList.map(staff=>{
-                            const staffBookings=dayBookings.filter(b=>b.staff_id===staff.id);
+                            // 柔整と鍼灸の担当を分けた予約は、それぞれの担当の列に、その部分の時間だけ出す
+                            const staffBookings=staffSegs(dayBookings).filter(b=>b.staff_id===staff.id);
                             const staffBreaks=breaks.filter(b=>b.date===wdStr&&b.staff_id===staff.id);
                             const configuredLanes=getLaneCount(staff.id,wdStr);
                             // レーン分け（段を分けるかどうか）は実際の予約時間の重なりだけで判定する。
@@ -17320,19 +17397,21 @@ function Dashboard({user,onLogout}){
                                     // 見た目を少し薄くして区別し、ドラッグ移動・リサイズのハンドルも出さない（タップして閲覧はできる）
                                     const isReadOnlyReal=trainingMode&&!b.is_training;
                                     const sp=specialBookingKind(b);
+                                    const base=b._seg?(dayBookings.find(x=>x.id===b.id)||b):b; // 分けた部分を押したときは、もとの予約を開く
                                     return(
-                                      <div key={b.id}
+                                      <div key={`${b.id}-${b._seg||"all"}`}
                                         title={(isReadOnlyReal?"🔒本番の予約（閲覧のみ）\n":"")+(sameDay?"⚡当日予約\n":"")+(b.memo?`📝 メモ：${b.memo}`:"")||undefined}
                                         onPointerDown={e=>{
                                           e.stopPropagation();
                                           try{e.target.setPointerCapture(e.pointerId);}catch(err){}
                                           dragPosRef.current={x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,moved:false};
                                           setDragPos({x:e.clientX,y:e.clientY,moved:false});
-                                          setDragBooking(b);
+                                          setDragBooking(base);
                                         }}
                                         onClick={e=>{e.stopPropagation();}}
                                         style={{position:"absolute",left:x,top:lane*laneH+3,height:laneH-6,width:Math.max(liveW-2,20),background:isPaid?"linear-gradient(135deg,#9ca3af,#6b7280)":sp?sp.grad:isNewPatient?"linear-gradient(135deg,#f97316,#ea580c)":`linear-gradient(135deg,${staff.color},${staff.color}bb)`,outline:sp?`2px dashed ${isPaid?"#9ca3af":"#ffffff"}`:"none",outlineOffset:-4,borderRadius:6,padding:"2px 5px",cursor:isReadOnlyReal?"pointer":"grab",touchAction:"none",boxShadow:isBeingResized?"0 0 0 2px #2563eb,0 2px 8px rgba(37,99,235,.5)":sameDay?"0 0 0 2px #eab308,0 2px 6px rgba(234,179,8,.5)":isCheckedIn?"0 0 0 2px #facc15,0 2px 6px rgba(0,0,0,.3)":isNewPatient?"0 2px 8px rgba(249,115,22,.6)":(isPaid?"0 1px 3px rgba(0,0,0,.2)":`0 2px 6px ${staff.color}44`),display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden",zIndex:isBeingResized?4:isNewPatient?3:2,opacity:isBeingDragged?.35:isReadOnlyReal?.6:isPaid?.75:1,filter:isReadOnlyReal?"grayscale(35%)":"none"}}>
                                         {isReadOnlyReal&&<div style={{position:"absolute",top:-1,right:-1,background:"#fff",color:"#475569",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"0 6px 0 4px",lineHeight:1,letterSpacing:0}}>🔒本番</div>}
+                                        {b._seg&&<div title={b._seg==="acu"?"柔整鍼灸併用：鍼灸の部分":"柔整鍼灸併用：柔整の部分"} style={{position:"absolute",top:-1,left:sameDay?30:-1,background:b._seg==="acu"?"#7c3aed":"#1d4ed8",color:"white",fontSize:8,fontWeight:900,padding:"1px 4px",borderRadius:"6px 0 4px 0",lineHeight:1,letterSpacing:0}}>{b._seg==="acu"?"鍼灸":"柔整"}</div>}
                                         {!isReadOnlyReal&&isNewPatient&&<div style={{position:"absolute",top:-1,right:-1,background:"#fff",color:"#ea580c",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"0 6px 0 4px",lineHeight:1,letterSpacing:0}}>NEW</div>}
                                         {sameDay&&<div style={{position:"absolute",top:-1,left:-1,background:"#fff",color:"#a16207",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"6px 0 4px 0",lineHeight:1,letterSpacing:0}}>⚡当日</div>}
                                         {b.memo&&<div style={{position:"absolute",bottom:-1,left:-1,background:"#fff",color:"#1e3a5f",fontSize:8,fontWeight:900,padding:"0 3px",borderRadius:"6px 4px 0 0",lineHeight:1.4}}>📝</div>}
@@ -17352,8 +17431,8 @@ function Dashboard({user,onLogout}){
                                         {(isBeingResized||(bookingPopup&&bookingPopup.booking&&bookingPopup.booking.id===b.id))&&(
                                         <div style={{fontSize:10,color:"rgba(255,255,255,.95)",textShadow:"0 1px 2px rgba(0,0,0,.45)",fontWeight:700}}>{b.time}{cnt>1&&<span style={{marginLeft:2,background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}{isBeingResized&&<span style={{marginLeft:2,fontWeight:800}}>{Math.max(10,(b.duration||DURATION[b.menu]||30)+Math.round(resizeDeltaPx/CELL_W)*10)}分</span>}</div>
                                         )}
-                                        {/* 右端のリサイズハンドル：ここをドラッグすると対応時間を伸縮できる（本番予約は閲覧のみのため表示しない） */}
-                                        {!isReadOnlyReal&&(
+                                        {/* 右端のリサイズハンドル：ここをドラッグすると対応時間を伸縮できる（本番予約は閲覧のみのため表示しない。柔整・鍼灸を分けた予約は「予約を編集」から） */}
+                                        {!isReadOnlyReal&&!b._seg&&(
                                         <div
                                           onPointerDown={e=>{
                                             e.stopPropagation();
@@ -17608,6 +17687,9 @@ function Dashboard({user,onLogout}){
                 <button type="button" onClick={()=>setBookingPopup(null)} aria-label="閉じる" style={{position:"absolute",top:10,right:10,width:34,height:34,borderRadius:17,border:"none",background:"rgba(255,255,255,.22)",color:"white",fontSize:18,fontWeight:800,cursor:"pointer",lineHeight:1}}>×</button>
                 <div style={{fontWeight:800,fontSize:wide?22:18,color:"white",paddingRight:40}}>{b.patient_name}</div>
                 <div style={{fontSize:13,color:"rgba(255,255,255,.8)",marginTop:2}}>{b.date}　{b.time}　{s.name}</div>
+                {isSplitBooking(b)&&<div style={{fontSize:12,color:"white",fontWeight:700,marginTop:4,background:"rgba(255,255,255,.18)",borderRadius:6,padding:"3px 8px",display:"inline-block"}}>
+                  🪡 {BookingSegments.segmentsOf(b,x=>DURATION[x.menu]||30).slice().sort((x,y)=>x.time.localeCompare(y.time)).map(sg=>`${sg.time} ${sg._seg==="acu"?"鍼灸":"柔整"}（${(STAFF_ACCOUNTS.find(x=>x.id===sg.staff_id)||{}).name||"未定"}）`).join(" → ")}
+                </div>}
                 <div style={{fontSize:13,fontWeight:700,color:"white",marginTop:3,lineHeight:1.4}}>{specialBookingKind(b)?specialBookingKind(b).icon+" ":"💆 "}{bookingMenuSummary(b)}</div>
                 {cnt>1&&<div style={{fontSize:12,color:"rgba(255,255,255,.7)",marginTop:1}}>{cnt}回目</div>}
                 {cnt===1&&<div style={{fontSize:12,fontWeight:800,color:"#7c2d12",background:"#fed7aa",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4}}>🆕 初診</div>}

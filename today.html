@@ -12,6 +12,7 @@
 <link rel="apple-touch-icon" href="today-icon-180.png"/>
 <link rel="icon" href="today-icon-32.png"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="/booking-segments.js"></script>
 <style>
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
   body{margin:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Yu Gothic",sans-serif;color:#0f172a;padding-bottom:env(safe-area-inset-bottom);}
@@ -444,7 +445,7 @@ function computeAvailSlots(){
   if(!isOpen||!openTime||!closeTime) return {closed:true,slots:[]};
 
   const staffList=storeStaffList(state.storeId);
-  const activeBookings=state.bookings.filter(b=>!b.cancelled&&!b.is_training);
+  const activeBookings=bookingSegs(state.bookings.filter(b=>!b.cancelled&&!b.is_training));
 
   const openMin=toMinutes(openTime), closeMin=toMinutes(closeTime);
   const slots=[];
@@ -468,6 +469,8 @@ function computeAvailSlots(){
   }
   return {closed:false,slots};
 }
+// 柔整と鍼灸の担当を分けた予約は、担当ごとの部分に分ける（booking-segments.js）
+function bookingSegs(list){ return window.BookingSegments?BookingSegments.expand(list,40):list; }
 function toMinutes(t){const[h,m]=(t||"0:0").split(":").map(Number);return h*60+m;}
 function minutesToHM(m){return `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;}
 
@@ -475,7 +478,7 @@ function minutesToHM(m){return `${String(Math.floor(m/60)).padStart(2,"0")}:${St
 // （空き状況で❌のスタッフ・時間でも、手入力フォームでは何もチェックせず保存できてしまっていたバグの修正）
 function hasBookingConflict(staffId,time,duration,excludeId){
   const bs=toMinutes(time), be=bs+duration;
-  return state.bookings.some(b=>{
+  return bookingSegs(state.bookings).some(b=>{
     if(excludeId&&b.id===excludeId) return false;
     if(b.cancelled||b.is_training) return false;
     if(b.staff_id!==staffId) return false;
