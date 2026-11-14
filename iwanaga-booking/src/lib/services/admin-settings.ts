@@ -91,7 +91,8 @@ export async function addRule(repo: Repo, admin: AdminContext | null, locationId
   const l = await loc(repo, locationId);
   assertPermission(admin, "settings", l.controller);
   const kind = form.kind; // weekly | date_open | date_closed
-  const time = (t: string | undefined) => (t && /^\d{2}:\d{2}$/.test(t) ? t : null);
+  // 00:00〜23:59 と、終了時刻としての 24:00（夜間営業）を受け付ける
+  const time = (t: string | undefined) => (t && /^(?:[01]\d|2[0-3]):[0-5]\d$|^24:00$/.test(t.trim()) ? t.trim() : null);
   const start = time(form.start_time);
   const end = time(form.end_time);
   if (kind !== "date_closed" && (!start || !end || start >= end)) throw new OperationError("開始・終了時刻を正しく入力してください");
