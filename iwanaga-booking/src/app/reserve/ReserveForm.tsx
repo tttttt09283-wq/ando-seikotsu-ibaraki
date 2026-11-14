@@ -4,6 +4,7 @@ import Link from "next/link";
 import Script from "next/script";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PublicCatalog } from "@/lib/services/reservations";
+import LineSendButton from "@/components/LineSendButton";
 
 const CONSULTATION_MAX = 200;
 const WEEK = ["日", "月", "火", "水", "木", "金", "土"];
@@ -207,9 +208,7 @@ export default function ReserveForm({ catalog, source, liffId }: { catalog: Publ
           <li>
             <p className="text-sm font-medium">1. 公式LINEを開いて、表示された内容をそのまま「送信」してください</p>
             {result.lineUrl ? (
-              <a href={result.lineUrl} className="mt-3 block bg-[#06C755] px-5 py-4 text-center text-sm font-bold tracking-[0.12em] text-white">
-                LINEで送信する
-              </a>
+              <LineSendButton url={result.lineUrl} />
             ) : (
               <p className="mt-2 text-xs text-mist">公式LINEのトーク画面を開き、下の内容を貼り付けて送信してください。</p>
             )}

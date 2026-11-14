@@ -141,8 +141,8 @@ export default async function LocationSettings({ params }: { params: Promise<{ l
           <ActionForm action={addRuleAction} hidden={{ ...lh, kind: "weekly" }} label="追加" confirm={false}>
             <div className="grid grid-cols-3 gap-2">
               <select name="weekday" className={inp}>{WEEK.map((w, i) => <option key={w} value={i}>{w}曜</option>)}</select>
-              <input type="time" name="start_time" defaultValue="10:00" className={inp} />
-              <input type="time" name="end_time" defaultValue="19:00" className={inp} />
+              <input type="time" name="start_time" defaultValue="20:00" className={inp} />
+              <input name="end_time" defaultValue="24:00" inputMode="numeric" pattern="([01][0-9]|2[0-3]):[0-5][0-9]|24:00" placeholder="24:00" title="終了時刻（例 24:00）" className={inp} />
             </div>
           </ActionForm>
         </Card>
@@ -161,8 +161,8 @@ export default async function LocationSettings({ params }: { params: Promise<{ l
             <div className="grid grid-cols-2 gap-2">
               <select name="kind" className={inp}><option value="date_closed">休業日</option><option value="date_open">この日だけの営業時間</option></select>
               <input type="date" name="date" required className={inp} />
-              <input type="time" name="start_time" defaultValue="10:00" className={inp} />
-              <input type="time" name="end_time" defaultValue="17:00" className={inp} />
+              <input type="time" name="start_time" defaultValue="20:00" className={inp} />
+              <input name="end_time" defaultValue="24:00" inputMode="numeric" pattern="([01][0-9]|2[0-3]):[0-5][0-9]|24:00" placeholder="24:00" title="終了時刻（例 24:00）" className={inp} />
               <input name="note" placeholder="メモ" className={`${inp} col-span-2`} />
             </div>
             <p className="text-xs text-mist">指定した日は、毎週の営業時間より優先されます（休業日は時刻不要）。</p>

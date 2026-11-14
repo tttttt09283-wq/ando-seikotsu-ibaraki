@@ -90,8 +90,23 @@ export function cancellationMessage(r: Reservation, loc: Location, reason: strin
     .join("\n");
 }
 
-/** 管理者向け通知（電話番号・相談内容は含めない） */
-export function adminNewHoldText(r: Reservation, loc: Location, kind: "new_hold" | "line_received"): string {
+/**
+ * 管理者向け通知。
+ * person を渡したときだけ、お名前・電話番号・ご相談内容を載せる（管理者本人の LINE・メール宛てのみ。
+ * 管理画面の通知履歴には個人情報を残さないため、そちらには person なしの文面の1行目だけを保存する）
+ */
+export function adminNewHoldText(
+  r: Reservation,
+  loc: Location,
+  kind: "new_hold" | "line_received",
+  person?: { name: string; phone: string; consultation: string } | null,
+  detailUrl?: string | null,
+): string {
   const head = kind === "new_hold" ? "【新規仮予約（LINE未確認）】" : "【LINE受付確認済み・承認待ち】";
-  return [head, `予約番号：${r.code}`, `場所：${loc.short_name}`, `日時：${formatRange(r.start_at, r.end_at)}`, `メニュー：${r.service_snapshot.name}`, "管理画面で内容を確認してください。"].join("\n");
+  const lines = [head, `予約番号：${r.code}`, `場所：${loc.short_name}`, `日時：${formatRange(r.start_at, r.end_at)}`, `メニュー：${r.service_snapshot.name}`];
+  if (person) {
+    lines.push(`お名前：${person.name}`, `電話番号：${person.phone}`, `ご相談内容：${person.consultation || "（なし）"}`);
+  }
+  lines.push(detailUrl ? `確認・承認はこちら：${detailUrl}` : "管理画面で内容を確認してください。");
+  return lines.join("\n");
 }

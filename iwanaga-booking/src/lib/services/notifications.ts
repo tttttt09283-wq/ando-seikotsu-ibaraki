@@ -42,11 +42,19 @@ async function sendMail(subject: string, text: string): Promise<{ ok: boolean; e
 
 /** 管理者への通知（新規仮予約・LINE受付確認）。個人情報（電話・相談内容）は含めない */
 export async function notifyAdmin(repo: Repo, r: Reservation, loc: Location, kind: "new_hold" | "line_received" | "expired") {
-  const text = kind === "expired" ? `【仮予約の期限切れ】予約番号：${r.code}（${loc.short_name}）` : adminNewHoldText(r, loc, kind);
+  const head = kind === "expired" ? "【仮予約の期限切れ】" : adminNewHoldText(r, loc, kind).split("\n")[0];
   const base = { reservation_id: r.id, controller: r.controller, location_id: r.location_id, recipient: "admin" as const, kind, attempt: 1 };
-  await repo.addNotification({ ...base, channel: "admin_panel", status: "sent", summary: text.split("\n")[0] + ` ${r.code}`, error: null });
+  // 管理画面の通知履歴（DBに平文で残る）には個人情報を入れない
+  await repo.addNotification({ ...base, channel: "admin_panel", status: "sent", summary: `${head} ${r.code}`, error: null });
 
   if (kind === "expired") return;
+  // 管理者本人の LINE・メールには、お名前・電話番号・ご相談内容を載せる（すぐ連絡・判断できるように）
+  const customer = await repo.getCustomer(r.customer_id);
+  const person =
+    customer && !customer.anonymized_at
+      ? { name: decrypt(customer.name_enc), phone: decrypt(customer.phone_enc), consultation: r.consultation_enc ? decrypt(r.consultation_enc) : "" }
+      : null;
+  const text = adminNewHoldText(r, loc, kind, person, `${config.siteUrl.replace(/\/$/, "")}/admin/reservations/${r.id}`);
   if (config.adminLineNotify && lineMessagingConfigured() && config.adminLineUserIds.length > 0) {
     for (const to of config.adminLineUserIds) {
       const res = await pushText(to, text, retryKeyFor(`admin:${r.id}:${kind}:${to}`));
