@@ -1,3 +1,5 @@
 # 予約管理システムのデプロイには本部システム（hq/）を含めない。本部は別の Vercel プロジェクト（Root Directory = hq）
 /hq
 /iwanaga-booking
+# FREEDOM OS（個人の独立管理アプリ）も別の Vercel プロジェクト（Root Directory = freedom-os）
+/freedom-os
