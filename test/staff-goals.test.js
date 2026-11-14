@@ -80,3 +80,18 @@ test("実績：自動の指標はサマリー、手入力は保存した値", ()
   assert.equal(SG.actualOf({ metric: "manual", results: {} }, "2026-11", row), null);
   assert.deepEqual(plain(SG.monthRange("2026-02")), { from: "2026-02-01", to: "2026-02-28" });
 });
+
+test("保険の担当：鍼灸保険の担当があれば、柔整の分と鍼灸の分を分ける", () => {
+  // 保険診療＋鍼灸併用：保険 1,100円（柔整 600・鍼灸 500）。柔整＝A(1)、鍼灸＝B(2)
+  const p = { staff_id: 1, insurance_staff_id: 1, acu_insurance_staff_id: 2, insurance_amount: 1100, ju_insurance_amount: 600, acu_insurance_amount: 500, total_amount: 1100, jifee_items: [] };
+  assert.deepEqual(plain(SG.insuranceShares(p, 1)), [{ staffId: 1, amount: 600 }, { staffId: 2, amount: 500 }]);
+  const split = plain(SG.splitPayment(p)).sort((a, b) => a.staffId - b.staffId);
+  assert.deepEqual(split, [{ staffId: 1, tech: 600, goods: 0 }, { staffId: 2, tech: 500, goods: 0 }]);
+  // 鍼灸のみ：柔整の分が無い → 全額が鍼灸の担当
+  assert.deepEqual(plain(SG.insuranceShares({ insurance_staff_id: 2, acu_insurance_staff_id: 2, insurance_amount: 500, acu_insurance_amount: 500 }, 1)), [{ staffId: 2, amount: 500 }]);
+  // 鍼灸の担当が無い古い会計は、これまでどおり全額を保険の担当へ
+  assert.deepEqual(plain(SG.insuranceShares({ insurance_staff_id: 3, insurance_amount: 1100, acu_insurance_amount: 500 }, 1)), [{ staffId: 3, amount: 1100 }]);
+  // 保険の担当が無ければ会計の担当
+  assert.deepEqual(plain(SG.insuranceShares({ insurance_amount: 800 }, 4)), [{ staffId: 4, amount: 800 }]);
+  assert.deepEqual(plain(SG.insuranceShares({ insurance_amount: 0 }, 4)), []);
+});

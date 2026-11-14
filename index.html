@@ -2350,17 +2350,18 @@ function specialBookingKind(b){
 // ===== 1つの予約に会計が複数ある場合（体験¥0＋FP購入、物販の追加会計など）は、全部の会計を合計して1件として扱う =====
 // （以前は最初に見つかった1件だけを見ていたため、¥0の方が表示されて「修正が反映されていない」ように見えることがあった）
 // 会計1件を担当スタッフごとの金額に分ける（会計画面で項目ごとに担当を選べる：保険施術は奥田、鍼は田中など）
-// 保険分＝insurance_staff_id、自費＝各項目の staff_id。指定が無いもの・ずれ（割引や古いデータ）は予約の担当にまとめる。
+// 保険分＝insurance_staff_id（鍼灸保険の分は acu_insurance_staff_id）、自費＝各項目の staff_id。指定が無いもの・ずれ（割引や古いデータ）は予約の担当にまとめる。
 // 返金（is_refund のマイナス行）や担当を分けていない会計は、これまで通り予約の担当に全額。戻り値：[{staffId,total,insurance,jifee}]
 function splitPaymentByStaff(p,defaultStaffId){
   const def=defaultStaffId||p.staff_id||0;
   const items=Array.isArray(p.jifee_items)?p.jifee_items.filter(Boolean):[];
   const total=Number(p.total_amount)||0, ins=Number(p.insurance_amount)||0, jif=Number(p.jifee_amount)||0;
   const whole=[{staffId:def,total,insurance:ins,jifee:jif}];
-  if(p.is_refund||!(p.insurance_staff_id||items.some(i=>i.staff_id))) return whole;
+  if(p.is_refund||!(p.insurance_staff_id||p.acu_insurance_staff_id||items.some(i=>i.staff_id))) return whole;
   const m={};
   const row=sid=>(m[sid]=m[sid]||{staffId:sid,total:0,insurance:0,jifee:0});
-  if(ins){ const r=row(p.insurance_staff_id||def); r.insurance+=ins; r.total+=ins; }
+  // 保険は、鍼灸保険の担当（acu_insurance_staff_id）があれば 柔整の分＝insurance_staff_id、鍼灸の分＝その担当 に分ける
+  StaffGoals.insuranceShares(p,def).forEach(x=>{ const r=row(x.staffId); r.insurance+=x.amount; r.total+=x.amount; });
   let itemSum=0;
   items.forEach(i=>{ const a=Number(i.amount)||0; itemSum+=a; if(a){ const r=row(i.staff_id||def); r.jifee+=a; r.total+=a; } });
   if(jif-itemSum){ const r=row(def); r.jifee+=jif-itemSum; r.total+=jif-itemSum; }

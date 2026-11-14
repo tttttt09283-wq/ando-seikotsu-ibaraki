@@ -547,9 +547,14 @@ function selectInsuranceType(type){
 // ===== 保険の窓口負担を「柔整（保険診療）」と「鍼灸」に分けて保存する =====
 // payments.ju_insurance_amount／acu_insurance_amount。列がまだ無いデータベースでは保存しない（会計が止まらないように）
 let paymentSplitSupported=false;
+let acuStaffSupported=false; // payments.acu_insurance_staff_id（鍼灸保険の担当）がある
 async function detectPaymentSplitColumns(){
   try{ const r=await sbGet("payments","?select=ju_insurance_amount,acu_insurance_amount&limit=1"); paymentSplitSupported=Array.isArray(r); }
   catch(e){ paymentSplitSupported=false; }
+  try{ const r=await sbGet("payments","?select=acu_insurance_staff_id&limit=1"); acuStaffSupported=paymentSplitSupported&&Array.isArray(r); }
+  catch(e){ acuStaffSupported=false; }
+  // 鍼灸保険の担当を選べるようになったら描き直す（ほかの読み込みと同じく、保存中は描き直さない）
+  if(acuStaffSupported){ try{ if(!state.saving) render(); }catch(e){} }
 }
 function insuranceSplitForSave(){
   const amt=parseInt(state.insuranceAmount)||0, type=state.insuranceType;
@@ -569,7 +574,7 @@ function insuranceSplitForSave(){
 function splitFieldsForSave(){
   if(!paymentSplitSupported) return {};
   const x=insuranceSplitForSave();
-  return {ju_insurance_amount:x.ju,acu_insurance_amount:x.acu};
+  return {ju_insurance_amount:x.ju,acu_insurance_amount:x.acu,...(acuStaffSupported?{acu_insurance_staff_id:x.acu>0?acuStaffId():null}:{})};
 }
 // 保険診療＋鍼灸併用：それぞれの段階から金額を合計する
 function combinedInsuranceAmount(){
@@ -734,6 +739,11 @@ function addJifee(label,amount){state.jifeeItems.push({label,amount});render();}
 // 例：保険施術は奥田、鍼は田中。未選択の項目は予約の担当（booking.staff_id）として扱う
 function itemStaffId(item){ return (item&&item.staff_id)||booking.staff_id||null; }
 function insuranceStaffId(){ return state.insuranceStaffId||booking.staff_id||null; }
+// 鍼灸保険の担当（選んでいなければ保険診療の担当と同じ）
+function acuStaffId(){ return state.acuStaffId||insuranceStaffId(); }
+// 保険の窓口負担に、保険診療（柔整）・鍼灸のどちらの分が含まれるか
+function insuranceHasJu(){ const t=state.insuranceType; return !t||t==="手技療法"||t===INS_COMBINED; }
+function insuranceHasAcu(){ const t=state.insuranceType; return t==="鍼灸併用"||t==="鍼灸のみ"||t===INS_COMBINED; }
 // 担当はタップで選ぶ（選んだ人はその人の色で塗る）。onPick は「スタッフID」を最後の引数に受け取る呼び出し（例："setJifeeStaff(0,"）
 function staffChipsHtml(val,onPick,label){
   return `<div class="staff-chips" role="group" aria-label="${label||"担当"}"><span class="lbl">担当</span>${STAFF_LIST.map(s=>{
@@ -743,9 +753,24 @@ function staffChipsHtml(val,onPick,label){
 }
 function setJifeeStaff(i,v){ state.jifeeItems[i].staff_id=parseInt(v)||null; render(); }
 function setInsuranceStaff(v){ state.insuranceStaffId=parseInt(v)||null; render(); }
+function setAcuStaff(v){ state.acuStaffId=parseInt(v)||null; render(); }
+// サマリー・確認用の担当の表示（保険診療と鍼灸で担当が違えば両方）
+function insuranceStaffLabel(){
+  if(acuStaffSupported&&insuranceHasAcu()){
+    if(!insuranceHasJu()) return `鍼灸担当 ${STAFF[acuStaffId()]||"-"}`;
+    if(acuStaffId()!==insuranceStaffId()) return `保険診療 ${STAFF[insuranceStaffId()]||"-"}／鍼灸 ${STAFF[acuStaffId()]||"-"}`;
+  }
+  return `担当 ${STAFF[insuranceStaffId()]||"-"}`;
+}
 // 保存用：自費項目（担当つき）
 function jifeeItemsForSave(){ return state.jifeeItems.map(i=>({label:i.label,amount:parseInt(i.amount)||0,staff_id:itemStaffId(i)})); }
-function insuranceStaffForSave(){ return (parseInt(state.insuranceAmount)||0)>0?insuranceStaffId():null; }
+// insurance_staff_id：保険診療（柔整）の担当。柔整の分が無い会計（鍼灸のみ・鍼灸併用だけ）は鍼灸の担当を入れる
+// （鍼灸の担当の列が無いデータベースでは、これまでどおり保険全体の担当）
+function insuranceStaffForSave(){
+  if(!((parseInt(state.insuranceAmount)||0)>0)) return null;
+  if(acuStaffSupported&&paymentSplitSupported&&insuranceSplitForSave().ju===0) return acuStaffId();
+  return insuranceStaffId();
+}
 // プレオープン期間中の「無料体験会」ワンタップ確定：保険負担・自費項目をすべてクリアし、
 // 0円の項目だけをレシートに残す（金額入力や支払方法の追加はそのまま行える）
 function applyPreOpenFreeTrial(){
@@ -769,7 +794,7 @@ function renderSummaryHtml(){
   const ins=parseInt(state.insuranceAmount)||0;
   const total=calcTotal();const paid=calcPaid();const remaining=calcRemaining();const change=calcChange();
   return`
-    ${ins>0?`<div class="summary-row"><span style="color:#666;">保険窓口負担<small style="margin-left:6px;color:#4338ca;font-weight:700;">担当 ${STAFF[insuranceStaffId()]||"-"}</small></span><span style="font-weight:700;">${fmt(ins)}</span></div>`:""}
+    ${ins>0?`<div class="summary-row"><span style="color:#666;">保険窓口負担<small style="margin-left:6px;color:#4338ca;font-weight:700;">${insuranceStaffLabel()}</small></span><span style="font-weight:700;">${fmt(ins)}</span></div>`:""}
     ${state.jifeeItems.map(i=>`<div class="summary-row"><span style="color:#666;">${i.label}<small style="margin-left:6px;color:#4338ca;font-weight:700;">担当 ${STAFF[itemStaffId(i)]||"-"}</small></span><span style="font-weight:700;">${fmt(i.amount)}</span></div>`).join("")}
     <div class="summary-total"><span>合　計</span><span>${fmt(total)}</span></div>
     ${paid>0?`
@@ -1442,6 +1467,8 @@ function restorePaidState(pay){
   state.payments=parsePaymentMethods(pay.payment_method);
   state.insuranceType=pay.insurance_type||null;
   state.insuranceStaffId=pay.insurance_staff_id||null;
+  // 鍼灸の担当。柔整の分が無い会計は insurance_staff_id が鍼灸の担当
+  state.acuStaffId=pay.acu_insurance_staff_id||((Number(pay.ju_insurance_amount)||0)===0&&(Number(pay.acu_insurance_amount)||0)>0?pay.insurance_staff_id:null)||null;
   state.alreadyPaid=pay;
   state.done=true;
 }
@@ -1638,7 +1665,8 @@ function paySnapshot(p){
     payment_method:p.payment_method||"",
     jifee_items:(p.jifee_items||[]).map(i=>({label:i.label,amount:parseInt(i.amount)||0,staff_id:i.staff_id||p.staff_id||booking.staff_id||null})),
     insurance_type:p.insurance_type||null,memo:p.memo||null,
-    insurance_staff_id:(parseInt(p.insurance_amount)||0)>0?(p.insurance_staff_id||p.staff_id||booking.staff_id||null):null};
+    insurance_staff_id:(parseInt(p.insurance_amount)||0)>0?(p.insurance_staff_id||p.staff_id||booking.staff_id||null):null,
+    ...(acuStaffSupported?{acu_insurance_staff_id:(Number(p.acu_insurance_amount)||0)>0?(p.acu_insurance_staff_id||p.insurance_staff_id||p.staff_id||booking.staff_id||null):null}:{})};
 }
 async function saveFix(){
   const before=state.fixing;
@@ -1655,6 +1683,7 @@ async function saveFix(){
     insurance_type:state.insuranceType||null,
     memo:state.jifeeItems.map(i=>i.label).join("・")||null,
     insurance_staff_id:insuranceStaffForSave(),
+    ...(acuStaffSupported?{acu_insurance_staff_id:splitFieldsForSave().acu_insurance_staff_id??null}:{}),
   };
   const b=paySnapshot(before);
   if(JSON.stringify(b)===JSON.stringify(after)){ alert("変更がありません"); return; }
@@ -1930,7 +1959,10 @@ function render(){
           <div class="card">
             <div class="card-header blue">🏥 保険窓口負担</div>
             <div class="card-body">
-              <div style="margin-bottom:10px;">${staffChipsHtml(insuranceStaffId(),"setInsuranceStaff(","保険施術の担当")}</div>
+              ${acuStaffSupported&&insuranceHasAcu()?`
+                ${insuranceHasJu()?`<div style="font-size:11px;font-weight:800;color:#1d4ed8;margin-bottom:2px;">保険診療（柔整）の担当</div><div style="margin-bottom:8px;">${staffChipsHtml(insuranceStaffId(),"setInsuranceStaff(","保険診療の担当")}</div>`:""}
+                <div style="font-size:11px;font-weight:800;color:#047857;margin-bottom:2px;">鍼灸保険の担当</div><div style="margin-bottom:10px;">${staffChipsHtml(acuStaffId(),"setAcuStaff(","鍼灸保険の担当")}</div>
+              `:`<div style="margin-bottom:10px;">${staffChipsHtml(insuranceStaffId(),"setInsuranceStaff(","保険施術の担当")}</div>`}
               <div class="ins-tab-row">
                 ${[{value:"手技療法",label:"保険診療"},{value:"鍼灸併用",label:"鍼灸併用"},{value:"鍼灸のみ",label:"鍼灸のみ"}].map(t=>`<button class="ins-tab-btn${selectedInsuranceParts().includes(t.value)?" sel":""}" onclick="selectInsuranceType('${t.value}')">${t.label}</button>`).join("")}
               </div>
