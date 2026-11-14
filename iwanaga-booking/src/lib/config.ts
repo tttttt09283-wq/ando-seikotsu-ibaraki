@@ -10,6 +10,7 @@
  * 本番（NODE_ENV=production）では、どちらもローカル代替モードでの起動を拒否する。
  */
 import "server-only";
+import { supabasePublic } from "./public-config";
 
 function env(name: string): string | undefined {
   const v = process.env[name];
@@ -23,7 +24,7 @@ export function dataMode(): DataMode {
   return env("DATABASE_URL") ? "postgres" : "memory";
 }
 export function authMode(): AuthMode {
-  return env("NEXT_PUBLIC_SUPABASE_URL") && env("NEXT_PUBLIC_SUPABASE_ANON_KEY") ? "supabase" : "local";
+  return supabasePublic() ? "supabase" : "local";
 }
 /** ローカル代替モードを本番で使うことを明示的に許可しているか（デモ用。通常は false） */
 function localAllowedInProduction() {
@@ -53,10 +54,10 @@ export const config = {
     return v ? v.replace(/\\n/g, "\n") : undefined;
   },
   get supabaseUrl() {
-    return env("NEXT_PUBLIC_SUPABASE_URL");
+    return supabasePublic()?.url;
   },
   get supabaseAnonKey() {
-    return env("NEXT_PUBLIC_SUPABASE_ANON_KEY");
+    return supabasePublic()?.anonKey;
   },
   /** LINE Messaging API（個人の公式LINEアカウント） */
   get lineChannelSecret() {
