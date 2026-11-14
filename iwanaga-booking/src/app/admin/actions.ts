@@ -64,8 +64,20 @@ export async function loginAction(_prev: ActionState, fd: FormData): Promise<Act
     });
   } else {
     const sb = await supabaseServer();
-    const { data, error } = await sb.auth.signInWithPassword({ email: s(fd, "email"), password: s(fd, "password") });
-    if (error || !data.user) return { ok: false, message: "メールアドレスまたはパスワードが違います。" };
+    const { data, error } = await sb.auth.signInWithPassword({ email: s(fd, "email").trim(), password: s(fd, "password") });
+    if (error || !data.user) {
+      // 原因ごとに分けて表示する（接続設定の誤りを「パスワード違い」と取り違えないため）
+      const code = (error as { code?: string } | null)?.code ?? "";
+      const status = (error as { status?: number } | null)?.status ?? 0;
+      console.error("admin login failed", { code, status, name: error?.name, message: error?.message });
+      if (code === "invalid_credentials") return { ok: false, message: "メールアドレスまたはパスワードが違います。" };
+      if (code === "email_not_confirmed") return { ok: false, message: "このアカウントはメール確認が済んでいません（Supabase の Users で確認済みにしてください）。" };
+      if (status === 429 || code === "over_request_rate_limit") return { ok: false, message: "ログインの試行が多すぎます。しばらくしてからお試しください。" };
+      if (!status || status >= 500 || error?.name === "AuthRetryableFetchError")
+        return { ok: false, message: `ログインの仕組み（Supabase）に接続できません。NEXT_PUBLIC_SUPABASE_URL の設定を確認してください。（${error?.message ?? "接続エラー"}）` };
+      if (status === 401 || status === 403) return { ok: false, message: "Supabase の公開キー（NEXT_PUBLIC_SUPABASE_ANON_KEY）が正しくありません。" };
+      return { ok: false, message: `ログインできませんでした（${code || status}）。` };
+    }
     const admin = await getRepo().getAdminUserByAuthId(data.user.id);
     if (!admin) {
       await sb.auth.signOut();
