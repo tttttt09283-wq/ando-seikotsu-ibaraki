@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>あんど整骨院 ご予約</title>
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script src="/booking-segments.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
@@ -511,7 +512,8 @@ function App(){
     ]).then(function(results){
       var allBookings = Array.isArray(results[0]) ? results[0] : [];
       setWeekData({
-        booked: allBookings.filter(function(b){return !b.cancelled;}),
+        // 柔整と鍼灸の担当を分けた予約（スタッフが入力）は、担当ごとの部分に分けて空きを判定する
+        booked: segs(allBookings.filter(function(b){return !b.cancelled;})),
         breaks: Array.isArray(results[1])?results[1]:[]
       });
     });
@@ -634,6 +636,9 @@ function App(){
   // 時間的に重なっているかどうか。
   // ※以前はここが常に20分固定だったため、次の20分に既に予約が入っていても「空きあり」と表示されてしまい、
   //   today.html（管理画面側の空き状況）の40分ベースの判定とズレていた。
+  // 予約を担当ごとの部分に分ける（柔整・鍼灸を別のスタッフが担当する予約）／同じ予約を1件として数える
+  function segs(list){ return window.BookingSegments?BookingSegments.expand(list,function(b){return DURATION_MAP[b.menu]||20;}):list; }
+  function uniqCount(list){ var seen={}; list.forEach(function(b){ seen[b.id]=true; }); return Object.keys(seen).length; }
   function overlapsSlot(b,t,durationMinutes){
     var bs=toMin(b.time), be=bs+getBookingDuration(b);
     var ss=toMin(t), se=ss+(durationMinutes||20);
@@ -663,7 +668,7 @@ function App(){
   function getBookedCountAt(d,t){
     var ds = fmtDate(d);
     var duration = getCurrentDuration(d);
-    return weekData.booked.filter(function(b){return b.date===ds && overlapsSlot(b,t,duration);}).length;
+    return uniqCount(weekData.booked.filter(function(b){return b.date===ds && overlapsSlot(b,t,duration);}));
   }
   // 指定した日時に対応可能なスタッフ一覧（その日休みのスタッフ・休憩中/既存予約が入っている人を除く。
   // その枠で実際に必要な対応時間ぶんの重なりも考慮。
@@ -712,7 +717,7 @@ function App(){
       sb.select("bookings","?date=eq."+dateStr),
       sb.select("staff_breaks","?date=eq."+dateStr)
     ]).then(function(results){
-      var dayBookings = Array.isArray(results[0]) ? results[0] : [];
+      var dayBookings = segs(Array.isArray(results[0]) ? results[0] : []);
       var dayBreaks = Array.isArray(results[1]) ? results[1] : [];
       var dateObj = new Date(dateStr+"T00:00:00");
       var duration = getCurrentDuration(dateObj);
@@ -720,7 +725,7 @@ function App(){
 
       // 1枠あたりの上限に達していないか確認（施術時間の重なりも考慮）
       var capacity = getSlotCapacity(dateStr);
-      if(activeOverlapping.length >= capacity) return null;
+      if(uniqCount(activeOverlapping) >= capacity) return null;
 
       var unavail = {};
       activeOverlapping.forEach(function(b){ unavail[b.staff_id]=true; });
@@ -888,8 +893,9 @@ function App(){
   // そのため、insert後にもう一度同じ条件で問い合わせ、重なっている予約が複数あれば
   // 最もidが小さい（先に作られた）ものだけを正とし、後から作られた予約は自動的に取り消す。
   function reconcileOverlapAfterInsert(newBookingId, staffId, dateStr, time){
-    return sb.select("bookings","?date=eq."+dateStr+"&staff_id=eq."+staffId).then(function(dayBookings){
-      if(!Array.isArray(dayBookings)) return true; // 判定不能時は成立扱い（フェイルセーフ）
+    return sb.select("bookings","?date=eq."+dateStr+"&or=(staff_id.eq."+staffId+",acu_staff_id.eq."+staffId+")").then(function(rows){
+      if(!Array.isArray(rows)) return true; // 判定不能時は成立扱い（フェイルセーフ）
+      var dayBookings = segs(rows).filter(function(b){ return b.staff_id===staffId; });
       var conflicting = dayBookings.filter(function(b){ return !b.cancelled && overlapsSlot(b,time); });
       if(conflicting.length<=1) return true;
       var winnerId = conflicting.reduce(function(min,b){ return b.id<min?b.id:min; }, conflicting[0].id);
