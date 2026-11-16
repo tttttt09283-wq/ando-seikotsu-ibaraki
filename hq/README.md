@@ -54,4 +54,4 @@ hq/                    ← この Vercel プロジェクトの Root Directory
    - （設定している場合）`SALES_SHEET_ID` / `CAREER_SHEET_ID` / `NEWPATIENT_SHEET_ID` / `PATIENT_CARE_SHEET_ID` / `ORG_SHEET_ID` / `BUDGET_SHEET_ID`
 5. Deploy。以後は main にマージすると自動で更新されます
 
-予約管理システム側のデプロイには `hq/` は含めていません（リポジトリ直下の `.vercelignore`）。
+予約管理システムのサイトで `/hq/...` を開いてもトップへ戻ります（リポジトリ直下の `vercel.json` の redirects）。`.vercelignore` で `/hq` を除外すると本部システムのデプロイが空（404）になるので除外しないでください。

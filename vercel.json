@@ -5,6 +5,18 @@
       "schedule": "0 9 * * *"
     }
   ],
+  "redirects": [
+    {
+      "source": "/hq",
+      "destination": "/",
+      "permanent": false
+    },
+    {
+      "source": "/hq/:path*",
+      "destination": "/",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/mandala",
