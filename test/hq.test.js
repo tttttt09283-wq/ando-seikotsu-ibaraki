@@ -166,3 +166,94 @@ test("ダッシュボード：アラートをまとめる", () => {
   assert.equal(a[0].level, "ng");
   assert.equal(a[a.length - 1].level, "info");
 });
+
+// ===== 人員の適正判断（組織図 × 年間予算） =====
+const orgGrid = (clinics, roleRows, rateRows = []) => [
+  ["", "", ...clinics.map(() => "")],
+  ["", "院名", ...clinics],
+  ...roleRows.map(([role, ...names]) => ["", role, ...names]),
+  ["", "ブロックマネージャー", "架空BM"],
+  ["", "", ""],
+  ...rateRows.map((r) => ["", r]),
+];
+
+test("parseOrgSheet：院ごとのメンバー・役割・目安の単価を読む", () => {
+  const o = HQ.parseOrgSheet("2026.9.17〜（架空）", orgGrid(["東町院", "西町院"], [
+    ["院長", "院長A", "院長B"], ["副院長", "", ""], ["施術者", "甲", "乙"], ["施術者", "中途", ""],
+    ["時短施術者", "", "丙"], ["施術者(ア)", "丁", ""], ["受付", "", "戊"],
+  ], ["施術者：800000"]));
+  assert.equal(o.start, "2026-09-17");
+  assert.equal(o.scenario, false);
+  assert.deepEqual(plain(o.clinics.map((c) => c.key)), ["東町", "西町"]);
+  assert.deepEqual(plain(HQ.roleCounts(o.clinics[0].members)), { "院長": 1, "施術者": 2, "施術者（ア）": 1 });
+  assert.equal(o.rates["施術者"], 800000);
+  // A：院長110万＋施術者80万×2＋ア30万 ／ B：院長110万＋施術者80万＋時短50万（受付は0）
+  assert.equal(HQ.capacityOf(o.clinics[0].members, o.rates), 1_100_000 + 1_600_000 + 300_000);
+  assert.equal(HQ.capacityOf(o.clinics[1].members, o.rates), 1_100_000 + 800_000 + 500_000);
+  assert.equal(HQ.parseOrgSheet("出店時(理想)", orgGrid(["東町院"], [["院長", "x"]])).scenario, true);
+  assert.equal(HQ.orgTabStart("20278店舗目出店時"), null);
+  assert.equal(HQ.orgTabStart("2026.12(架空入社)"), "2026-12-01");
+});
+
+test("parseBudgetSheet：期間の行＝予算・1年前＝前年、実績の行、比率の行は読まない", () => {
+  const months = [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6].map((m) => `${m}月`);
+  const grid = [
+    ["", "年間予算", "", 999],
+    ["", "", "", "", ...months],
+    ["", "", "R8.7~R9.6", 12, 100, 110, 120, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    ["", "", "R7.7~R8.6", 10, 90, 90, 90],
+    ["", "", "予算前年比", 1.2, 1.1, 1.2, 1.3],
+    ["", "東町院", "R8.7~R9.6", 1, 3_000_000, 3_000_000, 3_000_000],
+    ["", "", "R7.7~R8.6", 1, 2_500_000, 2_600_000, 2_700_000],
+    ["", "", "実績", 1, 3_300_000, "", ""],
+    ["", "", "進捗率 / 達成率", 1, 1.1],
+    ["", "西町", "R8.7~R9.6", 1, 2_000_000, 2_000_000, 2_000_000],
+  ];
+  const b = HQ.parseBudgetSheet("架空", grid);
+  assert.equal(b.fy, 2026);
+  assert.equal(b.hasActual, true);
+  assert.deepEqual(plain(b.clinics.map((c) => c.key)), ["全社", "東町", "西町"]);
+  assert.deepEqual(plain(b.clinics[1].months[7]), { budget: 3_000_000, lastYear: 2_500_000, actual: 3_300_000 });
+  assert.equal(b.clinics[1].months[8].actual, null);
+  assert.equal(b.clinics[2].months[9].budget, 2_000_000);
+});
+
+test("orgTabForMonth：月初までに始まった最新のタブ。月の途中の切り替えも返す", () => {
+  const tabs = ["2026.7", "2026.9.1〜", "2026.9.17〜", "2026.12(入社)", "理想"].map((t) => HQ.parseOrgSheet(t, orgGrid(["東町院"], [["院長", "x"]])));
+  assert.equal(HQ.orgTabForMonth(tabs, "2026-08").tab.title, "2026.7");
+  const sep = HQ.orgTabForMonth(tabs, "2026-09");
+  assert.equal(sep.tab.title, "2026.9.1〜");
+  assert.deepEqual(plain(sep.changes.map((t) => t.title)), ["2026.9.17〜"]);
+  assert.equal(HQ.orgTabForMonth(tabs, "2027-03").tab.title, "2026.12(入社)");
+  assert.equal(HQ.orgTabForMonth(tabs, "2026-06").tab, null);
+});
+
+test("fitMonth：予算÷目安で 人員不足・適正・人員に余裕・未配置 を判定する", () => {
+  const org = HQ.parseOrgSheet("2026.7", orgGrid(["東町院", "西町院", "南町院", "北町院"], [
+    ["院長", "a", "b", "c", ""], ["施術者", "a1", "b1", "c1", ""], ["施術者", "a2", "", "", ""],
+  ]));
+  // 目安：A=290万 B=200万 C=200万 D=0
+  const budget = { fy: 2026, clinics: [
+    { key: "全社", name: "全社", months: { 7: { budget: 1, lastYear: null, actual: null } } },
+    { key: "東町", name: "東町", months: { 7: { budget: 3_500_000, lastYear: null, actual: 2_000_000 } } }, // 121% → 不足
+    { key: "西町", name: "西町", months: { 7: { budget: 2_100_000, lastYear: null, actual: null } } },    // 105% → 適正
+    { key: "南町", name: "南町", months: { 7: { budget: 1_500_000, lastYear: null, actual: null } } },    // 75% → 余裕
+    { key: "北町", name: "北町", months: { 7: { budget: 1_000_000, lastYear: null, actual: null } } },    // 人がいない
+    { key: "中町", name: "中町", months: { 7: { budget: null, lastYear: null, actual: null } } },         // 人も予算もない → 出さない
+  ] };
+  const r = HQ.fitMonth({ org, budget, month: 7, tol: 0.1 });
+  const by = Object.fromEntries(r.rows.map((x) => [x.key, x]));
+  assert.deepEqual(plain(r.rows.map((x) => x.key)), ["東町", "西町", "南町", "北町"]);
+  assert.equal(by["東町"].verdict.id, "short");
+  assert.equal(by["東町"].gap, 600_000);
+  assert.equal(by["東町"].staffGap, 0.7);
+  assert.ok(by["東町"].advice.some((t) => /売上が届いていません/.test(t))); // 実績は目安の69%
+  assert.equal(by["西町"].verdict.id, "ok");
+  assert.equal(by["南町"].verdict.id, "surplus");
+  assert.equal(by["北町"].verdict.id, "nostaff");
+  assert.equal(r.total.capacity, 6_900_000);
+  assert.equal(r.total.budget, 8_100_000);
+  // 判定の幅を広げると B・C の判定が変わる
+  assert.equal(HQ.fitMonth({ org, budget, month: 7, tol: 0.3 }).rows.find((x) => x.key === "南町").verdict.id, "ok");
+  assert.equal(HQ.fitVerdict(null, 100, 0.1).id, "nobudget");
+});
