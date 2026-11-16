@@ -118,6 +118,16 @@ input[type=checkbox]{width:17px;height:17px;vertical-align:middle;cursor:pointer
 .ms.done input[type=text]{text-decoration:line-through;color:#94a3b8;}
 .ms.late input[type=date]{border-color:#fca5a5;background:#fef2f2;}
 .mcell.edit{cursor:pointer;} .mcell.edit:hover{border-color:#86efac;} .mcell.sel{border-color:#15803d;box-shadow:0 0 0 3px #bbf7d0;}
+/* 人員の適正判断 */
+.fitcell{display:block;min-width:62px;padding:5px 4px;border-radius:7px;font-weight:800;font-size:12px;text-align:center;cursor:pointer;border:2px solid transparent;}
+.fitcell.ok{background:#dcfce7;color:#166534;} .fitcell.short,.fitcell.nostaff{background:#fee2e2;color:#991b1b;} .fitcell.surplus{background:#fef3c7;color:#92400e;} .fitcell.nobudget{background:#f1f5f9;color:#94a3b8;}
+.fitcell.sel{border-color:#1e3a5f;}
+.fitcell .a{display:block;font-size:10px;font-weight:700;opacity:.8;}
+.vtag{display:inline-block;padding:3px 9px;border-radius:10px;font-size:11.5px;font-weight:800;}
+.vtag.ok{background:#dcfce7;color:#166534;} .vtag.short,.vtag.nostaff{background:#fee2e2;color:#991b1b;} .vtag.surplus{background:#fef3c7;color:#92400e;} .vtag.nobudget{background:#f1f5f9;color:#64748b;}
+.legend{display:flex;gap:10px;flex-wrap:wrap;font-size:11.5px;color:#64748b;margin-top:8px;align-items:center;}
+.ctl{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;}
+.ctl label{display:block;font-size:11px;font-weight:800;color:#64748b;margin-bottom:3px;}
 /* ログイン */
 .login{max-width:380px;margin:60px auto;background:white;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,.12);overflow:hidden;}
 .login .lh{background:linear-gradient(135deg,#0f2744,#1e4d8c);color:white;padding:22px;text-align:center;}
@@ -173,6 +183,7 @@ const S = {
   docs: {}, docsErr: null,
   bookings: null, bookingsErr: null, stores: [],
   mandala: null, mandalaErr: null, mandalaMonth: thisMonth,
+  fit: null, fitErr: null,
   ui: {},
 };
 if (!HQ.SECTIONS.some((s) => s.id === S.sec)) S.sec = "dashboard";
@@ -212,7 +223,7 @@ async function apiGet(path) {
 }
 
 // ===== 本部の台帳（hq_docs） =====
-const DOC_KEYS = ["org", "people", "accounting", "education", "career", "expansion", "annual", "marketing"];
+const DOC_KEYS = ["org", "people", "fit", "accounting", "education", "career", "expansion", "annual", "marketing"];
 const saveTimers = {};
 function doc(key) {
   if (!S.docs[key]) S.docs[key] = {};
@@ -305,12 +316,27 @@ async function loadAll() {
       .catch((e) => { S.docsErr = /hq_docs/.test(e.message) ? "本部の保存先（hq_docs テーブル）がまだありません。sql/2026-11-11_hq_docs.sql を Supabase で実行してください" : e.message; }),
     rest("stores?select=id,name,active").then((r) => { S.stores = r || []; }).catch(() => {}),
     selectAll("bookings", "select=id,patient_name,date,store_id,how_know,cancelled,is_training").then((b) => { S.bookings = b; }).catch((e) => { S.bookingsErr = e.message; }),
+    loadFit(false),
   ];
   await Promise.all(jobs.map((j) => j.then(render)));
 }
 async function refreshModel() {
   S.model = null; S.modelErr = null; render();
   try { S.model = await apiGet("/api/ledger?refresh=1"); } catch (e) { S.modelErr = e.message; }
+  render();
+}
+// 人員の適正判断：組織図と年間予算の2つのスプレッドシート
+async function loadFit(refresh) {
+  S.fitErr = null;
+  if (refresh) { S.fit = null; render(); }
+  try {
+    const raw = await apiGet(`/api/fit${refresh ? "?refresh=1" : ""}`);
+    S.fit = {
+      loadedAt: raw.loadedAt, orgUrl: raw.org.url, budgetUrl: raw.budget.url,
+      org: raw.org.tabs.map((t) => HQ.parseOrgSheet(t.title, t.values)),
+      budgets: raw.budget.tabs.map((t) => HQ.parseBudgetSheet(t.title, t.values)).filter((b) => b.clinics.length),
+    };
+  } catch (e) { S.fit = null; S.fitErr = e.message; }
   render();
 }
 async function loadMandala() {
@@ -328,8 +354,20 @@ function np() { return S.bookings ? HQ.newPatients(S.bookings, storesById()) : n
 function accDoc() { const a = doc("accounting"); if (!a.routines) a.routines = HQ.DEFAULT_ROUTINES.map((r) => ({ ...r })); return a; }
 function orgDoc() { const o = doc("org"); if (!o.depts) o.depts = HQ.DEFAULT_DEPTS.map((d) => ({ ...d })); return o; }
 function alertsNow() {
-  if (!S.model) return [];
-  return HQ.alerts({ model: S.model, perf: perf(), docs: { ...S.docs, accounting: accDoc() }, todayStr, monthKey: thisMonth });
+  if (!S.model) return fitAlerts();
+  return [...HQ.alerts({ model: S.model, perf: perf(), docs: { ...S.docs, accounting: accDoc() }, todayStr, monthKey: thisMonth }), ...fitAlerts()];
+}
+// 今月の組織図×予算で「人員不足・未配置」の院
+function fitAlerts() {
+  const b = fitBudget();
+  if (!b || !b.fy) return [];
+  const m = Number(thisMonth.slice(5));
+  if (HQ.monthKeyInFiscal(b.fy, m) !== thisMonth) return [];
+  const { tab } = HQ.orgTabForMonth(S.fit.org, thisMonth);
+  if (!tab) return [];
+  return HQ.fitMonth({ org: tab, budget: b, month: m, tol: fitTol() }).rows
+    .filter((r) => r.verdict.id === "short" || r.verdict.id === "nostaff")
+    .map((r) => ({ level: "warn", section: "fit", text: `${r.name}：今月の予算が人員の目安の ${pct(r.ratio, 0)}（${r.verdict.label}${r.staffGap !== null ? `・施術者 約${Math.abs(r.staffGap)}人分` : ""}）` }));
 }
 function latestLabel() {
   if (!S.model || !S.model.latestMonth) return "-";
@@ -358,8 +396,8 @@ function render() {
   const focusKey = active && active.dataset && active.dataset.path ? `${active.dataset.doc}|${active.dataset.path}` : null;
   const al = alertsNow();
   const badge = (id) => { const n = al.filter((a) => a.section === id && a.level !== "info").length; return n ? `<span class="badge">${n}</span>` : ""; };
-  const side = HQ.SECTIONS.map((s, i) => `${i === 1 ? '<div class="sep">部門</div>' : ""}${i === 6 ? '<div class="sep">組織・計画</div>' : ""}<button class="${S.sec === s.id ? "sel" : ""}" onclick="go('${s.id}')"><span>${s.icon}</span>${esc(s.label)}${s.id === "dashboard" ? (al.filter((a) => a.level === "ng").length ? `<span class="badge">${al.filter((a) => a.level === "ng").length}</span>` : "") : badge(s.id)}</button>`).join("");
-  const fn = { dashboard: secDashboard, performance: secPerformance, marketing: secMarketing, people: secPeople, accounting: secAccounting, education: secEducation, org: secOrg, career: secCareer, expansion: secExpansion, annual: secAnnual, mandala: secMandala }[S.sec];
+  const side = HQ.SECTIONS.map((s) => `${s.id === "performance" ? '<div class="sep">部門</div>' : ""}${s.id === "org" ? '<div class="sep">組織・計画</div>' : ""}<button class="${S.sec === s.id ? "sel" : ""}" onclick="go('${s.id}')"><span>${s.icon}</span>${esc(s.label)}${s.id === "dashboard" ? (al.filter((a) => a.level === "ng").length ? `<span class="badge">${al.filter((a) => a.level === "ng").length}</span>` : "") : badge(s.id)}</button>`).join("");
+  const fn = { dashboard: secDashboard, performance: secPerformance, marketing: secMarketing, people: secPeople, fit: secFit, accounting: secAccounting, education: secEducation, org: secOrg, career: secCareer, expansion: secExpansion, annual: secAnnual, mandala: secMandala }[S.sec];
   let body;
   try { body = fn(); } catch (e) { console.error(e); body = `<div class="err">表示できませんでした：${esc(e.message)}</div>`; }
   app.innerHTML = `${topbar()}<div class="layout"><nav class="side">${side}</nav><main class="main">${S.docsErr ? `<div class="err">${esc(S.docsErr)}</div>` : ""}${body}</main></div>`;
@@ -516,6 +554,103 @@ function secMarketing() {
       ${cs.channels.length ? `<div class="scroll" style="margin-bottom:12px;"><table><tr><th class="l">経路</th><th>施策数</th><th>費用</th><th>獲得</th><th>CPA</th></tr>${cs.channels.map((c) => `<tr><td class="l"><b>${esc(c.channel)}</b></td><td>${c.count}</td><td>${yen(c.cost)}</td><td>${c.acquired}</td><td><b>${c.cpa === null ? "-" : yen(c.cpa)}</b></td></tr>`).join("")}</table></div>` : ""}
       <div class="scroll"><table><tr><th class="l">月</th><th class="l">院</th><th class="l">経路</th><th class="l">施策</th><th>費用（円）</th><th>獲得</th><th>CPA</th><th class="l">メモ</th><th></th></tr>${camp || `<tr><td class="l muted" colspan="9">「＋ 施策を追加」から、チラシ・広告・イベントなどの施策を登録してください</td></tr>`}</table></div>
     </div></div>`;
+}
+
+// ---------- 人員の適正判断（組織図 × 年間予算） ----------
+const FIT_ROLE_SHORT = { "院長": "院長", "副院長": "副院長", "施術者": "施術", "時短施術者": "時短", "施術者（ア）": "ア", "受付": "受付", "受付（ア/パ）": "受付パ" };
+function fitTol() { const v = doc("fit").tol; return v === null || v === undefined || v === "" || !isFinite(v) ? HQ.FIT_DEFAULT_TOL : Number(v) / 100; }
+// 予算のタブ：本部で選んだもの → なければ「実績が入っているタブ」の最初 → 最初のタブ
+function fitBudget() {
+  if (!S.fit || !S.fit.budgets.length) return null;
+  const want = doc("fit").budgetTab;
+  return S.fit.budgets.find((b) => b.title === want) || S.fit.budgets.find((b) => b.hasActual && b.fy) || S.fit.budgets.find((b) => b.fy) || S.fit.budgets[0];
+}
+// 選んだ組織図（空＝月ごとに自動）
+function fitOrgFixed() { const t = S.ui.fitOrg || ""; return t ? (S.fit.org.find((o) => o.title === t) || null) : null; }
+function fitOrgFor(fy, month) {
+  const fixed = fitOrgFixed();
+  if (fixed) return { tab: fixed, changes: [] };
+  return HQ.orgTabForMonth(S.fit.org, HQ.monthKeyInFiscal(fy, month));
+}
+function fitSetMonth(m) { S.ui.fitMonth = m; render(); }
+function fitMembersHtml(r) {
+  if (!r.members.length) return `<span class="muted">-</span>`;
+  const groups = {};
+  r.members.forEach((m) => { (groups[m.role] = groups[m.role] || []).push(m.name); });
+  return Object.entries(groups).map(([role, names]) => `<span class="small" style="font-weight:800;">${esc(FIT_ROLE_SHORT[role] || role)}</span> ${names.map(esc).join("・")}`).join("<br>");
+}
+function secFit() {
+  const head = `<div class="h2">⚖️ 人員の適正判断</div><div class="lead">組織図（月ごとのタブ）の人員から「売上の目安」を出し、年間予算シートの院別・月別の予算・実績と比べて、人が足りているか・余っているかを判定します。<br>
+    人員の目安 ＝ 役割ごとの人数 × 1人あたりの目安（組織図シートの「院長：1100000」などの行）。予算 ÷ 目安 が判定の幅の中なら <span class="vtag ok">適正</span>、上回れば <span class="vtag short">人員不足</span>、下回れば <span class="vtag surplus">人員に余裕</span>。</div>`;
+  if (S.fitErr) return head + `<div class="err">組織図・年間予算のスプレッドシートを読み込めませんでした：${esc(S.fitErr)}<br>2つのスプレッドシートを、本部システムのサービスアカウント（Vercel の GOOGLE_SERVICE_ACCOUNT_EMAIL）に「閲覧者」で共有してください。<br><button class="btn btn-gray btn-sm" style="margin-top:6px;" onclick="loadFit(true)">もう一度読み込む</button></div>`;
+  if (!S.fit) return head + `<div class="center">組織図と年間予算を読み込み中...</div>`;
+  const b = fitBudget();
+  if (!b || !b.fy) return head + `<div class="err">年間予算シートから「7月〜6月」の予算の表が見つかりませんでした。</div>`;
+  const tol = fitTol();
+  const d = doc("fit");
+  // 月：選んだ月 → 今月（その年度なら）→ 実績がある最後の月 → 7月
+  const curM = Number(thisMonth.slice(5));
+  const withActual = HQ.FISCAL_MONTHS.filter((m) => b.clinics.some((c) => c.months[m] && c.months[m].actual !== null));
+  const month = S.ui.fitMonth || (HQ.monthKeyInFiscal(b.fy, curM) === thisMonth ? curM : withActual.slice(-1)[0] || 7);
+  const mk = HQ.monthKeyInFiscal(b.fy, month);
+  const { tab, changes } = fitOrgFor(b.fy, month);
+  const res = HQ.fitMonth({ org: tab, budget: b, month, tol });
+  const rates = res.rates;
+
+  const orgOpts = [["", "自動（その月の組織図タブ）"], ...S.fit.org.filter((o) => o.start).map((o) => [o.title, o.title]), ...S.fit.org.filter((o) => o.scenario && o.clinics.length).map((o) => [o.title, `計画案：${o.title}`])];
+  const controls = `<div class="card"><div class="card-b">
+    <div class="ctl">
+      <div><label>年間予算のタブ</label>${sel("fit", "budgetTab", b.title, S.fit.budgets.map((x) => [x.title, `${x.title}${x.fy ? `（${x.fy}年度）` : ""}${x.hasActual ? "・実績あり" : ""}`]), { style: "max-width:300px;" })}</div>
+      <div><label>組織図（人員）</label><select onchange="ui('fitOrg',this.value)" style="max-width:300px;">${orgOpts.map(([v, l]) => `<option value="${esc(v)}" ${v === (S.ui.fitOrg || "") ? "selected" : ""}>${esc(l)}</option>`).join("")}</select></div>
+      <div><label>判定の幅（±%）</label>${inp("fit", "tol", d.tol ?? Math.round(HQ.FIT_DEFAULT_TOL * 100), { num: 1, r: 1, style: "width:70px;" })}</div>
+      <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">
+        <a class="btn btn-gray btn-sm" href="${esc(S.fit.orgUrl)}" target="_blank" rel="noopener" style="text-decoration:none;">組織図 ↗</a>
+        <a class="btn btn-gray btn-sm" href="${esc(S.fit.budgetUrl)}" target="_blank" rel="noopener" style="text-decoration:none;">年間予算 ↗</a>
+        <button class="btn btn-gray btn-sm" onclick="loadFit(true)">🔄 シートを再読込</button>
+      </div>
+    </div>
+    <div class="chips" style="margin:12px 0 0;">${HQ.FISCAL_MONTHS.map((m) => `<button class="chip ${m === month ? "sel" : ""}" onclick="fitSetMonth(${m})">${m}月</button>`).join("")}</div>
+    <div class="small" style="margin-top:8px;">1人あたりの目安：${Object.entries(rates).filter(([, v]) => v).map(([k, v]) => `${esc(k)} ${man(v)}`).join("・")}（受付は売上の目安に含めません）／読込 ${esc(new Date(S.fit.loadedAt).toLocaleString("ja-JP"))}</div>
+  </div></div>`;
+
+  const t = res.total;
+  const cnt = (id) => res.count[id] || 0;
+  const tiles = `<div class="grid g4" style="margin-bottom:14px;">
+    <div class="tile"><div class="k">${esc(monthLabel(mk))}の予算（全院）</div><div class="v">${man(t.budget)}</div><div class="s">実績 ${man(t.actual)}${t.actual !== null && t.budget ? `・達成率 <b class="${rateCls(t.actual / t.budget)}">${pct(t.actual / t.budget)}</b>` : ""}</div></div>
+    <div class="tile"><div class="k">人員から見た売上の目安</div><div class="v">${man(t.capacity)}</div><div class="s">組織図：${esc(tab ? tab.title : "該当なし")}</div></div>
+    <div class="tile"><div class="k">予算 ÷ 目安（全社）</div><div class="v"><span class="vtag ${t.verdict.id}" style="font-size:13px;">${esc(t.verdict.label)}</span> ${pct(t.ratio, 0)}</div><div class="s">実績 ÷ 目安 ${pct(t.actualRatio, 0)}</div></div>
+    <div class="tile"><div class="k">院の判定</div><div class="v" style="font-size:18px;"><span class="ng">不足 ${cnt("short") + cnt("nostaff")}</span>・<span class="ok">適正 ${cnt("ok")}</span>・<span class="warn">余裕 ${cnt("surplus")}</span></div><div class="s">判定の幅 ±${Math.round(tol * 100)}%</div></div>
+  </div>`;
+
+  const note = !tab ? `<div class="err">${esc(monthLabel(mk))}に使える組織図のタブがありません（タブ名は「2026.7」「2026.9.17〜」のように日付で始めてください）。</div>`
+    : changes.length ? `<div class="note">この月の途中で組織図が変わります：${changes.map(esc).join("、")}。判定は月初のタブ（${esc(tab.title)}）で出しています。</div>` : "";
+  const table = `<div class="card"><div class="card-h">${esc(monthLabel(mk))}の院別判定</div><div class="card-b scroll"><table>
+    <tr><th class="l">院</th><th class="l">人員（組織図）</th><th>人員の目安</th><th>予算</th><th>予算÷目安</th><th class="l">判定</th><th>過不足</th><th>実績</th><th>実績÷目安</th><th class="l">理由・打ち手</th></tr>
+    ${res.rows.map((r) => `<tr><td class="l"><b>${esc(r.name)}</b></td><td class="l wrap" style="min-width:160px;">${fitMembersHtml(r)}</td>
+      <td>${man(r.capacity)}</td><td>${man(r.budget)}</td><td><b>${pct(r.ratio, 0)}</b></td>
+      <td class="l"><span class="vtag ${r.verdict.id}">${esc(r.verdict.label)}</span></td>
+      <td class="${r.gap === null ? "" : r.gap > 0 ? "ng" : "ok"}">${r.staffGap === null ? "-" : `${r.gap > 0 ? "−" : "+"}${Math.abs(r.staffGap)}人`}<div class="small">${r.gap === null ? "" : (r.gap > 0 ? "不足 " : "余裕 ") + man(Math.abs(r.gap))}</div></td>
+      <td>${man(r.actual)}${r.achievement !== null ? `<div class="small ${rateCls(r.achievement)}">達成 ${pct(r.achievement, 0)}</div>` : ""}</td>
+      <td>${pct(r.actualRatio, 0)}</td>
+      <td class="l wrap small" style="min-width:240px;">${r.advice.map(esc).join("<br>")}</td></tr>`).join("")}
+    <tr class="total"><td class="l">全社</td><td></td><td>${man(t.capacity)}</td><td>${man(t.budget)}</td><td>${pct(t.ratio, 0)}</td><td class="l"><span class="vtag ${t.verdict.id}">${esc(t.verdict.label)}</span></td><td></td><td>${man(t.actual)}</td><td>${pct(t.actualRatio, 0)}</td><td></td></tr>
+  </table><div class="small" style="margin-top:6px;">過不足は施術者（${man(rates["施術者"] || HQ.FIT_DEFAULT_RATES["施術者"])}／人）に換算した人数。−は足りない、＋は余っている人数です。</div></div></div>`;
+
+  // 年度の一覧（院 × 12か月）
+  const months = HQ.FISCAL_MONTHS.map((m) => { const o = fitOrgFor(b.fy, m); return { m, tab: o.tab, r: HQ.fitMonth({ org: o.tab, budget: b, month: m, tol }) }; });
+  const keys = [];
+  months.forEach((x) => x.r.rows.forEach((r) => { if (!keys.includes(r.key)) keys.push(r.key); }));
+  const yearRows = keys.map((key) => {
+    const cells = months.map((x) => x.r.rows.find((r) => r.key === key) || null);
+    const name = (cells.find((c) => c) || {}).name || key;
+    return `<tr><td class="l"><b>${esc(name)}</b></td>${cells.map((c, i) => `<td style="padding:3px;">${c ? `<span class="fitcell ${c.verdict.id} ${months[i].m === month ? "sel" : ""}" onclick="fitSetMonth(${months[i].m})" title="${esc(`${c.name} ${months[i].m}月：予算 ${man(c.budget)}／目安 ${man(c.capacity)}／${c.verdict.label}`)}">${c.ratio === null ? esc(c.verdict.label) : pct(c.ratio, 0)}${c.actualRatio !== null ? `<span class="a">実 ${pct(c.actualRatio, 0)}</span>` : ""}</span>` : ""}</td>`).join("")}</tr>`;
+  }).join("");
+  const year = `<div class="card"><div class="card-h">${b.fy}年度の一覧（予算 ÷ 人員の目安）<span class="small">マスを押すとその月の詳細</span></div><div class="card-b scroll"><table>
+    <tr><th class="l">院</th>${months.map((x) => `<th style="text-align:center;">${x.m}月<div class="small" style="font-weight:600;">${esc(x.tab ? x.tab.title.replace(/[（(].*$/, "") : "-")}</div></th>`).join("")}</tr>
+    ${yearRows}</table>
+    <div class="legend"><span class="vtag short">人員不足</span>予算が目安の${Math.round((1 + tol) * 100)}%超 <span class="vtag ok">適正</span>${Math.round((1 - tol) * 100)}〜${Math.round((1 + tol) * 100)}% <span class="vtag surplus">人員に余裕</span>${Math.round((1 - tol) * 100)}%未満 <span>「実」＝実績 ÷ 目安</span></div>
+  </div></div>`;
+  return head + controls + note + tiles + table + year;
 }
 
 // ---------- 人材 ----------

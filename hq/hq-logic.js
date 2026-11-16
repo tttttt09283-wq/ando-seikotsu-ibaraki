@@ -17,6 +17,7 @@
     { id: "performance", label: "業績", icon: "📈" },
     { id: "marketing", label: "集客", icon: "📣" },
     { id: "people", label: "人材", icon: "👥" },
+    { id: "fit", label: "人員の適正判断", icon: "⚖️" },
     { id: "accounting", label: "経理・事務", icon: "🧾" },
     { id: "education", label: "教育", icon: "🎓" },
     { id: "org", label: "組織図", icon: "🏢" },
@@ -339,6 +340,220 @@
     return out.sort((a, b) => order[a.level] - order[b.level]);
   }
 
+  // ===== 人員の適正判断（組織図 × 年間予算） =====
+  // 組織図（月ごとのタブ）の人員に、役割ごとの「1人あたり売上の目安」を掛けて「人員から見た売上の目安」を出し、
+  // 年間予算シートの院別・月別の予算（と実績）と比べて、人が足りているか・余っているかを判定する。
+  // 役割ごとの目安は組織図シートの下の「院長：1100000」などの行を使う（ない時はこの初期値）。
+  const FIT_DEFAULT_RATES = { "院長": 1100000, "副院長": 1000000, "施術者": 900000, "時短施術者": 500000, "施術者（ア）": 300000 };
+  const FIT_DEFAULT_TOL = 0.1; // 予算÷目安 が 90%〜110% なら「適正」
+  const FIT_TREAT_ROLE = "施術者"; // 「あと何人分」の換算に使う役割
+  const ZEN = "０１２３４５６７８９";
+  const toHalf = (s) => String(s ?? "").replace(/[０-９]/g, (c) => String(ZEN.indexOf(c)));
+  function normRole(s) {
+    return toHalf(s).replace(/[\s　]/g, "").replace(/\(/g, "（").replace(/\)/g, "）").replace(/／/g, "/");
+  }
+  // 「茨木院」「茨木」「あんど整骨院 茨木院」を同じ院として扱う（「本院」はそのまま）
+  function fitClinicKey(s) {
+    let t = String(s ?? "").replace(/[\s　]/g, "").replace(/^あんど整骨院/, "");
+    if (t.length > 2 && t.endsWith("院")) t = t.slice(0, -1);
+    return t;
+  }
+  const isBlank = (v) => v === null || v === undefined || String(v).trim() === "";
+  const numOf = (v) => {
+    if (typeof v === "number") return isFinite(v) ? v : null;
+    if (isBlank(v)) return null;
+    const n = Number(toHalf(v).replace(/[,，¥￥円\s]/g, ""));
+    return isFinite(n) ? n : null;
+  };
+  // タブ名「2026.9.17〜（…）」「2026.12(上島入社)」→ 開始日。日付で始まらないタブ（理想・出店時など）は計画案（null）
+  function orgTabStart(title) {
+    const m = toHalf(title).trim().match(/^(\d{4})\.(\d{1,2})(?:\.(\d{1,2}))?(?!\d)/);
+    if (!m) return null;
+    const mo = Number(m[2]), d = m[3] ? Number(m[3]) : 1;
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    return `${m[1]}-${pad(mo)}-${pad(d)}`;
+  }
+  // 組織図の1タブ（2次元配列）→ 院ごとのメンバーと役割ごとの目安
+  function parseOrgSheet(title, values) {
+    const rows = values || [];
+    let r0 = -1, c0 = -1;
+    for (let r = 0; r < rows.length && r0 < 0; r++) {
+      const c = (rows[r] || []).findIndex((v) => String(v ?? "").trim() === "院名");
+      if (c >= 0) { r0 = r; c0 = c; }
+    }
+    const start = orgTabStart(title);
+    const out = { title, start, scenario: !start, clinics: [], rates: { ...FIT_DEFAULT_RATES } };
+    if (r0 < 0) return out;
+    const head = rows[r0] || [];
+    const cols = [];
+    for (let c = c0 + 1; c < head.length && !isBlank(head[c]); c++) cols.push(c);
+    out.clinics = cols.map((c) => ({ name: String(head[c]).trim(), key: fitClinicKey(head[c]), members: [] }));
+    let r = r0 + 1;
+    for (; r < rows.length; r++) {
+      const label = normRole((rows[r] || [])[c0]);
+      if (!label || /マネージャー/.test(label)) break;
+      cols.forEach((c, i) => {
+        const v = (rows[r] || [])[c];
+        if (!isBlank(v)) out.clinics[i].members.push({ role: label, name: String(v).trim() });
+      });
+    }
+    // 下の方にある「院長：1100000」の行
+    for (; r < rows.length; r++) {
+      const m = normRole((rows[r] || [])[c0]).match(/^(.+?)[：:]([\d,]+)$/);
+      if (m) out.rates[m[1]] = Number(m[2].replace(/,/g, ""));
+    }
+    return out;
+  }
+  // 年度予算シートの1タブ → 院ごと・月ごとの { budget, lastYear, actual }
+  //   ・「7月」〜「6月」が並ぶ行を見出しとみなす
+  //   ・行の種類：期間（R8.7~R9.6 → その年度の予算／1年前 → 前年実績）・「予算」・「実績」。比率や差額の行は読まない
+  //   ・院名は見出しより左の文字の欄から（空欄なら上の行の院を引き継ぐ。最初は「全社」）
+  function parseBudgetSheet(title, values) {
+    const rows = values || [];
+    const monthOf = (v) => { const m = toHalf(v).trim().match(/^(\d{1,2})月$/); return m && Number(m[1]) >= 1 && Number(m[1]) <= 12 ? Number(m[1]) : null; };
+    let hr = -1;
+    for (let r = 0; r < rows.length; r++) if ((rows[r] || []).filter((v) => monthOf(v)).length >= 6) { hr = r; break; }
+    const out = { title, fy: null, clinics: [], hasActual: false };
+    if (hr < 0) return out;
+    const monthCols = [];
+    (rows[hr] || []).forEach((v, c) => { const m = monthOf(v); if (m && !monthCols.some((x) => x.month === m)) monthCols.push({ c, month: m }); });
+    const firstMonthCol = Math.min(...monthCols.map((x) => x.c));
+    const periodFy = (s) => { const m = toHalf(s).replace(/\s/g, "").match(/^R(\d+)\.7[~〜～]/); return m ? 2018 + Number(m[1]) : null; };
+    // 期間の行のうち、いちばん新しい年度を「このタブの予算年度」とする
+    let fy = null;
+    for (let r = hr + 1; r < rows.length; r++) for (let c = 0; c < firstMonthCol; c++) { const f = periodFy((rows[r] || [])[c]); if (f && (fy === null || f > fy)) fy = f; }
+    out.fy = fy;
+    const byKey = new Map();
+    let clinic = "全社";
+    for (let r = hr + 1; r < rows.length; r++) {
+      const row = rows[r] || [];
+      let kind = null;
+      for (let c = 0; c < firstMonthCol; c++) {
+        const v = row[c];
+        if (isBlank(v) || typeof v === "number" || numOf(v) !== null) continue;
+        const s = String(v).replace(/[\s　]/g, "");
+        const f = periodFy(s);
+        if (f) { kind = fy !== null && f === fy ? "budget" : fy !== null && f === fy - 1 ? "lastYear" : null; continue; }
+        if (s === "予算") { kind = "budget"; continue; }
+        if (s === "実績") { kind = "actual"; continue; }
+        if (/前年比|差額|進捗|達成|対比|昨対|項目|拠点|年間|累計|合計/.test(s)) { kind = kind || "skip"; continue; }
+        clinic = s;
+      }
+      if (!kind || kind === "skip") continue;
+      const key = fitClinicKey(clinic);
+      if (!byKey.has(key)) { const e = { name: clinic, key, months: {} }; byKey.set(key, e); out.clinics.push(e); }
+      const e = byKey.get(key);
+      for (const { c, month } of monthCols) {
+        const n = numOf(row[c]);
+        if (!e.months[month]) e.months[month] = { budget: null, lastYear: null, actual: null };
+        if (e.months[month][kind] === null && n !== null) e.months[month][kind] = n;
+        if (kind === "actual" && n !== null) out.hasActual = true;
+      }
+    }
+    return out;
+  }
+  // その月に使う組織図：月初（1日）までに始まっている日付つきタブのうち一番新しいもの。月の途中で切り替わるタブも返す
+  function orgTabForMonth(tabs, monthKey) {
+    const dated = (tabs || []).filter((t) => t.start).sort((a, b) => a.start.localeCompare(b.start));
+    const first = `${monthKey}-01`;
+    const base = dated.filter((t) => t.start <= first).slice(-1)[0] || null;
+    const changes = dated.filter((t) => t.start > first && t.start.slice(0, 7) === monthKey);
+    return { tab: base, changes };
+  }
+  function roleCounts(members) {
+    const out = {};
+    for (const m of members || []) out[m.role] = (out[m.role] || 0) + 1;
+    return out;
+  }
+  function capacityOf(members, rates) {
+    return sum((members || []).map((m) => (rates && rates[m.role]) || 0));
+  }
+  // 予算÷目安 の判定
+  function fitVerdict(budget, capacity, tol) {
+    const t = tol === null || tol === undefined || !isFinite(tol) ? FIT_DEFAULT_TOL : tol;
+    if (budget === null || budget === undefined) return { id: "nobudget", label: "予算なし", level: "info" };
+    if (!capacity) return { id: "nostaff", label: "人員未配置", level: "ng" };
+    const r = budget / capacity;
+    if (r > 1 + t) return { id: "short", label: "人員不足", level: "ng" };
+    if (r < 1 - t) return { id: "surplus", label: "人員に余裕", level: "warn" };
+    return { id: "ok", label: "適正", level: "ok" };
+  }
+  // ある月の全院の判定。org＝parseOrgSheet の結果（その月の組織図 or 計画案）、budget＝parseBudgetSheet の結果
+  function fitMonth({ org, budget, month, tol }) {
+    const rates = (org && org.rates) || FIT_DEFAULT_RATES;
+    const unit = rates[FIT_TREAT_ROLE] || FIT_DEFAULT_RATES[FIT_TREAT_ROLE];
+    const bClinics = ((budget && budget.clinics) || []).filter((c) => c.key !== "全社");
+    const keys = [];
+    ((org && org.clinics) || []).forEach((c) => { if (!keys.includes(c.key)) keys.push(c.key); });
+    bClinics.forEach((c) => { if (!keys.includes(c.key)) keys.push(c.key); });
+    const rows = keys.map((key) => {
+      const oc = ((org && org.clinics) || []).find((c) => c.key === key) || null;
+      const bc0 = bClinics.find((c) => c.key === key) || null;
+      const m0 = bc0 && bc0.months[month];
+      if ((!oc || !oc.members.length) && (!m0 || (m0.budget === null && m0.actual === null))) return null; // 開業前など、人も予算もない院
+
+      const bc = bClinics.find((c) => c.key === key) || null;
+      const m = (bc && bc.months[month]) || { budget: null, lastYear: null, actual: null };
+      const members = oc ? oc.members : [];
+      const capacity = capacityOf(members, rates);
+      const v = fitVerdict(m.budget, capacity, tol);
+      const gap = m.budget !== null && capacity ? m.budget - capacity : null;
+      const row = {
+        key, name: oc ? oc.name : bc.name, members, counts: roleCounts(members), capacity,
+        budget: m.budget, lastYear: m.lastYear, actual: m.actual,
+        ratio: m.budget !== null && capacity ? m.budget / capacity : null,
+        actualRatio: m.actual !== null && capacity ? m.actual / capacity : null,
+        achievement: m.actual !== null && m.budget ? m.actual / m.budget : null,
+        gap, staffGap: gap !== null && unit ? Math.round((gap / unit) * 10) / 10 : null,
+        verdict: v,
+      };
+      row.advice = fitAdvice(row, tol);
+      return row;
+    }).filter(Boolean);
+    const tot = (f) => sum(rows.map((r) => r[f]));
+    const hasActual = rows.some((r) => r.actual !== null);
+    const total = { capacity: tot("capacity"), budget: tot("budget"), actual: hasActual ? tot("actual") : null };
+    total.ratio = total.capacity ? total.budget / total.capacity : null;
+    total.actualRatio = total.actual !== null && total.capacity ? total.actual / total.capacity : null;
+    total.verdict = fitVerdict(total.budget || null, total.capacity, tol);
+    const count = {};
+    rows.forEach((r) => { count[r.verdict.id] = (count[r.verdict.id] || 0) + 1; });
+    return { month, rows, total, count, rates };
+  }
+  // 判定の理由と、次の打ち手（短い文）
+  function fitAdvice(r, tol) {
+    const t = tol === null || tol === undefined ? FIT_DEFAULT_TOL : tol;
+    const man = (n) => `${Math.round(Math.abs(n) / 10000).toLocaleString()}万円`;
+    const out = [];
+    if (r.verdict.id === "nostaff") out.push("組織図に人員がいません。配置を決めてください");
+    else if (r.verdict.id === "short") out.push(`予算が人員の目安を ${man(r.gap)} 上回っています（施術者 約${Math.abs(r.staffGap)}人分）。採用・応援・時短→フルへの切替を検討`);
+    else if (r.verdict.id === "surplus") out.push(`人員の目安が予算を ${man(r.gap)} 上回っています（施術者 約${Math.abs(r.staffGap)}人分）。予算の上積みか、他院への応援・配置換えを検討`);
+    else if (r.verdict.id === "ok") out.push("予算と人員のバランスは適正です");
+    if (r.actualRatio !== null && r.capacity) {
+      if (r.actualRatio < 1 - t) out.push(`実績は目安の ${Math.round(r.actualRatio * 100)}%：人はいるのに売上が届いていません（稼働・単価・リピートを確認）`);
+      else if (r.actualRatio > 1 + t) out.push(`実績は目安の ${Math.round(r.actualRatio * 100)}%：人員以上に売れています（負担・残業に注意）`);
+    }
+    return out;
+  }
+  // 年度12か月 × 院 の判定表（各月の組織図を自動で選ぶ）
+  function fitYear({ orgTabs, budget, tol }) {
+    const fy = (budget && budget.fy) || null;
+    if (!fy) return null;
+    const months = FISCAL_MONTHS.map((m) => {
+      const mk = monthKeyInFiscal(fy, m);
+      const { tab, changes } = orgTabForMonth(orgTabs, mk);
+      return { month: m, monthKey: mk, tab: tab ? tab.title : null, changes: changes.map((c) => c.title), result: fitMonth({ org: tab, budget, month: m, tol }) };
+    });
+    const keys = [];
+    months.forEach((x) => x.result.rows.forEach((r) => { if (!keys.includes(r.key)) keys.push(r.key); }));
+    const clinics = keys.map((key) => {
+      const cells = months.map((x) => x.result.rows.find((r) => r.key === key) || null);
+      const name = (cells.find((c) => c) || {}).name || key;
+      return { key, name, cells };
+    });
+    return { fy, months, clinics };
+  }
+
   function uid(prefix) {
     return `${prefix || "x"}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
   }
@@ -349,5 +564,7 @@
     gradeRank, gradeRole, monthKeyOf, fiscalYearOf, fiscalMonthKeys, monthKeyInFiscal, shiftMonth, daysBetween, dueDateOf,
     performance, newPatients, campaignStats, gradeCounts, staffing, recruitFunnel, buildOrg, careerLadder,
     expansionProgress, newMilestones, annualByMonth, trainingStats, routineStatus, laborSummary, alerts, uid, normName,
+    FIT_DEFAULT_RATES, FIT_DEFAULT_TOL, fitClinicKey, orgTabStart, parseOrgSheet, parseBudgetSheet, orgTabForMonth,
+    roleCounts, capacityOf, fitVerdict, fitMonth, fitAdvice, fitYear,
   };
 })(typeof window !== "undefined" ? window : globalThis);
