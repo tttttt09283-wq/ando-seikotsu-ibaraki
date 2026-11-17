@@ -133,8 +133,8 @@
       acu:/鍼灸/.test(t)||sp.acu>0,
     };
   }
-  // 保険の請求（見込み）：部門ごとに 実人数 × この金額（あとで実際の請求額に合わせて変えられるよう定数にしておく）
-  const CLAIM_PER_PERSON={ju:1000,acu:1000};
+  // 保険の請求（見込み）：部門ごとに 来院回数 × この金額（あとで実際の請求額に合わせて変えられるよう定数にしておく）
+  const CLAIM_PER_VISIT={ju:1000,acu:1000};
   const DEPTS=[{key:"ju",label:"柔整（保険診療）"},{key:"acu",label:"鍼灸保険"}];
 
   // ===== 会計1件の内訳 =====
@@ -226,7 +226,7 @@
     });
     r.staffCount=[...staff].filter(Boolean).length;
     // 実人数と請求（見込み）
-    DEPTS.forEach(d=>{ const x=r.dept[d.key]; x.peopleCount=x.people.size; x.claim=x.peopleCount*CLAIM_PER_PERSON[d.key]; delete x.people; });
+    DEPTS.forEach(d=>{ const x=r.dept[d.key]; x.peopleCount=x.people.size; x.claim=x.visits*CLAIM_PER_VISIT[d.key]; delete x.people; });
     r.taxIncluded=Math.round(r.taxable*10/110);
     r.netSales=r.total.amount-r.taxIncluded;
 
@@ -248,7 +248,7 @@
   // 店舗ごとの年度の始まりの月（香里園駅前院は2026年10月開業のため10月始まり、ほかは7月始まりの「期」）
   const fiscalStartMonth=storeName=>/香里園/.test(String(storeName||""))?10:7;
   // 売上＝窓口の売上（返金を引く）＋保険請求。保険請求・施術者人数・営業利益は月ごとに手入力でき、
-  // 入っていない月は 保険請求＝実人数×1,000円（柔整・鍼灸それぞれ）、施術者人数＝その月に担当した人数 で仮に計算する
+  // 入っていない月は 保険請求＝来院回数×1,000円（柔整・鍼灸それぞれ）、施術者人数＝その月に担当した人数 で仮に計算する
   const addMonthsYm=(ym,n)=>{ const [y,m]=ym.split("-").map(Number); const d=new Date(Date.UTC(y,m-1+n,1)); return d.toISOString().slice(0,7); };
   function fiscalMonths(startYm,count){ return Array.from({length:count||12},(_,i)=>addMonthsYm(startYm,i)); }
   function buildMonthlyKpi(payments,opts){
@@ -293,8 +293,8 @@
       });
       refunds.forEach(p=>{ window_+=Number(p.total_amount)||0; });
       const m=manual[month]||{};
-      const claimJu=num(m.claimJu)!==null?num(m.claimJu):counter.ju.people.size*CLAIM_PER_PERSON.ju;
-      const claimAcu=num(m.claimAcu)!==null?num(m.claimAcu):counter.acu.people.size*CLAIM_PER_PERSON.acu;
+      const claimJu=num(m.claimJu)!==null?num(m.claimJu):counter.ju.visits*CLAIM_PER_VISIT.ju;
+      const claimAcu=num(m.claimAcu)!==null?num(m.claimAcu):counter.acu.visits*CLAIM_PER_VISIT.acu;
       const claimEstimated=num(m.claimJu)===null||num(m.claimAcu)===null;
       const therapists=num(m.therapists)!==null?num(m.therapists):[...staff].filter(Boolean).length;
       const sales=window_+claimJu+claimAcu;
@@ -323,7 +323,7 @@
     return (o.months||[]).map(rowOf);
   }
 
-  const api={buildMonthlyKpi,fiscalMonths,fiscalStartMonth,insuranceSplit,insuranceDepts,CLAIM_PER_PERSON,DEPTS,GOODS_KINDS,isGoods,goodsKind,PAY_KINDS,parsePayments,visitsOf,classifyVisits,VISIT_CLASSES,patientProfiles,GENDERS,genderKey,
+  const api={buildMonthlyKpi,fiscalMonths,fiscalStartMonth,insuranceSplit,insuranceDepts,CLAIM_PER_VISIT,DEPTS,GOODS_KINDS,isGoods,goodsKind,PAY_KINDS,parsePayments,visitsOf,classifyVisits,VISIT_CLASSES,patientProfiles,GENDERS,genderKey,
     AGE_BANDS,ageBand,SOURCES,sourceKey,splitAmounts,rateKey,TECH_ROWS,buildReport};
   root.SalesReport=api;
 })(typeof window!=="undefined"?window:globalThis);

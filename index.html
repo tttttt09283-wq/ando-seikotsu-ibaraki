@@ -4805,9 +4805,9 @@ function DailyReportPanel({bookings,payments,stores,todayStr,refunds,onOpenPos,o
           <div style={{marginTop:10,background:"white",border:"1px solid #e2e8f0",borderRadius:10,padding:"10px 14px",display:"flex",gap:18,flexWrap:"wrap",alignItems:"center",fontSize:13}}>
             <span style={{fontWeight:800,color:"#1e3a5f"}}>🏥 {m}月の保険請求（見込み）</span>
             {SR.DEPTS.map(dp=>{ const x=d.dept[dp.key]; return(
-              <span key={dp.key}><b>{dp.label}</b>：{x.peopleCount}人 × {fmt(SR.CLAIM_PER_PERSON[dp.key])} ＝ <b>{fmt(x.claim)}</b><span style={{color:"#64748b"}}>（来院 {x.visits}回・窓口 {fmt(x.amount)}）</span></span>
+              <span key={dp.key}><b>{dp.label}</b>：{x.visits}回 × {fmt(SR.CLAIM_PER_VISIT[dp.key])} ＝ <b>{fmt(x.claim)}</b><span style={{color:"#64748b"}}>（実人数 {x.peopleCount}人・窓口 {fmt(x.amount)}）</span></span>
             );})}
-            <span style={{fontSize:11,color:"#94a3b8"}}>実人数×1,000円の仮の計算です。保険診療＋鍼灸併用の方は両方に数えます。</span>
+            <span style={{fontSize:11,color:"#94a3b8"}}>来院回数×1,000円の仮の計算です。保険診療＋鍼灸併用の来院は両方に数えます。</span>
           </div>
         );
       })()}
@@ -13384,7 +13384,7 @@ function MonthlyKpiPanel({payments,bookings,stores,todayStr}){
   return(
     <div style={{padding:16,maxWidth:1500,margin:"0 auto"}}>
       <div style={{fontSize:22,fontWeight:900,color:"#0f172a",marginBottom:4}}>月次KPI（{storeName}）</div>
-      <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>予約システムの会計から月ごとに集計します。売上＝窓口の売上（返金を引く）＋保険請求。<span style={{color:"#94a3b8",fontStyle:"italic"}}>※の付いた灰色の数字</span>は、保険請求（実人数×1,000円）や施術者人数（その月に担当した人数）を仮の値で計算しています。「手入力」から実際の値を入れると置き換わります。</div>
+      <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>予約システムの会計から月ごとに集計します。売上＝窓口の売上（返金を引く）＋保険請求。<span style={{color:"#94a3b8",fontStyle:"italic"}}>※の付いた灰色の数字</span>は、保険請求（来院回数×1,000円）や施術者人数（その月に担当した人数）を仮の値で計算しています。「手入力」から実際の値を入れると置き換わります。</div>
       <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginBottom:12}}>
         <select value={storeId} onChange={e=>setStoreId(Number(e.target.value))} aria-label="店舗" style={{padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontFamily:"inherit"}}>
           {(stores||[]).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
@@ -13539,7 +13539,7 @@ function SalesReportPanel({payments,bookings,stores,todayStr}){
             <Table title="部門別（柔整・鍼灸）・保険請求（見込み）" head={["部門","来院数","実人数","窓口負担","保険請求（見込み）","合計"]} rows={[
               ...SR.DEPTS.map(d=>{ const x=r.dept[d.key]; return [d.label,n(x.visits),n(x.peopleCount),n(x.amount),n(x.claim),n(x.amount+x.claim)]; }),
               ["合計",n(r.dept.ju.visits+r.dept.acu.visits),"-",n(r.dept.ju.amount+r.dept.acu.amount),n(r.dept.ju.claim+r.dept.acu.claim),n(r.dept.ju.amount+r.dept.acu.amount+r.dept.ju.claim+r.dept.acu.claim)],
-            ]} note={`保険診療＋鍼灸併用の来院は両方の部門に数えます。保険請求（見込み）＝実人数×${SR.CLAIM_PER_PERSON.ju.toLocaleString()}円（柔整）／×${SR.CLAIM_PER_PERSON.acu.toLocaleString()}円（鍼灸）の仮の計算です。`}/>
+            ]} note={`保険診療＋鍼灸併用の来院は両方の部門に数えます。保険請求（見込み）＝来院回数×${SR.CLAIM_PER_VISIT.ju.toLocaleString()}円（柔整）／×${SR.CLAIM_PER_VISIT.acu.toLocaleString()}円（鍼灸）の仮の計算です。`}/>
             <Table title="商品売上内訳" head={["","客数","客比率","金額","金額比","客単価"]} rows={[...SR.GOODS_KINDS.map(g=>[g.label,g.key]),["上記以外","other"]].map(([l,k])=>{ const x=r.goodsRows[k]; return [l,n(x.count),pct(x.count,C),n(x.amount),pct(x.amount,T),avg(x.amount,x.count)]; })}
               note="商品＝会計の自費項目のうち「物販：」で始まるもの、コルセット・サポーター・シップなどの名前のもの。"/>
             <Table title="来店区分・性別【税込】" head={["","客数","客比率","金額","金額比","客単価"]} rows={[
@@ -13565,8 +13565,8 @@ function SalesReportPanel({payments,bookings,stores,todayStr}){
               ["非課税（保険の窓口負担）","-",n(r.nonTaxable)],
               ["　うち柔整（保険診療）",n(r.dept.ju.visits),n(r.dept.ju.amount)],
               ["　うち鍼灸保険",n(r.dept.acu.visits),n(r.dept.acu.amount)],
-              [`保険請求（見込み）柔整 ${n(r.dept.ju.peopleCount)}人`,"-",n(r.dept.ju.claim)],
-              [`保険請求（見込み）鍼灸 ${n(r.dept.acu.peopleCount)}人`,"-",n(r.dept.acu.claim)],
+              [`保険請求（見込み）柔整 ${n(r.dept.ju.visits)}回`,"-",n(r.dept.ju.claim)],
+              [`保険請求（見込み）鍼灸 ${n(r.dept.acu.visits)}回`,"-",n(r.dept.acu.claim)],
               ["技術売上",n(r.tech.count),n(r.tech.amount)],
               ["商品売上",n(r.goods.count),n(r.goods.amount)],
               ["値引","-","0"],
