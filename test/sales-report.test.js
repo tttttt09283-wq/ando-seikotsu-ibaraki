@@ -111,8 +111,10 @@ test("月次KPI：売上＝窓口＋保険請求、カルテ枚数・新患・�
   assert.equal(oct.sales, 5600 + 3000);
   assert.deepEqual(plain([oct.karte, oct.karteJu, oct.karteAcu, oct.acuVisits]), [2, 1, 2, 3]);
   assert.deepEqual(plain([oct.newPatients, oct.revisits]), [1, 1]);
-  assert.equal(oct.churn, 1);          // 9月に来た架空 二 が10月に来ていない
-  assert.equal(Math.round(oct.churnRate), 50);
+  assert.equal(oct.churn, 2);          // 9/10の架空 一（次は10/11＝1か月超）・9/12の架空 二（以後なし）が10月に1か月通院なし
+  assert.equal(Math.round(oct.churnRate), 100); // 前の月の実人数2人に対して
+  assert.equal(Math.round(oct.ltv), Math.round(8600 / 2)); // 売上÷カルテ枚数
+  assert.equal(oct.avgVisitsPerPatient, 3 / 2);            // 総来院数÷カルテ枚数
   assert.equal(Math.round(oct.claimUnitAcu), Math.round(2000 / 3));
   assert.equal(oct.days, 2);
   assert.equal(sep.claimEstimated, true);
@@ -123,4 +125,12 @@ test("月次KPI：売上＝窓口＋保険請求、カルテ枚数・新患・�
   assert.equal(oct2.productivity, 14600 / 2.5);
   assert.equal(Math.round(oct2.operatingMargin * 10) / 10, Math.round(3000 / 14600 * 1000) / 10);
   assert.deepEqual(plain(SR.fiscalMonths("2026-07", 12).slice(-1)), ["2027-06"]);
+  assert.equal(SR.fiscalStartMonth("あんど整骨院 香里園駅前院"), 10);
+  assert.equal(SR.fiscalStartMonth("あんど整骨院　茨木院"), 7);
+  // 今日より後に1か月がたつ方は、まだ離反に数えない
+  const [nov] = SR.buildMonthlyKpi(pays, { months: ["2026-11"], bookings: [], today: "2026-11-10" });
+  assert.equal(nov.churn, 0); // 架空 一（最後10/11→11/11で1か月）・架空 三（最後10/15→11/15）はまだ1か月たっていない
+  const [nov2] = SR.buildMonthlyKpi(pays, { months: ["2026-11"], bookings: [], today: "2026-11-20" });
+  assert.equal(nov2.churn, 2); // 11/20には2人とも1か月通院なし
+
 });

@@ -13295,29 +13295,37 @@ function BulkReceiptPanel({payments,bookings,stores,refunds=[]}){
 // スタッフKPIの集計開始日（これより前＝プレオープン／イベント期間の予約・来院は集計に含めない）
 // ===== 売上日報・日計／累計表（POSの「総合売上日報」「日計／累計表」と同じ集計） =====
 // 計算は sales-report-logic.js（window.SalesReport）。テストは test/sales-report.test.js
-// ===== 月次KPI（期ごと：7月〜翌6月。スプレッドシートの「11期」の表と同じ項目） =====
+// ===== 月次KPI（年度ごと。スプレッドシートの「11期」の表と同じ項目） =====
+// 香里園駅前院は2026年10月開業のため10月〜翌9月、ほかの院は7月〜翌6月の「期」で表示する
 // 計算は sales-report-logic.js の buildMonthlyKpi。保険請求・施術者人数・営業利益は月ごとに手入力（共有設定に保存）
 const KPI_FIRST_PERIOD_YEAR=2015; // 11期＝2026年7月〜 → 期の数字＋2015 が始まりの年
 function MonthlyKpiPanel({payments,bookings,stores,todayStr}){
   const SR=window.SalesReport;
   const defaultStore=((stores||[]).find(s=>/香里園/.test(s.name||""))||(stores||[])[0]||{id:1}).id;
   const [storeId,setStoreId]=React.useState(defaultStore);
-  const curStartYear=Number(todayStr.slice(5,7))>=7?Number(todayStr.slice(0,4)):Number(todayStr.slice(0,4))-1;
-  const [period,setPeriod]=React.useState(curStartYear-KPI_FIRST_PERIOD_YEAR);
+  const storeName=((stores||[]).find(s=>s.id===storeId)||{}).name||"";
+  const startMonth=SR.fiscalStartMonth(storeName);
+  const startYearOf=sm=>Number(todayStr.slice(5,7))>=sm?Number(todayStr.slice(0,4)):Number(todayStr.slice(0,4))-1;
+  const [startYear,setStartYear]=React.useState(()=>startYearOf(startMonth));
+  React.useEffect(()=>{ setStartYear(startYearOf(startMonth)); },[startMonth]);
+  const periodLabel=y=>{
+    const from=`${y}年${startMonth}月`, to=`${startMonth===1?y:y+1}年${startMonth===1?12:startMonth-1}月`;
+    return startMonth===7?`${y-KPI_FIRST_PERIOD_YEAR}期（${from}〜${to}）`:`${from}〜${to}`;
+  };
+  const headLabel=startMonth===7?`${startYear-KPI_FIRST_PERIOD_YEAR}期`:`${startYear}年度`;
   const [editing,setEditing]=React.useState(false);
   const [drafts,setDrafts]=React.useState({});
   const [msg,setMsg]=React.useState("");
   const version=useSharedSettingsVersion();
   const [savedTick,setSavedTick]=React.useState(0); // 保存した直後に表を作り直す
-  const months=SR.fiscalMonths(`${period+KPI_FIRST_PERIOD_YEAR}-07`,12);
+  const months=SR.fiscalMonths(`${startYear}-${String(startMonth).padStart(2,"0")}`,12);
   const keyOf=m=>`monthly_kpi_${storeId}_${m}`;
   const manual=React.useMemo(()=>{
     const out={};
     months.forEach(m=>{ try{ out[m]=JSON.parse(localStorage.getItem(keyOf(m))||"{}")||{}; }catch(e){ out[m]={}; } });
     return out;
-  },[storeId,period,version,savedTick]);
-  const rows=React.useMemo(()=>SR.buildMonthlyKpi(payments,{months,storeId,bookings,manual}),[payments,bookings,storeId,period,manual]);
-  const storeName=((stores||[]).find(s=>s.id===storeId)||{}).name||"";
+  },[storeId,startYear,startMonth,version,savedTick]);
+  const rows=React.useMemo(()=>SR.buildMonthlyKpi(payments,{months,storeId,bookings,manual,today:todayStr}),[payments,bookings,storeId,startYear,startMonth,manual,todayStr]);
   const n0=v=>v===null||v===undefined?"":Math.round(v).toLocaleString("ja-JP");
   const n1=v=>v===null||v===undefined?"":(Math.round(v*10)/10).toLocaleString("ja-JP");
   const n2=v=>v===null||v===undefined?"":(Math.round(v*100)/100).toLocaleString("ja-JP");
@@ -13365,10 +13373,10 @@ function MonthlyKpiPanel({payments,bookings,stores,todayStr}){
     else setMsg("⚠ 保存できませんでした（ログインし直して、もう一度保存してください）");
   }
   function exportCsv(){
-    const lines=[[`${period}期`,...months],...LINES.map(([l,f,fmt])=>[l.trim(),...rows.map(r=>r.empty&&!/営業利益/.test(l)?"":fmt(f(r)).replace(/,/g,""))])];
+    const lines=[[headLabel,...months],...LINES.map(([l,f,fmt])=>[l.trim(),...rows.map(r=>r.empty&&!/営業利益/.test(l)?"":fmt(f(r)).replace(/,/g,""))])];
     const csv=lines.map(c=>c.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(",")).join("\n");
     const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});
-    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`月次KPI_${storeName}_${period}期.csv`; a.click();
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`月次KPI_${storeName}_${headLabel}.csv`; a.click();
   }
   const th={padding:"7px 8px",fontSize:12,fontWeight:800,color:"white",background:"#1e3a5f",border:"1px solid #cbd5e1",textAlign:"center",whiteSpace:"nowrap"};
   const td={padding:"6px 8px",fontSize:13,border:"1px solid #cbd5e1",textAlign:"right",whiteSpace:"nowrap",minWidth:84};
@@ -13381,8 +13389,8 @@ function MonthlyKpiPanel({payments,bookings,stores,todayStr}){
         <select value={storeId} onChange={e=>setStoreId(Number(e.target.value))} aria-label="店舗" style={{padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontFamily:"inherit"}}>
           {(stores||[]).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
         </select>
-        <select value={period} onChange={e=>setPeriod(Number(e.target.value))} aria-label="期" style={{padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontFamily:"inherit"}}>
-          {[period-1,period,period+1].map(p=><option key={p} value={p}>{p}期（{p+KPI_FIRST_PERIOD_YEAR}年7月〜{p+KPI_FIRST_PERIOD_YEAR+1}年6月）</option>)}
+        <select value={startYear} onChange={e=>setStartYear(Number(e.target.value))} aria-label="年度" style={{padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontFamily:"inherit"}}>
+          {[startYear-1,startYear,startYear+1].map(y=><option key={y} value={y}>{periodLabel(y)}</option>)}
         </select>
         <button onClick={()=>{setEditing(v=>!v);setDrafts({});}} style={btn(editing)}>{editing?"手入力をやめる":"✏️ 手入力（請求・施術者人数・営業利益）"}</button>
         {editing&&<button onClick={saveManual} style={{...btn(true),background:"#059669",borderColor:"#059669"}}>保存</button>}
@@ -13393,7 +13401,7 @@ function MonthlyKpiPanel({payments,bookings,stores,todayStr}){
       </div>
       <div style={{overflowX:"auto",background:"white",border:"1px solid #cbd5e1"}}>
         <table style={{borderCollapse:"collapse"}}>
-          <thead><tr><th style={{...th,background:"white",color:"#1d4ed8",textAlign:"left"}}>{period}期</th>{months.map(m=><th key={m} style={th}>{m}</th>)}</tr></thead>
+          <thead><tr><th style={{...th,background:"white",color:"#1d4ed8",textAlign:"left"}}>{headLabel}</th>{months.map(m=><th key={m} style={th}>{m}</th>)}</tr></thead>
           <tbody>
             {editing&&INPUTS.map(([k,l])=>(
               <tr key={"in_"+k} style={{background:"#fffbeb"}}>
@@ -13419,8 +13427,8 @@ function MonthlyKpiPanel({payments,bookings,stores,todayStr}){
       </div>
       <div style={{fontSize:11,color:"#64748b",marginTop:8,lineHeight:1.8}}>
         カルテ枚数＝保険（柔整・鍼灸）で来院した実人数（保険診療＋鍼灸併用の方は柔整・鍼灸の両方に数え、合計では1人）。新患数＝初めての来院。再診数＝前回から1か月以上あいた来院。<br/>
-        請求単価＝保険請求÷総来院数（柔整・鍼灸はそれぞれの来院数で割る）。総単価＝売上÷総来院数。LTV（1ヶ月）＝売上÷実人数。平均来院数＝総来院数÷稼働日数。平均通院回数＝総来院数÷実人数。<br/>
-        離反数＝前の月に来院し、この月に1回も来なかった方（離反率は前の月の実人数に対する割合。今月はまだ途中のため多めに出ます）。1人生産性＝売上÷施術者人数。1日売上＝売上÷稼働日数。営業利益率＝営業利益÷売上。
+        請求単価＝保険請求÷総来院数（柔整・鍼灸はそれぞれの来院数で割る）。総単価＝売上÷総来院数。LTV（1ヶ月）＝カルテ1枚あたりの月の売上（売上÷カルテ枚数）。平均来院数＝総来院数÷稼働日数。平均通院回数＝総来院数÷カルテ枚数。<br/>
+        離反数＝最後の来院から1か月通院が無かった方（1か月たった日の月に数える。まだ1か月たっていない方は数えない）。離反率は前の月の実人数に対する割合。1人生産性＝売上÷施術者人数。1日売上＝売上÷稼働日数。営業利益率＝営業利益÷売上。
       </div>
     </div>
   );
