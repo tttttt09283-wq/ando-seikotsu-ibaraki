@@ -314,7 +314,8 @@ function rinenView() {
 
 function gradeChips(onclick, cur) {
   const mine = data.viewer.manualGrade;
-  return `<div class="chip-row">${data.grades.map((g) => `<button class="chip ${g === cur ? "sel" : ""} ${g === mine ? "mine" : ""}" onclick="${onclick}('${g}')">${gLabel(g)}${g === mine ? " ★" : ""}</button>`).join("")}</div>`;
+  const note = data.canEdit ? "" : `<div class="small" style="margin:-4px 0 10px;">見られるのは、自分のクラス（★）とその下のクラス、1つ上のクラスまでです。</div>`;
+  return `<div class="chip-row">${data.grades.map((g) => `<button class="chip ${g === cur ? "sel" : ""} ${g === mine ? "mine" : ""}" onclick="${onclick}('${g}')">${gLabel(g)}${g === mine ? " ★" : ""}</button>`).join("")}</div>${note}`;
 }
 
 function classView() {
