@@ -223,6 +223,9 @@ async function apiGet(path) {
 }
 
 // ===== 本部の台帳（hq_docs） =====
+// 給与・人件費の台帳は hq_private_docs（clinic_staff.salary_viewer の人だけ読める）
+const PRIVATE_DOC_KEYS = ["labor"];
+const docTable = (key) => PRIVATE_DOC_KEYS.includes(key) ? "hq_private_docs" : "hq_docs";
 const DOC_KEYS = ["org", "people", "fit", "accounting", "education", "career", "expansion", "annual", "marketing"];
 const saveTimers = {};
 function doc(key) {
@@ -239,7 +242,7 @@ function saveDoc(key) {
   flash("保存中…");
   saveTimers[key] = setTimeout(async () => {
     try {
-      await rest("hq_docs?on_conflict=key", {
+      await rest(`${docTable(key)}?on_conflict=key`, {
         method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
         body: { key, data: doc(key), updated_at: new Date().toISOString(), updated_by: S.user ? S.user.name : null },
       });
@@ -312,8 +315,11 @@ async function loadAll() {
   render();
   const jobs = [
     apiGet("/api/ledger").then((m) => { S.model = m; S.modelErr = null; }).catch((e) => { S.modelErr = e.message; }),
-    rest("hq_docs?select=key,data").then((rows) => { S.docs = {}; (rows || []).forEach((r) => { S.docs[r.key] = r.data || {}; }); S.docsErr = null; })
+    rest("hq_docs?select=key,data").then((rows) => { S.docs = Object.fromEntries(Object.entries(S.docs).filter(([k]) => PRIVATE_DOC_KEYS.includes(k))); (rows || []).forEach((r) => { S.docs[r.key] = r.data || {}; }); S.docsErr = null; })
       .catch((e) => { S.docsErr = /hq_docs/.test(e.message) ? "本部の保存先（hq_docs テーブル）がまだありません。sql/2026-11-11_hq_docs.sql を Supabase で実行してください" : e.message; }),
+    rest("rpc/is_salary_viewer", { method: "POST", body: {} }).then((v) => { S.salaryViewer = v === true; }).catch(() => { S.salaryViewer = false; }),
+    rest("hq_private_docs?select=key,data").then((rows) => { (rows || []).forEach((r) => { S.docs[r.key] = r.data || {}; }); S.privateErr = null; })
+      .catch((e) => { S.privateErr = /hq_private_docs|salary_viewer/.test(e.message) ? "給与・人件費の保存先（hq_private_docs）がまだありません。sql/2026-11-17_hq_private_docs.sql を Supabase で実行してください" : e.message; }),
     rest("stores?select=id,name,active").then((r) => { S.stores = r || []; }).catch(() => {}),
     selectAll("bookings", "select=id,patient_name,date,store_id,how_know,cancelled,is_training").then((b) => { S.bookings = b; }).catch((e) => { S.bookingsErr = e.message; }),
     loadFit(false),
@@ -650,7 +656,59 @@ function secFit() {
     ${yearRows}</table>
     <div class="legend"><span class="vtag short">人員不足</span>予算が目安の${Math.round((1 + tol) * 100)}%超 <span class="vtag ok">適正</span>${Math.round((1 - tol) * 100)}〜${Math.round((1 + tol) * 100)}% <span class="vtag surplus">人員に余裕</span>${Math.round((1 - tol) * 100)}%未満 <span>「実」＝実績 ÷ 目安</span></div>
   </div></div>`;
-  return head + controls + note + tiles + table + year;
+  return head + controls + note + tiles + table + fitLaborCard(b, month, mk, tol, tab) + year;
+}
+// 人件費 × 倍率 の売上設定（スタッフ別の人件費は hq_docs の labor。管理者だけが読める）
+function fitLaborClinics(tab) {
+  const names = [];
+  (tab ? tab.clinics : []).forEach((c) => names.push(c.name));
+  S.fit.org.filter((o) => o.start).forEach((o) => o.clinics.forEach((c) => { if (!names.some((n) => HQ.fitClinicKey(n) === c.key)) names.push(c.name); }));
+  return names;
+}
+function fitLaborCard(b, month, mk, tol, tab) {
+  const title = `<div class="card-h">💴 人件費 × 倍率 の売上設定</div>`;
+  if (S.privateErr) return `<div class="card">${title}<div class="card-b"><div class="err">${esc(S.privateErr)}</div></div></div>`;
+  if (S.salaryViewer !== true) return `<div class="card">${title}<div class="card-b"><div class="muted">給与・人件費を見る権限がこのアカウントにありません（clinic_staff の salary_viewer が必要です）。</div></div></div>`;
+  const d = doc("labor");
+  const people = d.people || [];
+  const clinicNamesL = fitLaborClinics(tab);
+  const plan = HQ.laborPlan({ people, multiplier: d.multiplier, budget: b, month, tol, clinicNames: clinicNamesL });
+  const mult = plan.mult;
+  const lcls = (id) => id === "low" ? "short" : id === "high" ? "surplus" : id; // 予算が低め＝人件費率が高い（赤）、予算が高め（黄）
+  const vt = (v) => `<span class="vtag ${lcls(v.id)}">${esc(v.label)}</span>`;
+  const lr = (r) => r === null ? "-" : `<span class="${r > 1 / mult * (1 + tol) ? "ng" : r < 1 / mult * (1 - tol) ? "ok" : ""}">${pct(r, 1)}</span>`;
+  const t = plan.total;
+  const monthTable = people.length ? `<table>
+    <tr><th class="l">院</th><th>人数</th><th>人件費（月平均）</th><th>売上設定（×${mult}）</th><th>予算</th><th>予算÷売上設定</th><th class="l">判定</th><th>人件費率（予算）</th><th>実績</th><th>人件費率（実績）</th></tr>
+    ${plan.rows.map((r) => `<tr><td class="l"><b>${esc(r.name)}</b></td><td>${r.count}名${r.estimated ? `<div class="small">見込み${r.estimated}名</div>` : ""}</td>
+      <td>${man(r.labor)}</td><td><b>${man(r.target)}</b></td><td>${man(r.budget)}</td><td><b>${pct(r.ratio, 0)}</b></td><td class="l">${vt(r.verdict)}</td>
+      <td>${lr(r.laborRate)}</td><td>${man(r.actual)}</td><td>${lr(r.actualLaborRate)}</td></tr>`).join("")}
+    <tr class="total"><td class="l">院の合計</td><td>${plan.rows.reduce((a, r) => a + r.count, 0)}名</td><td>${man(t.labor)}</td><td>${man(t.target)}</td><td>${man(t.budget)}</td><td>${pct(t.ratio, 0)}</td><td class="l">${vt(t.verdict)}</td><td>${lr(t.laborRate)}</td><td>${man(t.actual)}</td><td>${lr(t.actual ? t.labor / t.actual : null)}</td></tr>
+    ${t.unassignedCount ? `<tr><td class="l small">院に割り当てていない人（本部など）</td><td class="small">${t.unassignedCount}名</td><td class="small">${man(t.unassigned)}</td><td class="small">${man(t.unassigned * mult)}</td><td colspan="6" class="l small">全社では 人件費 ${man(t.companyLabor)} → 売上設定 <b>${man(t.companyTarget)}</b></td></tr>` : ""}
+  </table>
+  <div class="small" style="margin-top:6px;">予算 ÷ 売上設定 が ${Math.round((1 - tol) * 100)}〜${Math.round((1 + tol) * 100)}% なら適正。<span class="vtag short">予算が低め</span>＝人件費率が高くなる（${pct(1 / mult, 0)}超）、<span class="vtag surplus">予算が高め</span>＝人件費の${mult}倍より高い予算（今の人員で届くか確認）。人件費は支給合計（会社負担の社会保険料は含まない）。</div>`
+    : `<div class="muted">スタッフ別の人件費がまだ登録されていません。下の「スタッフ別の人件費」から追加してください。</div>`;
+  // 年度の一覧（予算 ÷ 売上設定）
+  const ym = HQ.FISCAL_MONTHS.map((m) => ({ m, p: HQ.laborPlan({ people, multiplier: d.multiplier, budget: b, month: m, tol, clinicNames: clinicNamesL }) }));
+  const yearL = people.length ? `<div class="scroll" style="margin-top:12px;"><table><tr><th class="l">予算 ÷ 売上設定</th>${ym.map((x) => `<th style="text-align:center;">${x.m}月</th>`).join("")}</tr>
+    ${plan.rows.map((r) => `<tr><td class="l"><b>${esc(r.name)}</b></td>${ym.map((x) => { const c = x.p.rows.find((y) => y.key === r.key); if (!c || c.ratio === null) return "<td></td>"; const cls = lcls(c.verdict.id); return `<td style="padding:3px;"><span class="fitcell ${cls} ${x.m === month ? "sel" : ""}" onclick="fitSetMonth(${x.m})">${pct(c.ratio, 0)}</span></td>`; }).join("")}</tr>`).join("")}
+  </table></div>` : "";
+  const sorted = [...people].sort((a, b2) => String(a.clinic || "~").localeCompare(String(b2.clinic || "~"), "ja") || (Number(b2.avg) || 0) - (Number(a.avg) || 0));
+  const editor = `<details style="margin-top:12px;" ${S.ui.laborOpen ? "open" : ""} ontoggle="S.ui.laborOpen=this.open"><summary style="cursor:pointer;font-weight:800;font-size:13px;color:#1e3a5f;">スタッフ別の人件費（${people.length}名）を見る・直す</summary>
+    <div class="small" style="margin:8px 0;">${esc(d.source || "")}　所属院を空欄にすると、院の合計には入らず全社の合計にだけ入ります。</div>
+    <div class="scroll"><table><tr><th class="l">氏名</th><th class="l">所属院</th><th>人件費（月平均）</th><th>×${mult}</th><th class="l">見込み</th><th class="l">メモ</th><th></th></tr>
+    ${sorted.map((p) => `<tr><td class="l">${inp("labor", `people.#${p.id}.name`, p.name, { style: "width:120px;" })}</td>
+      <td class="l">${sel("labor", `people.#${p.id}.clinic`, p.clinic, clinicNamesL, { blank: "（院に割り当てない）" })}</td>
+      <td>${inp("labor", `people.#${p.id}.avg`, p.avg, { num: 1, r: 1 })}</td><td>${man((Number(p.avg) || 0) * mult)}</td>
+      <td class="l">${chk("labor", `people.#${p.id}.est`, p.est)}</td>
+      <td class="l">${inp("labor", `people.#${p.id}.note`, p.note, { style: "width:200px;" })}</td>
+      <td><button class="btn-del" onclick="removeItem('labor','people','${p.id}','${esc(p.name || "この人")}')">✕</button></td></tr>`).join("")}
+    </table></div>
+    <button class="btn btn-gray btn-sm" style="margin-top:8px;" onclick="addItem('labor','people',{id:HQ.uid('l'),name:'',clinic:'',avg:null,est:true,note:''})">＋ スタッフを追加</button>
+  </details>`;
+  return `<div class="card"><div class="card-h"><span>💴 人件費 × ${mult} の売上設定（${esc(monthLabel(mk))}の予算と比較）</span>
+    <span style="display:flex;gap:6px;align-items:center;font-size:12px;font-weight:700;color:#64748b;">倍率 ${inp("labor", "multiplier", d.multiplier ?? HQ.LABOR_DEFAULT_MULT, { num: 1, r: 1, style: "width:60px;" })} 倍</span></div>
+    <div class="card-b scroll">${monthTable}${yearL}${editor}</div></div>`;
 }
 
 // ---------- 人材 ----------

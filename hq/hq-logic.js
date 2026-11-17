@@ -554,6 +554,65 @@
     return { fy, months, clinics };
   }
 
+  // ===== 人件費 × 倍率 の売上設定 =====
+  // people: [{ name, clinic, avg }]（avg＝月の平均人件費。本部が hq_docs の labor に保存）
+  // 院ごとに 人件費 × 倍率（初期値3）＝売上設定 を出し、その月の予算と比べる。
+  // 予算 ÷ 売上設定 が幅の中なら「適正」、上なら「予算が高め」（人件費率が低い）、下なら「予算が低め」（人件費率が高い）
+  const LABOR_DEFAULT_MULT = 3;
+  function laborVerdict(budget, target, tol) {
+    const t = tol === null || tol === undefined || !isFinite(tol) ? FIT_DEFAULT_TOL : tol;
+    if (budget === null || budget === undefined) return { id: "nobudget", label: "予算なし" };
+    if (!target) return { id: "nostaff", label: "人件費なし" };
+    const r = budget / target;
+    if (r > 1 + t) return { id: "high", label: "予算が高め" };
+    if (r < 1 - t) return { id: "low", label: "予算が低め" };
+    return { id: "ok", label: "適正" };
+  }
+  function laborPlan({ people, multiplier, budget, month, tol, clinicNames }) {
+    const mult = Number(multiplier) > 0 ? Number(multiplier) : LABOR_DEFAULT_MULT;
+    const bClinics = ((budget && budget.clinics) || []).filter((c) => c.key !== "全社");
+    const order = [];
+    const nameOf = {};
+    (clinicNames || []).forEach((n) => { const k = fitClinicKey(n); if (!order.includes(k)) { order.push(k); nameOf[k] = n; } });
+    const byKey = {};
+    let unassigned = 0, unassignedCount = 0;
+    for (const p of people || []) {
+      const avg = Number(p.avg) || 0;
+      const k = p.clinic ? fitClinicKey(p.clinic) : "";
+      if (!k) { unassigned += avg; unassignedCount++; continue; }
+      if (!order.includes(k)) { order.push(k); nameOf[k] = p.clinic; }
+      (byKey[k] = byKey[k] || []).push(p);
+    }
+    const rows = order.map((key) => {
+      const ms = byKey[key] || [];
+      const labor = sum(ms.map((p) => p.avg));
+      const target = labor * mult;
+      const bc = bClinics.find((c) => c.key === key);
+      const m = (bc && bc.months[month]) || { budget: null, actual: null };
+      return {
+        key, name: nameOf[key], count: ms.length, estimated: ms.filter((p) => p.est).length,
+        labor, target, budget: m.budget, actual: m.actual,
+        ratio: m.budget !== null && target ? m.budget / target : null,
+        laborRate: m.budget ? labor / m.budget : null,
+        actualLaborRate: m.actual ? labor / m.actual : null,
+        verdict: laborVerdict(m.budget, target, tol),
+      };
+    }).filter((r) => r.count || r.budget !== null);
+    const clinicLabor = sum(rows.map((r) => r.labor));
+    const budgetSum = sum(rows.map((r) => r.budget));
+    const hasActual = rows.some((r) => r.actual !== null);
+    const actualSum = hasActual ? sum(rows.map((r) => r.actual)) : null;
+    const total = {
+      labor: clinicLabor, target: clinicLabor * mult, budget: budgetSum, actual: actualSum,
+      ratio: clinicLabor ? budgetSum / (clinicLabor * mult) : null,
+      laborRate: budgetSum ? clinicLabor / budgetSum : null,
+      unassigned, unassignedCount,
+      companyLabor: clinicLabor + unassigned, companyTarget: (clinicLabor + unassigned) * mult,
+    };
+    total.verdict = laborVerdict(budgetSum || null, total.target, tol);
+    return { mult, rows, total };
+  }
+
   function uid(prefix) {
     return `${prefix || "x"}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
   }
@@ -566,5 +625,6 @@
     expansionProgress, newMilestones, annualByMonth, trainingStats, routineStatus, laborSummary, alerts, uid, normName,
     FIT_DEFAULT_RATES, FIT_DEFAULT_TOL, fitClinicKey, orgTabStart, parseOrgSheet, parseBudgetSheet, orgTabForMonth,
     roleCounts, capacityOf, fitVerdict, fitMonth, fitAdvice, fitYear,
+    LABOR_DEFAULT_MULT, laborVerdict, laborPlan,
   };
 })(typeof window !== "undefined" ? window : globalThis);

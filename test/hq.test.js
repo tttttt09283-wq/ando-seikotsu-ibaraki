@@ -257,3 +257,29 @@ test("fitMonth：予算÷目安で 人員不足・適正・人員に余裕・未
   assert.equal(HQ.fitMonth({ org, budget, month: 7, tol: 0.3 }).rows.find((x) => x.key === "南町").verdict.id, "ok");
   assert.equal(HQ.fitVerdict(null, 100, 0.1).id, "nobudget");
 });
+
+test("laborPlan：院ごとに 人件費×倍率＝売上設定 を出し、予算と比べる", () => {
+  const budget = { fy: 2026, clinics: [
+    { key: "東町", name: "東町", months: { 11: { budget: 3_000_000, lastYear: null, actual: 2_700_000 } } },
+    { key: "西町", name: "西町", months: { 11: { budget: 2_000_000, lastYear: null, actual: null } } },
+    { key: "南町", name: "南町", months: { 11: { budget: 4_000_000, lastYear: null, actual: null } } },
+  ] };
+  const people = [
+    { name: "甲", clinic: "東町院", avg: 600_000 }, { name: "乙", clinic: "東町院", avg: 400_000 }, // 100万×3＝300万 → 予算300万で適正
+    { name: "丙", clinic: "西町院", avg: 1_000_000 },                                               // 300万 → 予算200万は低め
+    { name: "丁", clinic: "南町院", avg: 1_000_000 },                                               // 300万 → 予算400万は高め
+    { name: "本部", clinic: "", avg: 500_000 },
+  ];
+  const r = HQ.laborPlan({ people, multiplier: 3, budget, month: 11, tol: 0.1, clinicNames: ["東町院", "西町院", "南町院"] });
+  const by = Object.fromEntries(r.rows.map((x) => [x.key, x]));
+  assert.equal(by["東町"].target, 3_000_000);
+  assert.equal(by["東町"].verdict.id, "ok");
+  assert.equal(by["東町"].actualLaborRate, 1_000_000 / 2_700_000);
+  assert.equal(by["西町"].verdict.id, "low");
+  assert.equal(by["西町"].laborRate, 0.5);
+  assert.equal(by["南町"].verdict.id, "high");
+  assert.equal(r.total.labor, 3_000_000);
+  assert.equal(r.total.unassigned, 500_000);
+  assert.equal(r.total.companyTarget, 10_500_000);
+  assert.equal(HQ.laborPlan({ people, multiplier: "", budget, month: 11, clinicNames: [] }).mult, 3);
+});
