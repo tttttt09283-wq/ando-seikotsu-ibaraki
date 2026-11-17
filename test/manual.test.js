@@ -140,3 +140,41 @@ test("行動マニュアル：トーク例は「■見出し」で区切る・�
   assert.deepEqual(v.scripts, [{ label: "", text: "本文だけ" }]);
   assert.throws(() => validateBehavior({ id: "x1", title: "", chapter: "a" }), /タイトル/);
 });
+
+import { visibleManualGrades, limitToGrades, COMMON as C2 } from "../lib/manual.js";
+test("マニュアルの見られるクラス：自分のクラスとその下＋1つ上まで。社長・GMは全クラス", () => {
+  assert.deepEqual(visibleManualGrades("G1", false), ["G1", "G2"]);
+  assert.deepEqual(visibleManualGrades("G2", false), ["G1", "G2", "G3"]);
+  assert.deepEqual(visibleManualGrades("G4", false), ["G1", "G2", "G3", "G4", "G5"]);
+  assert.deepEqual(visibleManualGrades("G6", false), ["G1", "G2", "G3", "G4", "G5", "G6"]);
+  assert.deepEqual(visibleManualGrades("G2", true), ["G1", "G2", "G3", "G4", "G5", "G6"]);
+  assert.deepEqual(visibleManualGrades("X", false), ["G1", "G2", "G3"], "クラスが分からないときは一般スタッフ扱い");
+});
+test("クラス別の内容（本文・評価項目との対応・カリキュラム）は見られるクラスの分だけ送る。共通は全員", () => {
+  const out = limitToGrades({
+    manual: [{ id: "a", grade: C2 }, { id: "b", grade: "G2" }, { id: "c", grade: "G4" }],
+    curriculum: [{ id: "s1", grade: "G1" }, { id: "s4", grade: "G4" }],
+    evaluation: { G1: [1], G2: [2], G4: [4] },
+    evalItemOptions: { [C2]: [0], G2: [2], G5: [5] },
+  }, ["G1", "G2", "G3"]);
+  assert.deepEqual(out.manual.map((m) => m.id), ["a", "b"]);
+  assert.deepEqual(out.curriculum.map((s) => s.id), ["s1"]);
+  assert.deepEqual(Object.keys(out.evaluation), ["G1", "G2"]);
+  assert.deepEqual(Object.keys(out.evalItemOptions), [C2, "G2"]);
+});
+
+import { buildPayload } from "../lib/manual-api.js";
+import { DEFAULT_BEHAVIOR as DB } from "../lib/behavior-manual.js";
+test("画面に送るデータ：一般スタッフ（G2）には G4 以上の本文・カリキュラムが含まれない。社長は全クラス", () => {
+  const sheets = { manual: DEFAULT_MANUAL, curriculum: DEFAULT_CURRICULUM, behavior: DB, progress: new Map(), reads: new Map(), items: withAddedDefaults(DEFAULT_ITEMS) };
+  const model = { people: [{ key: "staff", name: "一般", grade: "G2", clinics: ["香里園"] }, { key: "mgr", name: "院長", grade: "G4", clinics: ["香里園"] }] };
+  const staff = buildPayload({ model, viewer: { name: "一般", personKey: "staff", scope: "self", grade: "G2", clinics: ["香里園"] }, isAdmin: false, sheets });
+  assert.deepEqual(staff.grades, ["G1", "G2", "G3"]);
+  assert.ok(staff.manual.length > 0 && staff.manual.every((m) => [COMMON, "G1", "G2", "G3"].includes(m.grade)));
+  assert.ok(staff.curriculum.every((st) => ["G1", "G2", "G3"].includes(st.grade)));
+  assert.deepEqual(Object.keys(staff.evaluation).sort(), ["G1", "G2", "G3"]);
+  assert.equal(staff.behavior.length, DB.length, "行動マニュアルは全員");
+  const boss = buildPayload({ model, viewer: { name: "社長", personKey: null, scope: "all" }, isAdmin: true, sheets });
+  assert.equal(boss.grades.length, 6);
+  assert.equal(boss.manual.length, attachEval(DEFAULT_MANUAL, withAddedDefaults(DEFAULT_ITEMS)).length);
+});
