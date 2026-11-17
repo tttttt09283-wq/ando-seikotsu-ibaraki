@@ -13295,6 +13295,137 @@ function BulkReceiptPanel({payments,bookings,stores,refunds=[]}){
 // スタッフKPIの集計開始日（これより前＝プレオープン／イベント期間の予約・来院は集計に含めない）
 // ===== 売上日報・日計／累計表（POSの「総合売上日報」「日計／累計表」と同じ集計） =====
 // 計算は sales-report-logic.js（window.SalesReport）。テストは test/sales-report.test.js
+// ===== 月次KPI（期ごと：7月〜翌6月。スプレッドシートの「11期」の表と同じ項目） =====
+// 計算は sales-report-logic.js の buildMonthlyKpi。保険請求・施術者人数・営業利益は月ごとに手入力（共有設定に保存）
+const KPI_FIRST_PERIOD_YEAR=2015; // 11期＝2026年7月〜 → 期の数字＋2015 が始まりの年
+function MonthlyKpiPanel({payments,bookings,stores,todayStr}){
+  const SR=window.SalesReport;
+  const defaultStore=((stores||[]).find(s=>/香里園/.test(s.name||""))||(stores||[])[0]||{id:1}).id;
+  const [storeId,setStoreId]=React.useState(defaultStore);
+  const curStartYear=Number(todayStr.slice(5,7))>=7?Number(todayStr.slice(0,4)):Number(todayStr.slice(0,4))-1;
+  const [period,setPeriod]=React.useState(curStartYear-KPI_FIRST_PERIOD_YEAR);
+  const [editing,setEditing]=React.useState(false);
+  const [drafts,setDrafts]=React.useState({});
+  const [msg,setMsg]=React.useState("");
+  const version=useSharedSettingsVersion();
+  const [savedTick,setSavedTick]=React.useState(0); // 保存した直後に表を作り直す
+  const months=SR.fiscalMonths(`${period+KPI_FIRST_PERIOD_YEAR}-07`,12);
+  const keyOf=m=>`monthly_kpi_${storeId}_${m}`;
+  const manual=React.useMemo(()=>{
+    const out={};
+    months.forEach(m=>{ try{ out[m]=JSON.parse(localStorage.getItem(keyOf(m))||"{}")||{}; }catch(e){ out[m]={}; } });
+    return out;
+  },[storeId,period,version,savedTick]);
+  const rows=React.useMemo(()=>SR.buildMonthlyKpi(payments,{months,storeId,bookings,manual}),[payments,bookings,storeId,period,manual]);
+  const storeName=((stores||[]).find(s=>s.id===storeId)||{}).name||"";
+  const n0=v=>v===null||v===undefined?"":Math.round(v).toLocaleString("ja-JP");
+  const n1=v=>v===null||v===undefined?"":(Math.round(v*10)/10).toLocaleString("ja-JP");
+  const n2=v=>v===null||v===undefined?"":(Math.round(v*100)/100).toLocaleString("ja-JP");
+  const pct=v=>v===null||v===undefined?"":(Math.round(v*10)/10)+"%";
+  // [表示名, 値の取り出し, 書式, 仮の値かどうか]
+  const LINES=[
+    ["売上",r=>r.sales,n0,r=>r.claimEstimated],
+    ["　窓口売上",r=>r.windowSales,n0],
+    ["　保険請求（柔整）",r=>r.claimJu,n0,r=>r.claimEstimated],
+    ["　保険請求（鍼灸）",r=>r.claimAcu,n0,r=>r.claimEstimated],
+    ["総来院数",r=>r.visits,n0],
+    ["カルテ枚数",r=>r.karte,n0],
+    ["　柔整カルテ枚数",r=>r.karteJu,n0],
+    ["　鍼灸保険カルテ枚数",r=>r.karteAcu,n0],
+    ["鍼灸保険 来院数",r=>r.acuVisits,n0],
+    ["新患数",r=>r.newPatients,n0],
+    ["再診数",r=>r.revisits,n0],
+    ["窓口単価",r=>r.windowUnit,n0],
+    ["請求単価",r=>r.claimUnit,n0,r=>r.claimEstimated],
+    ["　柔整の請求単価",r=>r.claimUnitJu,n0,r=>r.claimEstimated],
+    ["　鍼灸保険の請求単価",r=>r.claimUnitAcu,n0,r=>r.claimEstimated],
+    ["総単価",r=>r.totalUnit,n0,r=>r.claimEstimated],
+    ["LTV（1ヶ月）",r=>r.ltv,n0,r=>r.claimEstimated],
+    ["平均来院数（1日）",r=>r.avgPerDay,n1],
+    ["平均通院回数",r=>r.avgVisitsPerPatient,n2],
+    ["離反数",r=>r.churn,n0],
+    ["離反率",r=>r.churnRate,pct],
+    ["施術者人数",r=>r.therapists,n1,r=>r.therapistsEstimated],
+    ["1人生産性",r=>r.productivity,n0,r=>r.claimEstimated||r.therapistsEstimated],
+    ["1日売上",r=>r.salesPerDay,n0,r=>r.claimEstimated],
+    ["営業利益",r=>r.operatingProfit,n0],
+    ["営業利益率",r=>r.operatingMargin,pct],
+  ];
+  const INPUTS=[["claimJu","保険請求（柔整）"],["claimAcu","保険請求（鍼灸）"],["therapists","施術者人数"],["operatingProfit","営業利益"]];
+  async function saveManual(){
+    setMsg("");
+    const entries={};
+    months.forEach(m=>{
+      const d=drafts[m]; if(!d) return;
+      entries[keyOf(m)]=JSON.stringify({...manual[m],...d});
+    });
+    if(!Object.keys(entries).length){ setEditing(false); return; }
+    const ok=await sharedSettings.saveNow(entries);
+    if(ok){ setDrafts({}); setEditing(false); setSavedTick(t=>t+1); setMsg("手入力の値を保存しました"); }
+    else setMsg("⚠ 保存できませんでした（ログインし直して、もう一度保存してください）");
+  }
+  function exportCsv(){
+    const lines=[[`${period}期`,...months],...LINES.map(([l,f,fmt])=>[l.trim(),...rows.map(r=>r.empty&&!/営業利益/.test(l)?"":fmt(f(r)).replace(/,/g,""))])];
+    const csv=lines.map(c=>c.map(x=>`"${String(x).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`月次KPI_${storeName}_${period}期.csv`; a.click();
+  }
+  const th={padding:"7px 8px",fontSize:12,fontWeight:800,color:"white",background:"#1e3a5f",border:"1px solid #cbd5e1",textAlign:"center",whiteSpace:"nowrap"};
+  const td={padding:"6px 8px",fontSize:13,border:"1px solid #cbd5e1",textAlign:"right",whiteSpace:"nowrap",minWidth:84};
+  const btn=on=>({padding:"8px 12px",borderRadius:8,border:"1.5px solid "+(on?"#1e3a5f":"#e2e8f0"),background:on?"#1e3a5f":"white",color:on?"white":"#374151",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"});
+  return(
+    <div style={{padding:16,maxWidth:1500,margin:"0 auto"}}>
+      <div style={{fontSize:22,fontWeight:900,color:"#0f172a",marginBottom:4}}>月次KPI（{storeName}）</div>
+      <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>予約システムの会計から月ごとに集計します。売上＝窓口の売上（返金を引く）＋保険請求。<span style={{color:"#94a3b8",fontStyle:"italic"}}>※の付いた灰色の数字</span>は、保険請求（実人数×1,000円）や施術者人数（その月に担当した人数）を仮の値で計算しています。「手入力」から実際の値を入れると置き換わります。</div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",marginBottom:12}}>
+        <select value={storeId} onChange={e=>setStoreId(Number(e.target.value))} aria-label="店舗" style={{padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontFamily:"inherit"}}>
+          {(stores||[]).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <select value={period} onChange={e=>setPeriod(Number(e.target.value))} aria-label="期" style={{padding:"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontFamily:"inherit"}}>
+          {[period-1,period,period+1].map(p=><option key={p} value={p}>{p}期（{p+KPI_FIRST_PERIOD_YEAR}年7月〜{p+KPI_FIRST_PERIOD_YEAR+1}年6月）</option>)}
+        </select>
+        <button onClick={()=>{setEditing(v=>!v);setDrafts({});}} style={btn(editing)}>{editing?"手入力をやめる":"✏️ 手入力（請求・施術者人数・営業利益）"}</button>
+        {editing&&<button onClick={saveManual} style={{...btn(true),background:"#059669",borderColor:"#059669"}}>保存</button>}
+        {msg&&<span style={{fontSize:13,fontWeight:700,color:msg.startsWith("⚠")?"#b91c1c":"#047857"}}>{msg}</span>}
+        <span style={{flex:1}}/>
+        <button onClick={()=>window.print()} style={btn(false)}>印刷</button>
+        <button onClick={exportCsv} style={btn(false)}>ファイル出力</button>
+      </div>
+      <div style={{overflowX:"auto",background:"white",border:"1px solid #cbd5e1"}}>
+        <table style={{borderCollapse:"collapse"}}>
+          <thead><tr><th style={{...th,background:"white",color:"#1d4ed8",textAlign:"left"}}>{period}期</th>{months.map(m=><th key={m} style={th}>{m}</th>)}</tr></thead>
+          <tbody>
+            {editing&&INPUTS.map(([k,l])=>(
+              <tr key={"in_"+k} style={{background:"#fffbeb"}}>
+                <td style={{...td,textAlign:"left",fontWeight:700,background:"#fef3c7"}}>✏️ {l}</td>
+                {months.map(m=>{
+                  const v=drafts[m]&&drafts[m][k]!==undefined?drafts[m][k]:(manual[m][k]??"");
+                  return <td key={m} style={{...td,padding:3}}><input value={v} inputMode="decimal" aria-label={`${m} ${l}`} onChange={e=>setDrafts(prev=>({...prev,[m]:{...(prev[m]||{}),[k]:e.target.value}}))} style={{width:84,padding:"4px 6px",border:"1.5px solid #e2e8f0",borderRadius:6,textAlign:"right",fontFamily:"inherit"}}/></td>;
+                })}
+              </tr>
+            ))}
+            {LINES.map(([l,f,fmt,est])=>(
+              <tr key={l}>
+                <td style={{...td,textAlign:"left",background:"#f1f5f9",fontWeight:l.startsWith("　")?500:700,minWidth:150}}>{l}</td>
+                {rows.map(r=>{
+                  const show=!r.empty||/営業利益/.test(l);
+                  const isEst=show&&est&&est(r)&&f(r)!==null;
+                  return <td key={r.month} style={{...td,color:isEst?"#94a3b8":"#0f172a",fontStyle:isEst?"italic":"normal"}}>{show?fmt(f(r)):""}{isEst?"※":""}</td>;
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{fontSize:11,color:"#64748b",marginTop:8,lineHeight:1.8}}>
+        カルテ枚数＝保険（柔整・鍼灸）で来院した実人数（保険診療＋鍼灸併用の方は柔整・鍼灸の両方に数え、合計では1人）。新患数＝初めての来院。再診数＝前回から1か月以上あいた来院。<br/>
+        請求単価＝保険請求÷総来院数（柔整・鍼灸はそれぞれの来院数で割る）。総単価＝売上÷総来院数。LTV（1ヶ月）＝売上÷実人数。平均来院数＝総来院数÷稼働日数。平均通院回数＝総来院数÷実人数。<br/>
+        離反数＝前の月に来院し、この月に1回も来なかった方（離反率は前の月の実人数に対する割合。今月はまだ途中のため多めに出ます）。1人生産性＝売上÷施術者人数。1日売上＝売上÷稼働日数。営業利益率＝営業利益÷売上。
+      </div>
+    </div>
+  );
+}
+
 function SalesReportPanel({payments,bookings,stores,todayStr}){
   const SR=window.SalesReport;
   const monthStart=todayStr.slice(0,8)+"01";
@@ -16906,6 +17037,7 @@ function Dashboard({user,onLogout}){
       {id:"staff_kpi",label:"スタッフKPI管理",icon:"trending",special:""},
       {id:"staff_summary",label:"個人サマリー（売上・客数・客単価）",icon:"bar-chart",special:""},
       {id:"sales_report",label:"総合売上日報・日計／累計表",icon:"bar-chart",special:""},
+      {id:"monthly_kpi",label:"月次KPI（期ごと：売上・カルテ枚数・単価・LTV・離反）",icon:"trending",special:""},
     ]},
     {id:"money",label:"お金・会計",color:"#b45309",items:[
       {id:"money_calc",label:"当日の会計明細・金額計算・小口",icon:"receipt",special:""},
@@ -17575,6 +17707,7 @@ function Dashboard({user,onLogout}){
                              {view==="staff_kpi"&&<StaffKPIPanel onOpenPatient={openPatientByName} bookings={bookings} payments={paymentsNet} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr} trainingMode={trainingMode}/>}
                              {view==="staff_summary"&&<StaffSummaryPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}
                              {view==="sales_report"&&<SalesReportPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}
+                             {view==="monthly_kpi"&&<MonthlyKpiPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}
                              {view==="staff_mandala"&&<StaffMandalaPanel user={user} isAdmin={isAdmin} payments={paymentsNet} bookings={bookings} todayStr={todayStr}/>}
                              {view==="pass_holders"&&<PassHoldersPanel payments={payments} bookings={bookings} refunds={refunds} trainingMode={trainingMode} onOpenPatient={openPatientByName}/>}
                              {view==="referral_mgmt"&&<ReferralMgmtPanel bookings={bookings} payments={payments}/>}

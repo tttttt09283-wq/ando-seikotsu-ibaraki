@@ -244,7 +244,75 @@
     return r;
   }
 
-  const api={insuranceSplit,insuranceDepts,CLAIM_PER_PERSON,DEPTS,GOODS_KINDS,isGoods,goodsKind,PAY_KINDS,parsePayments,visitsOf,classifyVisits,VISIT_CLASSES,patientProfiles,GENDERS,genderKey,
+  // ===== 月次KPI（期ごとの月別の表：売上・来院数・カルテ枚数・単価・LTV・離反など） =====
+  // 売上＝窓口の売上（返金を引く）＋保険請求。保険請求・施術者人数・営業利益は月ごとに手入力でき、
+  // 入っていない月は 保険請求＝実人数×1,000円（柔整・鍼灸それぞれ）、施術者人数＝その月に担当した人数 で仮に計算する
+  const addMonthsYm=(ym,n)=>{ const [y,m]=ym.split("-").map(Number); const d=new Date(Date.UTC(y,m-1+n,1)); return d.toISOString().slice(0,7); };
+  function fiscalMonths(startYm,count){ return Array.from({length:count||12},(_,i)=>addMonthsYm(startYm,i)); }
+  function buildMonthlyKpi(payments,opts){
+    const o=opts||{};
+    const bookingById={}; (o.bookings||[]).forEach(b=>{ bookingById[b.id]=b; });
+    const inStore=p=>o.storeId==null||p.booking_id==null||((bookingById[p.booking_id]||{}).store_id||1)===o.storeId;
+    const pays=(payments||[]).filter(inStore);
+    const visits=visitsOf(pays);
+    // 再診＝前回の来院から1か月以上あいて来た来院（日計表と同じ）
+    const byPatient={};
+    visits.forEach(v=>{ (byPatient[v.patient]=byPatient[v.patient]||[]).push(v); });
+    const revisit=new Set(), firstVisit=new Set();
+    Object.values(byPatient).forEach(list=>{
+      list.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+      list.forEach((v,i)=>{
+        if(i===0){ firstVisit.add(v.key); return; }
+        const prev=list[i-1].date, back=addMonthsYm(prev.slice(0,7),1)+prev.slice(7);
+        if(v.date>=back) revisit.add(v.key);
+      });
+    });
+    const manual=o.manual||{};
+    const num=v=>v===""||v===null||v===undefined?null:(Number.isFinite(Number(v))?Number(v):null);
+    const rowOf=month=>{
+      const mv=visits.filter(v=>v.date.slice(0,7)===month);
+      const refunds=pays.filter(p=>p.is_refund&&String(p.payment_date||"").slice(0,7)===month);
+      const counter=Object.fromEntries(["ju","acu"].map(k=>[k,{visits:0,people:new Set()}]));
+      const people=new Set(), staff=new Set(), days=new Set();
+      let window_=0;
+      mv.forEach(v=>{
+        people.add(v.patient||v.key); staff.add(v.staffId); days.add(v.date);
+        v.payments.forEach(p=>{ window_+=Number(p.total_amount)||0; });
+        const dj=v.payments.some(p=>insuranceDepts(p).ju), da=v.payments.some(p=>insuranceDepts(p).acu);
+        if(dj){ counter.ju.visits++; counter.ju.people.add(v.patient||v.key); }
+        if(da){ counter.acu.visits++; counter.acu.people.add(v.patient||v.key); }
+      });
+      refunds.forEach(p=>{ window_+=Number(p.total_amount)||0; });
+      const m=manual[month]||{};
+      const claimJu=num(m.claimJu)!==null?num(m.claimJu):counter.ju.people.size*CLAIM_PER_PERSON.ju;
+      const claimAcu=num(m.claimAcu)!==null?num(m.claimAcu):counter.acu.people.size*CLAIM_PER_PERSON.acu;
+      const claimEstimated=num(m.claimJu)===null||num(m.claimAcu)===null;
+      const therapists=num(m.therapists)!==null?num(m.therapists):[...staff].filter(Boolean).length;
+      const sales=window_+claimJu+claimAcu;
+      const n=mv.length, d=days.size, ppl=people.size;
+      // 離反＝前の月に来院し、この月に1回も来なかった方
+      const prevPeople=new Set(visits.filter(v=>v.date.slice(0,7)===addMonthsYm(month,-1)).map(v=>v.patient||v.key));
+      const churn=[...prevPeople].filter(k=>!people.has(k)).length;
+      const div=(a,b)=>b?a/b:null;
+      const op=num(m.operatingProfit);
+      return {
+        month, empty:n===0,
+        sales, windowSales:window_, claimJu, claimAcu, claim:claimJu+claimAcu, claimEstimated,
+        visits:n, karte:new Set([...counter.ju.people,...counter.acu.people]).size,
+        karteJu:counter.ju.people.size, karteAcu:counter.acu.people.size, acuVisits:counter.acu.visits, juVisits:counter.ju.visits,
+        newPatients:mv.filter(v=>firstVisit.has(v.key)).length, revisits:mv.filter(v=>revisit.has(v.key)).length,
+        windowUnit:div(window_,n), claimUnit:div(claimJu+claimAcu,n),
+        claimUnitJu:div(claimJu,counter.ju.visits), claimUnitAcu:div(claimAcu,counter.acu.visits),
+        totalUnit:div(sales,n), ltv:div(sales,ppl), avgPerDay:div(n,d), avgVisitsPerPatient:div(n,ppl),
+        churn, churnRate:prevPeople.size?churn/prevPeople.size*100:null,
+        therapists, therapistsEstimated:num(m.therapists)===null, productivity:div(sales,therapists), salesPerDay:div(sales,d),
+        days:d, people:ppl, operatingProfit:op, operatingMargin:op===null?null:div(op,sales)!==null?div(op,sales)*100:null,
+      };
+    };
+    return (o.months||[]).map(rowOf);
+  }
+
+  const api={buildMonthlyKpi,fiscalMonths,insuranceSplit,insuranceDepts,CLAIM_PER_PERSON,DEPTS,GOODS_KINDS,isGoods,goodsKind,PAY_KINDS,parsePayments,visitsOf,classifyVisits,VISIT_CLASSES,patientProfiles,GENDERS,genderKey,
     AGE_BANDS,ageBand,SOURCES,sourceKey,splitAmounts,rateKey,TECH_ROWS,buildReport};
   root.SalesReport=api;
 })(typeof window!=="undefined"?window:globalThis);
