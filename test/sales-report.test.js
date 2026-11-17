@@ -82,7 +82,7 @@ test("保険の窓口負担を柔整・鍼灸に分ける（分けて保存し�
   assert.deepEqual(plain(r.acuIns), { count: 1, amount: 600 });
 });
 
-test("部門：保険診療＋鍼灸併用は両方に数え、請求（見込み）は実人数×1,000円", () => {
+test("部門：保険診療＋鍼灸併用は両方に数え、請求（見込み）は来院回数×1,000円", () => {
   const P = (id, name, date, ins, type, ju, acu) => ({ id, booking_id: id, patient_name: name, payment_date: date, staff_id: 1, insurance_amount: ins, jifee_amount: 0, total_amount: ins, insurance_type: type, ju_insurance_amount: ju, acu_insurance_amount: acu });
   const r = SR.buildReport([
     P(1, "架空 一", "2026-11-01", 1400, "手技療法＋鍼灸併用", 800, 600),
@@ -90,8 +90,8 @@ test("部門：保険診療＋鍼灸併用は両方に数え、請求（見込�
     P(3, "架空 二", "2026-11-02", 800, "手技療法", 800, 0),
     P(4, "架空 三", "2026-11-03", 0, "鍼灸のみ", 0, 0), // 医療助成0円でも鍼灸の部門
   ], { from: "2026-11-01", to: "2026-11-30", bookings: [] });
-  assert.deepEqual(plain(r.dept.ju), { visits: 3, amount: 2400, peopleCount: 2, claim: 2000 });
-  assert.deepEqual(plain(r.dept.acu), { visits: 3, amount: 1200, peopleCount: 2, claim: 2000 });
+  assert.deepEqual(plain(r.dept.ju), { visits: 3, amount: 2400, peopleCount: 2, claim: 3000 });
+  assert.deepEqual(plain(r.dept.acu), { visits: 3, amount: 1200, peopleCount: 2, claim: 3000 });
 });
 
 test("月次KPI：売上＝窓口＋保険請求、カルテ枚数・新患・再診・離反・単価", () => {
@@ -106,16 +106,16 @@ test("月次KPI：売上＝窓口＋保険請求、カルテ枚数・新患・�
   const [sep, oct] = SR.buildMonthlyKpi(pays, { months: ["2026-09", "2026-10"], bookings: [] });
   assert.equal(oct.visits, 3);
   assert.equal(oct.windowSales, 1400 + 600 + 3600);
-  assert.equal(oct.claimJu, 1000);   // 柔整の実人数1人×1,000円（仮）
-  assert.equal(oct.claimAcu, 2000);  // 鍼灸の実人数2人×1,000円（仮）
-  assert.equal(oct.sales, 5600 + 3000);
+  assert.equal(oct.claimJu, 1000);   // 柔整の来院1回×1,000円（仮）
+  assert.equal(oct.claimAcu, 3000);  // 鍼灸の来院3回×1,000円（仮）
+  assert.equal(oct.sales, 5600 + 4000);
   assert.deepEqual(plain([oct.karte, oct.karteJu, oct.karteAcu, oct.acuVisits]), [2, 1, 2, 3]);
   assert.deepEqual(plain([oct.newPatients, oct.revisits]), [1, 1]);
   assert.equal(oct.churn, 2);          // 9/10の架空 一（次は10/11＝1か月超）・9/12の架空 二（以後なし）が10月に1か月通院なし
   assert.equal(Math.round(oct.churnRate), 100); // 前の月の実人数2人に対して
-  assert.equal(Math.round(oct.ltv), Math.round(8600 / 2)); // 売上÷カルテ枚数
+  assert.equal(Math.round(oct.ltv), Math.round(9600 / 2)); // 売上÷カルテ枚数
   assert.equal(oct.avgVisitsPerPatient, 3 / 2);            // 総来院数÷カルテ枚数
-  assert.equal(Math.round(oct.claimUnitAcu), Math.round(2000 / 3));
+  assert.equal(Math.round(oct.claimUnitAcu), 1000);
   assert.equal(oct.days, 2);
   assert.equal(sep.claimEstimated, true);
   // 手入力した請求額・施術者人数・営業利益を使う
