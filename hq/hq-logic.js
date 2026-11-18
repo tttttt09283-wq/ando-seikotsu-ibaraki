@@ -382,7 +382,7 @@
       if (c >= 0) { r0 = r; c0 = c; }
     }
     const start = orgTabStart(title);
-    const out = { title, start, scenario: !start, clinics: [], rates: { ...FIT_DEFAULT_RATES } };
+    const out = { title, start, scenario: !start, clinics: [], rates: { ...FIT_DEFAULT_RATES }, issues: parseOrgIssues(rows) };
     if (r0 < 0) return out;
     const head = rows[r0] || [];
     const cols = [];
@@ -404,6 +404,56 @@
     }
     return out;
   }
+  // 「問題点」と書かれたセルの下に並ぶ文を読む（空欄が2つ続いたら終わり）
+  function parseOrgIssues(rows) {
+    const out = [];
+    for (let r = 0; r < rows.length; r++) {
+      const row = rows[r] || [];
+      for (let c = 0; c < row.length; c++) {
+        if (String(row[c] ?? "").replace(/[\s　:：]/g, "") !== "問題点") continue;
+        let blanks = 0;
+        for (let rr = r + 1; rr < rows.length && blanks < 2; rr++) {
+          const v = (rows[rr] || [])[c];
+          if (isBlank(v)) { blanks++; continue; }
+          blanks = 0;
+          const text = String(v).trim();
+          if (!out.includes(text)) out.push(text);
+        }
+      }
+    }
+    return out;
+  }
+  // 問題点の文から関係する院を推測（「茨木・交野の余剰人員」→ 茨木・交野）
+  function issueClinics(text, clinicNames) {
+    const t = String(text || "");
+    return (clinicNames || []).filter((n) => { const k = fitClinicKey(n); return k && t.includes(k); });
+  }
+  // シートの問題点に付けるID（タブ名＋文から。状態・メモの保存に使う）
+  function issueId(tab, text) {
+    let h = 5381;
+    const s = `${tab}\u0000${text}`;
+    for (let i = 0; i < s.length; i++) h = ((h * 33) ^ s.charCodeAt(i)) >>> 0;
+    return `s${h.toString(36)}`;
+  }
+  const ISSUE_STATUSES = ["未対応", "対応中", "解決済み"];
+  // シートの問題点（状態は本部が保存）と本部で追加した問題点をまとめる
+  function mergeIssues(orgTabs, fitDoc, clinicNames) {
+    const d = fitDoc || {};
+    const state = d.sheetIssues || {};
+    const out = [];
+    for (const t of orgTabs || []) {
+      for (const text of t.issues || []) {
+        const id = issueId(t.title, text);
+        const st = state[id] || {};
+        out.push({ id, source: "sheet", tab: t.title, text, clinics: st.clinic ? [st.clinic] : issueClinics(text, clinicNames), status: st.status || "未対応", memo: st.memo || "", owner: st.owner || "" });
+      }
+    }
+    for (const x of d.issues || []) {
+      out.push({ id: x.id, source: "hq", tab: x.tab || "", text: x.text || "", clinics: x.clinic ? [x.clinic] : issueClinics(x.text, clinicNames), status: x.status || "未対応", memo: x.memo || "", owner: x.owner || "" });
+    }
+    return out;
+  }
+
   // 年度予算シートの1タブ → 院ごと・月ごとの { budget, lastYear, actual }
   //   ・「7月」〜「6月」が並ぶ行を見出しとみなす
   //   ・行の種類：期間（R8.7~R9.6 → その年度の予算／1年前 → 前年実績）・「予算」・「実績」。比率や差額の行は読まない
@@ -625,6 +675,6 @@
     expansionProgress, newMilestones, annualByMonth, trainingStats, routineStatus, laborSummary, alerts, uid, normName,
     FIT_DEFAULT_RATES, FIT_DEFAULT_TOL, fitClinicKey, orgTabStart, parseOrgSheet, parseBudgetSheet, orgTabForMonth,
     roleCounts, capacityOf, fitVerdict, fitMonth, fitAdvice, fitYear,
-    LABOR_DEFAULT_MULT, laborVerdict, laborPlan,
+    LABOR_DEFAULT_MULT, laborVerdict, laborPlan, parseOrgIssues, issueClinics, issueId, ISSUE_STATUSES, mergeIssues,
   };
 })(typeof window !== "undefined" ? window : globalThis);

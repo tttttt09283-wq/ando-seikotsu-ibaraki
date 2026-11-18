@@ -619,6 +619,8 @@ function secFit() {
     <div class="small" style="margin-top:8px;">1人あたりの目安：${Object.entries(rates).filter(([, v]) => v).map(([k, v]) => `${esc(k)} ${man(v)}`).join("・")}（受付は売上の目安に含めません）／読込 ${esc(new Date(S.fit.loadedAt).toLocaleString("ja-JP"))}</div>
   </div></div>`;
 
+  const allIssues = fitIssues();
+  const openIssues = allIssues.filter((x) => x.status !== "解決済み" && (!tab || x.tab === tab.title || x.source === "hq" && !x.tab));
   const t = res.total;
   const cnt = (id) => res.count[id] || 0;
   const tiles = `<div class="grid g4" style="margin-bottom:14px;">
@@ -638,7 +640,7 @@ function secFit() {
       <td class="${r.gap === null ? "" : r.gap > 0 ? "ng" : "ok"}">${r.staffGap === null ? "-" : `${r.gap > 0 ? "−" : "+"}${Math.abs(r.staffGap)}人`}<div class="small">${r.gap === null ? "" : (r.gap > 0 ? "不足 " : "余裕 ") + man(Math.abs(r.gap))}</div></td>
       <td>${man(r.actual)}${r.achievement !== null ? `<div class="small ${rateCls(r.achievement)}">達成 ${pct(r.achievement, 0)}</div>` : ""}</td>
       <td>${pct(r.actualRatio, 0)}</td>
-      <td class="l wrap small" style="min-width:240px;">${r.advice.map(esc).join("<br>")}</td></tr>`).join("")}
+      <td class="l wrap small" style="min-width:240px;">${r.advice.map(esc).join("<br>")}${openIssues.filter((x) => x.clinics.some((c) => HQ.fitClinicKey(c) === r.key)).map((x) => `<div class="warn" style="margin-top:3px;">📝 ${esc(x.text)}<span class="muted">（${esc(x.status)}）</span></div>`).join("")}</td></tr>`).join("")}
     <tr class="total"><td class="l">全社</td><td></td><td>${man(t.capacity)}</td><td>${man(t.budget)}</td><td>${pct(t.ratio, 0)}</td><td class="l"><span class="vtag ${t.verdict.id}">${esc(t.verdict.label)}</span></td><td></td><td>${man(t.actual)}</td><td>${pct(t.actualRatio, 0)}</td><td></td></tr>
   </table><div class="small" style="margin-top:6px;">過不足は施術者（${man(rates["施術者"] || HQ.FIT_DEFAULT_RATES["施術者"])}／人）に換算した人数。−は足りない、＋は余っている人数です。</div></div></div>`;
 
@@ -656,7 +658,47 @@ function secFit() {
     ${yearRows}</table>
     <div class="legend"><span class="vtag short">人員不足</span>予算が目安の${Math.round((1 + tol) * 100)}%超 <span class="vtag ok">適正</span>${Math.round((1 - tol) * 100)}〜${Math.round((1 + tol) * 100)}% <span class="vtag surplus">人員に余裕</span>${Math.round((1 - tol) * 100)}%未満 <span>「実」＝実績 ÷ 目安</span></div>
   </div></div>`;
-  return head + controls + note + tiles + table + fitLaborCard(b, month, mk, tol, tab) + year;
+  return head + controls + note + tiles + table + fitIssuesCard(allIssues, tab) + fitLaborCard(b, month, mk, tol, tab) + year;
+}
+// ---- 組織図の問題点（シートの「問題点」の列＋本部で追加したもの） ----
+function fitIssueClinicNames() {
+  const names = [];
+  (S.fit ? S.fit.org : []).forEach((o) => o.clinics.forEach((c) => { if (!names.some((n) => HQ.fitClinicKey(n) === c.key)) names.push(c.name); }));
+  return names;
+}
+function fitIssues() { return S.fit ? HQ.mergeIssues(S.fit.org, doc("fit"), fitIssueClinicNames()) : []; }
+function fitIssuesCard(all, tab) {
+  const scope = S.ui.issueScope || "tab";
+  const statusF = S.ui.issueStatus || "open";
+  let list = all.filter((x) => scope === "all" || !tab || x.tab === tab.title || (x.source === "hq" && !x.tab));
+  if (statusF === "open") list = list.filter((x) => x.status !== "解決済み");
+  const order = { "未対応": 0, "対応中": 1, "解決済み": 2 };
+  list = [...list].sort((a, b) => order[a.status] - order[b.status]);
+  const clinics = fitIssueClinicNames();
+  const tabs = S.fit.org.map((o) => o.title);
+  const stCls = (s) => s === "解決済み" ? "green" : s === "対応中" ? "amber" : "red";
+  const rows = list.map((x) => {
+    const base = x.source === "sheet" ? `sheetIssues.${x.id}` : `issues.#${x.id}`;
+    const textCell = x.source === "sheet" ? `<b>${esc(x.text)}</b>` : inp("fit", `${base}.text`, x.text, { ph: "問題点を入力", style: "width:100%;min-width:220px;" });
+    const curClinic = x.source === "sheet" ? ((doc("fit").sheetIssues || {})[x.id] || {}).clinic || "" : ((doc("fit").issues || []).find((y) => y.id === x.id) || {}).clinic || "";
+    return `<tr><td class="l"><span class="tag ${x.source === "sheet" ? "blue" : "violet"}">${x.source === "sheet" ? "シート" : "本部で追加"}</span><div class="small">${esc(x.tab || "-")}</div></td>
+      <td class="l wrap">${textCell}</td>
+      <td class="l">${sel("fit", `${base}.clinic`, curClinic, clinics, { blank: x.clinics.length && !curClinic ? `自動：${x.clinics.join("・")}` : "（院を指定しない）" })}</td>
+      <td class="l"><span class="tag ${stCls(x.status)}" style="margin-right:4px;">●</span>${sel("fit", `${base}.status`, x.status, HQ.ISSUE_STATUSES)}</td>
+      <td class="l">${inp("fit", `${base}.owner`, x.owner, { ph: "担当", style: "width:90px;" })}</td>
+      <td class="l">${inp("fit", `${base}.memo`, x.memo, { ph: "対応・メモ", style: "width:220px;" })}</td>
+      <td>${x.source === "hq" ? `<button class="btn-del" onclick="removeItem('fit','issues','${x.id}','${esc(x.text || "この問題点")}')">✕</button>` : ""}</td></tr>`;
+  }).join("");
+  const openN = all.filter((x) => x.status !== "解決済み").length;
+  const newTab = tab ? tab.title : "";
+  return `<div class="card"><div class="card-h"><span>📝 組織図の問題点（未解決 ${openN}件）</span>
+    <span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+      <span class="chips" style="margin:0;"><button class="chip ${scope === "tab" ? "sel" : ""}" onclick="ui('issueScope','tab')">${esc(tab ? tab.title : "この月")}</button><button class="chip ${scope === "all" ? "sel" : ""}" onclick="ui('issueScope','all')">すべてのタブ</button></span>
+      <span class="chips" style="margin:0;"><button class="chip ${statusF === "open" ? "sel" : ""}" onclick="ui('issueStatus','open')">未解決だけ</button><button class="chip ${statusF === "all" ? "sel" : ""}" onclick="ui('issueStatus','all')">解決済みも</button></span>
+      <button class="btn btn-blue btn-sm" onclick="addItem('fit','issues',{id:HQ.uid('i'),tab:${esc(JSON.stringify(newTab))},text:'',clinic:'',status:'未対応',owner:'',memo:'',created:todayStr})">＋ 問題点を追加</button>
+    </span></div>
+    <div class="card-b scroll">${rows ? `<table><tr><th class="l">出どころ</th><th class="l">問題点</th><th class="l">関係する院</th><th class="l">状態</th><th class="l">担当</th><th class="l">メモ</th><th></th></tr>${rows}</table>` : `<div class="muted">${statusF === "open" ? "未解決の問題点はありません。" : "問題点はありません。"}組織図シートの「問題点」の列に書くか、「＋ 問題点を追加」から追加できます。</div>`}
+    <div class="small" style="margin-top:6px;">シートの問題点は組織図シートの「問題点」と書いたセルの下から読み込みます（文を直すときはシートで）。状態・担当・メモと「本部で追加」した問題点は本部システムに保存されます。未解決の問題点は、上の院別判定の「理由・打ち手」にも出ます。</div></div></div>`;
 }
 // 人件費 × 倍率 の売上設定（スタッフ別の人件費は hq_docs の labor。管理者だけが読める）
 function fitLaborClinics(tab) {
