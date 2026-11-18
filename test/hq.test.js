@@ -283,3 +283,26 @@ test("laborPlan：院ごとに 人件費×倍率＝売上設定 を出し、予�
   assert.equal(r.total.companyTarget, 10_500_000);
   assert.equal(HQ.laborPlan({ people, multiplier: "", budget, month: 11, clinicNames: [] }).mult, 3);
 });
+
+test("問題点：組織図の「問題点」列を読み、院を推測し、本部で追加した分とまとめる", () => {
+  const grid = orgGrid(["東町院", "西町院"], [["院長", "a", "b"], ["施術者", "c", ""]]);
+  grid[1].push("", "問題点");
+  grid[2].push("", "東町の土日");
+  grid[3].push("", "東町・西町の余剰人員");
+  const o = HQ.parseOrgSheet("2026.12(異動案)", grid);
+  assert.deepEqual(plain(o.issues), ["東町の土日", "東町・西町の余剰人員"]);
+  assert.equal(o.clinics.length, 2); // 問題点の列は院として読まない（院名の列は空欄で終わる）
+  const fitDoc = {
+    sheetIssues: { [HQ.issueId("2026.12(異動案)", "東町の土日")]: { status: "対応中", memo: "土日シフト調整" } },
+    issues: [{ id: "i1", tab: "2026.12(異動案)", text: "西町の受付", clinic: "", status: "未対応" }],
+  };
+  const all = HQ.mergeIssues([o], fitDoc, ["東町院", "西町院"]);
+  assert.equal(all.length, 3);
+  assert.equal(all[0].status, "対応中");
+  assert.equal(all[0].memo, "土日シフト調整");
+  assert.deepEqual(plain(all[1].clinics), ["東町院", "西町院"]);
+  assert.equal(all[2].source, "hq");
+  assert.deepEqual(plain(all[2].clinics), ["西町院"]);
+  assert.equal(HQ.issueId("a", "b"), HQ.issueId("a", "b"));
+  assert.notEqual(HQ.issueId("a", "b"), HQ.issueId("a", "c"));
+});
