@@ -14,6 +14,7 @@
 <script src="/staff-goals-logic.js"></script>
 <script src="/sales-report-logic.js"></script>
 <script src="/attendance-logic.js"></script>
+<script src="/shift-logic.js"></script>
 <script src="/petty-cash-logic.js"></script>
 <script src="/booking-segments.js"></script>
 <script>
@@ -577,7 +578,7 @@ const sb = {
 // ===== 全端末で共有する設定（月次シフト・休暇残・売上目標） =====
 // 以前はブラウザ（localStorage）にだけ保存していたため、端末ごとに設定し直す必要があった。
 // サーバー（app_settings）を正として、localStorage はその写し（すぐ読めるようにするための控え）として使う。
-const SHARED_SETTING_PREFIXES=["shifts_","shifthalf_","holiday_balance","ando_sales_target_","attendance_rules"];
+const SHARED_SETTING_PREFIXES=["shifts_","shifthalf_","shiftstore_","shift_required","holiday_balance","ando_sales_target_","attendance_rules"];
 // ===== 半日出勤（シフト表の「午前出勤」＝午後休み／「午後出勤」＝午前休み） =====
 // 午前・午後の時間帯は、設定「shift_half_times」（平日／土日・祝それぞれ）。未設定なら HALF_SHIFT_DEFAULT_TIMES
 const HALF_SHIFT={"午前出勤":"am","午後出勤":"pm"};
@@ -9218,6 +9219,421 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
   );
 }
 
+// ===== シフト管理（全社・院別） =====
+// 全社：院ごとの出勤人数（必要人数との過不足）と、所属院ごとのスタッフ別シフト
+// 各院：その院で働く人（所属＋応援）のシフトと、その院の人数
+// 集計は shift-logic.js（ShiftLogic）。シフトの種類は月次シフト表と同じ「shifts_YYYY-MM」、その日の勤務院は「shiftstore_YYYY-MM」に保存
+function ShiftOverviewPanel({onShiftsSaved}){
+  const SL=window.ShiftLogic;
+  const DAYS_JP=["日","月","火","水","木","金","土"];
+  const SHIFT_COLORS={"出勤":"#2563eb","午前出勤":"#0ea5e9","午後出勤":"#6366f1","休み":"#9ca3af","有休":"#059669","振替":"#d97706","祝振替":"#7c3aed"};
+  const SHIFT_ABBR={"出勤":"勤","午前出勤":"前","午後出勤":"後","休み":"休","有休":"有","振替":"振","祝振替":"祝"};
+  const todayStr=fmtDate(new Date());
+  const [month,setMonth]=React.useState(todayStr.slice(0,7));
+  const [scope,setScopeRaw]=React.useState(()=>{ try{ return localStorage.getItem("shift_overview_scope")||"all"; }catch(e){ return "all"; } });
+  const setScope=v=>{ setScopeRaw(v); try{ localStorage.setItem("shift_overview_scope",v); }catch(e){} };
+  const [stores,setStores]=React.useState([]);
+  const [staffStores,setStaffStores]=React.useState({});
+  const [weeklyRows,setWeeklyRows]=React.useState([]);
+  const [bh,setBh]=React.useState([]);
+  const [closures,setClosures]=React.useState([]);
+  const [loading,setLoading]=React.useState(true);
+  const [loadError,setLoadError]=React.useState("");
+  const [edits,setEdits]=React.useState({}); // 未保存の変更 {"スタッフID_日付":{type?,storeId?}}
+  const [editing,setEditing]=React.useState(null); // {staffId,date}
+  const [showReq,setShowReq]=React.useState(false);
+  const [saving,setSaving]=React.useState(false);
+  const [toast,setToast]=React.useState(null);
+  const ver=useSharedSettingsVersion();
+  const editCount=Object.keys(edits).length;
+
+  function showToast(msg,ok=true){ setToast({msg,ok}); setTimeout(()=>setToast(null),3000); }
+  function readJSON(key,fallback){ try{ const v=JSON.parse(localStorage.getItem(key)||"null"); return v&&typeof v==="object"?v:fallback; }catch(e){ return fallback; } }
+
+  React.useEffect(()=>{
+    let alive=true;
+    Promise.all([
+      sb.select("stores","?order=id.asc"),
+      sb.select("clinic_staff","?select=id,store_ids"),
+      sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc"),
+      sb.select("business_hours","?select=store_id,day_of_week,is_open"),
+      sb.select("temp_closures","?select=store_id,date,is_closed,memo"),
+    ]).then(([st,cs,ws,b,tc])=>{
+      if(!alive) return;
+      setStores(Array.isArray(st)?st:[]);
+      const map={}; if(Array.isArray(cs)) cs.forEach(r=>{ if(Array.isArray(r.store_ids)&&r.store_ids.length) map[r.id]=r.store_ids; });
+      setStaffStores(map);
+      setWeeklyRows(Array.isArray(ws)?ws:[]);
+      setBh(Array.isArray(b)?b:[]);
+      setClosures(Array.isArray(tc)?tc:[]);
+      setLoading(false);
+    }).catch(e=>{ if(alive){ setLoadError(e.message||"読み込めませんでした"); setLoading(false); } });
+    return()=>{ alive=false; };
+  },[]);
+
+  // 月を変えるときは未保存の変更を確認する
+  function changeMonth(next){
+    if(!next||next===month) return;
+    if(editCount>0&&!window.confirm(`保存していない変更が${editCount}件あります。破棄して月を変えますか？`)) return;
+    setEdits({}); setMonth(next);
+  }
+
+  const staff=STAFF_ACCOUNTS.filter(s=>!s.eventOnly);
+  const weekly=React.useMemo(()=>SL.weeklyMap(weeklyRows),[weeklyRows]);
+  const required=React.useMemo(()=>SL.normRequired(readJSON("shift_required",{})),[ver,showReq]);
+  const holidays=React.useMemo(()=>(window.Attendance&&Attendance.holidaySetFrom)?Attendance.holidaySetFrom(closures):new Set(),[closures]);
+  // 休診日（臨時休業、または営業時間で休みの曜日）「店舗ID_日付」
+  const closed=React.useMemo(()=>{
+    const set=new Set();
+    stores.forEach(st=>SL.monthDates(month).forEach(({date,day})=>{
+      const c=closures.find(x=>x.store_id===st.id&&x.date===date);
+      if(c){ if(c.is_closed) set.add(`${st.id}_${date}`); return; }
+      const h=bh.find(x=>x.store_id===st.id&&x.day_of_week===day);
+      if(h&&h.is_open===false) set.add(`${st.id}_${date}`);
+    }));
+    return set;
+  },[stores,closures,bh,month]);
+
+  // 保存済みの値＋未保存の変更
+  const saved=React.useMemo(()=>({shifts:readJSON(`shifts_${month}`,{}),storeOverrides:readJSON(`shiftstore_${month}`,{})}),[month,ver,saving]);
+  const merged=React.useMemo(()=>{
+    const shifts={...saved.shifts}, storeOverrides={...saved.storeOverrides};
+    Object.entries(edits).forEach(([k,e])=>{
+      if(e.type!==undefined) shifts[k]=e.type;
+      if(e.storeId!==undefined){ if(e.storeId==null) delete storeOverrides[k]; else storeOverrides[k]=e.storeId; }
+    });
+    return {shifts,storeOverrides};
+  },[saved,edits]);
+  const result=React.useMemo(()=>SL.buildMonth({month,staff,stores,shifts:merged.shifts,storeOverrides:merged.storeOverrides,weekly,staffStores,required,holidays,closed}),
+    [month,stores,merged,weekly,staffStores,required,holidays,closed,staff.length]);
+
+  const storeName=id=>{ const st=stores.find(x=>x.id===id); return st?SL.shortStoreName(st.name):"未設定"; };
+  const scopeStore=scope==="all"?null:stores.find(s=>String(s.id)===String(scope))||null;
+  React.useEffect(()=>{ if(!loading&&scope!=="all"&&!scopeStore) setScope("all"); },[loading,scope,scopeStore]);
+
+  // 1マスの変更（種類・勤務院）
+  function setCell(staffId,date,patch){
+    const key=`${staffId}_${date}`;
+    setEdits(prev=>{
+      const next={...prev}; const e={...(next[key]||{}),...patch};
+      // 保存済みと同じに戻ったら変更から外す
+      const sameType=e.type===undefined||e.type===SL.dayType(saved.shifts,weekly,staffId,date);
+      const savedStore=saved.storeOverrides[key]==null?null:Number(saved.storeOverrides[key]);
+      const sameStore=e.storeId===undefined||e.storeId===savedStore;
+      if(sameType) delete e.type; if(sameStore) delete e.storeId;
+      if(Object.keys(e).length===0) delete next[key]; else next[key]=e;
+      return next;
+    });
+  }
+  // その日の勤務院を選ぶ（週固定シフト／所属院と同じなら「その日だけの変更」は入れない）
+  function pickStore(staffId,date,storeId){
+    const base=SL.workStore({},weekly,staffStores,staffId,date);
+    setCell(staffId,date,{storeId:storeId===base?null:storeId});
+  }
+
+  async function save(){
+    if(editCount===0) return;
+    setSaving(true);
+    const M=month;
+    const shifts=readJSON(`shifts_${M}`,{}), storeOv=readJSON(`shiftstore_${M}`,{}), half=readHalfCustom(M);
+    let balance=readJSON("holiday_balance",{});
+    Object.entries(edits).forEach(([key,e])=>{
+      const i=key.lastIndexOf("_"), sid=Number(key.slice(0,i)), date=key.slice(i+1);
+      if(e.type!==undefined){
+        const before=SL.dayType(shifts,weekly,sid,date);
+        if(before!==e.type){ balance=SL.adjustBalance(balance,sid,before,e.type); shifts[key]=e.type; delete half[key]; } // 種類を変えたら「その日だけの時間」は外す
+      }
+      if(e.storeId!==undefined){ if(e.storeId==null) delete storeOv[key]; else storeOv[key]=e.storeId; }
+    });
+    const ok=await sharedSettings.saveNow({[`shifts_${M}`]:JSON.stringify(shifts),[`shiftstore_${M}`]:JSON.stringify(storeOv),[`shifthalf_${M}`]:JSON.stringify(half),holiday_balance:JSON.stringify(balance)});
+    setSaving(false);
+    if(ok){ setEdits({}); showToast("保存しました"); if(onShiftsSaved) onShiftsSaved(); }
+    else showToast("⚠ 保存できませんでした（ログインし直して、もう一度保存してください）",false);
+  }
+
+  function setRequired(storeId,field,val){
+    const cur=SL.normRequired(readJSON("shift_required",{}));
+    cur[storeId]={...(cur[storeId]||{weekday:0,sat:0,sun:0}),[field]:val};
+    sharedSettings.set("shift_required",JSON.stringify(SL.normRequired(cur)));
+    window.dispatchEvent(new Event("ando-shared-settings"));
+  }
+
+  function downloadCsv(){
+    const rows=scopeStore?(()=>{ const k=SL.staffForStore(result,scopeStore.id,staff,staffStores); return k.own.concat(k.help); })():staff;
+    const blob=new Blob(["﻿"+SL.toCsv(result,rows,stores)],{type:"text/csv;charset=utf-8"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob);
+    a.download=`シフト_${scopeStore?storeName(scopeStore.id):"全社"}_${month}.csv`; a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  }
+
+  if(!SL) return <div className="card" style={{padding:20,color:"#dc2626"}}>シフトの集計プログラム（shift-logic.js）を読み込めませんでした。ページを再読み込みしてください。</div>;
+  if(loading) return <div style={{textAlign:"center",padding:40,color:"#94a3b8"}}>読み込み中...</div>;
+
+  const dates=result.dates;
+  const [yy,mm]=month.split("-").map(Number);
+  const card={background:"white",borderRadius:12,boxShadow:"0 1px 4px rgba(0,0,0,.06)",border:"1px solid #f1f5f9",marginBottom:14,overflow:"hidden"};
+  const cardHead={padding:"12px 16px",borderBottom:"1px solid #f1f5f9",fontWeight:800,fontSize:14,color:"#1e3a5f",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"};
+  const nameCol={position:"sticky",left:0,zIndex:2,background:"white",padding:"6px 10px",textAlign:"left",whiteSpace:"nowrap",borderRight:"1px solid #e2e8f0",fontSize:12.5,fontWeight:700,color:"#1e293b",minWidth:110};
+  const dayColor=({date,day})=>day===0||holidays.has(date)?"#dc2626":day===6?"#2563eb":"#475569";
+  const dayHeadBg=({date})=>date===todayStr?"#fef3c7":"#f8fafc";
+  const sumCol={padding:"4px 8px",textAlign:"center",fontSize:12,fontWeight:700,color:"#334155",whiteSpace:"nowrap",borderLeft:"1px solid #e2e8f0"};
+
+  function DateHead({extra,sums}){
+    return(<thead><tr>
+      <th style={{...nameCol,background:"#f8fafc",zIndex:3,fontSize:11.5,color:"#64748b"}}>{extra||"スタッフ"}</th>
+      {dates.map(d=>(<th key={d.date} style={{padding:"4px 0",minWidth:30,textAlign:"center",background:dayHeadBg(d),borderBottom:"1px solid #e2e8f0",color:dayColor(d),fontSize:11,fontWeight:800,lineHeight:1.2}}>
+        {d.label}<br/><span style={{fontSize:9.5,fontWeight:700}}>{DAYS_JP[d.day]}</span>
+      </th>))}
+      {(sums||["出勤","休","有休"]).map(h=><th key={h} style={{...sumCol,background:"#f8fafc",fontSize:11,color:"#64748b"}}>{h}</th>)}
+    </tr></thead>);
+  }
+
+  // スタッフ1人のマス（viewStoreId を渡すと、その院の目線で「他院勤務」を薄く出す）
+  function StaffCell({s,date,viewStoreId}){
+    const key=`${s.id}_${date}`, c=result.cells[key]; if(!c) return <td/>;
+    const color=SHIFT_COLORS[c.type]||"#64748b", edited=!!edits[key];
+    const otherStore=viewStoreId!=null&&c.units>0&&c.storeId!==viewStoreId;
+    const showStore=c.units>0&&(viewStoreId==null?c.away||c.storeId==null:otherStore);
+    const working=c.units>0&&!otherStore;
+    const title=`${s.name} ${date}：${c.type}${c.units>0?`（${storeName(c.storeId)}）`:""}`;
+    return(<td style={{padding:1,textAlign:"center",borderBottom:"1px solid #f1f5f9",background:date===todayStr?"#fffbeb":undefined}}>
+      <button type="button" title={title} onClick={()=>setEditing({staffId:s.id,date})}
+        style={{width:28,minHeight:30,padding:"2px 0",borderRadius:6,cursor:"pointer",fontFamily:"inherit",lineHeight:1.05,
+          border:edited?"2px solid #f59e0b":"1px solid transparent",
+          background:otherStore?"#f1f5f9":working?color+"1f":"#f8fafc",
+          color:otherStore?"#94a3b8":working?color:"#9ca3af",fontWeight:800,fontSize:12}}>
+        {otherStore?"他":SHIFT_ABBR[c.type]||"?"}
+        {showStore&&<div style={{fontSize:8.5,fontWeight:700,marginTop:1,color:c.storeId==null?"#dc2626":otherStore?"#94a3b8":"#7c3aed",overflow:"hidden",whiteSpace:"nowrap",maxWidth:28}}>{c.storeId==null?"未定":storeName(c.storeId).slice(0,2)}</div>}
+      </button>
+    </td>);
+  }
+  function StaffRow({s,viewStoreId,tag}){
+    const sum=result.staffSummary[s.id]||{};
+    const days=viewStoreId!=null?(sum.byStore&&sum.byStore[viewStoreId])||0:sum.units||0;
+    return(<tr>
+      <td style={nameCol}>
+        <span style={{display:"inline-block",width:8,height:8,borderRadius:4,background:s.color||"#64748b",marginRight:6}}/>{s.name}
+        {tag&&<span style={{marginLeft:6,fontSize:10,fontWeight:800,color:"#7c3aed",background:"#ede9fe",borderRadius:4,padding:"1px 5px"}}>{tag}</span>}
+      </td>
+      {dates.map(({date})=><StaffCell key={date} s={s} date={date} viewStoreId={viewStoreId}/>)}
+      <td style={sumCol}>{SL.fmtUnits(days)}</td>
+      <td style={sumCol}>{sum.off||0}</td>
+      <td style={sumCol}>{sum.paid||0}</td>
+    </tr>);
+  }
+  // 院の人数のマス
+  function CountCell({storeId,date}){
+    const isClosed=closed.has(`${storeId}_${date}`);
+    const have=result.perStore[storeId]?result.perStore[storeId][date]:0;
+    const need=SL.requiredOn(required,storeId,date,holidays);
+    const short=!isClosed&&need>0&&have<need;
+    const names=(result.perStoreStaff[storeId]&&result.perStoreStaff[storeId][date]||[]).map(id=>(STAFF_ACCOUNTS.find(x=>x.id===id)||{}).name).filter(Boolean);
+    return(<td title={`${storeName(storeId)} ${date}：${SL.fmtUnits(have)}人${need?`／必要 ${need}人`:""}${names.length?"\n"+names.join("・"):""}${isClosed?"（休診）":""}`}
+      style={{padding:"4px 0",textAlign:"center",fontSize:12,fontWeight:800,borderBottom:"1px solid #f1f5f9",
+        background:isClosed?"#f1f5f9":short?"#fee2e2":date===todayStr?"#fffbeb":undefined,color:isClosed?"#94a3b8":short?"#b91c1c":have===0?"#cbd5e1":"#1e293b"}}>
+      {isClosed&&have===0?"休":SL.fmtUnits(have)}
+      {short&&<div style={{fontSize:8.5,fontWeight:700}}>/{SL.fmtUnits(need)}</div>}
+    </td>);
+  }
+  function Kpi({label,value,sub,warn}){
+    return(<div style={{background:"white",borderRadius:12,border:"1px solid #f1f5f9",boxShadow:"0 1px 4px rgba(0,0,0,.06)",padding:"12px 14px"}}>
+      <div style={{fontSize:11.5,fontWeight:700,color:"#64748b"}}>{label}</div>
+      <div style={{fontSize:22,fontWeight:800,color:warn?"#dc2626":"#1e3a5f",marginTop:2}}>{value}</div>
+      {sub&&<div style={{fontSize:11,color:"#94a3b8"}}>{sub}</div>}
+    </div>);
+  }
+  const tableWrap={overflowX:"auto"};
+  const table={borderCollapse:"separate",borderSpacing:0,width:"100%"};
+
+  // ===== 全社 =====
+  function CompanyView(){
+    const groups=SL.groupByHome(staff,stores,staffStores);
+    const totalShort=result.shortages.length;
+    const awayDays=staff.reduce((a,s)=>a+((result.staffSummary[s.id]||{}).away||0),0);
+    const hasUnassigned=dates.some(({date})=>result.unassigned[date]>0);
+    return(<>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginBottom:14}}>
+        <Kpi label="院の数" value={stores.length}/>
+        <Kpi label="スタッフ" value={`${staff.length}人`}/>
+        <Kpi label="人数が足りない日（全院）" value={`${totalShort}日`} warn={totalShort>0} sub={Object.keys(required).length?"必要人数の設定に対して":"必要人数が未設定です"}/>
+        <Kpi label="他院への応援（延べ）" value={`${awayDays}日`}/>
+      </div>
+      <div style={card}>
+        <div style={cardHead}>🏥 院別の出勤人数<span style={{fontSize:11,fontWeight:600,color:"#94a3b8"}}>出勤＝1人、午前・午後出勤＝0.5人。赤は必要人数に届かない日（下の数字が必要人数）。院名を押すと院別のシフトへ</span></div>
+        <div style={tableWrap}><table style={table}>
+          <DateHead extra="院" sums={["1日平均","不足日",""]}/>
+          <tbody>
+            {stores.map(st=>{ const ss=result.storeSummary[st.id]||{}; return(<tr key={st.id}>
+              <td style={nameCol}><button type="button" onClick={()=>setScope(String(st.id))} style={{border:"none",background:"none",padding:0,cursor:"pointer",fontFamily:"inherit",fontWeight:800,color:"#1d4ed8",fontSize:12.5}}>{SL.shortStoreName(st.name)} ›</button></td>
+              {dates.map(({date})=><CountCell key={date} storeId={st.id} date={date}/>)}
+              <td style={sumCol}>{ss.avg||0}人</td>
+              <td style={{...sumCol,color:ss.shortDays?"#dc2626":"#334155"}}>{ss.shortDays||0}日</td>
+              <td style={sumCol}/>
+            </tr>); })}
+            {hasUnassigned&&<tr>
+              <td style={{...nameCol,color:"#dc2626"}}>勤務院 未設定</td>
+              {dates.map(({date})=><td key={date} style={{textAlign:"center",fontSize:12,fontWeight:800,color:result.unassigned[date]?"#dc2626":"#cbd5e1",borderBottom:"1px solid #f1f5f9"}}>{SL.fmtUnits(result.unassigned[date])}</td>)}
+              <td style={sumCol} colSpan={3}/>
+            </tr>}
+            <tr style={{background:"#f8fafc"}}>
+              <td style={{...nameCol,background:"#f1f5f9",fontWeight:800}}>全社 合計</td>
+              {dates.map(({date})=><td key={date} style={{textAlign:"center",fontSize:12,fontWeight:800,color:"#1e3a5f",padding:"4px 0"}}>{SL.fmtUnits(result.total[date])}</td>)}
+              <td style={sumCol} colSpan={3}/>
+            </tr>
+          </tbody>
+        </table></div>
+      </div>
+      <div style={card}>
+        <div style={cardHead}>👥 スタッフ別シフト（所属院ごと）<span style={{fontSize:11,fontWeight:600,color:"#94a3b8"}}>マスの下の院名＝その日は他院で勤務。マスを押すと変更できます</span></div>
+        <div style={tableWrap}><table style={table}>
+          <DateHead/>
+          <tbody>
+            {groups.map(g=>(<React.Fragment key={String(g.storeId)}>
+              <tr><td colSpan={dates.length+4} style={{background:g.storeId==null?"#fef2f2":"#eef2ff",padding:"5px 10px",fontSize:12,fontWeight:800,color:g.storeId==null?"#b91c1c":"#3730a3",position:"sticky",left:0}}>
+                {g.storeId==null?g.name:SL.shortStoreName(g.name)}（{g.staff.length}人）
+                {g.storeId==null&&<span style={{fontWeight:600,marginLeft:6}}>「スタッフ・シフト管理」の勤務地で所属院を設定してください</span>}
+              </td></tr>
+              {g.staff.map(s=><StaffRow key={s.id} s={s}/>)}
+            </React.Fragment>))}
+          </tbody>
+        </table></div>
+      </div>
+    </>);
+  }
+
+  // ===== 各院 =====
+  function StoreView({st}){
+    const {own,help}=SL.staffForStore(result,st.id,staff,staffStores);
+    const ss=result.storeSummary[st.id]||{};
+    const short=result.shortages.filter(x=>x.storeId===st.id);
+    const r=required[st.id];
+    return(<>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginBottom:14}}>
+        <Kpi label="所属スタッフ" value={`${own.length}人`}/>
+        <Kpi label="応援に来る人" value={`${help.length}人`}/>
+        <Kpi label="1日の平均人数" value={`${ss.avg||0}人`} sub={`診療日 ${ss.openDays||0}日`}/>
+        <Kpi label="人数が足りない日" value={`${ss.shortDays||0}日`} warn={(ss.shortDays||0)>0} sub={r?`必要：平日${r.weekday}・土${r.sat}・日祝${r.sun}人`:"必要人数が未設定です"}/>
+      </div>
+      {short.length>0&&<div style={{...card,padding:"10px 14px",background:"#fef2f2",border:"1px solid #fecaca"}}>
+        <div style={{fontSize:12.5,fontWeight:800,color:"#b91c1c",marginBottom:6}}>⚠ 人数が足りない日</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          {short.map(x=>{ const d=new Date(x.date+"T00:00:00"); return <span key={x.date} style={{fontSize:12,fontWeight:700,background:"white",border:"1px solid #fecaca",borderRadius:6,padding:"3px 8px",color:"#b91c1c"}}>{d.getMonth()+1}/{d.getDate()}（{DAYS_JP[d.getDay()]}）{SL.fmtUnits(x.have)}／{SL.fmtUnits(x.need)}人</span>; })}
+        </div>
+      </div>}
+      <div style={card}>
+        <div style={cardHead}>🏥 {SL.shortStoreName(st.name)} のシフト<span style={{fontSize:11,fontWeight:600,color:"#94a3b8"}}>「他」＝その日は他院で勤務（下は勤務院）。マスを押すと種類・勤務院を変更できます</span></div>
+        <div style={tableWrap}><table style={table}>
+          <DateHead/>
+          <tbody>
+            <tr style={{background:"#f8fafc"}}>
+              <td style={{...nameCol,background:"#f1f5f9",fontWeight:800}}>出勤人数</td>
+              {dates.map(({date})=><CountCell key={date} storeId={st.id} date={date}/>)}
+              <td style={sumCol} colSpan={3}>延べ {SL.fmtUnits(ss.units||0)}</td>
+            </tr>
+            {own.length===0&&<tr><td colSpan={dates.length+4} style={{padding:14,fontSize:12.5,color:"#94a3b8"}}>この院が所属院のスタッフはいません（「スタッフ・シフト管理」の勤務地で設定できます）</td></tr>}
+            {own.map(s=><StaffRow key={s.id} s={s} viewStoreId={st.id}/>)}
+            {help.length>0&&<tr><td colSpan={dates.length+4} style={{background:"#f5f3ff",padding:"5px 10px",fontSize:12,fontWeight:800,color:"#6d28d9",position:"sticky",left:0}}>応援（他院所属）</td></tr>}
+            {help.map(s=><StaffRow key={s.id} s={s} viewStoreId={st.id} tag={storeName(SL.homeStore(staffStores,s.id))}/>)}
+          </tbody>
+        </table></div>
+      </div>
+    </>);
+  }
+
+  // ===== マスの編集 =====
+  function EditModal(){
+    if(!editing) return null;
+    const {staffId,date}=editing, s=STAFF_ACCOUNTS.find(x=>x.id===staffId); if(!s) return null;
+    const c=result.cells[`${staffId}_${date}`]||{};
+    const d=new Date(date+"T00:00:00");
+    const btn=(active,color)=>({padding:"8px 4px",borderRadius:8,border:active?`2px solid ${color}`:"1.5px solid #e2e8f0",background:active?color+"1a":"white",color:active?color:"#334155",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"});
+    const home=SL.homeStore(staffStores,staffId);
+    return(<div onClick={()=>setEditing(null)} style={{position:"fixed",inset:0,background:"rgba(15,23,42,.35)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"white",borderRadius:14,padding:18,width:"100%",maxWidth:380,boxShadow:"0 20px 50px rgba(0,0,0,.25)"}}>
+        <div style={{fontSize:15,fontWeight:800,color:"#1e3a5f"}}>{s.name}</div>
+        <div style={{fontSize:12.5,color:"#64748b",marginBottom:12}}>{d.getMonth()+1}月{d.getDate()}日（{DAYS_JP[d.getDay()]}）{home!=null&&`・所属 ${storeName(home)}`}</div>
+        <div style={{fontSize:12,fontWeight:800,color:"#475569",marginBottom:6}}>種類</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,marginBottom:14}}>
+          {SL.TYPES.map(t=><button key={t} type="button" onClick={()=>setCell(staffId,date,{type:t})} style={btn(c.type===t,SHIFT_COLORS[t])}>{t}</button>)}
+        </div>
+        {c.units>0&&<>
+          <div style={{fontSize:12,fontWeight:800,color:"#475569",marginBottom:6}}>この日の勤務院</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:14}}>
+            {stores.map(st=><button key={st.id} type="button" onClick={()=>pickStore(staffId,date,st.id)} style={btn(c.storeId===st.id,"#7c3aed")}>{SL.shortStoreName(st.name)}{st.id===home?"":" (応援)"}</button>)}
+          </div>
+        </>}
+        <div style={{fontSize:11,color:"#94a3b8",marginBottom:10}}>変更は「保存する」を押すまで確定しません。半日出勤の時間は「スタッフ・シフト管理」の月次シフト表で変えられます。</div>
+        <button type="button" onClick={()=>setEditing(null)} style={{width:"100%",padding:10,borderRadius:8,border:"none",background:"#1e3a5f",color:"white",fontWeight:800,fontSize:13.5,cursor:"pointer",fontFamily:"inherit"}}>OK</button>
+      </div>
+    </div>);
+  }
+
+  const tabBtn=active=>({padding:"7px 14px",borderRadius:20,border:active?"none":"1.5px solid #e2e8f0",background:active?"#1e3a5f":"white",color:active?"white":"#334155",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"});
+  const navBtn={padding:"6px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,background:"white",cursor:"pointer",fontWeight:800,fontFamily:"inherit",color:"#334155"};
+  return(
+    <div style={{maxWidth:1400,margin:"0 auto"}}>
+      {toast&&<div style={{position:"fixed",top:16,left:"50%",transform:"translateX(-50%)",zIndex:500,background:toast.ok?"#f0fdf4":"#fef2f2",border:`1px solid ${toast.ok?"#86efac":"#fecaca"}`,color:toast.ok?"#15803d":"#b91c1c",borderRadius:8,padding:"10px 16px",fontWeight:700,fontSize:13,boxShadow:"0 4px 12px rgba(0,0,0,.1)"}}>{toast.msg}</div>}
+      {loadError&&<div style={{...card,padding:12,color:"#b91c1c",background:"#fef2f2"}}>読み込みに失敗しました：{loadError}</div>}
+
+      <div style={{...card,padding:"14px 16px",overflow:"visible"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <div style={{fontSize:16,fontWeight:800,color:"#1e3a5f"}}>📅 シフト管理（全社・院別）</div>
+          <div style={{display:"flex",alignItems:"center",gap:4}}>
+            <button type="button" style={navBtn} onClick={()=>changeMonth(SL.shiftMonth(month,-1))} aria-label="前の月">‹</button>
+            <input type="month" value={month} onChange={e=>changeMonth(e.target.value)} style={{padding:"5px 8px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontWeight:700,fontFamily:"inherit"}} aria-label="表示する月"/>
+            <button type="button" style={navBtn} onClick={()=>changeMonth(SL.shiftMonth(month,1))} aria-label="次の月">›</button>
+            {month!==todayStr.slice(0,7)&&<button type="button" style={{...navBtn,fontSize:12}} onClick={()=>changeMonth(todayStr.slice(0,7))}>今月</button>}
+          </div>
+          <div style={{marginLeft:"auto",display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+            <button type="button" onClick={()=>setShowReq(v=>!v)} style={navBtn}>⚙ 必要人数</button>
+            <button type="button" onClick={downloadCsv} style={navBtn}>⬇ CSV</button>
+            {editCount>0&&<button type="button" onClick={()=>setEdits({})} style={{...navBtn,color:"#64748b"}}>取り消す</button>}
+            <button type="button" onClick={save} disabled={editCount===0||saving}
+              style={{padding:"7px 16px",borderRadius:8,border:"none",background:editCount>0?"linear-gradient(135deg,#059669,#047857)":"#cbd5e1",color:"white",fontWeight:800,fontSize:13,cursor:editCount>0?"pointer":"default",fontFamily:"inherit"}}>
+              {saving?"保存中...":editCount>0?`💾 保存する（${editCount}件）`:"保存済み"}
+            </button>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:6,marginTop:12,overflowX:"auto",paddingBottom:2}}>
+          <button type="button" onClick={()=>setScope("all")} style={tabBtn(!scopeStore)}>🏢 全社</button>
+          {stores.map(st=>{ const n=(result.storeSummary[st.id]||{}).shortDays||0; return(
+            <button key={st.id} type="button" onClick={()=>setScope(String(st.id))} style={tabBtn(scopeStore&&scopeStore.id===st.id)}>
+              {SL.shortStoreName(st.name)}{n>0&&<span style={{marginLeft:5,background:"#dc2626",color:"white",borderRadius:9,padding:"0 6px",fontSize:11}}>{n}</span>}
+            </button>); })}
+        </div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",marginTop:10,fontSize:11.5,color:"#64748b"}}>
+          {SL.TYPES.map(t=><span key={t}><b style={{color:SHIFT_COLORS[t]}}>{SHIFT_ABBR[t]}</b>＝{t}</span>)}
+          <span><b style={{color:"#94a3b8"}}>他</b>＝他院で勤務</span>
+          <span style={{color:"#f59e0b",fontWeight:700}}>オレンジ枠＝未保存</span>
+        </div>
+      </div>
+
+      {showReq&&<div style={card}>
+        <div style={cardHead}>⚙ 院ごとの必要人数<span style={{fontSize:11,fontWeight:600,color:"#94a3b8"}}>1日に必要な人数（0＝判定しない）。入力するとすぐ保存され、全端末で共有されます。祝日は日祝の人数</span></div>
+        <div style={{padding:"10px 16px",overflowX:"auto"}}>
+          <table style={{borderCollapse:"collapse",fontSize:13}}>
+            <thead><tr>{["院","平日","土曜","日曜・祝日"].map(h=><th key={h} style={{padding:"6px 10px",textAlign:"left",fontSize:12,color:"#64748b"}}>{h}</th>)}</tr></thead>
+            <tbody>{stores.map(st=>{ const r=required[st.id]||{weekday:0,sat:0,sun:0}; return(<tr key={st.id}>
+              <td style={{padding:"6px 10px",fontWeight:800}}>{SL.shortStoreName(st.name)}</td>
+              {["weekday","sat","sun"].map(f=><td key={f} style={{padding:"4px 10px"}}>
+                <input type="number" min="0" max="99" step="0.5" value={r[f]} onChange={e=>setRequired(st.id,f,e.target.value)} aria-label={`${st.name} ${f}`}
+                  style={{width:70,padding:"5px 8px",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:13,fontFamily:"inherit"}}/> 人
+              </td>)}
+            </tr>); })}</tbody>
+          </table>
+        </div>
+      </div>}
+
+      {stores.length===0?<div style={{...card,padding:20,color:"#64748b"}}>店舗が登録されていません（「店舗管理」で追加してください）。</div>
+        :scopeStore?<StoreView st={scopeStore}/>:<CompanyView/>}
+      <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>
+        {yy}年{mm}月。シフトの種類は「スタッフ・シフト管理」の月次シフト表と同じデータです（どちらで変えても同じ内容になります）。シフト表で変えていない日は週固定シフトの出勤・休みと勤務院を使います。
+      </div>
+      <EditModal/>
+    </div>
+  );
+}
+
 // ===== シフト・休日管理パネル =====
 // 半日出勤の時間帯の設定（シフト表の上に表示）
 function HalfShiftSplitSetting(){
@@ -17074,6 +17490,7 @@ function Dashboard({user,onLogout}){
     ]},
     {id:"staff",label:"スタッフ",color:"#d97706",defaultCollapsed:true,items:[
       {id:"staff_mgmt",label:"スタッフ・シフト管理",icon:"users-cog",special:""},
+      {id:"shift_overview",label:"シフト管理（全社・院別）",icon:"calendar",special:""},
       {id:"staff_mandala",label:"個人マンダラ・目標（KGI・KPI・KDI）",icon:"trending",special:""},
       {id:"attendance",label:"勤怠管理",icon:"clock",special:""},
       {id:"learning",label:"学習カリキュラム",icon:"clipboard-list",special:""},
@@ -17733,6 +18150,7 @@ function Dashboard({user,onLogout}){
 
           {/* スタッフ・シフト管理（統合） */}
           {view==="staff_mgmt"&&<StaffMgmtPanel currentUser={user} onShiftsSaved={fetchAll}/>}
+          {view==="shift_overview"&&<ShiftOverviewPanel onShiftsSaved={fetchAll}/>}
           {view==="attendance"&&<AttendancePanel currentUser={user} isAdmin={isAdmin}/>}
 
           {/* メニュー・コース管理 */}
