@@ -375,3 +375,35 @@ test("勤怠：賃金管理表のタブ（金額の列を除いたもの）か�
   assert.deepEqual(plain(HQ.clinicOfPerson("山﨑 航平", org)), { clinic: "西町院", role: "施術者" });
   assert.equal(HQ.clinicOfPerson("誰か", org), null);
 });
+
+test("KPI：「11期」「10期」の表を読み、項目の年度推移と昨対比（率は前年差）を出す", () => {
+  const months = (y) => [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6].map((m) => `${m >= 7 ? y : y + 1}-${String(m).padStart(2, "0")}-01 00:00:00`);
+  const rows = [
+    [],
+    ["", "11期", ...months(2026)],
+    ["", "売上", 2_200_000, 2_000_000, "", ""],
+    ["", "離反率", 0.13, 0.17],
+    ["", "窓口単価", 2100, 2200],
+    [],
+    ["", "10期", ...months(2025)],
+    ["", "売上", 2_000_000, 2_500_000, 2_000_000],
+    ["", "離反率", 0.18, 0.16],
+    ["", "窓口単価", 1700, 1800],
+  ];
+  const t = HQ.parseKpiTab("全社", rows);
+  assert.deepEqual(plain(t.periods.map((p) => [p.label, p.fy, p.items.length])), [["11期", 2026, 3], ["10期", 2025, 3]]);
+  const s = HQ.kpiSeries(t, "売上", 2026);
+  assert.equal(s.months[0], "2026-07");
+  assert.deepEqual(plain(s.cur.slice(0, 3)), [2_200_000, 2_000_000, null]);
+  assert.deepEqual(plain(s.prev.slice(0, 3)), [2_000_000, 2_500_000, 2_000_000]);
+  assert.equal(s.yoy[0], 1.1);
+  assert.equal(s.yoy[1], 0.8);
+  assert.equal(s.yoy[2], null);
+  const r = HQ.kpiSeries(t, "離反率", 2026);
+  assert.equal(r.rate, true);
+  assert.ok(Math.abs(r.yoy[0] - -0.05) < 1e-9); // 率は差（ポイント）
+  const tot = HQ.kpiYearTotals(s);
+  assert.equal(tot.months, 2);
+  assert.equal(tot.yoy, 4_200_000 / 4_500_000);
+  assert.equal(HQ.kpiYearTotals(HQ.kpiSeries(t, "窓口単価", 2026)), null); // 単価は足さない
+});

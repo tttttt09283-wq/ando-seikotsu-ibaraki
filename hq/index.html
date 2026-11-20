@@ -186,6 +186,7 @@ const S = {
   fit: null, fitErr: null,
   intake: null, intakeErr: null, intakeBooks: {}, intakeMonth: null,
   wage: null, wageErr: null, wageMonth: null,
+  kpi: null, kpiErr: null,
   ui: {},
 };
 if (!HQ.SECTIONS.some((s) => s.id === S.sec)) S.sec = "dashboard";
@@ -410,7 +411,7 @@ function render() {
   let body;
   try { body = fn(); } catch (e) { console.error(e); body = `<div class="err">表示できませんでした：${esc(e.message)}</div>`; }
   if (["performance", "marketing", "people", "accounting"].includes(S.sec)) {
-    try { body += intakeCard(S.sec) + (S.sec === "people" ? wageCard() : ""); } catch (e) { console.error(e); body += `<div class="err">日計表を表示できませんでした：${esc(e.message)}</div>`; }
+    try { body += (S.sec === "performance" ? kpiCard() : "") + intakeCard(S.sec) + (S.sec === "people" ? wageCard() : ""); } catch (e) { console.error(e); body += `<div class="err">日計表を表示できませんでした：${esc(e.message)}</div>`; }
   }
   app.innerHTML = `${topbar()}<div class="layout"><nav class="side">${side}</nav><main class="main">${S.docsErr ? `<div class="err">${esc(S.docsErr)}</div>` : ""}${body}</main></div>`;
   window.scrollTo(0, y);
@@ -830,6 +831,154 @@ function intakeStatusHtml() {
   if (book.error) return `<div class="err">${esc(book.error)}</div>`;
   return "";
 }
+// ---- KPI推移と昨対比（店舗別KPIダッシュボード） ----
+async function loadKpi(refresh) {
+  S.kpi = "loading"; S.kpiErr = null; render();
+  try {
+    const raw = await apiGet(`/api/intake?kpi=1${refresh ? "&refresh=1" : ""}`);
+    S.kpi = { url: raw.url, loadedAt: raw.loadedAt, tabs: raw.tabs.map((t) => HQ.parseKpiTab(t.title, t.values)).filter((t) => t.periods.length) };
+  } catch (e) { S.kpi = null; S.kpiErr = e.message; }
+  render();
+}
+// 項目ごとの表示（お金・率・回数）
+function kpiFmt(item, v, short) {
+  if (v === null || v === undefined || !isFinite(v)) return "-";
+  if (/率/.test(item)) return pct(v, 1);
+  if (/売上|生産性|利益|LTV|予算/.test(item)) return short ? man(v) : yen(v);
+  if (/単価/.test(item)) return yen(v);
+  return (Math.round(v * 10) / 10).toLocaleString("ja-JP");
+}
+function kpiYoyFmt(s, v) {
+  if (v === null || v === undefined) return "-";
+  if (s.rate) return `${v >= 0 ? "+" : "−"}${Math.abs(Math.round(v * 1000) / 10).toFixed(1)}pt`;
+  return pct(v, 1);
+}
+// 「良い方向」：率でも離反率は下がるほど良い
+const kpiLowerIsBetter = (item) => /離反/.test(item);
+function kpiGood(s, v) {
+  if (v === null || v === undefined) return null;
+  const up = s.rate ? v > 0 : v > 1;
+  const flat = s.rate ? v === 0 : v === 1;
+  if (flat) return null;
+  return kpiLowerIsBetter(s.item) ? !up : up;
+}
+let KPI_TIPS = [];
+function kpiTip(ev, i) {
+  const el = document.getElementById("kpiTip");
+  if (!el) return;
+  el.innerHTML = KPI_TIPS[i] || "";
+  el.style.display = "block";
+  const box = ev.currentTarget.ownerSVGElement.getBoundingClientRect();
+  const x = ev.clientX - box.left, y = ev.clientY - box.top;
+  el.style.left = `${Math.min(Math.max(8, x + 14), box.width - 200)}px`;
+  el.style.top = `${Math.max(0, y - 10)}px`;
+  document.querySelectorAll(".kpi-cross").forEach((c) => { c.style.opacity = c.dataset.i === String(i) ? 1 : 0; });
+}
+function kpiTipOff() {
+  const el = document.getElementById("kpiTip"); if (el) el.style.display = "none";
+  document.querySelectorAll(".kpi-cross").forEach((c) => { c.style.opacity = 0; });
+}
+function niceTicks(min, max, n) {
+  if (min === max) { max = min + 1; }
+  const span = max - min, step0 = span / n, mag = 10 ** Math.floor(Math.log10(step0));
+  const step = [1, 2, 2.5, 5, 10].map((k) => k * mag).find((k) => span / k <= n) || 10 * mag;
+  const lo = Math.floor(min / step) * step, hi = Math.ceil(max / step) * step;
+  const out = []; for (let v = lo; v <= hi + step / 2; v += step) out.push(Math.round(v * 1e6) / 1e6);
+  return out;
+}
+function kpiCharts(s, curLabel, prevLabel) {
+  const W = 760, H = 250, L = 64, R = 86, T = 14, B = 26;
+  const vals = [...s.cur, ...s.prev].filter((v) => v !== null);
+  if (!vals.length) return `<div class="muted">この項目のデータがありません。</div>`;
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (!s.rate && lo >= 0) lo = 0;
+  const ticks = niceTicks(lo, hi, 4);
+  const y0 = ticks[0], y1 = ticks[ticks.length - 1];
+  const X = (i) => L + (i + 0.5) * ((W - L - R) / 12);
+  const Y = (v) => T + (H - T - B) * (1 - (v - y0) / (y1 - y0 || 1));
+  const path = (arr) => { let d = "", pen = false; arr.forEach((v, i) => { if (v === null) { pen = false; return; } d += `${pen ? "L" : "M"}${X(i).toFixed(1)},${Y(v).toFixed(1)}`; pen = true; }); return d; };
+  const lastIdx = (arr) => { for (let i = arr.length - 1; i >= 0; i--) if (arr[i] !== null) return i; return -1; };
+  const grid = ticks.map((t) => `<line x1="${L}" x2="${W - R}" y1="${Y(t)}" y2="${Y(t)}" stroke="#e8e6e1" stroke-width="1"/><text x="${L - 8}" y="${Y(t) + 4}" text-anchor="end" font-size="11" fill="#64748b">${esc(kpiFmt(s.item, t, true))}</text>`).join("");
+  const xlab = s.months.map((mk, i) => `<text x="${X(i)}" y="${H - 8}" text-anchor="middle" font-size="11" fill="#64748b">${Number(mk.slice(5))}月</text>`).join("");
+  const dots = (arr, color, dashed) => arr.map((v, i) => v === null ? "" : `<circle cx="${X(i)}" cy="${Y(v)}" r="4" fill="${dashed ? "#ffffff" : color}" stroke="${dashed ? color : "#ffffff"}" stroke-width="2"/>`).join("");
+  const endLabel = (arr, color, text) => { const i = lastIdx(arr); if (i < 0) return ""; return `<text x="${X(i) + 9}" y="${Y(arr[i]) + 4}" font-size="11.5" font-weight="700" fill="#1e293b">${esc(text)}</text>`; };
+  KPI_TIPS = s.months.map((mk, i) => `<b>${esc(monthLabel(mk))}　${esc(s.item)}</b><br><span style="color:#2a78d6">━</span> ${esc(curLabel)}：${esc(kpiFmt(s.item, s.cur[i]))}<br><span style="color:#eb6834">┅</span> ${esc(prevLabel)}：${esc(kpiFmt(s.item, s.prev[i]))}<br>${s.rate ? "前年差" : "昨対比"}：<b>${esc(kpiYoyFmt(s, s.yoy[i]))}</b>`);
+  const hit = s.months.map((_, i) => `<line class="kpi-cross" data-i="${i}" x1="${X(i)}" x2="${X(i)}" y1="${T}" y2="${H - B}" stroke="#94a3b8" stroke-width="1" style="opacity:0"/><rect x="${X(i) - (W - L - R) / 24}" y="${T}" width="${(W - L - R) / 12}" height="${H - T - B}" fill="transparent" onmousemove="kpiTip(event,${i})" onmouseleave="kpiTipOff()"/>`).join("");
+  const line = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;" role="img" aria-label="${esc(s.item)}の月別推移（${esc(curLabel)}と${esc(prevLabel)}）">
+    ${grid}${xlab}
+    <path d="${path(s.prev)}" fill="none" stroke="#eb6834" stroke-width="2" stroke-dasharray="6 4"/>
+    <path d="${path(s.cur)}" fill="none" stroke="#2a78d6" stroke-width="2"/>
+    ${dots(s.prev, "#eb6834", true)}${dots(s.cur, "#2a78d6", false)}
+    ${endLabel(s.prev, "#eb6834", prevLabel)}${endLabel(s.cur, "#2a78d6", curLabel)}
+    ${hit}</svg>`;
+  // 昨対比（100%／0pt を基準に上下の棒）
+  const H2 = 150, base = s.rate ? 0 : 1;
+  const yv = s.yoy.filter((v) => v !== null);
+  let bar = `<div class="muted" style="font-size:12px;">昨対比を出せる月がありません（前年度の同じ月のデータが必要です）。</div>`;
+  if (yv.length) {
+    const t2 = niceTicks(Math.min(base, ...yv), Math.max(base, ...yv), 3);
+    const a = t2[0], b = t2[t2.length - 1];
+    const Y2 = (v) => 8 + (H2 - 8 - 22) * (1 - (v - a) / (b - a || 1));
+    const bw = Math.min(26, (W - L - R) / 12 - 10);
+    const g2 = t2.map((t) => `<line x1="${L}" x2="${W - R}" y1="${Y2(t)}" y2="${Y2(t)}" stroke="${t === base ? "#94a3b8" : "#eeece7"}" stroke-width="1"/><text x="${L - 8}" y="${Y2(t) + 4}" text-anchor="end" font-size="11" fill="#64748b">${s.rate ? `${t > 0 ? "+" : ""}${Math.round(t * 1000) / 10}pt` : `${Math.round(t * 100)}%`}</text>`).join("");
+    const bars = s.yoy.map((v, i) => {
+      if (v === null) return "";
+      const good = kpiGood(s, v);
+      const color = good === false ? "#e34948" : "#2a78d6";
+      const yTop = Math.min(Y2(v), Y2(base)), h = Math.max(1, Math.abs(Y2(v) - Y2(base)));
+      const up = v >= base;
+      const r = Math.min(4, h, bw / 2);
+      const x = X(i) - bw / 2;
+      const d = up ? `M${x},${yTop + h}V${yTop + r}Q${x},${yTop} ${x + r},${yTop}H${x + bw - r}Q${x + bw},${yTop} ${x + bw},${yTop + r}V${yTop + h}Z`
+                   : `M${x},${yTop}V${yTop + h - r}Q${x},${yTop + h} ${x + r},${yTop + h}H${x + bw - r}Q${x + bw},${yTop + h} ${x + bw},${yTop + h - r}V${yTop}Z`;
+      return `<path d="${d}" fill="${color}"><title>${esc(monthLabel(s.months[i]))}：${esc(kpiYoyFmt(s, v))}</title></path><text x="${X(i)}" y="${up ? yTop - 4 : yTop + h + 12}" text-anchor="middle" font-size="10.5" fill="#334155">${esc(kpiYoyFmt(s, v))}</text>`;
+    }).join("");
+    const xl2 = s.months.map((mk, i) => `<text x="${X(i)}" y="${H2 - 6}" text-anchor="middle" font-size="11" fill="#64748b">${Number(mk.slice(5))}月</text>`).join("");
+    bar = `<svg viewBox="0 0 ${W} ${H2}" style="width:100%;height:auto;display:block;" role="img" aria-label="${esc(s.item)}の${s.rate ? "前年差" : "昨対比"}">${g2}${bars}${xl2}</svg>`;
+  }
+  return { line, bar };
+}
+function kpiCard() {
+  const head = (extra) => `<div class="card-h"><span>📈 KPIの年間推移と昨対比（店舗別KPIダッシュボード）</span>${extra || ""}</div>`;
+  if (!S.kpi && !S.kpiErr) setTimeout(() => loadKpi(false), 0);
+  if (S.kpiErr) return `<div class="card">${head()}<div class="card-b"><div class="err">${esc(S.kpiErr)}</div><button class="btn btn-gray btn-sm" onclick="loadKpi(true)">もう一度読み込む</button></div></div>`;
+  if (!S.kpi || S.kpi === "loading") return `<div class="card">${head()}<div class="card-b muted">読み込み中...</div></div>`;
+  const tabs = S.kpi.tabs;
+  if (!tabs.length) return `<div class="card">${head()}<div class="card-b muted">「11期」「10期」の表が見つかりませんでした。</div></div>`;
+  const tab = tabs.find((t) => t.title === S.ui.kpiTab) || tabs[0];
+  const fys = [...new Set(tab.periods.map((p) => p.fy))].sort((a, b) => b - a);
+  const fy = fys.includes(Number(S.ui.kpiFy)) ? Number(S.ui.kpiFy) : fys[0];
+  const curP = tab.periods.find((p) => p.fy === fy), prevP = tab.periods.find((p) => p.fy === fy - 1);
+  const items = [];
+  tab.periods.forEach((p) => p.items.forEach((it) => { if (!items.includes(it.name)) items.push(it.name); }));
+  const item = items.includes(S.ui.kpiItem) ? S.ui.kpiItem : items[0];
+  const s = HQ.kpiSeries(tab, item, fy);
+  const curLabel = curP ? `${curP.label}（${fy}年度）` : `${fy}年度`, prevLabel = prevP ? `${prevP.label}（${fy - 1}年度）` : `${fy - 1}年度`;
+  const ch = kpiCharts(s, curLabel, prevLabel);
+  const tot = HQ.kpiYearTotals(s);
+  const lastI = (() => { for (let i = 11; i >= 0; i--) if (s.cur[i] !== null) return i; return -1; })();
+  const tiles = `<div class="grid g4" style="margin:4px 0 12px;">
+    <div class="tile" style="box-shadow:none;border:1px solid #eef2f7;"><div class="k">最新月（${lastI >= 0 ? esc(monthLabel(s.months[lastI])) : "-"}）</div><div class="v" style="font-size:20px;">${lastI >= 0 ? esc(kpiFmt(item, s.cur[lastI])) : "-"}</div><div class="s">前年同月 ${lastI >= 0 ? esc(kpiFmt(item, s.prev[lastI])) : "-"}</div></div>
+    <div class="tile" style="box-shadow:none;border:1px solid #eef2f7;"><div class="k">最新月の${s.rate ? "前年差" : "昨対比"}</div><div class="v" style="font-size:20px;">${lastI >= 0 ? `${kpiGood(s, s.yoy[lastI]) === false ? "▼" : kpiGood(s, s.yoy[lastI]) ? "▲" : ""} ${esc(kpiYoyFmt(s, s.yoy[lastI]))}` : "-"}</div><div class="s">${kpiLowerIsBetter(item) ? "下がるほど良い項目" : ""}</div></div>
+    ${tot ? `<div class="tile" style="box-shadow:none;border:1px solid #eef2f7;"><div class="k">年度累計（${tot.months}か月・前年同期間と比較）</div><div class="v" style="font-size:20px;">${esc(kpiFmt(item, tot.cur, true))}</div><div class="s">前年 ${esc(kpiFmt(item, tot.prev, true))}・昨対比 <b>${esc(pct(tot.yoy, 1))}</b></div></div>` : ""}
+  </div>`;
+  const ctl = `<div class="ctl" style="margin-bottom:10px;">
+      <div><label>全社・院</label><select onchange="ui('kpiTab',this.value)">${tabs.map((t) => `<option ${t.title === tab.title ? "selected" : ""}>${esc(t.title)}</option>`).join("")}</select></div>
+      <div><label>年度</label><select onchange="ui('kpiFy',this.value)">${fys.map((y) => `<option value="${y}" ${y === fy ? "selected" : ""}>${y}年度（${esc((tab.periods.find((p) => p.fy === y) || {}).label || "")}）</option>`).join("")}</select></div>
+      <div style="margin-left:auto;display:flex;gap:6px;"><a class="btn btn-gray btn-sm" href="${esc(S.kpi.url)}" target="_blank" rel="noopener" style="text-decoration:none;">シート ↗</a><button class="btn btn-gray btn-sm" onclick="loadKpi(true)">🔄 再読込</button></div>
+    </div>
+    <div class="chips">${items.map((n) => `<button class="chip ${n === item ? "sel" : ""}" onclick="ui('kpiItem',${esc(JSON.stringify(n))})">${esc(n)}</button>`).join("")}</div>`;
+  const legend = `<div class="legend" style="margin:0 0 4px;"><span><svg width="26" height="10"><line x1="0" x2="26" y1="5" y2="5" stroke="#2a78d6" stroke-width="2"/></svg> ${esc(curLabel)}</span><span><svg width="26" height="10"><line x1="0" x2="26" y1="5" y2="5" stroke="#eb6834" stroke-width="2" stroke-dasharray="6 4"/></svg> ${esc(prevLabel)}</span></div>`;
+  const yoyLegend = `<div class="legend" style="margin:10px 0 2px;"><b style="color:#1e293b;">${s.rate ? "前年差（ポイント）" : "昨対比（前年同月＝100%）"}</b><span><svg width="12" height="12"><rect width="12" height="12" rx="2" fill="#2a78d6"/></svg> 良い方向</span><span><svg width="12" height="12"><rect width="12" height="12" rx="2" fill="#e34948"/></svg> 悪い方向</span></div>`;
+  // 表（全項目 × 月：今期の値と昨対比）
+  const table = `<details style="margin-top:12px;" ${S.ui.kpiTable ? "open" : ""} ontoggle="S.ui.kpiTable=this.open"><summary style="cursor:pointer;font-weight:800;font-size:13px;color:#1e3a5f;">全項目を表で見る（${esc(tab.title)}・${fy}年度）</summary>
+    <div class="scroll" style="margin-top:8px;"><table><tr><th class="l">項目</th>${s.months.map((mk) => `<th>${Number(mk.slice(5))}月</th>`).join("")}</tr>
+    ${items.map((n) => { const x = HQ.kpiSeries(tab, n, fy); return `<tr><td class="l"><a href="javascript:void(0)" onclick="ui('kpiItem',${esc(JSON.stringify(n))})" style="color:#1e3a5f;font-weight:700;">${esc(n)}</a></td>${x.cur.map((v, i) => { const g = kpiGood(x, x.yoy[i]); return `<td>${esc(kpiFmt(n, v, true))}${x.yoy[i] !== null ? `<div class="small ${g === false ? "ng" : g ? "ok" : ""}">${g === false ? "▼" : g ? "▲" : ""}${esc(kpiYoyFmt(x, x.yoy[i]))}</div>` : ""}</td>`; }).join("")}</tr>`; }).join("")}
+    </table></div><div class="small" style="margin-top:4px;">各セルの下は${"昨対比"}（率の項目は前年差）。▲は良い方向、▼は悪い方向（離反数・離反率は下がるほど良い）。</div></details>`;
+  return `<div class="card">${head()}<div class="card-b">${ctl}${tiles}${legend}<div style="position:relative;">${ch.line}<div id="kpiTip" style="display:none;position:absolute;z-index:5;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;font-size:12px;line-height:1.6;box-shadow:0 4px 12px rgba(0,0,0,.12);pointer-events:none;min-width:180px;"></div></div>${yoyLegend}${ch.bar}${table}
+    <div class="small" style="margin-top:6px;">出どころ：<a href="${esc(S.kpi.url)}" target="_blank" rel="noopener">店舗別KPIダッシュボード</a>の「${esc(tab.title)}」タブ（${esc(curP ? curP.label : "")}・${esc(prevP ? prevP.label : "")}の表）。</div></div></div>`;
+}
+
 // ---- 勤怠（賃金管理表。金額の列はサーバーで除いてある。salary_viewer だけ） ----
 async function loadWage(refresh) {
   S.wage = "loading"; S.wageErr = null; render();

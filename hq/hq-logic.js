@@ -867,6 +867,70 @@
     return null;
   }
 
+  // ===== 店舗別KPIダッシュボード（「11期」「10期」の行の右に12か月、その下に項目の行） =====
+  function parseKpiTab(title, rows) {
+    const periods = [];
+    let cur = null;
+    for (let r = 0; r < rows.length; r++) {
+      const row = rows[r] || [];
+      const lc = row.findIndex((v) => !isBlank(v));
+      if (lc < 0) { cur = null; continue; }
+      const label = String(row[lc]).trim();
+      const pm = toHalf(label).match(/^(\d+)期$/);
+      if (pm) {
+        const months = [];
+        for (let c = lc + 1; c < row.length; c++) { const d = intakeDate(row[c]); if (d) months.push({ c, month: d.slice(0, 7) }); }
+        if (months.length >= 6) {
+          const m0 = months[0].month;
+          cur = { label, fy: fiscalYearOf(m0), months, items: [] };
+          periods.push(cur);
+          continue;
+        }
+      }
+      if (!cur) continue;
+      const values = cur.months.map(({ c }) => intakeNum(row[c]));
+      cur.items.push({ name: label, values });
+    }
+    return {
+      title, periods: periods.map((p) => ({ label: p.label, fy: p.fy, months: p.months.map((m) => m.month), items: p.items })),
+    };
+  }
+  // 率の項目は昨対「比」ではなく「差（ポイント）」で見る
+  const kpiIsRate = (name) => /率/.test(String(name || ""));
+  // 項目の年度推移と昨対：months は7月〜6月、cur＝その年度、prev＝前年度
+  function kpiSeries(tab, item, fy) {
+    const months = fiscalMonthKeys(fy);
+    const pick = (y) => {
+      const p = ((tab && tab.periods) || []).find((x) => x.fy === y);
+      const it = p && p.items.find((x) => x.name === item);
+      return months.map((mk) => {
+        const [yy, mm] = mk.split("-").map(Number);
+        const target = `${y === fy ? yy : yy - (fy - y)}-${pad(mm)}`;
+        const i = p ? p.months.indexOf(target) : -1;
+        return i >= 0 && it ? it.values[i] ?? null : null;
+      });
+    };
+    const cur = pick(fy), prev = pick(fy - 1);
+    const rate = kpiIsRate(item);
+    const yoy = cur.map((v, i) => {
+      const p = prev[i];
+      if (v === null || p === null) return null;
+      if (rate) return v - p;
+      return p > 0 ? v / p : null;
+    });
+    const has = (a) => a.some((v) => v !== null);
+    return { item, fy, months, cur, prev, yoy, rate, hasCur: has(cur), hasPrev: has(prev) };
+  }
+  // 年度累計（足せる項目だけ：売上・来院数など。単価・率・平均・人数・1人・1日は足さない）
+  function kpiAdditive(name) { return !/単価|率|平均|LTV|人数|1人|１人|1日|１日/.test(String(name || "")); }
+  function kpiYearTotals(s) {
+    if (!kpiAdditive(s.item)) return null;
+    const idx = s.cur.map((v, i) => (v !== null && s.prev[i] !== null ? i : -1)).filter((i) => i >= 0);
+    if (!idx.length) return null;
+    const c = sum(idx.map((i) => s.cur[i])), p = sum(idx.map((i) => s.prev[i]));
+    return { months: idx.length, cur: c, prev: p, yoy: p > 0 ? c / p : null };
+  }
+
   function uid(prefix) {
     return `${prefix || "x"}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
   }
@@ -881,7 +945,7 @@
     roleCounts, capacityOf, fitVerdict, fitMonth, fitAdvice, fitYear,
     INTAKE_DEPTS, intakeDefaultDepts, intakeAdditive, intakeFileMonth, intakeDate, parseDailyClinicTab, parseStaffRateTab, parseDailyBook,
     intakeColumnId, intakeDeptsOf, intakeDeptTable,
-    parseWageTab, clinicOfPerson,
+    parseWageTab, clinicOfPerson, parseKpiTab, kpiIsRate, kpiSeries, kpiAdditive, kpiYearTotals,
     LABOR_DEFAULT_MULT, laborVerdict, laborPlan, parseOrgIssues, issueClinics, issueId, ISSUE_STATUSES, mergeIssues,
   };
 })(typeof window !== "undefined" ? window : globalThis);
