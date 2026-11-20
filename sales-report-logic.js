@@ -323,7 +323,62 @@
     return (o.months||[]).map(rowOf);
   }
 
-  const api={buildMonthlyKpi,fiscalMonths,fiscalStartMonth,insuranceSplit,insuranceDepts,CLAIM_PER_VISIT,DEPTS,GOODS_KINDS,isGoods,goodsKind,PAY_KINDS,parsePayments,visitsOf,classifyVisits,VISIT_CLASSES,patientProfiles,GENDERS,genderKey,
+  // ===== 技術・店販別売上集計 日別一覧（POSの帳票と同じ形：日ごと×支払方法ごとに 技術／店販／合計 とその累計） =====
+  // 支払方法ごとの金額：お預かりにお釣りが含まれることがあるため、現金＝会計の合計−現金以外 とする。
+  // 1つの会計に技術と店販（物販）がある場合は、各支払方法の金額を技術と店販の金額の割合で分ける。
+  // 返金は返金日に、返金した方法（現金など）の技術からマイナスする。客数＝来院（同じ予約の会計は1人、¥0の会計も数える）
+  const DAILY_METHODS=[{key:"cash",label:"現金"},{key:"credit",label:"クレジット"},{key:"emoney",label:"電子マネー（PayPay等）"},{key:"other",label:"その他"}];
+  function methodAmounts(p){
+    const total=Number(p.total_amount)||0;
+    const parts=parsePayments(p.payment_method,total);
+    const nonCash={credit:0,emoney:0,other:0};
+    parts.forEach(x=>{ if(x.kind!=="cash") nonCash[x.kind]=(nonCash[x.kind]||0)+x.amount; });
+    const nc=nonCash.credit+nonCash.emoney+nonCash.other;
+    const hasCash=parts.some(x=>x.kind==="cash")||!parts.length;
+    return {cash:hasCash?Math.max(0,total-nc):0,...nonCash};
+  }
+  function buildDailyMethodReport(payments,opts){
+    const o=opts||{};
+    const bookingById={}; (o.bookings||[]).forEach(b=>{ bookingById[b.id]=b; });
+    const inStore=p=>o.storeId==null||p.booking_id==null||((bookingById[p.booking_id]||{}).store_id||1)===o.storeId;
+    const zeroRow=()=>Object.fromEntries(DAILY_METHODS.map(m=>[m.key,{tech:0,goods:0}]));
+    const days=[];
+    for(let d=o.from; d&&d<=o.to; ){ days.push(d); const t=new Date(d+"T00:00:00Z"); t.setUTCDate(t.getUTCDate()+1); d=t.toISOString().slice(0,10); }
+    const byDay=Object.fromEntries(days.map(d=>[d,{date:d,visits:new Set(),rows:zeroRow()}]));
+    (payments||[]).filter(inStore).forEach(p=>{
+      const day=byDay[p.payment_date]; if(!day) return;
+      if(p.is_refund){
+        const kind=(PAY_KINDS.find(k=>k.match(String(p.refund_method||"現金")))||{key:"other"}).key;
+        day.rows[kind].tech+=Number(p.total_amount)||0;
+        return;
+      }
+      day.visits.add(p.booking_id!=null?"b"+p.booking_id:"p"+p.id);
+      const a=splitAmounts(p), total=a.total;
+      const goodsShare=total>0?a.goods/total:0;
+      const m=methodAmounts(p);
+      DAILY_METHODS.forEach(({key})=>{
+        const amt=m[key]||0; if(!amt) return;
+        const g=Math.round(amt*goodsShare);
+        day.rows[key].goods+=g; day.rows[key].tech+=amt-g;
+      });
+    });
+    const cum=zeroRow(); let cumVisits=0;
+    return days.map(d=>{
+      const x=byDay[d]; cumVisits+=x.visits.size;
+      const rows={}, cumRows={};
+      DAILY_METHODS.forEach(({key})=>{
+        cum[key].tech+=x.rows[key].tech; cum[key].goods+=x.rows[key].goods;
+        rows[key]={...x.rows[key],total:x.rows[key].tech+x.rows[key].goods};
+        cumRows[key]={tech:cum[key].tech,goods:cum[key].goods,total:cum[key].tech+cum[key].goods};
+      });
+      const sumOf=rs=>({tech:DAILY_METHODS.reduce((s,m)=>s+rs[m.key].tech,0),goods:DAILY_METHODS.reduce((s,m)=>s+rs[m.key].goods,0)});
+      const all=sumOf(rows), allCum=sumOf(cumRows);
+      rows.all={...all,total:all.tech+all.goods}; cumRows.all={...allCum,total:allCum.tech+allCum.goods};
+      return {date:d,visits:x.visits.size,cumVisits,rows,cumRows};
+    });
+  }
+
+  const api={buildDailyMethodReport,DAILY_METHODS,methodAmounts,buildMonthlyKpi,fiscalMonths,fiscalStartMonth,insuranceSplit,insuranceDepts,CLAIM_PER_VISIT,DEPTS,GOODS_KINDS,isGoods,goodsKind,PAY_KINDS,parsePayments,visitsOf,classifyVisits,VISIT_CLASSES,patientProfiles,GENDERS,genderKey,
     AGE_BANDS,ageBand,SOURCES,sourceKey,splitAmounts,rateKey,TECH_ROWS,buildReport};
   root.SalesReport=api;
 })(typeof window!=="undefined"?window:globalThis);
