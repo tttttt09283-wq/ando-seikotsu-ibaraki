@@ -306,3 +306,104 @@ test("問題点：組織図の「問題点」列を読み、院を推測し、�
   assert.equal(HQ.issueId("a", "b"), HQ.issueId("a", "b"));
   assert.notEqual(HQ.issueId("a", "b"), HQ.issueId("a", "c"));
 });
+
+test("データ取り込み：日計表の院タブ・稼働率タブを読み、列を部門に振り分ける", () => {
+  const clinicTab = [
+    ["", "院名：", "東町院"],
+    [],
+    ["", "", "", "売上管理", "", "母数管理", "マーケティング管理", ""],
+    ["", "", "", "窓口単価", "総売上", "新患数", "Google\n口コミ", "キャンセル率"],
+    ["", "合計", "", 2000, 300000, 3, 2, 0.1],
+    ["", 46327, "日", 2000, 100000, 1, 1, 0.1], // 2026-11-01（シートの通し番号）
+    ["", "2026-11-02 00:00:00", "月", 2000, 200000, 2, 1, 0.1],
+    ["", "2026-11-03 00:00:00", "火", "#DIV/0!", 0, "", 0, 0], // 空の日は数えない
+  ];
+  const rateTab = [
+    ["", "東町院 施術スタッフ別"],
+    ["", "スタッフ名", "対応人数", "実稼働", "稼働枠", "稼働率"],
+    ["", "甲", 10, 12, 12, 1],
+    ["", "乙", 5, 6, 12, 0.5],
+    ["", "院合計", 15, 18, 24, 0.75],
+    ["", "■ 日別"],
+    ["", "2026-11-01 00:00:00", 1, 1, 1, 1],
+  ];
+  const book = HQ.parseDailyBook([{ title: "東町院", values: clinicTab }, { title: "東町稼働率", values: rateTab }, { title: "原本", values: [["", "院名：", "東町院"], [], ["", "", "", "売上管理", "母数管理"], ["", "", "", "総売上", "新患数"]] }]);
+  assert.equal(book.clinics.length, 1);
+  const c = book.clinics[0];
+  assert.equal(c.days.length, 2);
+  assert.equal(c.days[0].date, "2026-11-01");
+  assert.equal(c.total["総売上"], 300000);
+  assert.equal(book.staffRates[0].staff.length, 2);
+  assert.equal(book.staffRates[0].total.rate, 0.75);
+  assert.equal(book.staffRates[0].clinic, "東町院");
+  const col = (h) => book.columns.find((x) => x.header === h);
+  assert.deepEqual(plain(HQ.intakeDefaultDepts(col("総売上").section, "総売上")), ["performance"]);
+  assert.deepEqual(plain(HQ.intakeDefaultDepts("母数管理", "新患数")).sort(), ["marketing", "performance"]);
+  assert.deepEqual(plain(HQ.intakeDefaultDepts("マーケティング管理", "Google口コミ")), ["marketing"]);
+  assert.equal(col("キャンセル率").additive, false);
+  const mk = HQ.intakeDeptTable(book, "marketing", {});
+  assert.deepEqual(plain(mk.cols.map((x) => x.header)), ["新患数", "Google口コミ", "キャンセル率"]);
+  assert.equal(mk.total["新患数"], 3);
+  assert.equal(mk.total["キャンセル率"], null);
+  // 本部が「総売上」を集客にも入れたら、集客の表に出る
+  const map = { [HQ.intakeColumnId("総売上")]: { depts: ["performance", "marketing"] } };
+  assert.ok(HQ.intakeDeptTable(book, "marketing", map).cols.some((x) => x.header === "総売上"));
+  assert.equal(HQ.intakeFileMonth("EnejoyHand様日計表R8.11"), "2026-11");
+  assert.equal(HQ.intakeFileMonth("EnejoyHand様日計表2026.6"), "2026-06");
+  assert.equal(HQ.intakeFileMonth("EnejoyHand様日計表原本"), null);
+});
+
+test("勤怠：賃金管理表のタブ（金額の列を除いたもの）から日数・時間を読み、組織図の院を名字で探す", () => {
+  const rows = [
+    ["残業代計算表", "R", "", "", "", "8", "年", "9", "月"],
+    [],
+    ["", "", "", "", "", "", "", "", "今月総勤務数（ｈ）"],
+    [36, "出勤日数", "別バイト\n別MG業", "休日\n(バイト等含)", "有休", "有給残", "特休", "通常", "うち深夜", "固定\n残業数", "超過\n残業数"],
+    ["定井　彪雅", 20, 0, 10, 1, 12, 0, 183, 0, 23, -5],
+    ["", "", "", "", "", "", "", "", "", "", ""],
+    ["山﨑　航平", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // 全部0の人は出さない
+  ];
+  const t = HQ.parseWageTab("R8.9", rows);
+  assert.equal(t.month, "2026-09");
+  assert.deepEqual(plain(t.cols.map((c) => c.label)), ["出勤日数（日）", "別バイト別MG業（日）", "休日(バイト等含)（日）", "有休（日）", "有給残（日）", "特休（日）", "総勤務（時間）", "深夜（時間）", "固定残業数（時間）", "超過残業数（時間）"]);
+  assert.equal(t.people.length, 1);
+  assert.equal(t.people[0].name, "定井 彪雅");
+  assert.equal(t.people[0].values["総勤務（時間）"], 183);
+  assert.equal(HQ.parseWageTab("原本", rows), null);
+  const org = HQ.parseOrgSheet("2026.9.1〜", orgGrid(["東町院", "西町院"], [["院長", "大皿", "原田"], ["施術者", "定井", "山崎"]]));
+  assert.deepEqual(plain(HQ.clinicOfPerson("定井　彪雅", org)), { clinic: "東町院", role: "施術者" });
+  assert.deepEqual(plain(HQ.clinicOfPerson("山﨑 航平", org)), { clinic: "西町院", role: "施術者" });
+  assert.equal(HQ.clinicOfPerson("誰か", org), null);
+});
+
+test("KPI：「11期」「10期」の表を読み、項目の年度推移と昨対比（率は前年差）を出す", () => {
+  const months = (y) => [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6].map((m) => `${m >= 7 ? y : y + 1}-${String(m).padStart(2, "0")}-01 00:00:00`);
+  const rows = [
+    [],
+    ["", "11期", ...months(2026)],
+    ["", "売上", 2_200_000, 2_000_000, "", ""],
+    ["", "離反率", 0.13, 0.17],
+    ["", "窓口単価", 2100, 2200],
+    [],
+    ["", "10期", ...months(2025)],
+    ["", "売上", 2_000_000, 2_500_000, 2_000_000],
+    ["", "離反率", 0.18, 0.16],
+    ["", "窓口単価", 1700, 1800],
+  ];
+  const t = HQ.parseKpiTab("全社", rows);
+  assert.deepEqual(plain(t.periods.map((p) => [p.label, p.fy, p.items.length])), [["11期", 2026, 3], ["10期", 2025, 3]]);
+  const s = HQ.kpiSeries(t, "売上", 2026);
+  assert.equal(s.months[0], "2026-07");
+  assert.deepEqual(plain(s.cur.slice(0, 3)), [2_200_000, 2_000_000, null]);
+  assert.deepEqual(plain(s.prev.slice(0, 3)), [2_000_000, 2_500_000, 2_000_000]);
+  assert.equal(s.yoy[0], 1.1);
+  assert.equal(s.yoy[1], 0.8);
+  assert.equal(s.yoy[2], null);
+  const r = HQ.kpiSeries(t, "離反率", 2026);
+  assert.equal(r.rate, true);
+  assert.ok(Math.abs(r.yoy[0] - -0.05) < 1e-9); // 率は差（ポイント）
+  const tot = HQ.kpiYearTotals(s);
+  assert.equal(tot.months, 2);
+  assert.equal(tot.yoy, 4_200_000 / 4_500_000);
+  assert.equal(HQ.kpiYearTotals(HQ.kpiSeries(t, "窓口単価", 2026)), null); // 単価は足さない
+});
