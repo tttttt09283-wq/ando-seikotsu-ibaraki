@@ -13856,12 +13856,14 @@ function SalesReportPanel({payments,bookings,stores,todayStr}){
   const [from,setFrom]=React.useState(monthStart);
   const [to,setTo]=React.useState(todayStr);
   const [storeId,setStoreId]=React.useState("all");
-  const [tab,setTab]=React.useState("daily"); // "daily"=総合売上日報 / "ledger"=日計・累計表
+  const [tab,setTab]=React.useState("daily"); // "daily"=総合売上日報 / "ledger"=日計・累計表 / "methods"=技術・店販別売上集計日別一覧
+  const TAB_TITLES={daily:"総合売上日報",ledger:"日計／累計表",methods:"技術・店販別売上集計日別一覧"};
   const [closings,setClosings]=React.useState([]);
   React.useEffect(()=>{
     sb.select("register_closings",`?date=gte.${from}&date=lte.${to}&order=date.asc`).then(r=>setClosings(Array.isArray(r)?r:[])).catch(()=>setClosings([]));
   },[from,to]);
   const r=React.useMemo(()=>SR.buildReport(payments,{from,to,storeId:storeId==="all"?null:Number(storeId),bookings,registerClosings:closings}),[payments,bookings,from,to,storeId,closings]);
+  const dailyMethods=React.useMemo(()=>tab==="methods"?SR.buildDailyMethodReport(payments,{from,to,storeId:storeId==="all"?null:Number(storeId),bookings}):[],[tab,payments,bookings,from,to,storeId]);
   const n=v=>(Math.round(Number(v)||0)).toLocaleString("ja-JP");
   const pct=(a,b)=>b?`${Math.round(a/b*1000)/10}%`:"0%";
   const avg=(a,c)=>c?n(a/c):"0";
@@ -13899,11 +13901,11 @@ function SalesReportPanel({payments,bookings,stores,todayStr}){
   };
 
   function exportCsv(){
-    const lines=[[`${tab==="daily"?"総合売上日報":"日計／累計表"}（${storeName}）`,`${from}〜${to}`,`稼働日数 ${r.days}日`]];
+    const lines=[[`${TAB_TITLES[tab]}（${storeName}）`,`${from}〜${to}`,`稼働日数 ${r.days}日`]];
     tables.forEach(t=>{ lines.push([]); lines.push([t.title]); lines.push(t.head); t.rows.forEach(x=>lines.push(x)); });
     const csv=lines.map(cols=>cols.map(c=>`"${String(c??"").replace(/"/g,'""')}"`).join(",")).join("\n");
     const blob=new Blob(["﻿"+csv],{type:"text/csv;charset=utf-8;"});
-    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`${tab==="daily"?"総合売上日報":"日計累計表"}_${from}_${to}.csv`; a.click();
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`${TAB_TITLES[tab].replace(/[／・]/g,"")}_${from}_${to}.csv`; a.click();
   }
 
   const btn=on=>({padding:"8px 12px",borderRadius:8,border:"1.5px solid "+(on?"#0e7490":"#e2e8f0"),background:on?"#0e7490":"white",color:on?"white":"#374151",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"});
@@ -13913,10 +13915,11 @@ function SalesReportPanel({payments,bookings,stores,todayStr}){
   return(
     <div style={{padding:16,maxWidth:1200,margin:"0 auto"}} className="sales-report">
       <style>{`@media print{.sales-report .no-print{display:none!important}}`}</style>
-      <div style={{fontSize:22,fontWeight:900,color:"#0f172a",marginBottom:4}}>{tab==="daily"?"総合売上日報":"日計／累計表"}<span style={{fontSize:14,color:"#64748b",marginLeft:8}}>— {storeName}</span></div>
+      <div style={{fontSize:22,fontWeight:900,color:"#0f172a",marginBottom:4}}>{TAB_TITLES[tab]}<span style={{fontSize:14,color:"#64748b",marginLeft:8}}>— {storeName}</span></div>
       <div className="no-print" style={{display:"flex",gap:6,marginBottom:10}}>
         <button onClick={()=>setTab("daily")} style={btn(tab==="daily")}>総合売上日報</button>
         <button onClick={()=>setTab("ledger")} style={btn(tab==="ledger")}>日計／累計表</button>
+        <button onClick={()=>setTab("methods")} style={btn(tab==="methods")}>技術・店販 日別一覧</button>
       </div>
       <div style={{display:"flex",flexWrap:"wrap",gap:8,alignItems:"center",background:"white",padding:12,borderRadius:12,marginBottom:14,border:"1px solid #e2e8f0"}}>
         <span style={{fontSize:12,fontWeight:800,color:"#475569"}}>期間</span>
@@ -14016,6 +14019,38 @@ function SalesReportPanel({payments,bookings,stores,todayStr}){
           </div>
         </div>
       )}
+      {tab==="methods"&&(()=>{
+        const M=[...SR.DAILY_METHODS,{key:"all",label:"全体"}];
+        const yen=v=>`${n(v)}円`;
+        // CSV用（1行＝日付×支払方法）
+        tables.push({title:"技術・店販別売上集計日別一覧",head:["日","客数","客数累計","金種別","技術","店販","合計","技術累計","店販累計","合計累計"],
+          rows:dailyMethods.flatMap(d=>M.map(m=>[d.date,d.visits,d.cumVisits,m.label,d.rows[m.key].tech,d.rows[m.key].goods,d.rows[m.key].total,d.cumRows[m.key].tech,d.cumRows[m.key].goods,d.cumRows[m.key].total]))});
+        const c={padding:"3px 8px",fontSize:12,border:"1px solid #94a3b8",textAlign:"right",whiteSpace:"nowrap"};
+        const h={...c,background:"#e2e8f0",fontWeight:800,textAlign:"center"};
+        return(
+          <div style={{background:"white",border:"1px solid #e2e8f0",borderRadius:10,padding:12,overflowX:"auto"}}>
+            <table style={{borderCollapse:"collapse",margin:"0 auto"}}>
+              <thead><tr>{["日","客数","客数累計","金種別","技術","店販","合計","技術累計","店販累計","合計累計"].map(x=><th key={x} style={h}>{x}</th>)}</tr></thead>
+              <tbody>
+                {dailyMethods.map(d=>M.map((m,i)=>(
+                  <tr key={d.date+m.key} style={m.key==="all"?{fontWeight:800,background:"#f8fafc"}:undefined}>
+                    {i===0&&<td rowSpan={M.length} style={{...c,textAlign:"center"}}>{d.date.replace(/-/g,"/")}</td>}
+                    {i===0&&<td rowSpan={M.length} style={c}>{d.visits}人</td>}
+                    {i===0&&<td rowSpan={M.length} style={c}>{d.cumVisits}人</td>}
+                    <td style={{...c,textAlign:"left"}}>{m.label}</td>
+                    <td style={c}>{yen(d.rows[m.key].tech)}</td><td style={c}>{yen(d.rows[m.key].goods)}</td><td style={c}>{yen(d.rows[m.key].total)}</td>
+                    <td style={c}>{yen(d.cumRows[m.key].tech)}</td><td style={c}>{yen(d.cumRows[m.key].goods)}</td><td style={c}>{yen(d.cumRows[m.key].total)}</td>
+                  </tr>
+                )))}
+              </tbody>
+            </table>
+            <div style={{fontSize:11,color:"#64748b",marginTop:8,lineHeight:1.7}}>
+              技術＝保険・自費の施術・回数券・フリーパスなど、店販＝物販（「物販：」で始まる項目など）。1つの会計に技術と店販があり支払方法が複数のときは、金額の割合で分けています。<br/>
+              現金はお釣りを除いた金額（会計の合計−現金以外）。返金は返金日に、返金した方法の技術から引いています。客数＝来院の数（回数券・フリーパスの消化など¥0の会計も含む）。
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

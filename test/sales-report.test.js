@@ -134,3 +134,25 @@ test("月次KPI：売上＝窓口＋保険請求、カルテ枚数・新患・�
   assert.equal(nov2.churn, 2); // 11/20には2人とも1か月通院なし
 
 });
+
+test("技術・店販別 日別一覧：支払方法ごと（お釣りは除く）・技術と店販の割合・累計・返金", () => {
+  const P = (id, b, date, ins, items, method) => ({ id, booking_id: b, patient_name: "架空", payment_date: date, staff_id: 1, insurance_amount: ins, jifee_amount: items.reduce((a, i) => a + i.amount, 0), total_amount: ins + items.reduce((a, i) => a + i.amount, 0), jifee_items: items, payment_method: method });
+  const pays = [
+    P(1, 1, "2026-11-01", 800, [], "現金:¥1,000"),                                         // お釣り200円 → 現金800
+    P(2, 2, "2026-11-01", 1100, [{ label: "物販：インソール", amount: 4400 }], "カード:¥5,500"), // 技術1,100・店販4,400
+    P(3, 3, "2026-11-03", 0, [], "現金:¥0"),                                               // ¥0（回数券）でも客数
+    P(4, 4, "2026-11-03", 600, [], "PayPay:¥600"),
+    { id: "refund_1", is_refund: true, booking_id: 1, patient_name: "架空", payment_date: "2026-11-03", staff_id: 1, total_amount: -800, insurance_amount: -800, refund_method: "現金" },
+  ];
+  const r = SR.buildDailyMethodReport(pays, { from: "2026-11-01", to: "2026-11-03", bookings: [] });
+  assert.equal(r.length, 3);
+  const [d1, d2, d3] = r;
+  assert.deepEqual(plain([d1.visits, d1.cumVisits, d2.visits, d2.cumVisits, d3.visits, d3.cumVisits]), [2, 2, 0, 2, 2, 4]);
+  assert.deepEqual(plain(d1.rows.cash), { tech: 800, goods: 0, total: 800 });
+  assert.deepEqual(plain(d1.rows.credit), { tech: 1100, goods: 4400, total: 5500 });
+  assert.deepEqual(plain(d1.rows.all), { tech: 1900, goods: 4400, total: 6300 });
+  assert.deepEqual(plain(d3.rows.cash), { tech: -800, goods: 0, total: -800 });
+  assert.deepEqual(plain(d3.rows.emoney), { tech: 600, goods: 0, total: 600 });
+  assert.deepEqual(plain(d3.cumRows.all), { tech: 1700, goods: 4400, total: 6100 });
+  assert.deepEqual(plain(d3.cumRows.cash), { tech: 0, goods: 0, total: 0 });
+});
