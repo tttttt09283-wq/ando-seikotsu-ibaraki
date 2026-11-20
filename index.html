@@ -13850,6 +13850,55 @@ function MonthlyKpiPanel({payments,bookings,stores,todayStr}){
   );
 }
 
+// Excel（.xlsx）を作るためのライブラリ（ExcelJS）。ファイル出力を押したときだけ読み込む
+let excelJsPromise=null;
+function loadExcelJs(){
+  if(window.ExcelJS) return Promise.resolve(window.ExcelJS);
+  if(!excelJsPromise) excelJsPromise=new Promise((resolve,reject)=>{
+    const sc=document.createElement("script");
+    sc.src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js";
+    sc.onload=()=>window.ExcelJS?resolve(window.ExcelJS):reject(new Error("ExcelJS を読み込めませんでした"));
+    sc.onerror=()=>{ excelJsPromise=null; reject(new Error("Excel出力の準備ができませんでした（ネットワークを確認してください）")); };
+    document.head.appendChild(sc);
+  });
+  return excelJsPromise;
+}
+// 技術・店販別売上集計日別一覧を、画面と同じ形（日付・客数・客数累計は1日分の行をまとめる）の Excel にする
+async function exportDailyMethodsXlsx(days,methods,title,fileName){
+  const ExcelJS=await loadExcelJs();
+  const wb=new ExcelJS.Workbook();
+  const ws=wb.addWorksheet("日別一覧",{pageSetup:{paperSize:9,orientation:"portrait",fitToPage:true,fitToWidth:1,fitToHeight:0},views:[{state:"frozen",ySplit:3}]});
+  const head=["日","客数","客数累計","金種別","技術","店販","合計","技術累計","店販累計","合計累計"];
+  ws.columns=[{width:13},{width:8},{width:10},{width:22},{width:12},{width:10},{width:12},{width:13},{width:11},{width:13}];
+  ws.mergeCells(1,1,1,head.length);
+  ws.getCell(1,1).value=title; ws.getCell(1,1).font={bold:true,size:14}; ws.getCell(1,1).alignment={horizontal:"center"};
+  const border={top:{style:"thin"},left:{style:"thin"},bottom:{style:"thin"},right:{style:"thin"}};
+  const headRow=ws.getRow(3); headRow.values=head;
+  headRow.eachCell(c=>{ c.font={bold:true}; c.alignment={horizontal:"center",vertical:"middle"}; c.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFE2E8F0"}}; c.border=border; });
+  const yen='#,##0"円";-#,##0"円"', ppl='#,##0"人"';
+  let r=4;
+  days.forEach(d=>{
+    methods.forEach((m,i)=>{
+      const row=ws.getRow(r+i);
+      const x=d.rows[m.key], c=d.cumRows[m.key];
+      row.values=[i===0?d.date.replace(/-/g,"/"):null,i===0?d.visits:null,i===0?d.cumVisits:null,m.label,x.tech,x.goods,x.total,c.tech,c.goods,c.total];
+      for(let col=1;col<=head.length;col++){
+        const cell=row.getCell(col); cell.border=border;
+        if(col>=5){ cell.numFmt=yen; cell.alignment={horizontal:"right"}; }
+        if(m.key==="all"&&col>=4){ cell.font={bold:true}; cell.fill={type:"pattern",pattern:"solid",fgColor:{argb:"FFF8FAFC"}}; }
+      }
+    });
+    ws.mergeCells(r,1,r+methods.length-1,1); ws.mergeCells(r,2,r+methods.length-1,2); ws.mergeCells(r,3,r+methods.length-1,3);
+    ws.getCell(r,1).alignment={horizontal:"center",vertical:"middle"};
+    [2,3].forEach(col=>{ const c=ws.getCell(r,col); c.numFmt=ppl; c.alignment={horizontal:"right",vertical:"middle"}; });
+    r+=methods.length;
+  });
+  const buf=await wb.xlsx.writeBuffer();
+  const blob=new Blob([buf],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=fileName;
+  document.body.appendChild(a); a.click(); a.remove(); // ファイル名（日本語）が付くよう、いったん画面に置いてから押す
+  setTimeout(()=>URL.revokeObjectURL(a.href),10000);
+}
 function SalesReportPanel({payments,bookings,stores,todayStr}){
   const SR=window.SalesReport;
   const monthStart=todayStr.slice(0,8)+"01";
@@ -13900,7 +13949,13 @@ function SalesReportPanel({payments,bookings,stores,todayStr}){
     return <Table title={title} head={[firstHead,...G.flatMap(g=>[`${g.label} 客数`,"客比率"]),"合計 客数","客比率"]} rows={rows}/>;
   };
 
-  function exportCsv(){
+  async function exportCsv(){
+    if(tab==="methods"){
+      // 技術・店販 日別一覧は、画面と同じ形の Excel で出力する
+      try{ await exportDailyMethodsXlsx(dailyMethods,[...SR.DAILY_METHODS,{key:"all",label:"全体"}],`技術・店販別売上集計日別一覧（${storeName}）　${from.replace(/-/g,"/")}〜${to.replace(/-/g,"/")}`,`技術店販別売上集計日別一覧_${from}_${to}.xlsx`); }
+      catch(e){ alert(e.message||"Excelを作れませんでした"); }
+      return;
+    }
     const lines=[[`${TAB_TITLES[tab]}（${storeName}）`,`${from}〜${to}`,`稼働日数 ${r.days}日`]];
     tables.forEach(t=>{ lines.push([]); lines.push([t.title]); lines.push(t.head); t.rows.forEach(x=>lines.push(x)); });
     const csv=lines.map(cols=>cols.map(c=>`"${String(c??"").replace(/"/g,'""')}"`).join(",")).join("\n");
