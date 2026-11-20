@@ -182,3 +182,36 @@ select count(*) from bookings where from_body_check and not cancelled;
 - AI姿勢チェックは、開いたときだけ `cdn.jsdelivr.net` から MediaPipe Pose を読み込みます。判定基準は院内の「体のチェック（AI姿勢分析）」と同じです。
 - `/demo` はメニュー画面を開くので、4つすべてをデモで試せます。
 
+## 10. LINE配信・QRコード用のURL
+
+- **https://ando-body-check.vercel.app/age** … LINE配信用。開くとすぐカラダ年齢チェックの最初の質問（年齢など）から始まります（`/check?src=line` へ移動）。メニュー画面は通りません。
+- **https://ando-body-check.vercel.app/qr** … 店頭のQRコード用（`/check?src=qr`）。集計で「どこから開いたか」を分けるためのURLです。
+- **https://ando-body-check.vercel.app/th** … Threads投稿用（`/check?src=threads`）。
+- **https://ando-body-check.vercel.app/ig** … Instagram用（プロフィールのリンク・ストーリーズのリンクなど。`/check?src=instagram`）。
+  ※URLに印が無くても、InstagramやThreadsのアプリ内で開いた場合は自動でそれぞれに数えます。
+- LINEでこのURLを送ると、「あなたの姿勢・体幹は何歳？」の画像付きカードで表示されます（画像：`public/og-check.png`、文言：`src/app/(app)/check/page.tsx`）。
+- 公開URLが変わったときは、環境変数 `NEXT_PUBLIC_SITE_URL` を設定すると、カードの画像のURLもそれに合わせます。
+
+## 11. 利用数の自動集計（匿名）
+
+- チェックを始めたとき（最初の質問の「次へ」）・結果が出たとき・予約ボタンを押したときに、匿名の記録を予約システムのデータベース（Supabase の `body_check_results`）へ送ります（`src/lib/tally.ts`）。
+- 送る内容：匿名のセッションID・どこから開いたか（`?src=`）・LINEのアプリ内か・年齢・性別・気になる症状・姿勢・体幹年齢・項目ごとの年齢・スコア・ランク・予約ボタンを押したか。**氏名・電話番号などは送りません。**
+- 書き込みは関数 `record_body_check()` だけ（ブラウザ用の公開キーで呼べる入口）。表は院のスタッフ（ログイン中）しか読めません。
+- 見る場所：予約管理システムの「集客・フォロー」→「カラダ年齢チェックの集計」（期間を選んで、始めた人・完了・LINEから・予約ボタン・実際の予約・年代別・日別など）。
+- デモ中（`/demo`）は送りません。プライバシーのページ（`/privacy`）にも説明を載せています。
+
+## 12. お名前（任意）・来院特典・結果のシェア
+
+- 最初の質問で「お名前（ニックネームでもOK・任意）」を入れると、結果に「〇〇さんの姿勢・体幹年齢は」と出ます（集計にも記録）。
+- **来院特典**：結果画面に特典のカードと「特典コード」（紹介コードの先頭6文字）を表示。文言は `src/config/site.ts` の `benefit` で変えます。
+  受付では、予約システムの「カラダ年齢チェックの集計」→「来院特典の確認」で特典コード・お名前を入れると、チェック日・結果・紹介元を確かめられます。
+- **シェア**：結果画面の「LINEで送る／ほかのアプリで送る／コピー」。送られるURLは `/s?ref=紹介コード`（LIFF設定後は `https://liff.line.me/LIFF_ID?ref=…`）。
+- **シェアされた人**（`/s`）：「〇〇さんから届きました（〇歳）」→ **LINE友だち追加** → チェック開始（`/check?src=share&ref=…`）。紹介元は集計に記録。
+
+### LINE友だち追加を「必須」にする設定（LIFF）
+
+1. LINE Developers で、予約ページと同じプロバイダーの **LINEログインチャネル** を開く（「リンクされたLINE公式アカウント」が院の公式アカウントになっていること）
+2. 「LIFF」タブ →「追加」：サイズ Full ／ エンドポイントURL `https://ando-body-check.vercel.app/s` ／ Scope `profile` ／ **友だち追加オプション：On（Aggressive）**
+3. 発行された LIFF ID を `src/config/site.ts` の `liffId`（または Vercel の環境変数 `NEXT_PUBLIC_LIFF_ID`）に入れる（設定済み：`2010529910-aRlaZ403`）
+   → シェアされた人はLINEログインし、公式アカウントの友だちでないと「チェックを始める」が出ません。
+   未設定のあいだは「① 友だち追加 → ② 始める」の順に押す流れ（追加したかは確かめられない）で動きます。

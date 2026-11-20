@@ -204,16 +204,14 @@ function statusBadge(s) {
 
 // ===== ログイン =====
 // ===== ログイン =====
-// 院ID＋院PASS → 名前を選んで個人PASS（スタッフ・院長・BM）／メールアドレス（社長・GM）
+// 個人ID＋個人PASS（スタッフ・院長・BM）／メールアドレス（社長・GM）
 const PIN_KEY = "ando_pin_token";
 const ssGet = (k) => { try { return sessionStorage.getItem(k); } catch (e) { return null; } };
 const ssSet = (k, v) => { try { v === null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, v); } catch (e) {} };
 const lsGet = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch (e) {} };
-let loginMode = "clinic";  // clinic（院ID） / email（社長・GM）
-// 共有用URL（/incentive?id=ibaraki）なら院IDを入れておく
-const URL_CLINIC_ID = (() => { try { return (new URLSearchParams(location.search).get("id") || "").trim().toLowerCase().replace(/[^a-z0-9]/g, ""); } catch (e) { return ""; } })();
-let clinicStep = null;     // 院IDが通ったあと { clinic, staff, clinicToken }
+let loginMode = "person";  // person（個人ID） / email（社長・GM）
+let typedPersonId = "";    // PASSをまちがえたときも、入れた個人IDは残す
 
 async function authHeader() {
   const pin = ssGet(PIN_KEY);
@@ -233,7 +231,7 @@ function renderLogin(msg) {
   ssSet(PIN_KEY, null);
   document.getElementById("subLabel").textContent = "ログインしてください";
   document.getElementById("topActions").innerHTML = "";
-  const tabs = `<div class="tabs" style="margin-bottom:12px;"><button class="tab ${loginMode === "clinic" ? "sel" : ""}" onclick="loginMode='clinic';clinicStep=null;renderLogin()">院のIDでログイン</button><button class="tab ${loginMode === "email" ? "sel" : ""}" onclick="loginMode='email';renderLogin()">社長・GM</button></div>`;
+  const tabs = `<div class="tabs" style="margin-bottom:12px;"><button class="tab ${loginMode === "person" ? "sel" : ""}" onclick="loginMode='person';renderLogin()">スタッフ・院長・BM</button><button class="tab ${loginMode === "email" ? "sel" : ""}" onclick="loginMode='email';renderLogin()">社長・GM</button></div>`;
   const err = msg ? `<div class="err">${esc(msg)}</div>` : "";
   let form;
   if (loginMode === "email") {
@@ -241,17 +239,11 @@ function renderLogin(msg) {
       <label>パスワード</label><input id="lpw" type="password" autocomplete="current-password"/>
       <button class="btn btn-blue" id="lbtn">ログイン</button>
       <div class="small" style="margin-top:10px;">予約管理と同じID・パスワードでログインできます</div>`;
-  } else if (!clinicStep) {
-    form = `<label>院ID</label><input id="cid" autocomplete="username" autocapitalize="off" value="${esc(URL_CLINIC_ID || lsGet("ando_clinic_id") || "")}" placeholder="例：ibaraki"/>
-      <label>院PASS（数字4桁）</label><input id="cpw" type="password" inputmode="numeric" maxlength="4" autocomplete="off"/>
-      <button class="btn btn-blue" id="lbtn">次へ</button>
-      <div class="small" style="margin-top:10px;">院ID・院PASSは院長に確認してください</div>`;
   } else {
-    form = `<div style="font-weight:800;margin-bottom:8px;">${esc(clinicStep.clinic)}院</div>
-      <label>名前</label><select id="pname" class="pick">${clinicStep.staff.map((p) => `<option value="${esc(p.key)}">${esc(p.name)}</option>`).join("")}</select>
-      <label>個人PASS（自分の名字・漢字）</label><input id="ppw" type="text" lang="ja" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="例：山田（漢字で入力）"/>
+    form = `<label>個人ID</label><input id="pid" autocomplete="username" autocapitalize="off" spellcheck="false" value="${esc(typedPersonId || lsGet("ando_person_id") || "")}" placeholder="例：korien01"/>
+      <label>個人PASS</label><input id="ppw" type="password" autocomplete="current-password" autocapitalize="off" spellcheck="false"/>
       <button class="btn btn-blue" id="lbtn">ログイン</button>
-      <div style="margin-top:10px;"><button class="chip" onclick="clinicStep=null;renderLogin()">‹ 院IDからやり直す</button></div>`;
+      <div class="small" style="margin-top:10px;">個人ID・個人PASSは社長・GMから一人ずつ渡されます。ほかの人に教えないでください</div>`;
   }
   root.innerHTML = `<div class="card login"><div class="card-b">${tabs}${err}${form}</div></div>`;
   const btn = document.getElementById("lbtn");
@@ -267,25 +259,16 @@ function renderLogin(msg) {
         if (error) return renderLogin("IDまたはパスワードが違います");
         return load();
       }
-      if (!clinicStep) {
-        const id = document.getElementById("cid").value.trim().toLowerCase();
-        const pass = document.getElementById("cpw").value.trim();
-        if (!id || !/^\d{4}$/.test(pass)) return renderLogin("院IDと、院PASS（数字4桁）を入力してください");
-        const json = await postJson("/api/pin-login", { action: "clinic", id, pass });
-        lsSet("ando_clinic_id", id);
-        clinicStep = json;
-        if (!json.staff.length) { clinicStep = null; return renderLogin("この院でログインできるスタッフがまだ登録されていません。社長・GMに連絡してください"); }
-        return renderLogin();
-      }
-      const pin = document.getElementById("ppw").value.trim();
-      if (!pin) return renderLogin("個人PASS（自分の名字）を入力してください");
-      const json = await postJson("/api/pin-login", { action: "person", clinicToken: clinicStep.clinicToken, personKey: document.getElementById("pname").value, pin });
+      const id = document.getElementById("pid").value.trim().toLowerCase();
+      typedPersonId = id;
+      const pass = document.getElementById("ppw").value.trim();
+      if (!id || !pass) return renderLogin("個人IDと個人PASSを入力してください");
+      const json = await postJson("/api/pin-login", { action: "login", id, pass });
+      lsSet("ando_person_id", id);
       await supabaseClient.auth.signOut().catch(() => {});
       ssSet(PIN_KEY, json.token);
-      clinicStep = null;
       return load();
     } catch (e) {
-      if (/やり直/.test(e.message)) clinicStep = null;
       return renderLogin(e.message);
     }
   };
@@ -303,7 +286,7 @@ async function load(refresh) {
     if (res.status === 401) return renderLogin(body.error);
     if (!res.ok) throw new Error(body.error || `読み込みに失敗しました（HTTP ${res.status}）`);
     // マンダラの画面からログインしに来た人は、ログインできたらマンダラへ戻す
-    try { if (new URLSearchParams(location.search).get("next") === "mandala") { location.replace("/mandala"); return; } } catch (e) {}
+    try { const nx = new URLSearchParams(location.search).get("next"); if (nx === "mandala" || nx === "manual") { location.replace("/" + nx); return; } } catch (e) {}
     data = body;
     if (!halfKey) {
       const cur = data.halves.find((h) => h.elapsed.length && !h.complete) || [...data.halves].reverse().find((h) => h.elapsed.length) || data.halves[0];
@@ -351,6 +334,7 @@ function render() {
   document.getElementById("subLabel").textContent =
     `${data.fiscalYear}年度 ・ ${data.latestMonth ? data.latestMonth + "月分まで反映" : "実績なし"} ・ ${v.name}さん（${SCOPE_LABEL[v.scope]}）`;
   document.getElementById("topActions").innerHTML =
+    `<a class="btn btn-outline" style="text-decoration:none;" href="/manual">📘 マニュアル</a>` +
     `<a class="btn btn-outline" style="text-decoration:none;" href="/mandala">🧭 マンダラ・KDI</a>` +
     `<button class="btn btn-outline" onclick="${view === "evaluation" ? "loadEval(true)" : view === "logins" ? "loginsData=null;render()" : "load(true)"}">↻ 最新に更新</button>` +
     `<button class="btn btn-outline" onclick="logout()">ログアウト</button>`;
@@ -1436,45 +1420,36 @@ async function loadLogins(body) {
   render();
 }
 
-function reissuePin(kind, target, label) {
-  if (!confirm(`${label} のPASSを再発行します。\n古いPASSは使えなくなり、${kind === "個人" ? "その人" : "この院の院PASSで入る人"}はログインし直しになります。よろしいですか？`)) return;
+function reissuePin(personKey, label) {
+  if (!confirm(`${label} の個人PASSを再発行します（個人IDは同じです）。\n古いPASSは使えなくなり、その人はログインし直しになります。よろしいですか？`)) return;
   root.innerHTML = `<div class="center">再発行中...</div>`;
-  loadLogins(kind === "院" ? { action: "reissue", kind, clinic: target } : { action: "reissue", kind, personKey: target });
+  loadLogins({ action: "reissue", personKey });
 }
 
 function generatePins() {
-  if (!confirm("まだPASSが無い院・スタッフに、数字4桁のPASSをランダムで作成します。よろしいですか？")) return;
+  if (!confirm("まだ個人ID・個人PASSが無いスタッフに作成します（作成済みの人は変わりません）。よろしいですか？")) return;
   root.innerHTML = `<div class="center">作成中...</div>`;
   loadLogins({ action: "generate" });
-}
-
-const shareUrl = (clinicId) => `${location.origin}/incentive?id=${encodeURIComponent(clinicId)}`;
-async function copyText(text, btn) {
-  try { await navigator.clipboard.writeText(text); btn.textContent = "コピーしました"; }
-  catch (e) { prompt("このURLをコピーしてください", text); }
 }
 
 function renderLogins() {
   if (!loginsData) { if (!loginsLoading) setTimeout(() => loadLogins(), 0); return `<div class="center">読み込み中...</div>`; }
   if (loginsData.error) return `<div class="card"><div class="card-b"><div class="err">${esc(loginsData.error)}</div><button class="btn btn-blue" onclick="loginsData=null;render()">もう一度読み込む</button></div></div>`;
   const d = loginsData;
-  const bySurname = d.personPassMode === "surname";
   let html = `<div class="card no-print"><div class="card-b" style="font-size:13px;line-height:1.8;">
-    スタッフ・院長・BMは「院のIDでログイン」から、<b>院ID → 院PASS → 自分の名前 → 個人PASS</b> の順で入ります。見られる範囲は等級で自動で決まります（スタッフ＝自分だけ／院長＝自院／BM＝管轄エリア）。<br>
+    スタッフ・院長・BMは、<b>一人ずつの 個人ID と 個人PASS</b> でログインします（院ID・名字でのログインは終了しました）。見られる範囲は等級で自動で決まります（スタッフ＝自分だけ／院長＝自院／BM＝管轄エリア。マニュアルは自分のクラスとその下＋1つ上まで）。<br>
     社長・GMは今までどおりメールアドレスでログインします。PASSを${d.maxFails}回まちがえると${d.lockMinutes}分ロックされ、「再発行」で解除できます。<br>
-    ${bySurname ? "<b>個人PASSは当面、自分の名字（漢字）です。</b>院IDと院PASSは院の外に出さないでください。" : "<b>個人PASSは本人だけに伝えてください。</b>"}
+    <b>個人ID・個人PASSは本人だけに渡してください</b>（印刷して切り分けるか、本人に直接伝える）。
     <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
-      ${d.missing ? `<button class="btn btn-blue" style="width:auto;" onclick="generatePins()">まだ無いPASSをまとめて作成（${d.missing}件）</button>` : '<span class="small ok">全員分のPASSが作成済みです</span>'}
+      ${d.missing ? `<button class="btn btn-blue" style="width:auto;" onclick="generatePins()">まだ無い人の個人ID・PASSを作成（${d.missing}名）</button>` : '<span class="small ok">全員分の個人ID・PASSが作成済みです</span>'}
       <button class="btn btn-save" onclick="window.print()">🖨 印刷</button>
     </div></div></div>`;
-  html += d.clinics.map((c) => `<div class="card login-card"><div class="card-h"><span>${esc(c.name)}院</span>
-      <span>院ID <b class="mono">${esc(c.clinicId)}</b> ・ 院PASS <b class="mono">${c.pass ? esc(c.pass) : "未作成"}</b>${c.locked ? ' <span class="badge b-ng">ロック中</span>' : ""}
-      ${c.pass ? `<button class="chip no-print" onclick="reissuePin('院','${esc(c.name)}','${esc(c.name)}院')">再発行</button>` : ""}</span></div>
-    <div class="card-b"><div class="small" style="margin-bottom:8px;word-break:break-all;">共有URL（院IDが入った状態で開きます） <b class="mono">${esc(shareUrl(c.clinicId))}</b> <button class="chip no-print" onclick="copyText('${esc(shareUrl(c.clinicId))}', this)">コピー</button></div>
-    <div class="scroll"><table><tr><th class="l">名前</th><th class="l">等級</th><th>個人PASS${bySurname ? "（名字）" : ""}</th><th class="no-print"></th></tr>
-    ${c.staff.map((p) => `<tr><td class="l"><b>${esc(p.name)}</b></td><td class="l">${esc(p.grade || "-")} ${esc(p.role || "")}</td>
-      <td><b class="mono">${p.pin ? esc(p.pin) : '<span class="small">未作成</span>'}</b>${p.locked ? ' <span class="badge b-ng">ロック中</span>' : ""}</td>
-      <td class="no-print">${bySurname ? (p.locked ? `<button class="chip" onclick="reissuePin('個人','${esc(p.key)}','${esc(p.name)}')">ロック解除</button>` : "") : p.pin ? `<button class="chip" onclick="reissuePin('個人','${esc(p.key)}','${esc(p.name)}')">再発行</button>` : ""}</td></tr>`).join("") || '<tr><td colspan="4" class="l muted">スタッフがいません</td></tr>'}
+  html += d.clinics.filter((c) => c.staff.length).map((c) => `<div class="card login-card"><div class="card-h"><span>${esc(c.name)}院</span></div>
+    <div class="card-b"><div class="scroll"><table><tr><th class="l">名前</th><th class="l">等級</th><th>個人ID</th><th>個人PASS</th><th class="no-print"></th></tr>
+    ${c.staff.map((p) => `<tr><td class="l"><b>${esc(p.name)}</b>${p.clinics.length > 1 ? `<div class="small">${esc(p.clinics.join("・"))}</div>` : ""}</td><td class="l">${esc(p.grade || "-")} ${esc(p.role || "")}</td>
+      <td><b class="mono">${p.id ? esc(p.id) : '<span class="small">未作成</span>'}</b></td>
+      <td><b class="mono">${p.pass ? esc(p.pass) : '<span class="small">未作成</span>'}</b>${p.locked ? ' <span class="badge b-ng">ロック中</span>' : ""}</td>
+      <td class="no-print">${p.id ? `<button class="chip" onclick="reissuePin('${esc(p.key)}','${esc(p.name)}')">${p.locked ? "ロック解除・" : ""}再発行</button>` : ""}</td></tr>`).join("")}
     </table></div></div></div>`).join("");
   return html;
 }

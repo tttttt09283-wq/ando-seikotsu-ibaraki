@@ -498,7 +498,7 @@ function renderPrevPaymentsInner(){
     </div>
   </div>`;
 }
-let state={passes:[],usePassId:null,passUsedInfo:null,insuranceAmount:0,insuranceType:null,insuranceRate:null,insuranceTier:null,jifeeItems:[],payments:[],done:false,saving:false,nextBookings:[],savingBookings:false,bookingsSaved:false,jifeeTab:isPreOpenPeriod()?"kaisu":"spot",receiptFrequency:null,receiptFrequencyKnown:false,savingReceiptPref:false};
+let state={passes:[],usePassId:null,passUsedInfo:null,insuranceAmount:0,insuranceType:null,insuranceRate:null,insuranceTier:null,acuTier:null,jifeeItems:[],payments:[],done:false,saving:false,nextBookings:[],savingBookings:false,bookingsSaved:false,jifeeTab:isPreOpenPeriod()?"kaisu":"spot",receiptFrequency:null,receiptFrequencyKnown:false,savingReceiptPref:false};
 const CLINIC_NAME_FALLBACK="あんど整骨院";
 
 // 次回予約の枠：2回目以降の来院は基本20分（初めての来院だけ60分）
@@ -511,19 +511,82 @@ function calcInsuranceAmount(menuName, rate){
 }
 
 // ===== 会計画面：施術区分・負担割合ボタンからの自動金額計算 =====
-// 鍼灸系（鍼灸併用・鍼灸のみ）は「初診／2回目以降」の2段階、手技療法は「初診／2回目／3回目／4回目以降」の4段階
+// 鍼灸併用・鍼灸のみは「初診／2回目以降」の2段階、手技療法（保険診療）は「初診／2回目／3回目／4回目以降」の4段階。
+// 保険診療と鍼灸併用は両方選べる（INS_COMBINED）。そのときの金額＝保険診療の金額＋鍼灸併用の金額（段階はそれぞれ選ぶ）
+const INS_COMBINED="手技療法＋鍼灸併用";
+function tiersForType(type){
+  return (type==="鍼灸のみ"||type==="鍼灸併用")?["初診","2回目以降"]:["初診","2回目","3回目","4回目以降"];
+}
 function getVisitTierForType(type,visit){
-  if(type==="手技療法") return getInsMenuByVisit(visit);
-  return visit===1?"初診":"2回目以降";
+  if(type==="鍼灸のみ"||type==="鍼灸併用") return visit===1?"初診":"2回目以降";
+  return getInsMenuByVisit(visit);
 }
 function getInsuranceAmountFor(type,rate,tier){
   const table=INSURANCE_AMOUNT_TABLE[type];
   return (table&&table[rate]&&table[rate][tier])||0;
 }
+// 選んでいる区分（保険診療・鍼灸併用は両方のこともある）
+function selectedInsuranceParts(){
+  const t=state.insuranceType;
+  return t===INS_COMBINED?["手技療法","鍼灸併用"]:t?[t]:[];
+}
 function selectInsuranceType(type){
-  state.insuranceType=(state.insuranceType===type)?null:type;
+  if(type==="鍼灸のみ"){
+    state.insuranceType=(state.insuranceType==="鍼灸のみ")?null:"鍼灸のみ";
+  }else{
+    // 保険診療・鍼灸併用はそれぞれオン・オフでき、両方オンなら「保険診療＋鍼灸併用」
+    const on=new Set(selectedInsuranceParts().filter(x=>x!=="鍼灸のみ"));
+    if(on.has(type)) on.delete(type); else on.add(type);
+    state.insuranceType=on.size===2?INS_COMBINED:on.size===1?[...on][0]:null;
+  }
   state.insuranceRate=null;
   state.insuranceTier=null;
+  state.acuTier=null;
+  state.acuAmount=null;
+  render();
+}
+// ===== 保険の窓口負担を「柔整（保険診療）」と「鍼灸」に分けて保存する =====
+// payments.ju_insurance_amount／acu_insurance_amount。列がまだ無いデータベースでは保存しない（会計が止まらないように）
+let paymentSplitSupported=false;
+let acuStaffSupported=false; // payments.acu_insurance_staff_id（鍼灸保険の担当）がある
+async function detectPaymentSplitColumns(){
+  try{ const r=await sbGet("payments","?select=ju_insurance_amount,acu_insurance_amount&limit=1"); paymentSplitSupported=Array.isArray(r); }
+  catch(e){ paymentSplitSupported=false; }
+  try{ const r=await sbGet("payments","?select=acu_insurance_staff_id&limit=1"); acuStaffSupported=paymentSplitSupported&&Array.isArray(r); }
+  catch(e){ acuStaffSupported=false; }
+  // 鍼灸保険の担当を選べるようになったら描き直す（ほかの読み込みと同じく、保存中は描き直さない）
+  if(acuStaffSupported){ try{ if(!state.saving) render(); }catch(e){} }
+}
+function insuranceSplitForSave(){
+  const amt=parseInt(state.insuranceAmount)||0, type=state.insuranceType;
+  if(!type) return {ju:amt,acu:0};
+  if(type==="鍼灸併用"||type==="鍼灸のみ") return {ju:0,acu:amt};
+  if(type===INS_COMBINED){
+    // 保険診療・鍼灸の金額を別々に直したときは、その金額
+    if(state.acuAmount!=null&&state.acuAmount!==""){ const acu=Math.max(0,Math.min(amt,parseInt(state.acuAmount)||0)); return {ju:amt-acu,acu}; }
+    // 医療助成：1,000円＝柔整500円＋鍼灸500円。それ以外（500円など）は柔整の分として扱う
+    if(state.insuranceRate==="医療助成") return amt>=1000?{ju:amt-500,acu:500}:{ju:amt,acu:0};
+    // 鍼灸併用で選んだ段階の金額を鍼灸に、残りを柔整に（合計を手で直したときも合計は合う）
+    // 会計の訂正で段階を選び直していないときは、前に保存した鍼灸の金額を使う
+    const acuPart=state.acuTier?getInsuranceAmountFor("鍼灸併用",state.insuranceRate,state.acuTier):Number(state.alreadyPaid&&state.alreadyPaid.acu_insurance_amount)||0;
+    const acu=Math.min(amt,acuPart);
+    return {ju:amt-acu,acu};
+  }
+  return {ju:amt,acu:0};
+}
+function splitFieldsForSave(){
+  if(!paymentSplitSupported) return {};
+  const x=insuranceSplitForSave();
+  return {ju_insurance_amount:x.ju,acu_insurance_amount:x.acu,...(acuStaffSupported?{acu_insurance_staff_id:x.acu>0?acuStaffId():null}:{})};
+}
+// 保険診療＋鍼灸併用：それぞれの段階から金額を合計する
+function combinedInsuranceAmount(){
+  return getInsuranceAmountFor("手技療法",state.insuranceRate,state.insuranceTier)+getInsuranceAmountFor("鍼灸併用",state.insuranceRate,state.acuTier);
+}
+function selectCombinedTier(part,tier){
+  if(part==="鍼灸併用") state.acuTier=tier; else state.insuranceTier=tier;
+  state.insuranceAmount=combinedInsuranceAmount();
+  state.acuAmount=null;
   render();
 }
 function selectInsuranceRate(rate){
@@ -533,20 +596,38 @@ function selectInsuranceRate(rate){
     state.insuranceTier=null;
   }else if(state.insuranceRate){
     // 負担割合を選んだ時点で、この患者様の実際の来院回数に合う欄をデフォルト表示しておく
-    state.insuranceTier=getVisitTierForType(state.insuranceType,visitCount);
+    if(state.insuranceType===INS_COMBINED){
+      // 両方のときは、それぞれの段階を来院回数に合わせて選び、合計の金額をすぐ入れる
+      state.insuranceTier=getVisitTierForType("手技療法",visitCount);
+      state.acuTier=getVisitTierForType("鍼灸併用",visitCount);
+      state.insuranceAmount=combinedInsuranceAmount();
+      state.acuAmount=null;
+    }else{
+      state.insuranceTier=getVisitTierForType(state.insuranceType,visitCount);
+    }
   }else{
     state.insuranceTier=null;
   }
   render();
 }
-// 医療助成：500円／0円のワンタップ選択
+// 医療助成で選べる金額。鍼灸併用は柔整（保険診療）の医療助成500円＋鍼灸保険の医療助成500円＝1,000円
+function medicalAssistOptions(){
+  if(state.insuranceType==="鍼灸併用"||state.insuranceType===INS_COMBINED) return [
+    {amount:1000,note:"柔整 500円＋鍼灸 500円"},
+    {amount:500,note:"どちらか一方だけ"},
+    {amount:0,note:""},
+  ];
+  return [{amount:500,note:""},{amount:0,note:""}];
+}
+// 医療助成：ワンタップ選択（保険診療・鍼灸のみ＝500円／0円、鍼灸併用＝1,000円／500円／0円）
 function selectMedicalAssistAmount(amount){
   state.insuranceTier=null;
   state.insuranceAmount=amount;
+  state.acuAmount=null;
   render();
 }
 function stepInsuranceTier(dir){
-  const tiers=state.insuranceType==="手技療法"?["初診","2回目","3回目","4回目以降"]:["初診","2回目以降"];
+  const tiers=tiersForType(state.insuranceType);
   const curIdx=Math.max(0,tiers.indexOf(state.insuranceTier||tiers[0]));
   const nextIdx=Math.min(tiers.length-1,Math.max(0,curIdx+dir));
   state.insuranceTier=tiers[nextIdx];
@@ -664,6 +745,11 @@ function addJifee(label,amount){state.jifeeItems.push({label,amount});render();}
 // 例：保険施術は奥田、鍼は田中。未選択の項目は予約の担当（booking.staff_id）として扱う
 function itemStaffId(item){ return (item&&item.staff_id)||booking.staff_id||null; }
 function insuranceStaffId(){ return state.insuranceStaffId||booking.staff_id||null; }
+// 鍼灸保険の担当（選んでいなければ、予約で決めた鍼灸の担当→保険診療の担当）
+function acuStaffId(){ return state.acuStaffId||(booking&&booking.acu_staff_id)||insuranceStaffId(); }
+// 保険の窓口負担に、保険診療（柔整）・鍼灸のどちらの分が含まれるか
+function insuranceHasJu(){ const t=state.insuranceType; return !t||t==="手技療法"||t===INS_COMBINED; }
+function insuranceHasAcu(){ const t=state.insuranceType; return t==="鍼灸併用"||t==="鍼灸のみ"||t===INS_COMBINED; }
 // 担当はタップで選ぶ（選んだ人はその人の色で塗る）。onPick は「スタッフID」を最後の引数に受け取る呼び出し（例："setJifeeStaff(0,"）
 function staffChipsHtml(val,onPick,label){
   return `<div class="staff-chips" role="group" aria-label="${label||"担当"}"><span class="lbl">担当</span>${STAFF_LIST.map(s=>{
@@ -673,9 +759,46 @@ function staffChipsHtml(val,onPick,label){
 }
 function setJifeeStaff(i,v){ state.jifeeItems[i].staff_id=parseInt(v)||null; render(); }
 function setInsuranceStaff(v){ state.insuranceStaffId=parseInt(v)||null; render(); }
+function setAcuStaff(v){ state.acuStaffId=parseInt(v)||null; render(); }
+// 保険診療＋鍼灸併用：保険診療（柔整）と鍼灸の金額を別々に直す（保険の合計＝その和）
+function setSplitInsurance(part,v){
+  const cur=insuranceSplitForSave();
+  const n=Math.max(0,parseInt(v)||0);
+  const ju=part==="ju"?n:cur.ju, acu=part==="acu"?n:cur.acu;
+  state.acuAmount=acu;
+  state.insuranceAmount=ju+acu;
+  const lbl=document.getElementById("insTotalLabel"); if(lbl) lbl.textContent=fmt(ju+acu);
+  renderSummary();
+}
+// お会計の欄：保険診療と鍼灸を別々の行に（担当も別々）
+function insuranceSummaryRows(){
+  const ins=parseInt(state.insuranceAmount)||0;
+  if(ins<=0) return "";
+  const row=(label,staffLabel,amount)=>`<div class="summary-row"><span style="color:#666;">${label}<small style="margin-left:6px;color:#4338ca;font-weight:700;">${staffLabel}</small></span><span style="font-weight:700;">${fmt(amount)}</span></div>`;
+  if(state.insuranceType===INS_COMBINED){
+    const sp=insuranceSplitForSave();
+    return row("保険診療（柔整）",`担当 ${STAFF[insuranceStaffId()]||"-"}`,sp.ju)+row("鍼灸保険",`担当 ${STAFF[acuStaffId()]||"-"}`,sp.acu);
+  }
+  if(state.insuranceType==="鍼灸併用"||state.insuranceType==="鍼灸のみ") return row("鍼灸保険",`担当 ${STAFF[acuStaffSupported?acuStaffId():insuranceStaffId()]||"-"}`,ins);
+  return row("保険窓口負担",insuranceStaffLabel(),ins);
+}
+// サマリー・確認用の担当の表示（保険診療と鍼灸で担当が違えば両方）
+function insuranceStaffLabel(){
+  if(acuStaffSupported&&insuranceHasAcu()){
+    if(!insuranceHasJu()) return `鍼灸担当 ${STAFF[acuStaffId()]||"-"}`;
+    if(acuStaffId()!==insuranceStaffId()) return `保険診療 ${STAFF[insuranceStaffId()]||"-"}／鍼灸 ${STAFF[acuStaffId()]||"-"}`;
+  }
+  return `担当 ${STAFF[insuranceStaffId()]||"-"}`;
+}
 // 保存用：自費項目（担当つき）
 function jifeeItemsForSave(){ return state.jifeeItems.map(i=>({label:i.label,amount:parseInt(i.amount)||0,staff_id:itemStaffId(i)})); }
-function insuranceStaffForSave(){ return (parseInt(state.insuranceAmount)||0)>0?insuranceStaffId():null; }
+// insurance_staff_id：保険診療（柔整）の担当。柔整の分が無い会計（鍼灸のみ・鍼灸併用だけ）は鍼灸の担当を入れる
+// （鍼灸の担当の列が無いデータベースでは、これまでどおり保険全体の担当）
+function insuranceStaffForSave(){
+  if(!((parseInt(state.insuranceAmount)||0)>0)) return null;
+  if(acuStaffSupported&&paymentSplitSupported&&insuranceSplitForSave().ju===0) return acuStaffId();
+  return insuranceStaffId();
+}
 // プレオープン期間中の「無料体験会」ワンタップ確定：保険負担・自費項目をすべてクリアし、
 // 0円の項目だけをレシートに残す（金額入力や支払方法の追加はそのまま行える）
 function applyPreOpenFreeTrial(){
@@ -699,7 +822,7 @@ function renderSummaryHtml(){
   const ins=parseInt(state.insuranceAmount)||0;
   const total=calcTotal();const paid=calcPaid();const remaining=calcRemaining();const change=calcChange();
   return`
-    ${ins>0?`<div class="summary-row"><span style="color:#666;">保険窓口負担<small style="margin-left:6px;color:#4338ca;font-weight:700;">担当 ${STAFF[insuranceStaffId()]||"-"}</small></span><span style="font-weight:700;">${fmt(ins)}</span></div>`:""}
+    ${insuranceSummaryRows()}
     ${state.jifeeItems.map(i=>`<div class="summary-row"><span style="color:#666;">${i.label}<small style="margin-left:6px;color:#4338ca;font-weight:700;">担当 ${STAFF[itemStaffId(i)]||"-"}</small></span><span style="font-weight:700;">${fmt(i.amount)}</span></div>`).join("")}
     <div class="summary-total"><span>合　計</span><span>${fmt(total)}</span></div>
     ${paid>0?`
@@ -800,6 +923,7 @@ function togglePass(id){
 function getInsuranceKindLabel(type){
   if(type==="手技療法") return "保険診療";
   if(type==="鍼灸併用") return "鍼灸保険（併用）";
+  if(type===INS_COMBINED) return "保険診療＋鍼灸保険（併用）";
   if(type==="鍼灸のみ") return "鍼灸保険（のみ）";
   return null;
 }
@@ -928,6 +1052,13 @@ function getEpsonPrinterIP(){
   const saved=(localStorage.getItem("epsonPrinterIP")||"").trim();
   return saved||DEFAULT_EPSON_IP;
 }
+// プリンターは自分で作った証明書（https）を使うため、ブラウザごとに一度「このプリンターにつないでよい」と許可が必要。
+// プリンターの画面を新しいタブで開き、「詳細」→「アクセスする」を選んでもらう（ブラウザの更新・再起動で消えることがある）
+function openPrinterCertPage(){
+  const ip=getEpsonPrinterIP();
+  alert(`プリンター（${ip}）の画面を新しいタブで開きます。\n\n「この接続ではプライバシーが保護されません」などと出たら、\n「詳細設定」（Safariは「詳細を表示」）→「${ip} にアクセスする」を押してください。\nプリンターの画面が出たら、そのタブを閉じて、もう一度印刷してください。`);
+  window.open(`https://${ip}/`,"_blank");
+}
 function setEpsonPrinterIP(){
   const current=getEpsonPrinterIP();
   const ip=prompt("EPSONプリンター（TM-m30III-H）のIPアドレスを入力してください（例：192.168.1.50）\n\nプリンター本体のメニューボタン長押しで印字されるステータスシート、またはルーターの接続機器一覧で確認できます。",current);
@@ -972,15 +1103,47 @@ function eposEnvelope(innerCommands){
     `\n</epos-print></soap:Body></soap:Envelope>`;
 }
 // プリンターへePOS-Print XMLを送信する共通処理。成功/失敗をPromiseで返す
+// 印刷できなかった理由を、画面に出せる言葉にする
+function explainPrintError(e,ip){
+  // プリンターが返すエラーコードの意味（ePOS-Print の code 属性）
+  const EPOS_ERROR_TEXT={
+    EPTR_COVER_OPEN:"プリンターのカバーが開いています",
+    EPTR_REC_EMPTY:"レシート用紙が切れています",
+    EPTR_AUTOCUTTER:"用紙カッターのエラーです（紙詰まりを確認して、電源を入れ直してください）",
+    EPTR_MECHANICAL:"プリンターの機械エラーです（電源を入れ直してください）",
+    EPTR_UNRECOVERABLE:"プリンターの復帰できないエラーです（電源を入れ直してください）",
+    DeviceNotFound:"プリンターが見つかりません（プリンターの設定のデバイスIDが local_printer か確認してください）",
+    EX_DEVICE_NOT_FOUND:"プリンターが見つかりません",
+    EX_TIMEOUT:"プリンターの応答がありませんでした（ほかの端末が印刷中か、電源を確認してください）",
+    EX_BUSY:"プリンターがほかの端末で使用中です。少し待ってからもう一度お試しください",
+    SchemaError:"送ったデータをプリンターが読めませんでした",
+    PrintSystemError:"プリンターの内部エラーです（電源を入れ直してください）",
+  };
+  if(e&&e.code) return `プリンターがエラーを返しました：${EPOS_ERROR_TEXT[e.code]||e.code}`;
+  if(e&&e.name==="AbortError") return `プリンター（${ip}）から15秒たっても返事がありませんでした。プリンターの電源・LANケーブル・Wi-Fiを確認してください。`;
+  // ブラウザがプリンターにつなげなかった（すぐにエラーになる）
+  return `プリンター（${ip}）につなげませんでした。よくある原因：\n`+
+    `① このブラウザでプリンターの証明書を許可していない（ブラウザの更新・iPadの再起動などで消えることがあります）\n`+
+    `　→ 会計画面の上の「🔓 プリンターとの接続を許可する」を押し、開いた画面で「詳細」→「アクセスする」を選んでください\n`+
+    `② ブラウザの「ローカルネットワークへのアクセス」をブロックしている（Chrome）\n`+
+    `　→ アドレスバー左のマーク →「ローカルネットワーク」を「許可」にしてください\n`+
+    `③ プリンターのIPアドレスが変わった・電源が切れている（今の設定：${ip}）`;
+}
 function sendEposRequest(ip,innerCommands){
+  const ctrl=typeof AbortController!=="undefined"?new AbortController():null;
+  const timer=ctrl?setTimeout(()=>ctrl.abort(),15000):null;
   return fetch(eposEndpoint(ip),{
     method:"POST",
     headers:{"Content-Type":"text/xml; charset=utf-8","If-Modified-Since":"Thu, 01 Jan 1970 00:00:00 GMT"},
-    body:eposEnvelope(innerCommands)
+    body:eposEnvelope(innerCommands),
+    signal:ctrl?ctrl.signal:undefined,
   }).then(res=>res.text()).then(text=>{
     if(text.indexOf('success="true"')>=0) return true;
-    throw new Error("プリンターからエラー応答がありました（用紙切れ・カバー開き等をご確認ください）");
-  });
+    const m=text.match(/code="([^"]*)"/);
+    const err=new Error("プリンターからエラー応答がありました（用紙切れ・カバー開き等をご確認ください）");
+    err.code=m&&m[1]?m[1]:"不明なエラー";
+    throw err;
+  }).finally(()=>{ if(timer) clearTimeout(timer); });
 }
 // USB接続では、印刷コマンド自体はプリンターに届いて実際に印字されるのに完了通知だけが遅れることがあるため、
 // 連打で紙が何枚も出てしまわないよう、送信中は次の送信をブロックする簡易ロックを設ける。
@@ -1005,23 +1168,34 @@ function printReceiptViaWebPRNT(){
     showPrintToast("🖨️ 印刷しました");
   }).catch(e=>{
     receiptPrintInFlight=false;
-    showPrintToast("❌ 印刷に失敗しました："+e.message+"（IPアドレス・電源・LAN接続をご確認ください）");
+    // 理由を出したうえで、すぐにお客様へお渡しできるよう画面からの印刷（プレビュー印刷）に切り替えられるようにする
+    if(confirm("❌ 領収書を印刷できませんでした。\n\n"+explainPrintError(e,ip)+"\n\n代わりに画面から印刷（プレビュー印刷）しますか？")) openReceiptPrintWindow();
   });
 }
 // ===== EPSONプリンターに接続されたレジドロアを開ける =====
 // 会計確定時（現金の受け渡しがある場合）に自動で呼ばれるほか、両替などレジ操作のためだけに
 // 会計を介さず手動で開けたい場合は、画面右上の「レジを開ける」ボタンからmanual=trueで呼ばれる
 function openCashDrawer(manual){
-  const ip=getEpsonPrinterIP();
-  if(!ip){
-    if(manual) showPrintToast("❌ プリンターのIP未設定のためレジドロアを開けられません（🖨️設定ボタンからIPを登録してください）");
+  // レジのドロアは Star mPOP につながっている。管理画面（親の画面）の「レジを開ける」と同じ方法で開ける
+  const notify=(msg,type)=>{ if(manual||type==="delete") showPrintToast(msg); };
+  try{
+    if(window.parent&&window.parent!==window&&typeof window.parent.openAdminCashDrawer==="function"){
+      window.parent.openAdminCashDrawer(notify);
+      return;
+    }
+  }catch(e){}
+  if(navigator.userAgent.indexOf("webPRNTSupportMessageHandler")<0){
+    if(manual) showPrintToast("❌ レジのドロアは、レシートプリンター（Star webPRNT Browser）アプリで開いた画面からだけ開けられます");
     return;
   }
-  sendEposRequest(ip,`<pulse drawer="drawer_1" time="pulse_100"/>`).then(()=>{
-    if(manual) showPrintToast("🗄️ レジを開けました");
-  }).catch(e=>{
-    showPrintToast("❌ レジドロアを開けられませんでした："+e.message);
-  });
+  try{
+    const builder=new StarWebPrintBuilder();
+    const request=builder.createInitializationElement()+builder.createPeripheralElement({channel:1,on:200,off:200});
+    const trader=new StarWebPrintTrader({url:"https://localhost:8001/StarWebPRNT/SendMessage"});
+    trader.onReceive=r=>notify(r.traderSuccess==="true"?"🗄️ レジを開けました":"❌ レジドロアを開けられませんでした（プリンターの状態をご確認ください）",r.traderSuccess==="true"?"success":"delete");
+    trader.onError=r=>notify("❌ ドロア開放エラー："+(r.responseText||"接続できませんでした"),"delete");
+    trader.sendMessage({request});
+  }catch(e){ notify("❌ ドロア開放処理でエラーが発生しました："+e.message,"delete"); }
 }
 // ===== 接続確認用：短いテスト印刷 =====
 function printMinimalTest(){
@@ -1034,6 +1208,7 @@ function printMinimalTest(){
   sendEposRequest(ip,`<text lang="ja"/><text align="center"/><text>TEST OK\n接続確認\n</text><feed line="2"/><cut type="feed"/>`).then(()=>{
     showPrintToast("🧪 テスト印刷 成功");
   }).catch(e=>{
+    alert("❌ テスト印刷エラー\n\n"+explainPrintError(e,ip));
     showPrintToast("❌ テスト印刷エラー："+e.message+"\n\n※https配信のページからhttpのプリンターへ接続できない場合は、Chromeの設定→プライバシーとセキュリティ→サイトの設定→「安全性の低いコンテンツ」で、このサイトのURLを追加して許可してください。");
   });
 }
@@ -1310,6 +1485,8 @@ async function loadExistingPayments(bookingId){
 // 会計データから画面の状態を復元する（レシートは確定時と同じ内容で出る）
 function restorePaidState(pay){
   state.insuranceAmount=parseInt(pay.insurance_amount)||0;
+  // 保険診療＋鍼灸併用は、保存した鍼灸の金額で分ける
+  state.acuAmount=(pay.insurance_type===INS_COMBINED&&pay.acu_insurance_amount!=null)?Number(pay.acu_insurance_amount)||0:null;
   if(Array.isArray(pay.jifee_items)&&pay.jifee_items.length>0){
     state.jifeeItems=pay.jifee_items.map(i=>({label:i.label,amount:parseInt(i.amount)||0,staff_id:i.staff_id||null}));
   }else if((pay.jifee_amount||0)>0){
@@ -1320,6 +1497,8 @@ function restorePaidState(pay){
   state.payments=parsePaymentMethods(pay.payment_method);
   state.insuranceType=pay.insurance_type||null;
   state.insuranceStaffId=pay.insurance_staff_id||null;
+  // 鍼灸の担当。柔整の分が無い会計は insurance_staff_id が鍼灸の担当
+  state.acuStaffId=pay.acu_insurance_staff_id||((Number(pay.ju_insurance_amount)||0)===0&&(Number(pay.acu_insurance_amount)||0)>0?pay.insurance_staff_id:null)||null;
   state.alreadyPaid=pay;
   state.done=true;
 }
@@ -1516,7 +1695,9 @@ function paySnapshot(p){
     payment_method:p.payment_method||"",
     jifee_items:(p.jifee_items||[]).map(i=>({label:i.label,amount:parseInt(i.amount)||0,staff_id:i.staff_id||p.staff_id||booking.staff_id||null})),
     insurance_type:p.insurance_type||null,memo:p.memo||null,
-    insurance_staff_id:(parseInt(p.insurance_amount)||0)>0?(p.insurance_staff_id||p.staff_id||booking.staff_id||null):null};
+    ...(paymentSplitSupported&&p.insurance_type===INS_COMBINED?{ju_insurance_amount:Number(p.ju_insurance_amount)||0,acu_insurance_amount:Number(p.acu_insurance_amount)||0}:{}),
+    insurance_staff_id:(parseInt(p.insurance_amount)||0)>0?(p.insurance_staff_id||p.staff_id||booking.staff_id||null):null,
+    ...(acuStaffSupported?{acu_insurance_staff_id:(Number(p.acu_insurance_amount)||0)>0?(p.acu_insurance_staff_id||p.insurance_staff_id||p.staff_id||booking.staff_id||null):null}:{})};
 }
 async function saveFix(){
   const before=state.fixing;
@@ -1532,7 +1713,9 @@ async function saveFix(){
     jifee_items:jifeeItemsForSave(),
     insurance_type:state.insuranceType||null,
     memo:state.jifeeItems.map(i=>i.label).join("・")||null,
+    ...(paymentSplitSupported&&state.insuranceType===INS_COMBINED?{ju_insurance_amount:insuranceSplitForSave().ju,acu_insurance_amount:insuranceSplitForSave().acu}:{}),
     insurance_staff_id:insuranceStaffForSave(),
+    ...(acuStaffSupported?{acu_insurance_staff_id:splitFieldsForSave().acu_insurance_staff_id??null}:{}),
   };
   const b=paySnapshot(before);
   if(JSON.stringify(b)===JSON.stringify(after)){ alert("変更がありません"); return; }
@@ -1542,7 +1725,7 @@ async function saveFix(){
   if(reason===null) return;
   state.saving=true;render();
   try{
-    const res=await sbPatch("payments",before.id,after);
+    const res=await sbPatch("payments",before.id,{...after,...splitFieldsForSave()});
     if(!Array.isArray(res)||res.length===0) throw new Error((res&&res.message)||"更新できませんでした（権限がない可能性があります）");
     try{
       await sbPost("payment_corrections",{payment_id:before.id,booking_id:booking.id,before_data:b,after_data:after,reason:reason.trim()||null,staff_name:currentStaffName()});
@@ -1602,6 +1785,7 @@ async function save(){
       jifee_items:jifeeItemsForSave(),
       insurance_staff_id:insuranceStaffForSave(),
       insurance_type:state.insuranceType||null,
+      ...splitFieldsForSave(),
       is_training:!!booking.is_training,
     });
     if(result&&result.error){throw new Error(result.message||result.error||"保存に失敗しました");}
@@ -1651,9 +1835,11 @@ async function save(){
     try{
       const rate=state.insuranceRate;
       if(state.insuranceType&&(rate==="3割"||rate==="2割"||rate==="1割")){
-        const tiers=state.insuranceType==="手技療法"?["初診","2回目","3回目","4回目以降"]:["初診","2回目以降"];
+        // 両方（保険診療＋鍼灸併用）のときは、予約のメニュー名は保険診療に合わせる
+        const menuType=state.insuranceType===INS_COMBINED?"手技療法":state.insuranceType;
+        const tiers=tiersForType(menuType);
         const tier=state.insuranceTier||tiers[0];
-        const newMenu=`${state.insuranceType} ${rate} ${tier}`;
+        const newMenu=`${menuType} ${rate} ${tier}`;
         if(newMenu!==booking.menu){
           await sbPatch("bookings",booking.id,{menu:newMenu});
           booking.menu=newMenu;
@@ -1766,6 +1952,7 @@ function render(){
           <button onclick="openCashDrawer(true)" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:white;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">🗄️ レジを開ける</button>
           <button onclick="printMinimalTest()" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:white;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">🧪 テスト印刷</button>
           <button onclick="setEpsonPrinterIP()" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:white;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">🖨️ プリンター設定</button>
+          <button onclick="openPrinterCertPage()" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.4);color:white;border-radius:8px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;">🔓 プリンターとの接続を許可する</button>
         </div>
       </div>
       <div class="main-grid">
@@ -1804,9 +1991,12 @@ function render(){
           <div class="card">
             <div class="card-header blue">🏥 保険窓口負担</div>
             <div class="card-body">
-              <div style="margin-bottom:10px;">${staffChipsHtml(insuranceStaffId(),"setInsuranceStaff(","保険施術の担当")}</div>
+              ${acuStaffSupported&&insuranceHasAcu()?`
+                ${insuranceHasJu()?`<div style="font-size:11px;font-weight:800;color:#1d4ed8;margin-bottom:2px;">保険診療（柔整）の担当</div><div style="margin-bottom:8px;">${staffChipsHtml(insuranceStaffId(),"setInsuranceStaff(","保険診療の担当")}</div>`:""}
+                <div style="font-size:11px;font-weight:800;color:#047857;margin-bottom:2px;">鍼灸保険の担当</div><div style="margin-bottom:10px;">${staffChipsHtml(acuStaffId(),"setAcuStaff(","鍼灸保険の担当")}</div>
+              `:`<div style="margin-bottom:10px;">${staffChipsHtml(insuranceStaffId(),"setInsuranceStaff(","保険施術の担当")}</div>`}
               <div class="ins-tab-row">
-                ${[{value:"手技療法",label:"保険診療"},{value:"鍼灸併用",label:"鍼灸併用"},{value:"鍼灸のみ",label:"鍼灸のみ"}].map(t=>`<button class="ins-tab-btn${state.insuranceType===t.value?" sel":""}" onclick="selectInsuranceType('${t.value}')">${t.label}</button>`).join("")}
+                ${[{value:"手技療法",label:"保険診療"},{value:"鍼灸併用",label:"鍼灸併用"},{value:"鍼灸のみ",label:"鍼灸のみ"}].map(t=>`<button class="ins-tab-btn${selectedInsuranceParts().includes(t.value)?" sel":""}" onclick="selectInsuranceType('${t.value}')">${t.label}</button>`).join("")}
               </div>
               ${state.insuranceType?`
                 <div class="ins-rate-row">
@@ -1815,14 +2005,30 @@ function render(){
               `:`<div style="font-size:11px;color:#9ca3af;margin-bottom:10px;">↑施術区分を選ぶと、負担割合を選べます</div>`}
               ${(state.insuranceType&&state.insuranceRate==="医療助成")?`
                 <div class="ins-history-box">
-                  <div class="ins-history-title">📋 医療助成</div>
+                  <div class="ins-history-title">📋 医療助成${(state.insuranceType==="鍼灸併用"||state.insuranceType===INS_COMBINED)?"（鍼灸併用：柔整と鍼灸の医療助成を合わせた金額）":""}</div>
                   <div style="display:flex;gap:8px;">
-                    <button style="flex:1;padding:12px;font-size:15px;font-weight:800;border-radius:8px;cursor:pointer;border:2px solid #1e3a5f;background:${state.insuranceAmount==500?"#1e3a5f":"white"};color:${state.insuranceAmount==500?"white":"#1e3a5f"};" onclick="selectMedicalAssistAmount(500)">500円</button>
-                    <button style="flex:1;padding:12px;font-size:15px;font-weight:800;border-radius:8px;cursor:pointer;border:2px solid #1e3a5f;background:${state.insuranceAmount==0?"#1e3a5f":"white"};color:${state.insuranceAmount==0?"white":"#1e3a5f"};" onclick="selectMedicalAssistAmount(0)">0円</button>
+                    ${medicalAssistOptions().map(o=>{const on=Number(state.insuranceAmount)===o.amount;return `<button style="flex:1;padding:12px;font-size:15px;font-weight:800;border-radius:8px;cursor:pointer;border:2px solid #1e3a5f;background:${on?"#1e3a5f":"white"};color:${on?"white":"#1e3a5f"};" onclick="selectMedicalAssistAmount(${o.amount})">${o.amount.toLocaleString()}円${o.note?`<div style="font-size:10px;font-weight:600;opacity:.85;">${o.note}</div>`:""}</button>`;}).join("")}
                   </div>
                 </div>
-              `:(state.insuranceType&&state.insuranceRate)?(()=>{
-                const tiers=state.insuranceType==="手技療法"?["初診","2回目","3回目","4回目以降"]:["初診","2回目以降"];
+              `:(state.insuranceType===INS_COMBINED&&state.insuranceRate)?(()=>{
+                const box=(part,label,cur)=>{
+                  const tiers=tiersForType(part), suggest=getVisitTierForType(part,visitCount);
+                  return `<div style="margin-bottom:8px;"><div style="font-size:12px;font-weight:800;color:#1e3a5f;margin-bottom:4px;">${label}（${state.insuranceRate}）</div>
+                    <div class="ins-history-list" style="grid-template-columns:repeat(${tiers.length},1fr);">
+                      ${tiers.map(t=>{ const amt=getInsuranceAmountFor(part,state.insuranceRate,t);
+                        return `<div class="ins-history-item${cur===t?" sel":""}" onclick="selectCombinedTier('${part}','${t}')"><span>${t}${t===suggest?"（この患者様の回数）":""}</span><span>${fmt(amt)}</span></div>`; }).join("")}
+                    </div></div>`;
+                };
+                const m=getInsuranceAmountFor("手技療法",state.insuranceRate,state.insuranceTier), a=getInsuranceAmountFor("鍼灸併用",state.insuranceRate,state.acuTier);
+                return `
+                  <div class="ins-history-box">
+                    <div class="ins-history-title">📋 保険診療＋鍼灸併用</div>
+                    ${box("手技療法","保険診療",state.insuranceTier)}
+                    ${box("鍼灸併用","鍼灸併用",state.acuTier)}
+                    <div style="font-size:14px;font-weight:800;color:#1e3a5f;text-align:right;">合計 ${fmt(m+a)}<span style="font-size:11px;font-weight:600;color:#64748b;margin-left:6px;">（保険診療 ${fmt(m)}＋鍼灸併用 ${fmt(a)}）</span></div>
+                  </div>`;
+              })():(state.insuranceType&&state.insuranceRate)?(()=>{
+                const tiers=tiersForType(state.insuranceType);
                 const curIdx=Math.max(0,tiers.indexOf(state.insuranceTier||tiers[0]));
                 const curTier=tiers[curIdx];
                 const curAmount=getInsuranceAmountFor(state.insuranceType,state.insuranceRate,curTier);
@@ -1849,13 +2055,21 @@ function render(){
                   </div>
                 `;
               })():""}
+              ${state.insuranceType===INS_COMBINED?(()=>{ const sp=insuranceSplitForSave(); return `
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;">
+                <div><div style="font-size:11px;font-weight:800;color:#1d4ed8;margin-bottom:3px;">保険診療（柔整）</div>
+                  <div class="ins-input" style="margin:0;"><input type="number" id="juAmount" value="${sp.ju}" placeholder="0" oninput="setSplitInsurance('ju',this.value)"/><span style="font-size:12px;color:#666;">円</span></div></div>
+                <div><div style="font-size:11px;font-weight:800;color:#047857;margin-bottom:3px;">鍼灸保険</div>
+                  <div class="ins-input" style="margin:0;"><input type="number" id="acuAmount" value="${sp.acu}" placeholder="0" oninput="setSplitInsurance('acu',this.value)"/><span style="font-size:12px;color:#666;">円</span></div></div>
+              </div>
+              <div style="font-size:11px;color:#64748b;text-align:right;margin-bottom:8px;">保険の合計 <b id="insTotalLabel">${fmt(parseInt(state.insuranceAmount)||0)}</b></div>`; })():`
               <div class="ins-input">
                 <input type="number" id="insuranceAmount" value="${state.insuranceAmount}" placeholder="0" oninput="state.insuranceAmount=this.value;renderSummary()"/>
                 <span style="font-size:12px;color:#666;">円</span>
-              </div>
-              <div class="quick-btns">
+              </div>`}
+              ${state.insuranceType===INS_COMBINED?"":`<div class="quick-btns">
                 ${[0,400,500,600,780,800,950,1100,1150,1300,1650].map(v=>`<button class="quick-btn" onclick="state.insuranceAmount=${v};document.getElementById('insuranceAmount').value=${v};renderSummary();">${v===0?"¥0":"¥"+v}</button>`).join("")}
-              </div>
+              </div>`}
               <div style="border-top:1px dashed #e5e7eb;margin-top:10px;padding-top:10px;">
                 <div style="font-size:11px;color:#94a3b8;font-weight:700;margin-bottom:6px;">諸費用（別途加算）</div>
                 <div style="display:flex;gap:6px;">
@@ -1952,6 +2166,7 @@ async function init(){
     treatment=treatments[0]||null;
     const samePatient=await sbGet("bookings",`?patient_name=eq.${encodeURIComponent(booking.patient_name)}&order=date.asc`);
     visitCount=Array.isArray(samePatient)?samePatient.length:1;
+    detectPaymentSplitColumns();
     // この患者様の有効な回数券・フリーパスを取得（会計画面に残数・期限を表示し、消費を選べるようにする）
     try{
       const rows=await sbGet("passes",`?patient_name=eq.${encodeURIComponent(booking.patient_name)}&active=eq.true&order=expiry_date.asc`);

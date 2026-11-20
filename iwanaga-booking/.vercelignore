@@ -1,0 +1,7 @@
+# Root Directory = iwanaga-booking の Vercel プロジェクト用。
+# リポジトリ直下の .vercelignore（既存システム用で、このフォルダを除外している）の代わりにこちらを使わせる。
+node_modules
+.next
+.data
+.env*.local
+coverage

@@ -35,7 +35,18 @@ test("担当ごとに技術・商品へ分け、同じ予約は1人と数える"
   assert.equal(a.newVisits, 1);
   assert.equal(a.repeatVisits, 1);
   assert.equal(a.avg, 1500);
-  assert.deepEqual(plain(b), { staffId: 2, total: 3000, tech: 3000, goods: 0, visits: 1, techVisits: 1, goodsVisits: 0, newVisits: 1, repeatVisits: 0, avg: 3000, techAvg: 3000, goodsAvg: 0 });
+  // B は Aの患者さんの鍼を担当しただけ：売上と技術の客数には入るが、総合の客数（担当した人数）には入らない
+  assert.deepEqual(plain(b), { staffId: 2, total: 3000, tech: 3000, goods: 0, visits: 0, techVisits: 1, goodsVisits: 0, newVisits: 0, repeatVisits: 0, avg: 0, techAvg: 3000, goodsAvg: 0 });
+});
+
+test("回数券・フリーパスの消化など ¥0 の会計も、担当した1人として数える", () => {
+  const zero = [
+    { id: 11, booking_id: 21, patient_name: "架空 次郎", payment_date: "2026-11-02", staff_id: 4, insurance_amount: 0, jifee_amount: 0, total_amount: 0, jifee_items: [] },
+    { id: 12, booking_id: 22, patient_name: "架空 次郎", payment_date: "2026-11-03", staff_id: 4, insurance_amount: 0, jifee_amount: 0, total_amount: 0, jifee_items: [] },
+    { id: 13, booking_id: 23, patient_name: "架空 三郎", payment_date: "2026-11-03", staff_id: 4, insurance_amount: 1000, jifee_amount: 0, total_amount: 1000, jifee_items: [] },
+  ];
+  const [r] = SG.summarize(zero, { from: "2026-11-01", to: "2026-11-30" });
+  assert.deepEqual(plain([r.visits, r.techVisits, r.total, r.avg, r.newVisits, r.repeatVisits]), [3, 3, 1000, 333, 2, 1]);
 });
 
 test("店舗で絞り込める", () => {
@@ -68,4 +79,19 @@ test("実績：自動の指標はサマリー、手入力は保存した値", ()
   assert.equal(SG.actualOf({ metric: "manual", results: { "2026-11": { actual: 7 } } }, "2026-11", row), 7);
   assert.equal(SG.actualOf({ metric: "manual", results: {} }, "2026-11", row), null);
   assert.deepEqual(plain(SG.monthRange("2026-02")), { from: "2026-02-01", to: "2026-02-28" });
+});
+
+test("保険の担当：鍼灸保険の担当があれば、柔整の分と鍼灸の分を分ける", () => {
+  // 保険診療＋鍼灸併用：保険 1,100円（柔整 600・鍼灸 500）。柔整＝A(1)、鍼灸＝B(2)
+  const p = { staff_id: 1, insurance_staff_id: 1, acu_insurance_staff_id: 2, insurance_amount: 1100, ju_insurance_amount: 600, acu_insurance_amount: 500, total_amount: 1100, jifee_items: [] };
+  assert.deepEqual(plain(SG.insuranceShares(p, 1)), [{ staffId: 1, amount: 600 }, { staffId: 2, amount: 500 }]);
+  const split = plain(SG.splitPayment(p)).sort((a, b) => a.staffId - b.staffId);
+  assert.deepEqual(split, [{ staffId: 1, tech: 600, goods: 0 }, { staffId: 2, tech: 500, goods: 0 }]);
+  // 鍼灸のみ：柔整の分が無い → 全額が鍼灸の担当
+  assert.deepEqual(plain(SG.insuranceShares({ insurance_staff_id: 2, acu_insurance_staff_id: 2, insurance_amount: 500, acu_insurance_amount: 500 }, 1)), [{ staffId: 2, amount: 500 }]);
+  // 鍼灸の担当が無い古い会計は、これまでどおり全額を保険の担当へ
+  assert.deepEqual(plain(SG.insuranceShares({ insurance_staff_id: 3, insurance_amount: 1100, acu_insurance_amount: 500 }, 1)), [{ staffId: 3, amount: 1100 }]);
+  // 保険の担当が無ければ会計の担当
+  assert.deepEqual(plain(SG.insuranceShares({ insurance_amount: 800 }, 4)), [{ staffId: 4, amount: 800 }]);
+  assert.deepEqual(plain(SG.insuranceShares({ insurance_amount: 0 }, 4)), []);
 });

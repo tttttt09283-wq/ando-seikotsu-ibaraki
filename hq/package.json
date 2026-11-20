@@ -1,0 +1,7 @@
+{
+  "name": "enejoy-hand-hq",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "株式会社Enejoy Hand 本部システム（予約管理システムとは別の Vercel プロジェクト。Root Directory = hq）"
+}
