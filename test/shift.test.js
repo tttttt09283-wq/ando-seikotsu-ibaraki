@@ -118,3 +118,41 @@ test("院名の短縮・人数表示・CSV", () => {
   assert.ok(csv[1].startsWith("A,休み,出勤(茨木)"));
   assert.ok(csv[1].endsWith(",29,1,0"));
 });
+
+// ===== 日割りの売上目標 =====
+const d5 = ["2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05"].map((date) => ({ date }));
+test("dailySalesPlan：出勤人数で目標を配分（休診・0人の日は0）", () => {
+  const units = { "2026-11-01": 2, "2026-11-02": 1, "2026-11-03": 3, "2026-11-04": 0, "2026-11-05": 2 };
+  const p = S.dailySalesPlan({ dates: d5, units, closed: (d) => d === "2026-11-05", target: 600000, actual: {}, today: "2026-11-01" });
+  assert.deepEqual(p.days.map((d) => d.target), [200000, 100000, 300000, 0, 0]);
+  assert.equal(p.workDays, 3);
+  assert.equal(p.avgDaily, 200000);
+  assert.equal(p.days[0].perPerson, 100000);
+});
+test("dailySalesPlan：足りない分は以降の日に上乗せ・多く売れても減らさない", () => {
+  const units = { "2026-11-01": 1, "2026-11-02": 1, "2026-11-03": 1, "2026-11-04": 1, "2026-11-05": 1 };
+  // 1日目 0円（-100,000）→ 2日目以降は 500,000÷4＝125,000
+  let p = S.dailySalesPlan({ dates: d5, units, target: 500000, actual: { "2026-11-01": 0 }, today: "2026-11-02" });
+  assert.deepEqual(p.days.map((d) => d.target), [100000, 125000, 125000, 125000, 125000]);
+  assert.equal(p.days[1].added, 25000);
+  assert.equal(p.days[0].diff, -100000);
+  // 1日目 300,000円（プラス）→ 減らさず 100,000 のまま
+  p = S.dailySalesPlan({ dates: d5, units, target: 500000, actual: { "2026-11-01": 300000 }, today: "2026-11-02" });
+  assert.deepEqual(p.days.map((d) => d.target), [100000, 100000, 100000, 100000, 100000]);
+  assert.equal(p.days[0].diff, 200000);
+  assert.equal(p.remaining, 200000);
+  // 過去の日は「その日に見ていた目標」：1日目0円、2・3日目125,000円 → 4日目以降は 250,000÷2＝125,000
+  p = S.dailySalesPlan({ dates: d5, units, target: 500000, actual: { "2026-11-01": 0, "2026-11-02": 125000, "2026-11-03": 125000 }, today: "2026-11-04" });
+  assert.deepEqual(p.days.map((d) => d.target), [100000, 125000, 125000, 125000, 125000]);
+  assert.equal(p.days[2].cum, -100000);
+  assert.equal(p.rate, 50);
+  // 3日目が0円なら、4・5日目は (500,000−125,000)÷2＝187,500 に増える
+  p = S.dailySalesPlan({ dates: d5, units, target: 500000, actual: { "2026-11-01": 0, "2026-11-02": 125000 }, today: "2026-11-04" });
+  assert.deepEqual(p.days.map((d) => d.target).slice(3), [187500, 187500]);
+});
+test("dailySalesPlan：未来の月は基本の目標のまま", () => {
+  const units = { "2026-11-01": 2, "2026-11-02": 2 };
+  const p = S.dailySalesPlan({ dates: d5.slice(0, 2), units, target: 100000, actual: {}, today: "2026-10-20" });
+  assert.deepEqual(p.days.map((d) => d.target), [50000, 50000]);
+  assert.equal(p.days[0].actual, null);
+});
