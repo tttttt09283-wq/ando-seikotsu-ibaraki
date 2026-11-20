@@ -25,6 +25,7 @@
     { id: "expansion", label: "出店計画", icon: "📍" },
     { id: "annual", label: "年間計画", icon: "🗓" },
     { id: "mandala", label: "マンダラチャート", icon: "🧭" },
+    { id: "intake", label: "データ取り込み", icon: "📥" },
   ];
 
   // 等級（上から）
@@ -663,6 +664,169 @@
     return { mult, rows, total };
   }
 
+  // ===== データ取り込み（院の日計表 → 部門へ自動で振り分け） =====
+  // 日計表は月ごとのファイル（例「EnejoyHand様日計表R8.11」）。院ごとのタブに
+  //   ・「院名：」の下に「売上管理／母数管理／運営管理／マーケティング管理」の区分の行 → その下が列の見出し → 日別の行と「合計」の行
+  //   ・「○○稼働率」タブ：スタッフ別の対応人数・実稼働・稼働枠・稼働率
+  // 列ごとに部門（業績・集客・人材・経理事務）を自動で決め、本部が画面で直せる（hq_docs の intake.map）。
+  const INTAKE_DEPTS = [
+    { id: "performance", label: "業績" },
+    { id: "marketing", label: "集客" },
+    { id: "people", label: "人材" },
+    { id: "accounting", label: "経理・事務" },
+  ];
+  // 列の自動振り分け（見出しの言葉が優先、なければ区分）
+  function intakeDefaultDepts(section, header) {
+    const h = String(header || "").replace(/\s/g, "");
+    const sec = String(section || "");
+    const out = new Set();
+    if (/口コミ|キャンセル|EMS|HPB|Google|チラシ|紹介/.test(h)) out.add("marketing");
+    if (/新患/.test(h)) { out.add("marketing"); out.add("performance"); }
+    if (/自賠|保険|請求|レセ/.test(h)) out.add("accounting");
+    if (/レセ|売上|単価|窓口|自費|物販|来院|再診|今月初|巻き爪/.test(h)) out.add("performance");
+    if (/稼働|出勤|スタッフ/.test(h)) out.add("people");
+    if (!out.size) {
+      if (/マーケ|集客/.test(sec)) out.add("marketing");
+      else if (/運営|経理|請求/.test(sec)) out.add("accounting");
+      else if (/人材|労務|稼働/.test(sec)) out.add("people");
+      else out.add("performance");
+    }
+    return [...out];
+  }
+  // 足し算してよい列か（単価・平均・率・頻度は足さない）
+  function intakeAdditive(header) { return !/単価|平均|率|頻度|割合/.test(String(header || "")); }
+  // ファイル名 → 月（「R8.11」→ 2026-11、「2026.6」→ 2026-06）。原本などは null
+  function intakeFileMonth(name) {
+    const s = toHalf(name);
+    let m = s.match(/R(\d{1,2})[.\-年](\d{1,2})(?!\d)/);
+    if (m) return `${2018 + Number(m[1])}-${pad(Number(m[2]))}`;
+    m = s.match(/(20\d{2})[.\-年](\d{1,2})(?!\d)/);
+    if (m) return `${m[1]}-${pad(Number(m[2]))}`;
+    return null;
+  }
+  // セルの値 → 日付文字列（シートの通し番号・文字列どちらも）
+  function intakeDate(v) {
+    if (typeof v === "number" && v > 20000 && v < 80000) {
+      const d = new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000);
+      return d.toISOString().slice(0, 10);
+    }
+    const m = toHalf(v).match(/^(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})/);
+    return m ? `${m[1]}-${pad(Number(m[2]))}-${pad(Number(m[3]))}` : null;
+  }
+  const intakeNum = (v) => {
+    if (typeof v === "number") return isFinite(v) ? v : null;
+    const s = String(v ?? "").trim();
+    if (!s || /^[-−‐ー]+$|^#|^---$/.test(s)) return null;
+    const n = Number(toHalf(s).replace(/[,，¥￥円%％\s]/g, ""));
+    return isFinite(n) ? n : null;
+  };
+  const headerText = (v) => String(v ?? "").replace(/\s+/g, "").trim();
+  // 1つの院のタブ（日計）
+  function parseDailyClinicTab(title, rows) {
+    let name = null;
+    for (let r = 0; r < Math.min(rows.length, 6) && !name; r++) {
+      const row = rows[r] || [];
+      const c = row.findIndex((v) => /^院名[：:]$/.test(String(v ?? "").trim()));
+      if (c >= 0) for (let k = c + 1; k < row.length; k++) if (!isBlank(row[k])) { name = String(row[k]).trim(); break; }
+    }
+    if (!name) return null;
+    // 区分の行（「○○管理」が2つ以上ある行）と、その次の見出しの行
+    let sr = -1;
+    for (let r = 0; r < rows.length; r++) if ((rows[r] || []).filter((v) => /管理$/.test(String(v ?? "").trim())).length >= 2) { sr = r; break; }
+    if (sr < 0 || !rows[sr + 1]) return null;
+    const secRow = rows[sr], head = rows[sr + 1];
+    const columns = [];
+    let section = "";
+    for (let c = 0; c < Math.max(secRow.length, head.length); c++) {
+      if (!isBlank(secRow[c])) section = String(secRow[c]).trim();
+      if (isBlank(head[c])) continue;
+      const header = headerText(head[c]);
+      columns.push({ c, header, section, additive: intakeAdditive(header) });
+    }
+    const days = [];
+    let total = null;
+    for (let r = sr + 2; r < rows.length; r++) {
+      const row = rows[r] || [];
+      const label = row.slice(0, 3).find((v) => !isBlank(v));
+      const values = {};
+      let any = false;
+      for (const col of columns) { const n = intakeNum(row[col.c]); values[col.header] = n; if (n) any = true; }
+      if (String(label ?? "").replace(/\s/g, "") === "合計") { total = values; continue; }
+      const date = row.slice(0, 3).map(intakeDate).find(Boolean);
+      if (date && any) days.push({ date, values });
+    }
+    return { tab: title, name, key: fitClinicKey(name), columns: columns.map(({ c, ...x }) => x), total, days };
+  }
+  // 「○○稼働率」タブ：スタッフ別
+  function parseStaffRateTab(title, rows) {
+    let hr = -1, hc = -1;
+    for (let r = 0; r < rows.length && hr < 0; r++) { const c = (rows[r] || []).findIndex((v) => headerText(v) === "スタッフ名"); if (c >= 0) { hr = r; hc = c; } }
+    if (hr < 0) return null;
+    const head = rows[hr].map(headerText);
+    const idx = (re) => head.findIndex((h, i) => i > hc && re.test(h));
+    const ci = { handled: idx(/対応/), actual: idx(/実稼働/), slots: idx(/稼働枠/), rate: idx(/稼働率/) };
+    const staff = [];
+    let total = null;
+    for (let r = hr + 1; r < rows.length; r++) {
+      const row = rows[r] || [];
+      const nm = String(row[hc] ?? "").trim();
+      if (!nm) { if (staff.length) break; continue; }
+      if (/^■/.test(nm) || intakeDate(row[hc])) break; // 下の「日別」の表には入らない
+      const g = (k) => (ci[k] >= 0 ? intakeNum(row[ci[k]]) : null);
+      const rec = { name: nm, handled: g("handled"), actual: g("actual"), slots: g("slots"), rate: g("rate") };
+      if (/合計/.test(nm)) { total = rec; break; }
+      staff.push(rec);
+    }
+    const label = String(title).replace(/稼働率.*$/, "");
+    return { tab: title, label, key: fitClinicKey(label), staff, total };
+  }
+  // 日計表1ファイル（タブの配列）→ 院ごとの日計とスタッフ稼働
+  function parseDailyBook(tabs) {
+    const clinics = [], staffRates = [];
+    for (const t of tabs || []) {
+      const rows = t.values || [];
+      if (/稼働率/.test(t.title)) { const s = parseStaffRateTab(t.title, rows); if (s) staffRates.push(s); continue; }
+      const c = parseDailyClinicTab(t.title, rows);
+      if (!c) continue;
+      // 「原本」などのひな形タブで同じ院が2回出たら、日別のデータが多い方を使う
+      const same = clinics.findIndex((x) => x.key === c.key);
+      if (same < 0) clinics.push(c);
+      else if (c.days.length > clinics[same].days.length) clinics[same] = c;
+    }
+    // 稼働率タブの「交野」なども院に合わせる（「交野」→「交野院」の key は同じ）
+    for (const s of staffRates) {
+      const hit = clinics.find((c) => c.key === s.key || c.key.startsWith(s.key) || s.key.startsWith(c.key));
+      s.clinic = hit ? hit.name : s.label;
+      s.key = hit ? hit.key : s.key;
+    }
+    const columns = [];
+    for (const c of clinics) for (const col of c.columns) if (!columns.some((x) => x.header === col.header)) columns.push(col);
+    return { clinics, staffRates, columns };
+  }
+  // 列 → 部門（本部が直した対応 map[列ID] があればそれ）
+  function intakeColumnId(header) { return issueId("col", header); }
+  function intakeDeptsOf(col, map) {
+    const o = map && map[intakeColumnId(col.header)];
+    return o && Array.isArray(o.depts) ? o.depts : intakeDefaultDepts(col.section, col.header);
+  }
+  // 部門ごとの表：院 × その部門の列（合計の行。合計の行がなければ日別を足す）
+  function intakeDeptTable(book, dept, map) {
+    const cols = ((book && book.columns) || []).filter((c) => intakeDeptsOf(c, map).includes(dept));
+    const rows = ((book && book.clinics) || []).map((c) => {
+      const values = {};
+      for (const col of cols) {
+        let v = c.total ? c.total[col.header] : null;
+        if ((v === null || v === undefined) && col.additive) v = c.days.length ? sum(c.days.map((d) => d.values[col.header])) : null;
+        values[col.header] = v ?? null;
+      }
+      const lastDay = c.days.length ? c.days[c.days.length - 1].date : null;
+      return { name: c.name, key: c.key, values, days: c.days.length, lastDay };
+    });
+    const total = {};
+    for (const col of cols) total[col.header] = col.additive ? sum(rows.map((r) => r.values[col.header])) : null;
+    return { cols, rows, total };
+  }
+
   function uid(prefix) {
     return `${prefix || "x"}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
   }
@@ -675,6 +839,8 @@
     expansionProgress, newMilestones, annualByMonth, trainingStats, routineStatus, laborSummary, alerts, uid, normName,
     FIT_DEFAULT_RATES, FIT_DEFAULT_TOL, fitClinicKey, orgTabStart, parseOrgSheet, parseBudgetSheet, orgTabForMonth,
     roleCounts, capacityOf, fitVerdict, fitMonth, fitAdvice, fitYear,
+    INTAKE_DEPTS, intakeDefaultDepts, intakeAdditive, intakeFileMonth, intakeDate, parseDailyClinicTab, parseStaffRateTab, parseDailyBook,
+    intakeColumnId, intakeDeptsOf, intakeDeptTable,
     LABOR_DEFAULT_MULT, laborVerdict, laborPlan, parseOrgIssues, issueClinics, issueId, ISSUE_STATUSES, mergeIssues,
   };
 })(typeof window !== "undefined" ? window : globalThis);

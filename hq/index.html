@@ -184,6 +184,7 @@ const S = {
   bookings: null, bookingsErr: null, stores: [],
   mandala: null, mandalaErr: null, mandalaMonth: thisMonth,
   fit: null, fitErr: null,
+  intake: null, intakeErr: null, intakeBooks: {}, intakeMonth: null,
   ui: {},
 };
 if (!HQ.SECTIONS.some((s) => s.id === S.sec)) S.sec = "dashboard";
@@ -226,7 +227,7 @@ async function apiGet(path) {
 // 給与・人件費の台帳は hq_private_docs（clinic_staff.salary_viewer の人だけ読める）
 const PRIVATE_DOC_KEYS = ["labor"];
 const docTable = (key) => PRIVATE_DOC_KEYS.includes(key) ? "hq_private_docs" : "hq_docs";
-const DOC_KEYS = ["org", "people", "fit", "accounting", "education", "career", "expansion", "annual", "marketing"];
+const DOC_KEYS = ["org", "people", "fit", "intake", "accounting", "education", "career", "expansion", "annual", "marketing"];
 const saveTimers = {};
 function doc(key) {
   if (!S.docs[key]) S.docs[key] = {};
@@ -323,6 +324,7 @@ async function loadAll() {
     rest("stores?select=id,name,active").then((r) => { S.stores = r || []; }).catch(() => {}),
     selectAll("bookings", "select=id,patient_name,date,store_id,how_know,cancelled,is_training").then((b) => { S.bookings = b; }).catch((e) => { S.bookingsErr = e.message; }),
     loadFit(false),
+    loadIntake(false),
   ];
   await Promise.all(jobs.map((j) => j.then(render)));
 }
@@ -403,9 +405,12 @@ function render() {
   const al = alertsNow();
   const badge = (id) => { const n = al.filter((a) => a.section === id && a.level !== "info").length; return n ? `<span class="badge">${n}</span>` : ""; };
   const side = HQ.SECTIONS.map((s) => `${s.id === "performance" ? '<div class="sep">部門</div>' : ""}${s.id === "org" ? '<div class="sep">組織・計画</div>' : ""}<button class="${S.sec === s.id ? "sel" : ""}" onclick="go('${s.id}')"><span>${s.icon}</span>${esc(s.label)}${s.id === "dashboard" ? (al.filter((a) => a.level === "ng").length ? `<span class="badge">${al.filter((a) => a.level === "ng").length}</span>` : "") : badge(s.id)}</button>`).join("");
-  const fn = { dashboard: secDashboard, performance: secPerformance, marketing: secMarketing, people: secPeople, fit: secFit, accounting: secAccounting, education: secEducation, org: secOrg, career: secCareer, expansion: secExpansion, annual: secAnnual, mandala: secMandala }[S.sec];
+  const fn = { dashboard: secDashboard, performance: secPerformance, marketing: secMarketing, people: secPeople, fit: secFit, intake: secIntake, accounting: secAccounting, education: secEducation, org: secOrg, career: secCareer, expansion: secExpansion, annual: secAnnual, mandala: secMandala }[S.sec];
   let body;
   try { body = fn(); } catch (e) { console.error(e); body = `<div class="err">表示できませんでした：${esc(e.message)}</div>`; }
+  if (["performance", "marketing", "people", "accounting"].includes(S.sec)) {
+    try { body += intakeCard(S.sec); } catch (e) { console.error(e); body += `<div class="err">日計表を表示できませんでした：${esc(e.message)}</div>`; }
+  }
   app.innerHTML = `${topbar()}<div class="layout"><nav class="side">${side}</nav><main class="main">${S.docsErr ? `<div class="err">${esc(S.docsErr)}</div>` : ""}${body}</main></div>`;
   window.scrollTo(0, y);
   if (focusKey) {
@@ -751,6 +756,125 @@ function fitLaborCard(b, month, mk, tol, tab) {
   return `<div class="card"><div class="card-h"><span>💴 人件費 × ${mult} の売上設定（${esc(monthLabel(mk))}の予算と比較）</span>
     <span style="display:flex;gap:6px;align-items:center;font-size:12px;font-weight:700;color:#64748b;">倍率 ${inp("labor", "multiplier", d.multiplier ?? HQ.LABOR_DEFAULT_MULT, { num: 1, r: 1, style: "width:60px;" })} 倍</span></div>
     <div class="card-b scroll">${monthTable}${yearL}${editor}</div></div>`;
+}
+
+// ---------- データ取り込み（院の日計表 → 部門へ自動で振り分け） ----------
+async function loadIntake(refresh) {
+  S.intakeErr = null;
+  if (refresh) { S.intake = null; S.intakeBooks = {}; render(); }
+  try { S.intake = await apiGet(`/api/intake${refresh ? "?refresh=1" : ""}`); } catch (e) { S.intake = null; S.intakeErr = e.message; }
+  render();
+  const f = intakeFiles()[0];
+  if (f && !S.intakeMonth) loadIntakeBook(f.month);
+}
+// フォルダの日計表＋本部で追加したURL（月が読めないファイル＝原本などは除く）
+function intakeFiles() {
+  const out = [];
+  const add = (id, name, src, month) => { const m = month || HQ.intakeFileMonth(name); if (m && !out.some((x) => x.id === id)) out.push({ id, name, month: m, src }); };
+  ((S.intake && S.intake.files) || []).forEach((f) => add(f.id, f.name, "folder"));
+  (doc("intake").extraFiles || []).forEach((f) => add(f.fileId, f.name || "", "added", f.month));
+  return out.sort((a, b) => b.month.localeCompare(a.month));
+}
+async function loadIntakeBook(month, refresh) {
+  S.intakeMonth = month;
+  const f = intakeFiles().find((x) => x.month === month);
+  if (!f) { render(); return; }
+  if (S.intakeBooks[f.id] && !refresh) { render(); return; }
+  S.intakeBooks[f.id] = "loading"; render();
+  try {
+    const raw = await apiGet(`/api/intake?file=${encodeURIComponent(f.id)}${refresh ? "&refresh=1" : ""}`);
+    S.intakeBooks[f.id] = { ...HQ.parseDailyBook(raw.tabs), url: raw.url, loadedAt: raw.loadedAt };
+  } catch (e) { S.intakeBooks[f.id] = { error: e.message }; }
+  render();
+}
+function intakeBook() {
+  const f = intakeFiles().find((x) => x.month === S.intakeMonth);
+  return f ? { file: f, book: S.intakeBooks[f.id] } : { file: null, book: null };
+}
+function intakeAddFile() {
+  const url = prompt("日計表のURL（https://docs.google.com/spreadsheets/d/…）を貼り付けてください");
+  if (!url) return;
+  const m = String(url).match(/\/d\/([A-Za-z0-9_-]{20,})/) || String(url).match(/^([A-Za-z0-9_-]{20,})$/);
+  if (!m) { alert("スプレッドシートのURLが読み取れませんでした"); return; }
+  const month = prompt("何月分ですか？（例：2026-07）", "");
+  if (!month || !/^\d{4}-\d{2}$/.test(month.trim())) { alert("「2026-07」の形で入力してください"); return; }
+  addItem("intake", "extraFiles", { id: HQ.uid("f"), fileId: m[1], month: month.trim(), name: `追加（${month.trim()}）` });
+}
+function intakeToggle(colId, header, section, dept, on) {
+  const d = doc("intake");
+  if (!d.map) d.map = {};
+  const cur = d.map[colId] && Array.isArray(d.map[colId].depts) ? d.map[colId].depts : HQ.intakeDefaultDepts(section, header);
+  const next = on ? [...new Set([...cur, dept])] : cur.filter((x) => x !== dept);
+  d.map[colId] = { header, depts: next };
+  saveDoc("intake"); render();
+}
+function intakeReset(colId) { const d = doc("intake"); if (d.map) delete d.map[colId]; saveDoc("intake"); render(); }
+// 値の表示（列名からお金・率・人数を見分ける）
+function intakeFmt(header, v) {
+  if (v === null || v === undefined) return "-";
+  if (/率/.test(header)) return pct(v, 1);
+  if (/売上|単価|合計|額|窓口|自費|物販|請求|返金/.test(header)) return /単価/.test(header) ? yen(v) : man(v);
+  return (Math.round(v * 10) / 10).toLocaleString("ja-JP");
+}
+function intakeMonthChips() {
+  const files = intakeFiles();
+  return `<span class="chips" style="margin:0;">${files.slice(0, 8).map((f) => `<button class="chip ${f.month === S.intakeMonth ? "sel" : ""}" onclick="loadIntakeBook('${f.month}')">${esc(monthLabel(f.month))}</button>`).join("")}</span>`;
+}
+function intakeStatusHtml() {
+  if (S.intakeErr) return `<div class="err">日計表を読み込めませんでした：${esc(S.intakeErr)}</div>`;
+  if (!S.intake) return `<div class="muted">日計表を読み込み中...</div>`;
+  if (!intakeFiles().length) return `<div class="err">日計表が見つかりません。${S.intake.folderErr ? esc(S.intake.folderErr) : ""}<br>「📥 データ取り込み」から確認してください。</div>`;
+  const { book } = intakeBook();
+  if (!book || book === "loading") return `<div class="muted">日計表を読み込み中...</div>`;
+  if (book.error) return `<div class="err">${esc(book.error)}</div>`;
+  return "";
+}
+// 各部門の画面に出すカード
+function intakeCard(dept) {
+  const label = (HQ.INTAKE_DEPTS.find((x) => x.id === dept) || {}).label;
+  const head = `<div class="card-h"><span>📥 日計表から（${esc(label)}）</span>${intakeMonthChips()}</div>`;
+  const st = intakeStatusHtml();
+  if (st) return `<div class="card">${head}<div class="card-b">${st}</div></div>`;
+  const { file, book } = intakeBook();
+  const t = HQ.intakeDeptTable(book, dept, doc("intake").map);
+  const lastDays = t.rows.map((r) => r.lastDay).filter(Boolean).sort();
+  let body = t.cols.length ? `<table><tr><th class="l">院</th>${t.cols.map((c) => `<th>${esc(c.header)}</th>`).join("")}<th class="l">入力済み</th></tr>
+    ${t.rows.map((r) => `<tr><td class="l"><b>${esc(r.name)}</b></td>${t.cols.map((c) => `<td>${intakeFmt(c.header, r.values[c.header])}</td>`).join("")}<td class="l small">${r.days}日分${r.lastDay ? `（〜${esc(r.lastDay.slice(5).replace("-", "/"))}）` : ""}</td></tr>`).join("")}
+    <tr class="total"><td class="l">全院</td>${t.cols.map((c) => `<td>${c.additive ? intakeFmt(c.header, t.total[c.header]) : "-"}</td>`).join("")}<td></td></tr></table>`
+    : (dept === "people" && book.staffRates.length ? "" : `<div class="muted">この部門に振り分けた列がありません（「📥 データ取り込み」で設定できます）。</div>`);
+  if (dept === "people" && book.staffRates.length) {
+    body += `<div class="small" style="font-weight:800;margin:14px 0 6px;">スタッフ別の稼働（各院の「稼働率」タブ）</div>
+      <table><tr><th class="l">院</th><th class="l">スタッフ</th><th>対応人数</th><th>実稼働</th><th>稼働枠</th><th>稼働率</th></tr>
+      ${book.staffRates.map((s) => [...s.staff.filter((p) => p.slots || p.handled), ...(s.total ? [{ ...s.total, name: "院合計", tot: true }] : [])].map((p, i) => `<tr ${p.tot ? 'class="total"' : ""}><td class="l">${i === 0 ? `<b>${esc(s.clinic)}</b>` : ""}</td><td class="l">${esc(p.name)}</td><td>${p.handled ?? "-"}</td><td>${p.actual ?? "-"}</td><td>${p.slots ?? "-"}</td><td class="${p.rate !== null && p.rate < 0.7 ? "warn" : ""}">${pct(p.rate, 0)}</td></tr>`).join("")).join("")}</table>`;
+  }
+  return `<div class="card">${head}<div class="card-b scroll">${body}
+    <div class="small" style="margin-top:6px;">出どころ：<a href="${esc(book.url)}" target="_blank" rel="noopener">${esc(file.name || "日計表")}</a>（各院タブの「合計」の行）${lastDays.length ? `・最新の入力 ${esc(lastDays[lastDays.length - 1])}` : ""}。単価・平均・率は院の合計に足していません。</div></div></div>`;
+}
+function secIntake() {
+  const head = `<div class="h2">📥 データ取り込み</div><div class="lead">院が入力している日計表（月ごとのスプレッドシート）を読み込み、列ごとに部門（業績・集客・人材・経理事務）へ自動で振り分けます。振り分けた数字は各部門の画面の「📥 日計表から」に出ます。院の作業は今までどおり日計表に入力するだけです。</div>`;
+  const files = intakeFiles();
+  const folder = S.intake ? `<a href="${esc(S.intake.folderUrl)}" target="_blank" rel="noopener">日計表のフォルダ ↗</a>` : "";
+  const fileList = `<div class="card"><div class="card-h"><span>日計表のファイル（${files.length}か月）</span>
+      <span style="display:flex;gap:6px;flex-wrap:wrap;">${folder ? `<span class="small">${folder}</span>` : ""}<button class="btn btn-gray btn-sm" onclick="intakeAddFile()">＋ URLで追加</button><button class="btn btn-gray btn-sm" onclick="loadIntake(true)">🔄 再読込</button></span></div><div class="card-b">
+    ${S.intakeErr ? `<div class="err">${esc(S.intakeErr)}</div>` : ""}
+    ${S.intake && S.intake.folderErr ? `<div class="err">${esc(S.intake.folderErr)}<br>フォルダを開いて「共有」から <b>incentive-sheets@ando-incentive.iam.gserviceaccount.com</b> を「閲覧者」で追加してください。フォルダの外にある月は「＋ URLで追加」で足せます。</div>` : ""}
+    ${files.length ? `<table><tr><th class="l">月</th><th class="l">ファイル</th><th class="l">どこから</th><th></th></tr>${files.map((f) => `<tr><td class="l"><b>${esc(monthLabel(f.month))}</b></td><td class="l"><a href="https://docs.google.com/spreadsheets/d/${esc(f.id)}/edit" target="_blank" rel="noopener">${esc(f.name || f.id)}</a></td><td class="l small">${f.src === "folder" ? "フォルダから自動" : "URLで追加"}</td><td>${f.src === "added" ? `<button class="btn-del" onclick="removeItem('intake','extraFiles','${esc((doc("intake").extraFiles || []).find((x) => x.fileId === f.id)?.id || "")}','${esc(f.name)}')">✕</button>` : ""}</td></tr>`).join("")}</table>` : (S.intake ? `<div class="muted">日計表が見つかりません。</div>` : `<div class="muted">読み込み中...</div>`)}
+    <div class="small" style="margin-top:6px;">ファイル名の「R8.11」「2026.6」などから月を判断します（「原本」は読みません）。</div></div></div>`;
+  const st = intakeStatusHtml();
+  let mapping = "";
+  if (!st) {
+    const { book } = intakeBook();
+    const map = doc("intake").map || {};
+    mapping = `<div class="card"><div class="card-h"><span>列 → 部門の振り分け（${esc(monthLabel(S.intakeMonth))}の日計表から ${book.columns.length}列）</span>${intakeMonthChips()}</div><div class="card-b scroll">
+      <div class="small" style="margin-bottom:8px;">読み取った院：${book.clinics.map((c) => `<b>${esc(c.name)}</b>（${c.days.length}日分）`).join("、")}／稼働率タブ ${book.staffRates.length}院</div>
+      <table><tr><th class="l">区分（シート）</th><th class="l">列</th>${HQ.INTAKE_DEPTS.map((d) => `<th style="text-align:center;">${esc(d.label)}</th>`).join("")}<th class="l"></th></tr>
+      ${book.columns.map((c) => { const id = HQ.intakeColumnId(c.header); const ds = HQ.intakeDeptsOf(c, map); const custom = !!map[id];
+        return `<tr><td class="l small">${esc(c.section)}</td><td class="l"><b>${esc(c.header)}</b>${c.additive ? "" : ' <span class="small">（足さない）</span>'}</td>
+          ${HQ.INTAKE_DEPTS.map((d) => `<td style="text-align:center;"><input type="checkbox" ${ds.includes(d.id) ? "checked" : ""} onchange="intakeToggle('${id}',${esc(JSON.stringify(c.header))},${esc(JSON.stringify(c.section))},'${d.id}',this.checked)"/></td>`).join("")}
+          <td class="l small">${custom ? `手動 <button class="btn btn-gray btn-sm" onclick="intakeReset('${id}')">自動に戻す</button>` : "自動"}</td></tr>`; }).join("")}
+      </table><div class="small" style="margin-top:6px;">チェックを変えると、その列が出る部門の画面が変わります（全員共通の設定）。新しい列が増えても、見出しの言葉と区分から自動で振り分けます。</div></div></div>`;
+  }
+  return head + fileList + (st ? `<div class="card"><div class="card-b">${st}</div></div>` : mapping);
 }
 
 // ---------- 人材 ----------
