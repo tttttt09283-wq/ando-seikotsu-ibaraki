@@ -203,7 +203,45 @@
     return lines.join("\n");
   }
 
-  const api={TYPES,DATE_RE,monthDates,shiftMonth,workUnits,isWorking,weeklyMap,dayType,homeStore,workStore,normRequired,requiredOn,buildMonth,staffForStore,groupByHome,adjustBalance,shortStoreName,fmtUnits,toCsv,dowOf};
+  // ===== 日割りの売上目標（シフトの出勤人数で配分） =====
+  // dates：[{date}]、units：{日付:その日の出勤人数}、closed(date)：休診なら true、target：月の目標売上、
+  // actual：{日付:売上}、today："YYYY-MM-DD"
+  // ・出勤人数が多い日ほど目標を大きくする（目標 × その日の人数 ÷ 月の延べ人数）＝基本の目標
+  // ・前日までの実績が目標に足りない（マイナス）ときは、足りない分をその日以降の稼働日に人数の割合で上乗せする
+  // ・目標より多く売れている（プラス）ときは減らさず、基本の目標（平均の数字）のまま
+  function dailySalesPlan({dates,units,closed,target,actual,today}){
+    const T=Number(target)||0, act=actual||{};
+    const w=d=>{ const u=Number(units&&units[d])||0; return closed&&closed(d)?0:Math.max(0,u); };
+    const W=dates.reduce((t,{date})=>t+w(date),0);
+    const workDays=dates.filter(({date})=>w(date)>0).length;
+    const A=d=>Math.round(Number(act[d])||0);
+    // 今日から先は「前日までの実績」で割り直した同じ割合（1人あたり）を使う
+    const beforeToday=dates.reduce((t,{date})=>t+(date<today?A(date):0),0);
+    const wFromToday=dates.reduce((t,{date})=>t+(date>=today?w(date):0),0);
+    const futureRate=wFromToday>0?(T-beforeToday)/wFromToday:0;
+    let actBefore=0, wFrom=W, cum=0;
+    const days=dates.map(({date})=>{
+      const weight=w(date), a=A(date);
+      const base=W>0?T*weight/W:0;
+      // 過去の日は「その日より前の実績」で、残りの目標を残りの延べ人数に割り直した数（その日に見ていた目標）
+      const need=date<today?(wFrom>0?(T-actBefore)*weight/wFrom:0):futureRate*weight;
+      const tgt=weight>0?Math.round(Math.max(base,need)):0;
+      const past=date<today, isToday=date===today;
+      const row={date,units:weight,working:weight>0,base:Math.round(base),target:tgt,added:Math.max(0,tgt-Math.round(base)),
+        perPerson:weight>0?Math.round(tgt/weight):0,actual:date<=today?a:null,past,today:isToday};
+      if(date<=today){ row.diff=a-tgt; if(past) cum+=a-tgt; row.cum=cum; }
+      actBefore+=a; wFrom-=weight;
+      return row;
+    });
+    const actualTotal=dates.reduce((t,{date})=>t+(date<=today?Math.round(Number(act[date])||0):0),0);
+    const remainDays=days.filter(d=>d.working&&d.date>=today).length;
+    const todayRow=days.find(d=>d.today)||null;
+    const next=days.find(d=>d.working&&d.date>=today)||null;
+    return {target:T,totalUnits:W,workDays,avgDaily:workDays?Math.round(T/workDays):0,actualTotal,remaining:Math.max(0,T-actualTotal),
+      rate:T>0?Math.round(actualTotal/T*1000)/10:null,remainDays,today:todayRow,next,days};
+  }
+
+  const api={TYPES,DATE_RE,monthDates,shiftMonth,workUnits,isWorking,weeklyMap,dayType,homeStore,workStore,normRequired,requiredOn,buildMonth,staffForStore,groupByHome,adjustBalance,shortStoreName,fmtUnits,toCsv,dowOf,dailySalesPlan};
   root.ShiftLogic=api;
   if(typeof module!=="undefined"&&module.exports) module.exports=api;
 })(typeof window!=="undefined"?window:globalThis);
