@@ -185,6 +185,7 @@ const S = {
   mandala: null, mandalaErr: null, mandalaMonth: thisMonth,
   fit: null, fitErr: null,
   intake: null, intakeErr: null, intakeBooks: {}, intakeMonth: null,
+  wage: null, wageErr: null, wageMonth: null,
   ui: {},
 };
 if (!HQ.SECTIONS.some((s) => s.id === S.sec)) S.sec = "dashboard";
@@ -409,7 +410,7 @@ function render() {
   let body;
   try { body = fn(); } catch (e) { console.error(e); body = `<div class="err">表示できませんでした：${esc(e.message)}</div>`; }
   if (["performance", "marketing", "people", "accounting"].includes(S.sec)) {
-    try { body += intakeCard(S.sec); } catch (e) { console.error(e); body += `<div class="err">日計表を表示できませんでした：${esc(e.message)}</div>`; }
+    try { body += intakeCard(S.sec) + (S.sec === "people" ? wageCard() : ""); } catch (e) { console.error(e); body += `<div class="err">日計表を表示できませんでした：${esc(e.message)}</div>`; }
   }
   app.innerHTML = `${topbar()}<div class="layout"><nav class="side">${side}</nav><main class="main">${S.docsErr ? `<div class="err">${esc(S.docsErr)}</div>` : ""}${body}</main></div>`;
   window.scrollTo(0, y);
@@ -828,6 +829,37 @@ function intakeStatusHtml() {
   if (!book || book === "loading") return `<div class="muted">日計表を読み込み中...</div>`;
   if (book.error) return `<div class="err">${esc(book.error)}</div>`;
   return "";
+}
+// ---- 勤怠（賃金管理表。金額の列はサーバーで除いてある。salary_viewer だけ） ----
+async function loadWage(refresh) {
+  S.wage = "loading"; S.wageErr = null; render();
+  try {
+    const raw = await apiGet(`/api/intake?wage=1${refresh ? "&refresh=1" : ""}`);
+    const tabs = raw.tabs.map((t) => HQ.parseWageTab(t.title, t.values)).filter(Boolean).sort((a, b) => b.month.localeCompare(a.month));
+    S.wage = { url: raw.url, tabs };
+    if (!S.wageMonth && tabs[0]) S.wageMonth = tabs[0].month;
+  } catch (e) { S.wage = null; S.wageErr = e.message; }
+  render();
+}
+function wageCard() {
+  if (S.salaryViewer !== true) return "";
+  if (!S.wage && !S.wageErr) { setTimeout(() => loadWage(false), 0); }
+  const head = (chips) => `<div class="card-h"><span>🕒 勤怠（賃金管理表から）</span>${chips || ""}</div>`;
+  if (S.wageErr) return `<div class="card">${head()}<div class="card-b"><div class="err">${esc(S.wageErr)}</div><button class="btn btn-gray btn-sm" onclick="loadWage(true)">もう一度読み込む</button></div></div>`;
+  if (!S.wage || S.wage === "loading") return `<div class="card">${head()}<div class="card-b muted">読み込み中...</div></div>`;
+  const tabs = S.wage.tabs;
+  const t = tabs.find((x) => x.month === S.wageMonth) || tabs[0];
+  if (!t) return `<div class="card">${head()}<div class="card-b muted">月のタブが見つかりません。</div></div>`;
+  const chips = `<span class="chips" style="margin:0;">${tabs.slice(0, 8).map((x) => `<button class="chip ${x.month === t.month ? "sel" : ""}" onclick="S.wageMonth='${x.month}';render()">${esc(monthLabel(x.month))}</button>`).join("")}</span>`;
+  const orgTab = S.fit ? HQ.orgTabForMonth(S.fit.org, t.month).tab : null;
+  const rows = t.people.map((p) => ({ ...p, at: HQ.clinicOfPerson(p.name, orgTab) }))
+    .sort((a, b) => String(a.at ? a.at.clinic : "~").localeCompare(String(b.at ? b.at.clinic : "~"), "ja"));
+  const cols = t.cols;
+  const hi = (label, v) => /超過残業/.test(label) && v > 0 ? "ng" : /有給残/.test(label) && v >= 20 ? "warn" : "";
+  return `<div class="card">${head(chips)}<div class="card-b scroll"><table>
+    <tr><th class="l">氏名</th><th class="l">院（組織図）</th>${cols.map((c) => `<th>${esc(c.label)}</th>`).join("")}</tr>
+    ${rows.map((p) => `<tr><td class="l"><b>${esc(p.name)}</b></td><td class="l small">${esc(p.at ? p.at.clinic : "-")}</td>${cols.map((c) => { const v = p.values[c.label]; return `<td class="${hi(c.label, v)}">${v === null || v === undefined ? "-" : (Math.round(v * 10) / 10).toLocaleString("ja-JP")}</td>`; }).join("")}</tr>`).join("")}
+  </table><div class="small" style="margin-top:6px;">出どころ：<a href="${esc(S.wage.url)}" target="_blank" rel="noopener">賃金管理表</a>の「${esc(t.title)}」タブ（日数・時間の列だけ。金額の列は本部システムに読み込んでいません）。超過残業がプラスの人は赤、有給残20日以上は黄色。給与を見る権限（salary_viewer）のある人だけに表示。</div></div></div>`;
 }
 // 各部門の画面に出すカード
 function intakeCard(dept) {

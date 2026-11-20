@@ -352,3 +352,26 @@ test("データ取り込み：日計表の院タブ・稼働率タブを読み�
   assert.equal(HQ.intakeFileMonth("EnejoyHand様日計表2026.6"), "2026-06");
   assert.equal(HQ.intakeFileMonth("EnejoyHand様日計表原本"), null);
 });
+
+test("勤怠：賃金管理表のタブ（金額の列を除いたもの）から日数・時間を読み、組織図の院を名字で探す", () => {
+  const rows = [
+    ["残業代計算表", "R", "", "", "", "8", "年", "9", "月"],
+    [],
+    ["", "", "", "", "", "", "", "", "今月総勤務数（ｈ）"],
+    [36, "出勤日数", "別バイト\n別MG業", "休日\n(バイト等含)", "有休", "有給残", "特休", "通常", "うち深夜", "固定\n残業数", "超過\n残業数"],
+    ["定井　彪雅", 20, 0, 10, 1, 12, 0, 183, 0, 23, -5],
+    ["", "", "", "", "", "", "", "", "", "", ""],
+    ["山﨑　航平", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // 全部0の人は出さない
+  ];
+  const t = HQ.parseWageTab("R8.9", rows);
+  assert.equal(t.month, "2026-09");
+  assert.deepEqual(plain(t.cols.map((c) => c.label)), ["出勤日数（日）", "別バイト別MG業（日）", "休日(バイト等含)（日）", "有休（日）", "有給残（日）", "特休（日）", "総勤務（時間）", "深夜（時間）", "固定残業数（時間）", "超過残業数（時間）"]);
+  assert.equal(t.people.length, 1);
+  assert.equal(t.people[0].name, "定井 彪雅");
+  assert.equal(t.people[0].values["総勤務（時間）"], 183);
+  assert.equal(HQ.parseWageTab("原本", rows), null);
+  const org = HQ.parseOrgSheet("2026.9.1〜", orgGrid(["東町院", "西町院"], [["院長", "大皿", "原田"], ["施術者", "定井", "山崎"]]));
+  assert.deepEqual(plain(HQ.clinicOfPerson("定井　彪雅", org)), { clinic: "東町院", role: "施術者" });
+  assert.deepEqual(plain(HQ.clinicOfPerson("山﨑 航平", org)), { clinic: "西町院", role: "施術者" });
+  assert.equal(HQ.clinicOfPerson("誰か", org), null);
+});

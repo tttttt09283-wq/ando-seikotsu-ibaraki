@@ -827,6 +827,46 @@
     return { cols, rows, total };
   }
 
+  // ===== 賃金管理表の勤怠（金額の列はサーバーで除いてある） =====
+  // 「出勤日数」のある行が見出し。「通常」より左は日数、「通常」から右は時間。
+  function parseWageTab(title, rows) {
+    const month = intakeFileMonth(title);
+    let hr = -1;
+    for (let r = 0; r < Math.min(rows.length, 15) && hr < 0; r++) if ((rows[r] || []).some((v) => headerText(v) === "出勤日数")) hr = r;
+    if (!month || hr < 0) return null;
+    const head = rows[hr].map(headerText);
+    const hoursFrom = head.findIndex((h) => h === "通常");
+    const cols = [];
+    head.forEach((h, c) => {
+      if (c === 0 || !h || /^\d+$/.test(h)) return;
+      const unit = hoursFrom >= 0 && c >= hoursFrom ? "時間" : "日";
+      const label = h === "通常" ? "総勤務" : h.replace(/^うち/, "");
+      cols.push({ c, label: `${label}（${unit}）`, unit });
+    });
+    const people = [];
+    for (let r = hr + 1; r < rows.length; r++) {
+      const row = rows[r] || [];
+      const name = String(row[0] ?? "").replace(/[\s　]+/g, " ").trim();
+      if (!name || /^\d+$/.test(name) || /合計|計$/.test(name)) continue;
+      const values = {};
+      let any = false;
+      for (const col of cols) { const n = intakeNum(row[col.c]); values[col.label] = n; if (n) any = true; }
+      if (any) people.push({ name, values });
+    }
+    return { title, month, cols: cols.map(({ c, ...x }) => x), people };
+  }
+  // 名前から組織図の院を探す（「定井 彪雅」→ 組織図の「定井」）
+  function clinicOfPerson(name, orgTab) {
+    const n = String(name || "").replace(/[\s　]/g, "").replace(/﨑/g, "崎");
+    for (const c of (orgTab && orgTab.clinics) || []) {
+      for (const m of c.members) {
+        const sn = String(m.name).replace(/[（(].*$/, "").replace(/﨑/g, "崎").trim();
+        if (sn && n.startsWith(sn)) return { clinic: c.name, role: m.role };
+      }
+    }
+    return null;
+  }
+
   function uid(prefix) {
     return `${prefix || "x"}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
   }
@@ -841,6 +881,7 @@
     roleCounts, capacityOf, fitVerdict, fitMonth, fitAdvice, fitYear,
     INTAKE_DEPTS, intakeDefaultDepts, intakeAdditive, intakeFileMonth, intakeDate, parseDailyClinicTab, parseStaffRateTab, parseDailyBook,
     intakeColumnId, intakeDeptsOf, intakeDeptTable,
+    parseWageTab, clinicOfPerson,
     LABOR_DEFAULT_MULT, laborVerdict, laborPlan, parseOrgIssues, issueClinics, issueId, ISSUE_STATUSES, mergeIssues,
   };
 })(typeof window !== "undefined" ? window : globalThis);
