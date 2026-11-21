@@ -13,6 +13,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="/staff-goals-logic.js"></script>
 <script src="/sales-report-logic.js"></script>
+<script src="/sales-simulator-logic.js"></script>
 <script src="/attendance-logic.js"></script>
 <script src="/shift-logic.js"></script>
 <script src="/petty-cash-logic.js"></script>
@@ -206,6 +207,11 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 .sidebar-icon{font-size:14px;flex-shrink:0;width:16px;text-align:center;}
 
 .scroll-x{overflow-x:auto;}
+.ss-range{-webkit-appearance:none;appearance:none;width:100%;height:8px;margin:12px 0 4px;border-radius:4px;background:linear-gradient(to right,var(--ss-c) var(--ss-p),#e2e8f0 var(--ss-p));outline:none;cursor:pointer;touch-action:pan-y}
+.ss-range:disabled{cursor:default}
+.ss-range::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:50%;background:#fff;border:3px solid var(--ss-c);box-shadow:0 1px 4px rgba(0,0,0,.2)}
+.ss-range::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#fff;border:3px solid var(--ss-c);box-shadow:0 1px 4px rgba(0,0,0,.2)}
+.ss-range:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 5px rgba(30,58,95,.2)}
 </style>
 </head>
 <body>
@@ -578,7 +584,7 @@ const sb = {
 // ===== 全端末で共有する設定（月次シフト・休暇残・売上目標） =====
 // 以前はブラウザ（localStorage）にだけ保存していたため、端末ごとに設定し直す必要があった。
 // サーバー（app_settings）を正として、localStorage はその写し（すぐ読めるようにするための控え）として使う。
-const SHARED_SETTING_PREFIXES=["shifts_","shifthalf_","shiftstore_","shift_required","holiday_balance","ando_sales_target_","attendance_rules"];
+const SHARED_SETTING_PREFIXES=["shifts_","shifthalf_","shiftstore_","shift_required","holiday_balance","ando_sales_target_","attendance_rules","sales_simulator_"];
 // ===== 半日出勤（シフト表の「午前出勤」＝午後休み／「午後出勤」＝午前休み） =====
 // 午前・午後の時間帯は、設定「shift_half_times」（平日／土日・祝それぞれ）。未設定なら HALF_SHIFT_DEFAULT_TIMES
 const HALF_SHIFT={"午前出勤":"am","午後出勤":"pm"};
@@ -14136,6 +14142,581 @@ function BulkReceiptPanel({payments,bookings,stores,refunds=[]}){
 // 香里園駅前院は2026年10月開業のため10月〜翌9月、ほかの院は7月〜翌6月の「期」で表示する
 // 計算は sales-report-logic.js の buildMonthlyKpi。保険請求・施術者人数・営業利益は月ごとに手入力（共有設定に保存）
 const KPI_FIRST_PERIOD_YEAR=2015; // 11期＝2026年7月〜 → 期の数字＋2015 が始まりの年
+// ===== 総売上シミュレーター（売上シミュレーター／目標逆算／ダッシュボード） =====
+// 計算は sales-simulator-logic.js（window.SalesSim）。3パターンは店舗ごとに共有設定（全端末）へ保存する。
+const SS_COLOR={navy:"#1e3a5f",judo:"#2563eb",acu:"#16a34a",self:"#ea580c",ems:"#f59e0b",fixed:"#94a3b8",red:"#dc2626"};
+const SS_SOFT={navy:"#eef3f9",judo:"#eff5ff",acu:"#effbf3",self:"#fff5ed"};
+const ssCard={background:"white",borderRadius:14,boxShadow:"0 1px 4px rgba(0,0,0,.06)",border:"1px solid #e8edf3",marginBottom:12};
+const ssGrid=min=>({display:"grid",gridTemplateColumns:`repeat(auto-fit,minmax(min(100%,${min}px),1fr))`,gap:12});
+const ssNum={fontVariantNumeric:"tabular-nums"};
+
+// 数値入力＋スライダー（どちらを動かしても同じ値。空欄・マイナス・上限超えは安全な値にする）
+function SSField({label,value,onChange,unit,max,sliderMax,step,decimal,accent,hint,disabled}){
+  const S=window.SalesSim;
+  const show=v=>decimal?S.formatOneDecimal(v):S.formatInt(v);
+  const [focused,setFocused]=React.useState(false);
+  const [text,setText]=React.useState(show(value));
+  React.useEffect(()=>{ if(!focused) setText(show(value)); },[value,focused]);
+  const norm=raw=>{ const v=S.clamp(raw,0,max==null?Number.MAX_SAFE_INTEGER:max); return decimal?Math.round(v*10)/10:Math.round(v); };
+  const color=SS_COLOR[accent||"navy"];
+  return(
+    <div style={{opacity:disabled?.55:1}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+        <label style={{fontSize:13,fontWeight:700,color:"#334155",lineHeight:1.35}}>{label}</label>
+        <div style={{position:"relative",width:150,flexShrink:0}}>
+          <input inputMode={decimal?"decimal":"numeric"} autoComplete="off" disabled={disabled} value={text} aria-label={label}
+            onFocus={e=>{ setFocused(true); setText(String(decimal?value:Math.round(value))); const t=e.target; setTimeout(()=>t.select(),0); }}
+            onBlur={()=>{ setFocused(false); setText(show(value)); }}
+            onChange={e=>{ setText(e.target.value); onChange(norm(S.toSafeNumber(e.target.value))); }}
+            style={{...ssNum,width:"100%",boxSizing:"border-box",height:40,padding:"0 34px 0 10px",borderRadius:9,border:"1.5px solid #cbd5e1",fontSize:16,fontWeight:800,textAlign:"right",fontFamily:"inherit",color:"#0f172a",background:disabled?"#f8fafc":"white"}}/>
+          <span style={{position:"absolute",right:10,top:0,bottom:0,display:"flex",alignItems:"center",fontSize:12,fontWeight:700,color:"#64748b",pointerEvents:"none"}}>{unit}</span>
+        </div>
+      </div>
+      <input type="range" className="ss-range" min={0} max={sliderMax} step={step||1} value={Math.min(value,sliderMax)} disabled={disabled} aria-label={label+"（スライダー）"}
+        onChange={e=>onChange(norm(Number(e.target.value)))}
+        style={{"--ss-c":color,"--ss-p":(sliderMax>0?Math.min(100,value/sliderMax*100):0)+"%"}}/>
+      {hint&&<div style={{fontSize:11.5,color:"#64748b",marginTop:2}}>{hint}</div>}
+    </div>
+  );
+}
+
+// 自動計算の結果（入力できない）
+function SSRow({label,value,unit,strong}){
+  return(
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,.9)"}}>
+      <span style={{fontSize:13,color:strong?"#0f172a":"#475569",fontWeight:strong?800:500}}>{label}</span>
+      <span style={{...ssNum,fontSize:strong?19:15,fontWeight:800,color:"#0f172a",whiteSpace:"nowrap"}}>{value}{unit&&<span style={{fontSize:11,fontWeight:700,color:"#64748b",marginLeft:2}}>{unit}</span>}</span>
+    </div>
+  );
+}
+
+function SSSection({tone,icon,title,desc,total,results,children}){
+  const S=window.SalesSim;
+  return(
+    <div style={{...ssCard,overflow:"hidden",marginBottom:0}}>
+      <div style={{height:4,background:SS_COLOR[tone]}}/>
+      <div style={{padding:"14px 16px 16px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+          <span style={{width:36,height:36,borderRadius:10,background:SS_SOFT[tone],display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{icon}</span>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>{title}</div>
+            {desc&&<div style={{fontSize:11.5,color:"#64748b"}}>{desc}</div>}
+          </div>
+          {total!=null&&<span style={{...ssNum,fontSize:13,fontWeight:800,color:SS_COLOR[tone],background:SS_SOFT[tone],borderRadius:20,padding:"3px 10px",whiteSpace:"nowrap"}}>{S.formatInt(total)}円</span>}
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>{children}</div>
+        <div style={{marginTop:16,background:SS_SOFT[tone],borderRadius:10,padding:"4px 12px"}}>{results}</div>
+      </div>
+    </div>
+  );
+}
+
+function SSKpi({label,value,unit,dark,valueColor,footer,span}){
+  return(
+    <div style={{...ssCard,marginBottom:0,padding:"12px 14px",minWidth:0,background:dark?SS_COLOR.navy:"white",border:dark?"none":ssCard.border,gridColumn:span?"1 / -1":undefined}}>
+      <div style={{fontSize:12,fontWeight:700,color:dark?"rgba(255,255,255,.7)":"#64748b"}}>{label}</div>
+      <div style={{...ssNum,fontSize:"clamp(20px,5.4vw,28px)",fontWeight:900,lineHeight:1.25,color:dark?"white":(valueColor||"#0f172a"),marginTop:2,whiteSpace:"nowrap"}}>
+        {value}{value!=="—"&&<span style={{fontSize:13,fontWeight:700,marginLeft:3,color:dark?"rgba(255,255,255,.7)":"#64748b"}}>{unit}</span>}
+      </div>
+      {footer}
+    </div>
+  );
+}
+
+function SalesSimulatorPanel({payments,bookings,stores,todayStr}){
+  const S=window.SalesSim, SR=window.SalesReport;
+  const defaultStore=((stores||[]).find(s=>/香里園/.test(s.name||""))||(stores||[])[0]||{id:1}).id;
+  const [storeId,setStoreId]=React.useState(defaultStore);
+  const key=S.storageKey(storeId);
+  const version=useSharedSettingsVersion();
+  const readSaved=()=>{ try{ return S.parseStoredState(localStorage.getItem(key)); }catch(e){ return S.createInitialState(); } };
+  const draftsOf=st=>Object.fromEntries(S.SCENARIOS.map(({id})=>[id,S.cloneInput(st.scenarios[id].input)]));
+  const [saved,setSaved]=React.useState(readSaved);
+  const [drafts,setDrafts]=React.useState(()=>draftsOf(saved));
+  const [active,setActive]=React.useState(saved.active);
+  const [tab,setTab]=React.useState("sim");
+  const [toast,setToast]=React.useState("");
+  const [saving,setSaving]=React.useState(false);
+
+  // 店舗を変えたら、その店舗の保存データを読み直す
+  const loadedKey=React.useRef(key);
+  React.useEffect(()=>{
+    if(loadedKey.current===key) return;
+    loadedKey.current=key;
+    const st=readSaved(); setSaved(st); setDrafts(draftsOf(st)); setActive(st.active);
+  },[key]);
+  // 他の端末で保存されたら、保存データを更新（この端末で編集中のパターンはそのまま）
+  React.useEffect(()=>{
+    if(!version) return;
+    const st=readSaved();
+    setDrafts(prev=>{
+      const next={...prev};
+      S.SCENARIOS.forEach(({id})=>{ if(S.inputsEqual(prev[id],saved.scenarios[id].input)) next[id]=S.cloneInput(st.scenarios[id].input); });
+      return next;
+    });
+    setSaved(st);
+  },[version]);
+  React.useEffect(()=>{ if(!toast) return; const t=setTimeout(()=>setToast(""),2400); return()=>clearTimeout(t); },[toast]);
+
+  const input=drafts[active];
+  const result=React.useMemo(()=>S.calculate(input),[input]);
+  const dirty=Object.fromEntries(S.SCENARIOS.map(({id})=>[id,!S.inputsEqual(drafts[id],saved.scenarios[id].input)]));
+  const activeLabel=S.SCENARIOS.find(s=>s.id===active).label;
+  const update=fn=>setDrafts(prev=>{ const next=S.cloneInput(prev[active]); fn(next); return {...prev,[active]:next}; });
+
+  async function save(){
+    const next={...saved,active,scenarios:{...saved.scenarios,[active]:{input:S.cloneInput(input),savedAt:new Date().toISOString()}}};
+    setSaving(true);
+    const ok=await sharedSettings.saveNow({[key]:JSON.stringify(next)});
+    setSaving(false);
+    setSaved(next);
+    setToast(ok?`「${activeLabel}」を保存しました（全端末で共有）`:`「${activeLabel}」をこの端末に保存しました（サーバーへの保存は失敗）`);
+  }
+  function reset(){
+    if(!window.confirm(`「${activeLabel}」の入力をデモ用の初期値に戻しますか？\n（保存するまで、保存済みのデータは変わりません）`)) return;
+    setDrafts(prev=>({...prev,[active]:S.cloneInput(S.DEFAULT_INPUT)}));
+    setToast("初期値に戻しました");
+  }
+
+  // ===== 月次の実績から読み込む（カルテ枚数・来院回数・診療日数・施術者人数・柔整/鍼灸の対応率。単価は変えない） =====
+  const months=React.useMemo(()=>{ const out=[]; const [y,m]=todayStr.slice(0,7).split("-").map(Number); for(let i=1;i<=12;i++){ const d=new Date(Date.UTC(y,m-1-i,1)); out.push(d.toISOString().slice(0,7)); } return out; },[todayStr]);
+  const [actualMonth,setActualMonth]=React.useState(months[0]);
+  const actualRow=React.useMemo(()=>SR&&SR.buildMonthlyKpi?SR.buildMonthlyKpi(payments,{months:[actualMonth],storeId,bookings,today:todayStr})[0]:null,[payments,bookings,storeId,actualMonth,todayStr]);
+  function loadActuals(){
+    const next=S.fromMonthlyActuals(actualRow,input);
+    if(!next){ setToast("その月の来院データがありません"); return; }
+    setDrafts(prev=>({...prev,[active]:next}));
+    setToast(`${Number(actualMonth.slice(5))}月の実績を「${activeLabel}」に読み込みました（単価はそのまま）`);
+  }
+
+  const btn=(primary)=>({padding:"9px 14px",borderRadius:9,border:primary?"none":"1.5px solid #cbd5e1",background:primary?SS_COLOR.navy:"white",color:primary?"white":"#334155",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"});
+  const savedAt=saved.scenarios[active].savedAt;
+  const rate=result.achievementRate;
+  const tabs=[["sim","🧮","シミュレーター"],["reverse","🎯","目標逆算"],["dash","📊","ダッシュボード"]];
+
+  return(
+    <div style={{maxWidth:1100,margin:"0 auto"}}>
+      {/* 見出しと、いつも見える総売上 */}
+      <div style={{background:SS_COLOR.navy,color:"white",borderRadius:14,padding:"14px 16px",marginBottom:12,position:"sticky",top:0,zIndex:20,boxShadow:"0 4px 14px rgba(15,39,68,.25)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <div style={{fontSize:16,fontWeight:900}}>総売上シミュレーター</div>
+          {(stores||[]).length>1&&<select value={storeId} onChange={e=>setStoreId(Number(e.target.value))} style={{fontSize:12,fontWeight:700,padding:"4px 8px",borderRadius:8,border:"none",fontFamily:"inherit"}} aria-label="店舗">
+            {(stores||[]).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>}
+        </div>
+        <div style={{display:"flex",alignItems:"baseline",gap:10,marginTop:6,flexWrap:"wrap"}}>
+          <span style={{fontSize:12,color:"rgba(255,255,255,.7)"}}>総売上</span>
+          <span style={{...ssNum,fontSize:22,fontWeight:900}}>{S.formatInt(result.totalSales)}<span style={{fontSize:12,marginLeft:2}}>円</span></span>
+          <span style={{marginLeft:"auto",fontSize:12,color:"rgba(255,255,255,.7)"}}>達成率</span>
+          <span style={{...ssNum,fontSize:18,fontWeight:900,color:rate!=null&&rate>=100?"#86efac":"white"}}>{S.formatPercent(rate)}</span>
+        </div>
+      </div>
+
+      {/* パターン切替・保存 */}
+      <div style={{...ssCard,padding:12,display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
+        <div role="radiogroup" aria-label="パターン" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,background:"#f1f5f9",borderRadius:10,padding:4,flex:"1 1 280px"}}>
+          {S.SCENARIOS.map(s=>(
+            <button key={s.id} role="radio" aria-checked={active===s.id} onClick={()=>setActive(s.id)}
+              style={{position:"relative",padding:"8px 4px",borderRadius:8,border:"none",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",background:active===s.id?SS_COLOR.navy:"transparent",color:active===s.id?"white":"#475569"}}>
+              {s.label}{dirty[s.id]&&<span title="未保存" style={{position:"absolute",top:4,right:6,width:7,height:7,borderRadius:"50%",background:"#f59e0b"}}/>}
+            </button>
+          ))}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:6,flex:"1 1 280px"}}>
+        <select value="" onChange={e=>{ const from=e.target.value; if(!from) return; setDrafts(prev=>({...prev,[active]:S.cloneInput(prev[from])})); setToast(`「${S.SCENARIOS.find(s=>s.id===from).label}」の内容をコピーしました`); }}
+          style={{...btn(false),appearance:"auto",padding:"9px 6px",minWidth:0}} aria-label="他のパターンからコピー">
+          <option value="">📋 コピー</option>
+          {S.SCENARIOS.filter(s=>s.id!==active).map(s=><option key={s.id} value={s.id}>「{s.label}」から</option>)}
+        </select>
+        <button onClick={reset} style={btn(false)}>↺ リセット</button>
+        <button onClick={save} disabled={saving} style={{...btn(true),opacity:saving?.6:1}}>💾 {saving?"保存中…":"保存"}</button>
+        </div>
+        <span style={{fontSize:11.5,color:dirty[active]?"#b45309":"#64748b",flexBasis:"100%"}}>
+          {dirty[active]?"未保存の変更があります":savedAt?`保存済み ${new Date(savedAt).toLocaleString("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`:"まだ保存していません（初期値はデモ用の仮の数値です）"}
+        </span>
+      </div>
+
+      {/* 画面の切り替え */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,background:"white",borderRadius:12,padding:4,marginBottom:12,border:"1px solid #e8edf3"}}>
+        {tabs.map(([id,icon,label])=>(
+          <button key={id} onClick={()=>setTab(id)} aria-pressed={tab===id} style={{padding:"8px 2px",borderRadius:9,border:"none",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:tab===id?SS_SOFT.navy:"transparent",color:tab===id?SS_COLOR.navy:"#64748b",boxShadow:tab===id?"inset 0 -3px 0 "+SS_COLOR.navy:"none"}}><span style={{fontSize:17}}>{icon}</span>{label}</button>
+        ))}
+      </div>
+
+      {tab==="sim"&&<SSSimulatorTab S={S} input={input} result={result} update={update}
+        actuals={{months,month:actualMonth,setMonth:setActualMonth,row:actualRow,load:loadActuals}}/>}
+      {tab==="reverse"&&<SSReverseTab S={S} input={input} update={update}/>}
+      {tab==="dash"&&<SSDashboardTab S={S} input={input} result={result} drafts={drafts} dirty={dirty} active={active}/>}
+
+      <div style={{fontSize:11.5,color:"#64748b",background:"#f1f5f9",borderRadius:10,padding:"10px 12px",lineHeight:1.7,marginTop:12}}>
+        ⓘ 初期値はデモ用の仮の数値で、実際の保険請求単価・算定額ではありません。保険の単価は実績にもとづく「平均値」として入力してください。
+        本ツールは売上の試算用であり、保険算定の適法性や請求可否を判定するものではありません。
+      </div>
+
+      {toast&&<div role="status" style={{position:"fixed",left:"50%",bottom:24,transform:"translateX(-50%)",background:"#0f172a",color:"white",padding:"9px 18px",borderRadius:20,fontSize:13,fontWeight:700,zIndex:500,boxShadow:"0 6px 20px rgba(0,0,0,.25)",maxWidth:"90vw"}}>{toast}</div>}
+    </div>
+  );
+}
+
+function SSSimulatorTab({S,input,result,update,actuals}){
+  const b=input.basic, j=input.judo, a=input.acu, s=input.self, r=result;
+  const rate=r.achievementRate, achieved=rate!=null&&rate>=100;
+  const two={display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,220px),1fr))",gap:16};
+  const ar=actuals.row;
+  return(<>
+    {/* 上の4つ（スマホは2列） */}
+    <div style={{...ssGrid(150),marginBottom:12}}>
+      <SSKpi label="月間総売上" value={S.formatInt(r.totalSales)} unit="円" dark/>
+      <SSKpi label="目標売上" value={S.formatInt(b.targetSales)} unit="円"/>
+      <SSKpi label="目標達成率" value={rate==null?"—":S.formatOneDecimal(rate)} unit="%"
+        footer={<div style={{height:6,background:"#e2e8f0",borderRadius:4,marginTop:8,overflow:"hidden"}}><div style={{height:"100%",width:Math.min(100,rate||0)+"%",background:achieved?SS_COLOR.acu:SS_COLOR.navy,borderRadius:4,transition:"width .2s"}}/></div>}/>
+      <SSKpi label={achieved?"目標超過額":"目標までの不足金額"} value={S.formatInt(achieved?r.surplus:r.shortfall)} unit="円" valueColor={achieved?SS_COLOR.acu:r.shortfall>0?SS_COLOR.red:undefined}/>
+    </div>
+
+    {/* 実績の読み込み */}
+    <div style={{...ssCard,padding:"10px 14px",display:"flex",flexWrap:"wrap",alignItems:"center",gap:8}}>
+      <span style={{fontSize:13,fontWeight:800,color:"#334155"}}>📥 実績から読み込む</span>
+      <select value={actuals.month} onChange={e=>actuals.setMonth(e.target.value)} style={{fontSize:13,padding:"6px 8px",borderRadius:8,border:"1.5px solid #cbd5e1",fontFamily:"inherit"}} aria-label="読み込む月">
+        {actuals.months.map(m=><option key={m} value={m}>{m.slice(0,4)}年{Number(m.slice(5))}月</option>)}
+      </select>
+      <span style={{...ssNum,fontSize:12,color:"#64748b"}}>{ar&&!ar.empty?`カルテ${S.formatInt(ar.karte)}枚・来院${S.formatInt(ar.visits)}回・${ar.days}日`:"来院データなし"}</span>
+      <button onClick={actuals.load} disabled={!ar||ar.empty} style={{marginLeft:"auto",padding:"7px 12px",borderRadius:8,border:"1.5px solid "+SS_COLOR.navy,background:"white",color:SS_COLOR.navy,fontSize:12.5,fontWeight:800,cursor:ar&&!ar.empty?"pointer":"default",opacity:ar&&!ar.empty?1:.5,fontFamily:"inherit"}}>読み込む</button>
+      <div style={{flexBasis:"100%",fontSize:11,color:"#94a3b8"}}>月次KPIと同じ数え方で、カルテ枚数・平均来院回数・診療日数・施術者人数・柔整/鍼灸の対応率を入れます。単価は変えません。</div>
+    </div>
+
+    {r.warnings.length>0&&<div style={{...ssCard,padding:"10px 14px",background:"#fffbeb",border:"1px solid #fcd34d",color:"#78350f",fontSize:13}}>
+      {r.warnings.map(w=><div key={w}>⚠️ {w}</div>)}
+    </div>}
+
+    <div style={{...ssGrid(340),alignItems:"start"}}>
+      <SSSection tone="navy" icon="🏥" title="基本設定" desc="患者数と来院頻度"
+        results={<>
+          <SSRow label="月間延べ来院数（自動計算）" value={S.formatInt(r.totalVisits)} unit="回" strong/>
+          <SSRow label="1日あたり平均来院数" value={S.formatOneDecimal(r.visitsPerDay)} unit="回"/>
+        </>}>
+        <SSField label="稼働カルテ数" unit="枚" value={b.karteCount} sliderMax={500} onChange={v=>update(d=>{d.basic.karteCount=v;})}/>
+        <SSField label="1カルテあたり月間平均来院回数" unit="回" decimal step={0.1} max={31} value={b.visitsPerKarte} sliderMax={15} onChange={v=>update(d=>{d.basic.visitsPerKarte=v;})}/>
+        <div style={two}>
+          <SSField label="診療日数" unit="日" max={31} value={b.workingDays} sliderMax={31} onChange={v=>update(d=>{d.basic.workingDays=v;})}/>
+          <SSField label="スタッフ人数" unit="人" value={b.staffCount} sliderMax={20} onChange={v=>update(d=>{d.basic.staffCount=v;})}/>
+        </div>
+        <SSField label="月間目標売上" unit="円" step={50000} value={b.targetSales} sliderMax={15000000} onChange={v=>update(d=>{d.basic.targetSales=v;})}/>
+      </SSSection>
+
+      <SSSection tone="judo" icon="🦴" title="柔整保険" desc="延べ来院数のうち柔整保険で対応した割合" total={r.judo.total}
+        results={<>
+          <SSRow label="柔整保険 延べ対応数" value={S.formatInt(r.judo.count)} unit="回"/>
+          <SSRow label="柔整保険 窓口売上" value={S.formatInt(r.judo.copaySales)} unit="円"/>
+          <SSRow label="柔整保険 請求売上" value={S.formatInt(r.judo.claimSales)} unit="円"/>
+          <SSRow label="柔整保険 合計売上" value={S.formatInt(r.judo.total)} unit="円" strong/>
+        </>}>
+        <label style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,border:"1px solid #e2e8f0",borderRadius:10,padding:"8px 12px",cursor:"pointer"}}>
+          <span><span style={{fontSize:13,fontWeight:700,color:"#334155"}}>延べ対応数を直接入力</span><br/><span style={{fontSize:11.5,color:"#64748b"}}>オフ：対応率から自動計算</span></span>
+          <input type="checkbox" checked={j.useManualCount} style={{width:20,height:20,accentColor:SS_COLOR.judo}}
+            onChange={e=>{ const on=e.target.checked; update(d=>{ d.judo.useManualCount=on; if(on) d.judo.manualCount=r.judo.count; else if(r.totalVisits>0) d.judo.rate=Math.round(r.judo.count/r.totalVisits*1000)/10; }); }}/>
+        </label>
+        {j.useManualCount
+          ?<SSField label="柔整保険 延べ対応数" unit="回" accent="judo" value={j.manualCount} sliderMax={Math.max(r.totalVisits,1)} hint={`対応率 ${S.formatPercent(r.judo.effectiveRate)}（延べ来院数 ${S.formatInt(r.totalVisits)}回に対して）`} onChange={v=>update(d=>{d.judo.manualCount=v;})}/>
+          :<SSField label="柔整保険 対応率" unit="%" accent="judo" decimal max={100} value={j.rate} sliderMax={100} onChange={v=>update(d=>{d.judo.rate=v;})}/>}
+        <SSField label="1対応あたり平均窓口負担額" unit="円" accent="judo" step={10} value={j.copay} sliderMax={3000} onChange={v=>update(d=>{d.judo.copay=v;})}/>
+        <SSField label="1対応あたり平均保険者請求額" unit="円" accent="judo" step={10} value={j.claim} sliderMax={6000} onChange={v=>update(d=>{d.judo.claim=v;})}/>
+      </SSSection>
+
+      <SSSection tone="acu" icon="🪡" title="鍼灸保険" desc="柔整との併用も可（来院数は重複して数えません）" total={r.acu.total}
+        results={<>
+          <SSRow label="鍼灸保険 延べ対応数" value={S.formatInt(r.acu.count)} unit="回"/>
+          <SSRow label="内訳（1術 / 2術）" value={`${S.formatInt(r.acu.oneCount)} / ${S.formatInt(r.acu.twoCount)}`} unit="回"/>
+          <SSRow label="鍼灸保険 窓口売上" value={S.formatInt(r.acu.copaySales)} unit="円"/>
+          <SSRow label="鍼灸保険 請求売上" value={S.formatInt(r.acu.claimSales)} unit="円"/>
+          <SSRow label="鍼灸保険 合計売上" value={S.formatInt(r.acu.total)} unit="円" strong/>
+        </>}>
+        <SSField label="鍼灸保険 対応率" unit="%" accent="acu" decimal max={100} value={a.rate} sliderMax={100} onChange={v=>update(d=>{d.acu.rate=v;})}/>
+        <div style={{border:"1px solid #e2e8f0",borderRadius:10,padding:12,display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:700,color:"#334155"}}><span>1術・2術の構成比</span><span style={{fontSize:11.5,fontWeight:500,color:"#64748b"}}>合計100%</span></div>
+          <div style={{display:"flex",height:26,borderRadius:7,overflow:"hidden",fontSize:11.5,fontWeight:800,color:"white"}}>
+            <div style={{width:r.acu.oneRate+"%",background:"#4ade80",display:"flex",alignItems:"center",justifyContent:"center",color:"#14532d",transition:"width .2s"}}>{r.acu.oneRate>=14&&`1術 ${S.formatPercent(r.acu.oneRate)}`}</div>
+            <div style={{width:r.acu.twoRate+"%",background:SS_COLOR.acu,display:"flex",alignItems:"center",justifyContent:"center",transition:"width .2s"}}>{r.acu.twoRate>=14&&`2術 ${S.formatPercent(r.acu.twoRate)}`}</div>
+          </div>
+          <div style={two}>
+            <SSField label="1術 対応率" unit="%" accent="acu" decimal max={100} value={a.oneRate} sliderMax={100} onChange={v=>update(d=>{d.acu.oneRate=v;})}/>
+            <SSField label="2術 対応率" unit="%" accent="acu" decimal max={100} value={r.acu.twoRate} sliderMax={100} onChange={v=>update(d=>{d.acu.oneRate=Math.round((100-v)*10)/10;})}/>
+          </div>
+        </div>
+        <div style={two}>
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <div style={{fontSize:12,fontWeight:900,color:SS_COLOR.acu}}>1術</div>
+            <SSField label="平均窓口負担額" unit="円" accent="acu" step={10} value={a.one.copay} sliderMax={2000} onChange={v=>update(d=>{d.acu.one.copay=v;})}/>
+            <SSField label="平均保険者請求額" unit="円" accent="acu" step={10} value={a.one.claim} sliderMax={5000} onChange={v=>update(d=>{d.acu.one.claim=v;})}/>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <div style={{fontSize:12,fontWeight:900,color:SS_COLOR.acu}}>2術</div>
+            <SSField label="平均窓口負担額" unit="円" accent="acu" step={10} value={a.two.copay} sliderMax={2000} onChange={v=>update(d=>{d.acu.two.copay=v;})}/>
+            <SSField label="平均保険者請求額" unit="円" accent="acu" step={10} value={a.two.claim} sliderMax={5000} onChange={v=>update(d=>{d.acu.two.claim=v;})}/>
+          </div>
+        </div>
+      </SSSection>
+
+      <SSSection tone="self" icon="✨" title="自費売上" desc="自費施術・EMS・物販・その他は別々に1回だけ計上" total={r.self.total}
+        results={<>
+          <SSRow label="自費施術 売上" value={S.formatInt(r.self.treatmentSales)} unit="円"/>
+          <SSRow label="EMS 利用件数" value={S.formatInt(r.self.emsCount)} unit="件"/>
+          <SSRow label="EMS 売上" value={S.formatInt(r.self.emsSales)} unit="円"/>
+          <SSRow label="物販・その他" value={S.formatInt(s.productSales+s.otherSales)} unit="円"/>
+          <SSRow label="自費売上 合計" value={S.formatInt(r.self.total)} unit="円" strong/>
+        </>}>
+        <div style={two}>
+          <SSField label="自費施術 延べ件数" unit="件" accent="self" value={s.treatmentCount} sliderMax={Math.max(500,r.totalVisits)} onChange={v=>update(d=>{d.self.treatmentCount=v;})}/>
+          <SSField label="自費施術 平均単価" unit="円" accent="self" step={100} value={s.treatmentPrice} sliderMax={15000} onChange={v=>update(d=>{d.self.treatmentPrice=v;})}/>
+        </div>
+        <div style={two}>
+          <SSField label="EMS 利用率" unit="%" accent="self" decimal max={100} value={s.emsRate} sliderMax={100} hint="延べ来院数に対する割合" onChange={v=>update(d=>{d.self.emsRate=v;})}/>
+          <SSField label="EMS 平均単価" unit="円" accent="self" step={100} value={s.emsPrice} sliderMax={10000} onChange={v=>update(d=>{d.self.emsPrice=v;})}/>
+        </div>
+        <div style={two}>
+          <SSField label="物販売上" unit="円" accent="self" step={10000} value={s.productSales} sliderMax={1000000} onChange={v=>update(d=>{d.self.productSales=v;})}/>
+          <SSField label="その他売上" unit="円" accent="self" step={10000} value={s.otherSales} sliderMax={1000000} onChange={v=>update(d=>{d.self.otherSales=v;})}/>
+        </div>
+      </SSSection>
+    </div>
+  </>);
+}
+
+function SSReverseTab({S,input,update}){
+  const r=React.useMemo(()=>S.reverseCalculate(input),[input]);
+  const achieved=r.gap<=0;
+  const metric=(label,value,unit,big,color)=>(
+    <div style={{...ssCard,marginBottom:0,padding:"14px 16px"}}>
+      <div style={{fontSize:12,fontWeight:700,color:"#64748b"}}>{label}</div>
+      <div style={{...ssNum,fontSize:big?28:22,fontWeight:900,color:color||"#0f172a",marginTop:2}}>{value}{value!=="—"&&<span style={{fontSize:12,fontWeight:700,color:"#64748b",marginLeft:3}}>{unit}</span>}</div>
+    </div>
+  );
+  const split=(label,value,note)=>(
+    <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 12px"}}>
+      <div style={{fontSize:12,fontWeight:700,color:"#64748b"}}>{label}</div>
+      <div style={{...ssNum,fontSize:19,fontWeight:900,color:"#0f172a"}}>{S.formatInt(value)}{value!=null&&<span style={{fontSize:11,color:"#64748b",marginLeft:2}}>円</span>}</div>
+      <div style={{fontSize:11,color:"#94a3b8"}}>{note}</div>
+    </div>
+  );
+  return(<>
+    <div style={{...ssCard,padding:16}}>
+      <div style={{fontSize:15,fontWeight:800,marginBottom:2}}>🎯 目標売上を入力</div>
+      <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>現在の構成比・単価・来院頻度をもとに、必要な数字を逆算します</div>
+      <SSField label="月間目標売上" unit="円" step={50000} value={input.basic.targetSales} sliderMax={15000000} onChange={v=>update(d=>{d.basic.targetSales=v;})}/>
+      <div style={{marginTop:12,borderRadius:10,padding:"12px 14px",background:achieved?SS_SOFT.acu:"#fef2f2",color:achieved?"#14532d":"#7f1d1d"}}>
+        <div style={{fontSize:13,fontWeight:700}}>{achieved?"現状で目標を達成しています":"現状と目標の差"}</div>
+        <div style={{...ssNum,fontSize:28,fontWeight:900}}>{achieved?S.formatSigned(-r.gap,"円"):`あと ${S.formatInt(r.gap)}円`}</div>
+        <div style={{...ssNum,fontSize:12,opacity:.8}}>現状 {S.formatInt(r.currentSales)}円 → 目標 {S.formatInt(r.targetSales)}円</div>
+      </div>
+    </div>
+
+    <div style={{fontSize:13,fontWeight:800,color:"#334155",margin:"4px 2px 8px"}}>カルテ数で達成する場合に必要な数字</div>
+    <div style={{...ssGrid(170),marginBottom:12}}>
+      {metric("必要稼働カルテ数",S.formatInt(r.requiredKarte),"枚",true)}
+      {metric("追加で必要なカルテ数",r.additionalKarte==null?"—":"+"+S.formatInt(r.additionalKarte),"枚",true,r.additionalKarte?SS_COLOR.red:SS_COLOR.acu)}
+      {metric("必要延べ来院数",S.formatInt(r.requiredVisits),"回")}
+      {metric("1日平均必要来院数",S.formatOneDecimal(r.requiredVisitsPerDay),"回")}
+      {metric("スタッフ1人あたり必要売上",S.formatInt(r.requiredSalesPerStaff),"円")}
+      {metric("スタッフ1人あたり現状売上",S.formatInt(r.currentSalesPerStaff),"円")}
+    </div>
+    {r.requiredKarte==null&&<div style={{...ssCard,padding:12,background:"#fffbeb",color:"#78350f",fontSize:13}}>来院数に連動する売上が0のため、カルテ数を増やしても目標に届きません。</div>}
+
+    <div style={{...ssCard,padding:14,...ssGrid(200)}}>
+      {split("固定売上（物販・その他）",r.fixedSales,"カルテ数が変わっても一定")}
+      {split("連動売上（保険・自費施術・EMS）",r.variableSales,"来院数に比例して増減")}
+      {split("カルテ1枚あたり連動売上",r.variablePerKarte,"必要カルテ数は端数を含めて1枚ずつ探索")}
+    </div>
+
+    <div style={{fontSize:13,fontWeight:800,color:"#334155",margin:"4px 2px 2px"}}>4つの改善策を比較</div>
+    <div style={{fontSize:11.5,color:"#64748b",margin:"0 2px 8px"}}>それぞれ「その項目だけ」を変えた場合に、目標を達成する最小の値です（他の条件は現状のまま）。</div>
+    <div style={ssGrid(300)}>
+      {r.cases.map(c=>{
+        const dec=c.key==="visits"||c.key==="acuRate";
+        const f=v=>v==null?"—":dec?S.formatOneDecimal(v):S.formatInt(v);
+        const status=!c.achievable?"ng":c.alreadyAchieved?"done":"ok";
+        const badge={ng:["✕ これだけでは届かない","#f1f5f9","#475569"],ok:["✓ 達成可能",SS_SOFT.navy,SS_COLOR.navy],done:["✓ 達成済み",SS_SOFT.acu,SS_COLOR.acu]}[status];
+        return(
+          <div key={c.key} style={{...ssCard,marginBottom:0,padding:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"flex-start"}}>
+              <div><div style={{fontSize:14.5,fontWeight:800}}>{c.label}</div><div style={{fontSize:11.5,color:"#64748b"}}>{c.description}</div></div>
+              <span style={{fontSize:11,fontWeight:800,background:badge[1],color:badge[2],borderRadius:20,padding:"3px 8px",whiteSpace:"nowrap"}}>{badge[0]}</span>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10}}>
+              <div style={{flex:1,background:"#f8fafc",borderRadius:10,padding:8,textAlign:"center"}}>
+                <div style={{fontSize:11,color:"#64748b"}}>現在</div>
+                <div style={{...ssNum,fontSize:18,fontWeight:800,color:"#334155"}}>{f(c.current)}<span style={{fontSize:11,marginLeft:2}}>{c.unit}</span></div>
+              </div>
+              <span style={{color:"#94a3b8",fontSize:18}}>→</span>
+              <div style={{flex:1,background:c.achievable?SS_COLOR.navy:"#f1f5f9",color:c.achievable?"white":"#64748b",borderRadius:10,padding:8,textAlign:"center"}}>
+                <div style={{fontSize:11,opacity:.75}}>必要</div>
+                <div style={{...ssNum,fontSize:18,fontWeight:900}}>{f(c.required)}{c.required!=null&&<span style={{fontSize:11,marginLeft:2}}>{c.unit}</span>}</div>
+              </div>
+            </div>
+            <div style={{...ssNum,fontSize:12.5,color:"#475569",marginTop:8}}>
+              {c.achievable
+                ?<>差：<b style={{color:"#0f172a"}}>{S.formatSigned(c.delta,c.key==="acuRate"?"pt":c.unit,dec)}</b><span style={{color:"#94a3b8",marginLeft:8,fontSize:11.5}}>（試算売上 {S.formatInt(c.resultingSales)}円）</span></>
+                :c.note}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  </>);
+}
+
+// ドーナツ（構成比）。各項目の間に白いすき間を入れる
+function SSDonut({rows,total,center,sub}){
+  const R=70, C=2*Math.PI*R;
+  let acc=0;
+  const segs=rows.filter(x=>x.value>0).map(x=>{ const len=x.value/total*C; const seg={...x,len,off:acc}; acc+=len; return seg; });
+  return(
+    <div style={{position:"relative",width:200,height:200,flexShrink:0}}>
+      <svg viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="売上構成比">
+        <circle cx="100" cy="100" r={R} fill="none" stroke="#f1f5f9" strokeWidth="28"/>
+        {segs.map(sg=>(
+          <circle key={sg.key} cx="100" cy="100" r={R} fill="none" stroke={sg.color} strokeWidth="28"
+            strokeDasharray={`${Math.max(0,sg.len-(segs.length>1?2:0))} ${C}`} strokeDashoffset={-sg.off} transform="rotate(-90 100 100)">
+            <title>{sg.name}：{sg.value.toLocaleString("ja-JP")}円</title>
+          </circle>
+        ))}
+      </svg>
+      <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+        <div style={{fontSize:11,color:"#64748b"}}>{sub}</div>
+        <div style={{...ssNum,fontSize:20,fontWeight:900}}>{center}</div>
+      </div>
+    </div>
+  );
+}
+
+// 半円ゲージ（100%で満タン。超えたら数字で見せる）
+function SSGauge({rate}){
+  const S=window.SalesSim;
+  const ratio=Math.min(1,Math.max(0,(rate||0)/100)), C=Math.PI*80, done=rate!=null&&rate>=100;
+  return(
+    <div style={{position:"relative",maxWidth:260,margin:"0 auto"}}>
+      <svg viewBox="0 0 200 112" style={{width:"100%"}} role="img" aria-label={"目標達成率 "+S.formatPercent(rate)}>
+        <path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="#e2e8f0" strokeWidth="16" strokeLinecap="round"/>
+        <path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke={done?SS_COLOR.acu:SS_COLOR.navy} strokeWidth="16" strokeLinecap="round" strokeDasharray={`${C*ratio} ${C}`} style={{transition:"stroke-dasharray .2s"}}/>
+      </svg>
+      <div style={{position:"absolute",left:0,right:0,bottom:0,textAlign:"center",...ssNum,fontSize:34,fontWeight:900}}>
+        {rate==null?"—":S.formatOneDecimal(rate)}{rate!=null&&<span style={{fontSize:16,color:"#64748b"}}>%</span>}
+      </div>
+    </div>
+  );
+}
+
+function SSDashboardTab({S,input,result:r,drafts,dirty,active}){
+  const rows=[
+    {key:"judo",name:"柔整保険",value:r.judo.total,color:SS_COLOR.judo},
+    {key:"acu",name:"鍼灸保険",value:r.acu.total,color:SS_COLOR.acu},
+    {key:"self",name:"自費施術",value:r.self.treatmentSales,color:SS_COLOR.self},
+    {key:"ems",name:"EMS",value:r.self.emsSales,color:SS_COLOR.ems},
+    {key:"fixed",name:"物販・その他",value:r.fixedSales,color:SS_COLOR.fixed},
+  ];
+  const tile=(label,value,color,dark)=>(
+    <div style={{...ssCard,marginBottom:0,padding:"12px 14px",background:dark?SS_COLOR.navy:"white",color:dark?"white":"#0f172a"}}>
+      <div style={{fontSize:12,fontWeight:700,color:dark?"rgba(255,255,255,.7)":"#64748b",display:"flex",alignItems:"center",gap:6}}>{color&&<span style={{width:9,height:9,borderRadius:"50%",background:color}}/>}{label}</div>
+      <div style={{...ssNum,fontSize:22,fontWeight:900}}>{S.formatInt(value)}<span style={{fontSize:11,marginLeft:2,opacity:.7}}>円</span></div>
+    </div>
+  );
+  const stat=(label,value,unit,sub)=>(
+    <div style={{...ssCard,marginBottom:0,padding:"12px 14px"}}>
+      <div style={{fontSize:12,fontWeight:700,color:"#64748b"}}>{label}</div>
+      <div style={{...ssNum,fontSize:21,fontWeight:900}}>{value}{value!=="—"&&<span style={{fontSize:11,color:"#64748b",marginLeft:2}}>{unit}</span>}</div>
+      {sub&&<div style={{...ssNum,fontSize:11,color:"#94a3b8"}}>{sub}</div>}
+    </div>
+  );
+  const results=Object.fromEntries(S.SCENARIOS.map(({id})=>[id,S.calculate(drafts[id])]));
+  const maxTotal=Math.max(1,...S.SCENARIOS.map(({id})=>results[id].totalSales));
+  const lines=[
+    ["目標売上",(i)=>S.formatInt(i.basic.targetSales)+"円"],
+    ["目標達成率",(i,x)=>S.formatPercent(x.achievementRate)],
+    ["稼働カルテ数",(i)=>S.formatInt(i.basic.karteCount)+"枚"],
+    ["平均来院回数",(i)=>S.formatOneDecimal(i.basic.visitsPerKarte)+"回"],
+    ["延べ来院数",(i,x)=>S.formatInt(x.totalVisits)+"回"],
+    ["柔整保険売上",(i,x)=>S.formatInt(x.judo.total)+"円"],
+    ["鍼灸保険売上",(i,x)=>S.formatInt(x.acu.total)+"円"],
+    ["自費売上（EMS・物販含む）",(i,x)=>S.formatInt(x.self.total)+"円"],
+    ["来院1回あたり売上",(i,x)=>S.formatInt(x.salesPerVisit)+"円"],
+  ];
+  const th={padding:"8px 6px",textAlign:"right",fontSize:12,fontWeight:700,color:"#64748b",borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap"};
+  const td={...ssNum,padding:"7px 6px",textAlign:"right",fontSize:13,borderBottom:"1px solid #f1f5f9",whiteSpace:"nowrap"};
+  return(<>
+    <div style={{...ssGrid(160),marginBottom:12}}>
+      {tile("総売上",r.totalSales,null,true)}
+      {tile("柔整保険売上",r.judo.total,SS_COLOR.judo)}
+      {tile("鍼灸保険売上",r.acu.total,SS_COLOR.acu)}
+      {tile("自費施術売上",r.self.treatmentSales,SS_COLOR.self)}
+      {tile("EMS売上",r.self.emsSales,SS_COLOR.ems)}
+    </div>
+
+    <div style={{...ssGrid(320),marginBottom:12}}>
+      <div style={{...ssCard,marginBottom:0,padding:16}}>
+        <div style={{fontSize:15,fontWeight:800}}>売上構成比</div>
+        <div style={{fontSize:11.5,color:"#64748b",marginBottom:10}}>総売上に占める各項目の割合</div>
+        {r.totalSales>0?(
+          <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",justifyContent:"center",gap:16}}>
+            <SSDonut rows={rows} total={r.totalSales} sub="保険売上比率" center={S.formatPercent(r.insuranceTotal/r.totalSales*100)}/>
+            <table style={{flex:"1 1 220px",borderCollapse:"collapse",fontSize:13}}>
+              <tbody>{rows.map(x=>(
+                <tr key={x.key} style={{borderBottom:"1px solid #f1f5f9"}}>
+                  <td style={{padding:"7px 0"}}><span style={{display:"inline-block",width:11,height:11,borderRadius:3,background:x.color,marginRight:7,verticalAlign:"-1px"}}/>{x.name}</td>
+                  <td style={{...ssNum,textAlign:"right",fontWeight:800}}>{S.formatInt(x.value)}円</td>
+                  <td style={{...ssNum,textAlign:"right",color:"#64748b",width:58}}>{S.formatPercent(x.value/r.totalSales*100)}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        ):<div style={{padding:"40px 0",textAlign:"center",fontSize:13,color:"#94a3b8"}}>売上がまだありません</div>}
+      </div>
+      <div style={{...ssCard,marginBottom:0,padding:16}}>
+        <div style={{fontSize:15,fontWeight:800}}>目標達成率</div>
+        <div style={{...ssNum,fontSize:11.5,color:"#64748b",marginBottom:10}}>目標 {S.formatInt(input.basic.targetSales)}円</div>
+        <SSGauge rate={r.achievementRate}/>
+        <div style={{...ssNum,textAlign:"center",fontSize:13,color:"#475569",marginTop:6}}>
+          {r.achievementRate==null?"目標売上を入力してください":r.shortfall>0?`あと ${S.formatInt(r.shortfall)}円`:`目標を ${S.formatInt(r.surplus)}円 上回っています`}
+        </div>
+      </div>
+    </div>
+
+    <div style={{...ssGrid(160),marginBottom:12}}>
+      {stat("稼働カルテ数",S.formatInt(input.basic.karteCount),"枚")}
+      {stat("延べ来院数",S.formatInt(r.totalVisits),"回",`1日平均 ${S.formatOneDecimal(r.visitsPerDay)}回`)}
+      {stat("カルテ1枚あたり月間売上",S.formatInt(r.salesPerKarte),"円")}
+      {stat("来院1回あたり売上",S.formatInt(r.salesPerVisit),"円")}
+      {stat("スタッフ1人あたり月間売上",S.formatInt(r.salesPerStaff),"円")}
+    </div>
+
+    <div style={{...ssCard,padding:16}}>
+      <div style={{fontSize:15,fontWeight:800}}>3パターン比較</div>
+      <div style={{fontSize:11.5,color:"#64748b",marginBottom:12}}>現在値・改善案・挑戦目標（上のボタンで切り替えて編集・保存）</div>
+      {S.SCENARIOS.map(({id,label})=>(
+        <div key={id} style={{display:"grid",gridTemplateColumns:"72px 1fr auto",alignItems:"center",gap:8,marginBottom:8}}>
+          <span style={{fontSize:13,fontWeight:800,color:id===active?SS_COLOR.navy:"#64748b"}}>{label}</span>
+          <div style={{height:22,background:"#f1f5f9",borderRadius:6,overflow:"hidden"}}>
+            <div style={{height:"100%",width:results[id].totalSales/maxTotal*100+"%",background:id===active?SS_COLOR.navy:"#9fb2cc",borderRadius:6,transition:"width .2s"}}/>
+          </div>
+          <span style={{...ssNum,fontSize:13,fontWeight:800,minWidth:96,textAlign:"right"}}>{S.formatInt(results[id].totalSales)}円</span>
+        </div>
+      ))}
+      <div style={{overflowX:"auto",marginTop:8}}>
+        <table style={{width:"100%",minWidth:460,borderCollapse:"collapse"}}>
+          <thead><tr>
+            <th style={{...th,textAlign:"left"}}>項目</th>
+            {S.SCENARIOS.map(({id,label})=><th key={id} style={{...th,color:id===active?SS_COLOR.navy:th.color}}>{label}{dirty[id]&&<span style={{color:"#f59e0b",marginLeft:3}}>●</span>}</th>)}
+          </tr></thead>
+          <tbody>
+            <tr><td style={{...td,textAlign:"left",fontWeight:800}}>総売上</td>{S.SCENARIOS.map(({id})=><td key={id} style={{...td,fontWeight:900}}>{S.formatInt(results[id].totalSales)}円</td>)}</tr>
+            {lines.map(([label,get])=>(
+              <tr key={label}><td style={{...td,textAlign:"left",color:"#475569"}}>{label}</td>{S.SCENARIOS.map(({id})=><td key={id} style={td}>{get(drafts[id],results[id])}</td>)}</tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{fontSize:11.5,color:"#64748b",marginTop:8}}><span style={{color:"#f59e0b"}}>●</span> は保存していない変更があるパターンです。</div>
+    </div>
+  </>);
+}
+
 function MonthlyKpiPanel({payments,bookings,stores,todayStr}){
   const SR=window.SalesReport;
   const defaultStore=((stores||[]).find(s=>/香里園/.test(s.name||""))||(stores||[])[0]||{id:1}).id;
@@ -17973,6 +18554,7 @@ function Dashboard({user,onLogout}){
       {id:"staff_summary",label:"個人サマリー（売上・客数・客単価）",icon:"bar-chart",special:""},
       {id:"sales_report",label:"総合売上日報・日計／累計表",icon:"bar-chart",special:""},
       {id:"monthly_kpi",label:"月次KPI（期ごと：売上・カルテ枚数・単価・LTV・離反）",icon:"trending",special:""},
+      {id:"sales_simulator",label:"総売上シミュレーター（目標逆算・3パターン比較）",icon:"trending",special:""},
     ]},
     {id:"money",label:"お金・会計",color:"#b45309",items:[
       {id:"money_calc",label:"当日の会計明細・金額計算・小口",icon:"receipt",special:""},
@@ -18645,6 +19227,7 @@ function Dashboard({user,onLogout}){
                              {view==="staff_summary"&&<StaffSummaryPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}
                              {view==="sales_report"&&<SalesReportPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}
                              {view==="monthly_kpi"&&<MonthlyKpiPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}
+                             {view==="sales_simulator"&&<SalesSimulatorPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}
                              {view==="staff_mandala"&&<StaffMandalaPanel user={user} isAdmin={isAdmin} payments={paymentsNet} bookings={bookings} todayStr={todayStr}/>}
                              {view==="pass_holders"&&<PassHoldersPanel payments={payments} bookings={bookings} refunds={refunds} trainingMode={trainingMode} onOpenPatient={openPatientByName}/>}
                              {view==="referral_mgmt"&&<ReferralMgmtPanel bookings={bookings} payments={payments}/>}
