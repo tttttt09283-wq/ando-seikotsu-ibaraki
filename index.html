@@ -9414,41 +9414,138 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
 // 全社：院ごとの出勤人数（必要人数との過不足）と、所属院ごとのスタッフ別シフト
 // 各院：その院で働く人（所属＋応援）のシフトと、その院の人数
 // 集計は shift-logic.js（ShiftLogic）。シフトの種類は月次シフト表と同じ「shifts_YYYY-MM」、その日の勤務院は「shiftstore_YYYY-MM」に保存
+// ===== 月の目標売上・シフト人数の共通処理（シフト管理のカレンダーと、予約カレンダー上の「1日の目標」で使う） =====
+// 月の目標売上：予約分析・サマリーの月間売上目標 → 無ければ経営ダッシュボードの目標。storeId=null は全社
+function useMonthlySalesTarget(month,storeId){
+  useSharedSettingsVersion(); // 目標が変わったら読み直す
+  const [dash,setDash]=React.useState({});
+  React.useEffect(()=>{
+    let alive=true; setDash({});
+    sb.select("clinic_monthly_targets",`?target_month=eq.${month}-01&select=store_id,target_sales`)
+      .then(r=>{ if(!alive||!Array.isArray(r)) return; const m={}; r.forEach(x=>{ if(x.target_sales) m[x.store_id==null?"all":String(x.store_id)]=Number(x.target_sales); }); setDash(m); }).catch(()=>{});
+    return()=>{ alive=false; };
+  },[month]);
+  const one=id=>{
+    let l=0; try{ l=Number(String(localStorage.getItem(`ando_sales_target_store_${id}_${month}`)||"").replace(/[^0-9]/g,""))||0; }catch(e){}
+    if(l) return {value:l,source:"予約分析・サマリーの月間売上目標"};
+    if(dash[id]) return {value:dash[id],source:"経営ダッシュボードの目標"};
+    return {value:0,source:""};
+  };
+  return {own:one(storeId==null?"all":String(storeId)),all:one("all"),key:`ando_sales_target_store_${storeId==null?"all":storeId}_${month}`};
+}
+// その院（null＝全社）の、日ごとの出勤人数と休診の判定、月の延べ人数（休診日を除く）
+function shiftUnitsFor(result,closedSet,stores,storeId){
+  const unitsOf=d=>storeId!=null?((result.perStore[storeId]&&result.perStore[storeId][d])||0):(result.total[d]||0);
+  const isClosed=d=>storeId!=null?closedSet.has(`${storeId}_${d}`):stores.length>0&&stores.every(st=>closedSet.has(`${st.id}_${d}`));
+  const sumStore=id=>result.dates.reduce((t,{date})=>t+(closedSet.has(`${id}_${date}`)?0:((result.perStore[id]&&result.perStore[id][date])||0)),0);
+  const allUnits=stores.reduce((t,st)=>t+sumStore(st.id),0);
+  return {unitsOf,isClosed,share:storeId==null?1:(allUnits>0?sumStore(storeId)/allUnits:0)};
+}
+// 目標を決める：その院の目標が無ければ、全社の目標をその院の月の延べ出勤人数の割合で分ける
+function resolveSalesTarget(T,storeId,share){
+  if(T.own.value) return {target:T.own.value,source:T.own.source,derived:false};
+  if(storeId!=null&&T.all.value&&share>0) return {target:Math.round(T.all.value*share),source:`全社の目標 ¥${T.all.value.toLocaleString()} を出勤人数（${Math.round(share*100)}%）で按分`,derived:true};
+  return {target:0,source:"",derived:false};
+}
+// 予約カレンダー用：シフトのデータを読み込み、その月の人数を計算する（シフト管理の画面と同じ計算）
+const _shiftBaseCache={p:null};
+function useShiftMonth(month){
+  const SL=window.ShiftLogic;
+  const ver=useSharedSettingsVersion();
+  const [base,setBase]=React.useState(null);
+  React.useEffect(()=>{
+    let alive=true;
+    if(!_shiftBaseCache.p) _shiftBaseCache.p=Promise.all([
+      sb.select("stores","?order=id.asc"),
+      sb.select("clinic_staff","?select=id,store_ids"),
+      sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc"),
+      sb.select("business_hours","?select=store_id,day_of_week,is_open"),
+      sb.select("temp_closures","?select=store_id,date,is_closed,memo"),
+    ]).then(([st,cs,ws,b,tc])=>{
+      const staffStores={}; if(Array.isArray(cs)) cs.forEach(r=>{ if(Array.isArray(r.store_ids)&&r.store_ids.length) staffStores[r.id]=r.store_ids; });
+      return {stores:Array.isArray(st)?st:[],staffStores,weekly:SL.weeklyMap(Array.isArray(ws)?ws:[]),bh:Array.isArray(b)?b:[],closures:Array.isArray(tc)?tc:[]};
+    }).catch(e=>{ _shiftBaseCache.p=null; throw e; });
+    _shiftBaseCache.p.then(v=>{ if(alive) setBase(v); }).catch(()=>{});
+    // 10分ごとに読み直す（週固定シフトや休診日の変更を反映）
+    const t=setInterval(()=>{ _shiftBaseCache.p=null; },10*60*1000);
+    return()=>{ alive=false; clearInterval(t); };
+  },[month]);
+  return React.useMemo(()=>{
+    if(!base||!SL) return null;
+    const read=k=>{ try{ const v=JSON.parse(localStorage.getItem(k)||"null"); return v&&typeof v==="object"?v:{}; }catch(e){ return {}; } };
+    const closed=new Set();
+    base.stores.forEach(st=>SL.monthDates(month).forEach(({date,day})=>{
+      const c=base.closures.find(x=>x.store_id===st.id&&x.date===date);
+      if(c){ if(c.is_closed) closed.add(`${st.id}_${date}`); return; }
+      const h=base.bh.find(x=>x.store_id===st.id&&x.day_of_week===day);
+      if(h&&h.is_open===false) closed.add(`${st.id}_${date}`);
+    }));
+    const holidays=(window.Attendance&&Attendance.holidaySetFrom)?Attendance.holidaySetFrom(base.closures):new Set();
+    const result=SL.buildMonth({month,staff:STAFF_ACCOUNTS.filter(s=>!s.eventOnly),stores:base.stores,shifts:read(`shifts_${month}`),storeOverrides:read(`shiftstore_${month}`),
+      weekly:base.weekly,staffStores:base.staffStores,required:{},holidays,closed});
+    return {result,closed,stores:base.stores};
+  },[base,month,ver]);
+}
+// 月の売上（日ごと）。storeId を渡すと予約の院で分ける
+function dailySalesMap(payments,bookings,month,storeId,firstStoreId){
+  const storeOf={}; if(storeId!=null) (bookings||[]).forEach(b=>{ storeOf[b.id]=b.store_id||firstStoreId; });
+  const m={};
+  (payments||[]).forEach(p=>{
+    if(!p.payment_date||p.payment_date.slice(0,7)!==month) return;
+    if(storeId!=null&&storeOf[p.booking_id]!==storeId) return;
+    m[p.payment_date]=(m[p.payment_date]||0)+(Number(p.total_amount)||0);
+  });
+  return m;
+}
+// 予約カレンダーの「その日の売上」の右に出す、1日の売上目標
+function DailyTargetBadge({date,storeId,payments,bookings,todayStr}){
+  const SL=window.ShiftLogic;
+  const month=date.slice(0,7);
+  const sm=useShiftMonth(month);
+  const T=useMonthlySalesTarget(month,storeId);
+  const firstStoreId=sm&&sm.stores.length?sm.stores[0].id:1;
+  const actual=React.useMemo(()=>dailySalesMap(payments,bookings,month,storeId,firstStoreId),[payments,bookings,month,storeId,firstStoreId]);
+  if(!sm||!SL) return null;
+  const u=shiftUnitsFor(sm.result,sm.closed,sm.stores,storeId);
+  const {target,source}=resolveSalesTarget(T,storeId,u.share);
+  const pill={fontSize:12,fontWeight:700,padding:"3px 10px",borderRadius:20,whiteSpace:"nowrap"};
+  if(!target) return <span style={{...pill,marginLeft:"auto",color:"#64748b",background:"#f1f5f9"}} title="予約分析・サマリーの月間売上目標を入れると、1日の目標が出ます">🎯 1日の目標：月の目標が未設定</span>;
+  const units={}; sm.result.dates.forEach(({date:d})=>{ units[d]=u.unitsOf(d); });
+  const plan=SL.dailySalesPlan({dates:sm.result.dates,units,closed:u.isClosed,target,actual,today:todayStr});
+  const day=plan.days.find(x=>x.date===date);
+  if(!day) return null;
+  const yen=v=>"¥"+Math.round(v||0).toLocaleString();
+  if(!day.working) return <span style={{...pill,marginLeft:"auto",color:"#64748b",background:"#f1f5f9"}}>🎯 1日の目標：{u.isClosed(date)?"休診日":"出勤0人"}</span>;
+  const got=day.actual!=null?day.actual:null;
+  const rest=got!=null?day.target-got:null;
+  const tip=`月の目標 ${yen(target)}（${source}）\nこの日の出勤 ${SL.fmtUnits(day.units)}人 → 目標 ${yen(day.target)}（1人あたり ${yen(day.perPerson)}）\n基本 ${yen(day.base)}${day.added?`＋前日までの不足分の上乗せ ${yen(day.added)}`:""}`;
+  return(
+    <span title={tip} style={{marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
+      <span style={{fontSize:12,fontWeight:800,color:"#7c2d12"}}>🎯 1日の目標</span>
+      <span style={{fontSize:15,fontWeight:800,color:day.added?"#c2410c":"#1e3a5f"}}>{yen(day.target)}</span>
+      <span style={{...pill,color:"#475569",background:"white",border:"1px solid #fde68a"}}>👥 {SL.fmtUnits(day.units)}人・1人 {yen(day.perPerson)}</span>
+      {day.added>0&&<span style={{...pill,color:"#c2410c",background:"#ffedd5"}}>不足分 +{yen(day.added)}</span>}
+      {got!=null&&(rest>0
+        ?<span style={{...pill,color:"#b91c1c",background:"#fee2e2"}}>あと {yen(rest)}</span>
+        :<span style={{...pill,color:"#047857",background:"#d1fae5"}}>✓ 達成 +{yen(-rest)}</span>)}
+    </span>
+  );
+}
+
 // ===== シフト管理：日割りの売上目標カレンダー =====
 // 月の目標売上（予約分析・サマリーの「月間売上目標」、無ければ経営ダッシュボードの院の目標）を、
 // シフトの出勤人数に合わせて1日ずつに配分し、その日の実績と並べて毎日追えるようにする。
 // 足りない分は以降の日に上乗せ、多く売れている日は減らさない（計算は shift-logic.js の dailySalesPlan）
-function DailySalesTargetCard({month,dates,unitsOf,isClosed,storeId,storeLabel,payments,bookings,firstStoreId,todayStr}){
+function DailySalesTargetCard({month,dates,unitsOf,isClosed,share,storeId,storeLabel,payments,bookings,firstStoreId,todayStr}){
   const SL=window.ShiftLogic;
-  const ver=useSharedSettingsVersion();
-  const key=`ando_sales_target_store_${storeId==null?"all":storeId}_${month}`;
-  const [local,setLocal]=React.useState("");
-  const [dash,setDash]=React.useState(null); // 経営ダッシュボードの院の目標
+  const T=useMonthlySalesTarget(month,storeId);
+  const key=T.key;
   const [editing,setEditing]=React.useState(false);
   const [draft,setDraft]=React.useState("");
-  React.useEffect(()=>{ try{ setLocal(localStorage.getItem(key)||""); }catch(e){ setLocal(""); } },[key,ver]);
-  React.useEffect(()=>{
-    let alive=true; setDash(null);
-    const f=storeId==null?"store_id=is.null":`store_id=eq.${storeId}`;
-    sb.select("clinic_monthly_targets",`?target_month=eq.${month}-01&${f}&select=target_sales&limit=1`)
-      .then(r=>{ if(alive&&Array.isArray(r)&&r[0]&&r[0].target_sales) setDash(Number(r[0].target_sales)); }).catch(()=>{});
-    return()=>{ alive=false; };
-  },[month,storeId]);
-  const localNum=Number(String(local).replace(/[^0-9]/g,""))||0;
-  const target=localNum||dash||0;
-  const source=localNum?"予約分析・サマリーの月間売上目標":dash?"経営ダッシュボードの目標":"";
+  const {target,source,derived}=resolveSalesTarget(T,storeId,share);
 
   // その月の日ごとの売上（返金はマイナス）。院を選んでいるときは、予約の院で分ける
-  const actual=React.useMemo(()=>{
-    const storeOf={}; if(storeId!=null) (bookings||[]).forEach(b=>{ storeOf[b.id]=b.store_id||firstStoreId; });
-    const m={};
-    (payments||[]).forEach(p=>{
-      if(!p.payment_date||p.payment_date.slice(0,7)!==month) return;
-      if(storeId!=null&&storeOf[p.booking_id]!==storeId) return;
-      m[p.payment_date]=(m[p.payment_date]||0)+(Number(p.total_amount)||0);
-    });
-    return m;
-  },[payments,bookings,month,storeId,firstStoreId]);
+  const actual=React.useMemo(()=>dailySalesMap(payments,bookings,month,storeId,firstStoreId),[payments,bookings,month,storeId,firstStoreId]);
 
   const units={}; dates.forEach(({date})=>{ units[date]=unitsOf(date); });
   const plan=SL.dailySalesPlan({dates,units,closed:isClosed,target,actual,today:todayStr});
@@ -9460,7 +9557,7 @@ function DailySalesTargetCard({month,dates,unitsOf,isClosed,storeId,storeLabel,p
 
   function saveTarget(){
     const v=String(draft).replace(/[^0-9]/g,"");
-    sharedSettings.set(key,v); setLocal(v); setEditing(false);
+    sharedSettings.set(key,v); setEditing(false);
     window.dispatchEvent(new Event("ando-shared-settings"));
   }
 
@@ -9491,8 +9588,8 @@ function DailySalesTargetCard({month,dates,unitsOf,isClosed,storeId,storeLabel,p
             <button type="button" onClick={()=>setEditing(false)} style={{padding:"5px 10px",borderRadius:6,border:"1.5px solid #e2e8f0",background:"white",cursor:"pointer",fontFamily:"inherit"}}>やめる</button>
           </>:<>
             <span style={{fontSize:16,fontWeight:900,color:target?"#1e293b":"#dc2626"}}>{target?yen(target):"未設定"}</span>
-            {source&&<span style={{fontSize:11,color:"#94a3b8"}}>（{source}から自動で反映）</span>}
-            <button type="button" onClick={()=>{ setDraft(target?String(target):""); setEditing(true); }} style={{padding:"3px 10px",borderRadius:6,border:"1.5px solid #e2e8f0",background:"white",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>✏ {target?"変更":"入力"}</button>
+            {source&&<span style={{fontSize:11,color:"#94a3b8"}}>（{derived?source:`${source}から自動で反映`}）</span>}
+            <button type="button" onClick={()=>{ setDraft(T.own.value?String(T.own.value):""); setEditing(true); }} style={{padding:"3px 10px",borderRadius:6,border:"1.5px solid #e2e8f0",background:"white",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>✏ {T.own.value?"変更":derived?"この院の目標を入力":"入力"}</button>
           </>}
         </div>
         {!target?<div style={{padding:"12px 14px",background:"#fef2f2",borderRadius:8,fontSize:12.5,color:"#b91c1c",fontWeight:700}}>この月の目標売上が入っていません。「予約分析・サマリー」の月間売上目標で入れるか、上の「✏ 入力」から入れると、1日の目標が出ます。</div>:<>
@@ -9945,8 +10042,7 @@ function ShiftOverviewPanel({onShiftsSaved,payments,bookings}){
         :<>
           {/* 1日の売上目標（院を選んでいればその院、全社なら全社の合計） */}
           <DailySalesTargetCard key={scopeStore?scopeStore.id:"all"} month={month} dates={dates}
-            unitsOf={d=>scopeStore?((result.perStore[scopeStore.id]&&result.perStore[scopeStore.id][d])||0):(result.total[d]||0)}
-            isClosed={d=>scopeStore?closed.has(`${scopeStore.id}_${d}`):stores.every(st=>closed.has(`${st.id}_${d}`))}
+            {...shiftUnitsFor(result,closed,stores,scopeStore?scopeStore.id:null)}
             storeId={scopeStore?scopeStore.id:null} storeLabel={scopeStore?SL.shortStoreName(scopeStore.name):"全社"}
             payments={payments} bookings={bookings} firstStoreId={stores[0].id} todayStr={todayStr}/>
           {scopeStore?<StoreView st={scopeStore}/>:<CompanyView/>}
@@ -18207,6 +18303,7 @@ function Dashboard({user,onLogout}){
                     <span style={{fontSize:15,fontWeight:800,color:"#d97706"}}>¥{(dayCash+dayOther).toLocaleString()}</span>
                     <span style={{fontSize:12,fontWeight:700,color:"#059669",background:"#ecfdf5",padding:"3px 10px",borderRadius:20}}>💴 現金 ¥{dayCash.toLocaleString()}</span>
                     <span style={{fontSize:12,fontWeight:700,color:"#2563eb",background:"#eff6ff",padding:"3px 10px",borderRadius:20}}>💳 現金以外 ¥{dayOther.toLocaleString()}{dayOtherDetail?`（${dayOtherDetail}）`:""}</span>
+                    {!selStaff&&<DailyTargetBadge date={ds} storeId={selStoreId} payments={paymentsNet} bookings={bookings} todayStr={todayStr}/>}
                   </div>
                 )}
                 {/* 個人絞り込み時：週間リスト切り替えボタン */}
