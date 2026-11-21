@@ -291,6 +291,22 @@ export const pointPositions: Record<string, Partial<Record<View, Pt>>> = {
   SI3: { back: [57, 316], side: [113, 314] },
   TE5: { back: armFB(1.833, 0.5), side: armS(1.833, 0.5) },
   BL62: { back: [87, 440], side: [121, 442] },
+  // 要穴・頻用穴
+  LU9: { front: armFB(2, 0.06) },
+  LI4: { back: [41, 309] },
+  LI11: { front: armFB(1, 0.02), back: armFB(1, 0.08) },
+  ST25: { front: [108, 200] },
+  ST36: { front: legFB(1.3, 0.3), side: legS(1.3, 0.18) },
+  SP6: { front: legFB(1.7, 0.88) },
+  LR3: { front: [103, 443] },
+  GB20: { back: [103, 64] },
+  GB21: { back: [94, 94] },
+  GB30: { back: [90, 254], side: [122, 250] },
+  GB34: { front: legFB(1.1, 0.03), side: legS(1.1, 0.45) },
+  BL10: { back: [113, 72] },
+  BL23: { back: [111, 200] },
+  BL40: { back: legFB(1, 0.5) },
+  KI3: { back: [103, 428] },
 };
 
 /** 経穴名ラベルの配置（重なりを避けるため経穴ごとに指定）。mirror=true はミラー側の点に付ける */
@@ -307,6 +323,22 @@ export const labelPlacements: Record<string, Partial<Record<View, LabelPlacement
   SP4: { front: { dx: 9, dy: 10, anchor: "start", mirror: true } },
   GB41: { front: { dx: -8, dy: 3, anchor: "end" }, side: { dx: 6, dy: 12, anchor: "start" } },
   BL62: { side: { dx: -8, dy: 3, anchor: "end" } },
+  LU9: { front: { dx: -8, dy: 12, anchor: "end" } },
+  LI11: { front: { dx: -6, dy: 3, anchor: "end" } },
+  LR3: { front: { dx: -7, dy: -7, anchor: "end" } },
+  ST25: { front: { dx: 8, dy: 3, anchor: "start" } },
+  ST36: { front: { dx: 8, dy: 3, anchor: "start" }, side: { dx: 8, dy: 3, anchor: "start" } },
+  SP6: { front: { dx: 9, dy: 3, anchor: "start", mirror: true } },
+  GB20: { back: { dx: -8, dy: -2, anchor: "end" } },
+  BL10: { back: { dx: 8, dy: 6, anchor: "start" } },
+  GB21: { back: { dx: -6, dy: -5, anchor: "end" } },
+  BL23: { back: { dx: 8, dy: 3, anchor: "start" } },
+  GB30: { back: { dx: -8, dy: 3, anchor: "end" }, side: { dx: -8, dy: 3, anchor: "end" } },
+  BL40: { back: { dx: 8, dy: 3, anchor: "start" } },
+  KI3: { back: { dx: 9, dy: -2, anchor: "start", mirror: true } },
+  LI4: { back: { dx: -8, dy: 0, anchor: "end" } },
+  SI3: { back: { dx: -4, dy: 13, anchor: "end" } },
+  GB34: { front: { dx: -8, dy: 3, anchor: "end" }, side: { dx: 8, dy: 3, anchor: "start" } },
 };
 
 export const mirrorPt = ([x, y]: Pt): Pt => [240 - x, y];

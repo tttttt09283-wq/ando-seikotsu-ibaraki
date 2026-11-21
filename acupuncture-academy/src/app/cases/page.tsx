@@ -43,7 +43,7 @@ export default function CasesPage() {
           </li>
         ))}
       </ul>
-      <p className="mt-4 text-xs text-muted-foreground">腰痛・坐骨神経痛・五十肩・神経難病の症例は今後追加予定です。</p>
+      <p className="mt-4 text-xs text-muted-foreground">神経障害性疼痛・神経難病の症例は今後追加予定です。</p>
     </div>
   );
 }

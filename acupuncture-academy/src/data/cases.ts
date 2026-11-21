@@ -1,7 +1,8 @@
 import type { ClinicalCase } from "./types";
+import { moreCases } from "./cases-more";
 
 /** 症例演習。初期版はすべて教育用の架空症例。 */
-export const cases: ClinicalCase[] = [
+const neckCases: ClinicalCase[] = [
   {
     id: "case-neck-01",
     title: "デスクワーク後に増悪する頸肩部痛",
@@ -133,5 +134,7 @@ export const cases: ClinicalCase[] = [
       "危険徴候の除外 → 鑑別 → 部位から経絡 → 全身所見から証 → 治則 → 遠隔穴・局所穴・背景への配穴 → 評価、という順で判断の根拠をつなげることが目標です。",
   },
 ];
+
+export const cases: ClinicalCase[] = [...neckCases, ...moreCases];
 
 export const caseMap = Object.fromEntries(cases.map((c) => [c.id, c]));

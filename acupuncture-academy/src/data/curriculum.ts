@@ -1,5 +1,8 @@
 import type { Chapter, Lesson } from "./types";
 import { meridianIntro } from "./lessons/meridian-intro";
+import { fiveElements, qiBloodFluid, yinYang, zangFu } from "./lessons/chapter1";
+import { jingjinJingbie, jingLuo, piBu } from "./lessons/chapter2";
+import { flowOverview, footChannels, handChannels, pairsAndSymptoms } from "./lessons/chapter3";
 
 /** 準備中の講義を作る */
 function planned(chapterId: string, titles: [string, string][]): Lesson[] {
@@ -16,38 +19,24 @@ function planned(chapterId: string, titles: [string, string][]): Lesson[] {
   }));
 }
 
-const c2Lessons: Lesson[] = [
-  meridianIntro,
-  ...planned("c2", [
-    ["経脈と絡脈", "十二経脈・十五絡脈・孫絡の関係と、絡穴の意味を学ぶ。"],
-    ["経筋と経別", "経筋の分布と筋骨格系の症状、経別による表裏のつながりを学ぶ。"],
-    ["十二皮部と経絡の臨床的意義", "皮部の考え方と、経絡を診察・治療に使う方法を整理する。"],
-  ]).map((l) => ({ ...l, number: l.number + 1, id: `c2-l${l.number + 1}` })),
-];
-
 export const chapters: Chapter[] = [
   {
     id: "c1",
     number: 1,
     title: "東洋医学の基礎",
     subtitle: "陰陽・五行・気血津液・臓腑",
-    description: "経絡と経穴を理解するための土台となる理論。",
+    description: "最初に「経絡とは何か」で全体像をつかみ、経絡と経穴を理解する土台となる理論を学ぶ。",
     color: "#1e3a6b",
-    lessons: planned("c1", [
-      ["陰陽", "陰陽の対立・依存・消長・転化と、身体・病態への当てはめ方。"],
-      ["五行", "相生・相克の関係と、臓腑・季節・感情との対応。"],
-      ["気・血・津液", "生成・はたらき・失調（気虚・血瘀など）の基本。"],
-      ["臓腑", "五臓六腑の生理と、経絡との関係。"],
-    ]),
+    lessons: [meridianIntro, yinYang, fiveElements, qiBloodFluid, zangFu],
   },
   {
     id: "c2",
     number: 2,
     title: "経絡の基礎",
     subtitle: "経脈・絡脈・経筋・経別",
-    description: "経絡とは何か、どのように構成されているかを学ぶ。",
+    description: "経絡がどのような要素で構成され、診察と治療にどう使われるかを学ぶ。",
     color: "#1e40af",
-    lessons: c2Lessons,
+    lessons: [jingLuo, jingjinJingbie, piBu],
   },
   {
     id: "c3",
@@ -56,12 +45,7 @@ export const chapters: Chapter[] = [
     subtitle: "流注・表裏・病候",
     description: "12本の正経の走行と、表裏関係・病候を学ぶ。",
     color: "#2563eb",
-    lessons: planned("c3", [
-      ["流注の全体像", "十二経脈がどのようにつながって一巡するか。"],
-      ["手の三陰経・三陽経", "肺・心包・心経と大腸・三焦・小腸経の走行。"],
-      ["足の三陽経・三陰経", "胃・胆・膀胱経と脾・肝・腎経の走行。"],
-      ["表裏関係と病候", "表裏経の関係と、是動病・所生病の読み方。"],
-    ]),
+    lessons: [flowOverview, handChannels, footChannels, pairsAndSymptoms],
   },
   {
     id: "c4",
@@ -165,5 +149,5 @@ export const lessonMap = Object.fromEntries(allLessons.map((l) => [l.id, l])) as
 export const chapterMap = Object.fromEntries(chapters.map((c) => [c.id, c])) as Record<string, Chapter>;
 export const publishedLessons = allLessons.filter((l) => l.status === "published");
 
-/** 最初に学ぶ講義（第1章は準備中のため、公開済みの最初の講義） */
+/** 最初に学ぶ講義 */
 export const firstLesson = publishedLessons[0];

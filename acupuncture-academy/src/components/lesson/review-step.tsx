@@ -33,7 +33,17 @@ export function FlashCards({ cards }: { cards: FlashCard[] }) {
   );
 }
 
-export function ReviewStep({ keyPoints, cards, completed }: { keyPoints: string[]; cards: FlashCard[]; completed: boolean }) {
+export function ReviewStep({
+  keyPoints,
+  cards,
+  completed,
+  next,
+}: {
+  keyPoints: string[];
+  cards: FlashCard[];
+  completed: boolean;
+  next?: { id: string; title: string } | null;
+}) {
   return (
     <div className="space-y-6">
       <section className="rounded-xl border bg-white p-4">
@@ -66,11 +76,17 @@ export function ReviewStep({ keyPoints, cards, completed }: { keyPoints: string[
       </section>
       <div className="flex flex-col gap-2 sm:flex-row">
         <Button asChild size="lg" variant="outline">
-          <Link href="/eight-confluent">次の学習：八脈交会穴を見る</Link>
-        </Button>
-        <Button asChild size="lg">
           <Link href="/curriculum">カリキュラムに戻る</Link>
         </Button>
+        {next ? (
+          <Button asChild size="lg">
+            <Link href={`/lessons/${next.id}`}>次の講義：{next.title}</Link>
+          </Button>
+        ) : (
+          <Button asChild size="lg">
+            <Link href="/eight-confluent">次の学習：八脈交会穴を見る</Link>
+          </Button>
+        )}
       </div>
     </div>
   );

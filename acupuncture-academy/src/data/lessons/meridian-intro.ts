@@ -1,9 +1,9 @@
 import type { Lesson } from "../types";
 
-/** 第2章 第1講「経絡とは何か」— MVP の完成教材 */
+/** 第1章 第1講「経絡とは何か」（導入）— 最初に学ぶ完成教材 */
 export const meridianIntro: Lesson = {
-  id: "c2-l1",
-  chapterId: "c2",
+  id: "c1-l1",
+  chapterId: "c1",
   number: 1,
   title: "経絡とは何か",
   summary: "経絡の定義・構成・はたらきを学び、「部位 → 経絡 → 取穴」の筋道の土台をつくる。",
@@ -118,7 +118,7 @@ export const meridianIntro: Lesson = {
   },
   quiz: [
     {
-      id: "c2-l1-q1",
+      id: "c1-l1-q1",
       prompt: "経絡のうち、体を縦に走る「幹線」にあたるものはどれか。",
       type: "single",
       options: [
@@ -132,7 +132,7 @@ export const meridianIntro: Lesson = {
       topic: "経絡の構成",
     },
     {
-      id: "c2-l1-q2",
+      id: "c1-l1-q2",
       prompt: "経絡系統に含まれるものをすべて選べ。",
       type: "multiple",
       options: [
@@ -147,7 +147,7 @@ export const meridianIntro: Lesson = {
       topic: "経絡の構成",
     },
     {
-      id: "c2-l1-q3",
+      id: "c1-l1-q3",
       prompt: "十二経脈の流注で、手の太陰肺経の次に流れる経脈はどれか。",
       type: "single",
       options: [
@@ -161,7 +161,7 @@ export const meridianIntro: Lesson = {
       topic: "流注",
     },
     {
-      id: "c2-l1-q4",
+      id: "c1-l1-q4",
       prompt: "伝統理論における「手の三陰経」の走行方向として正しいものはどれか。",
       type: "single",
       options: [
@@ -175,7 +175,7 @@ export const meridianIntro: Lesson = {
       topic: "手足陰陽の走行",
     },
     {
-      id: "c2-l1-q5",
+      id: "c1-l1-q5",
       prompt: "経絡についての説明として最も適切なものはどれか。",
       type: "single",
       options: [
@@ -189,7 +189,7 @@ export const meridianIntro: Lesson = {
       topic: "経絡と解剖",
     },
     {
-      id: "c2-l1-q6",
+      id: "c1-l1-q6",
       prompt: "表裏関係にある経脈の組み合わせとして正しいものはどれか。",
       type: "single",
       options: [
@@ -203,7 +203,7 @@ export const meridianIntro: Lesson = {
       topic: "表裏関係",
     },
     {
-      id: "c2-l1-q7",
+      id: "c1-l1-q7",
       prompt: "臨床例の「項部〜肩甲間部（背骨のすぐ外側）」の痛みで、まず関連を考える経脈はどれか。",
       type: "single",
       options: [
@@ -217,7 +217,7 @@ export const meridianIntro: Lesson = {
       topic: "部位と経絡",
     },
     {
-      id: "c2-l1-q8",
+      id: "c1-l1-q8",
       prompt: "後渓（SI3）が属する経脈はどれか。",
       type: "single",
       options: [

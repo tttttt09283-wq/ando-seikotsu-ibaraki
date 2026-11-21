@@ -54,7 +54,7 @@ export interface ReviewItem {
 }
 
 export interface LearningState {
-  version: 1;
+  version: 2;
   lessons: Record<string, LessonProgress>;
   quizAttempts: QuizAttempt[];
   caseAttempts: CaseAttempt[];
@@ -66,7 +66,7 @@ export interface LearningState {
 }
 
 export const emptyState = (): LearningState => ({
-  version: 1,
+  version: 2,
   lessons: {},
   quizAttempts: [],
   caseAttempts: [],

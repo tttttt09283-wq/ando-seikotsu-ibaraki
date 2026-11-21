@@ -1,7 +1,8 @@
 import type { AcuPoint, ClaimItem } from "./types";
+import { keyPoints } from "./points-key";
 
 /**
- * 経穴辞典（MVP：八脈交会穴 8穴）。
+ * 経穴辞典：八脈交会穴 8穴（要穴・頻用穴は points-key.ts）。
  * 部位は WHO 標準経穴部位（2008）と国内教科書の記載に準拠することを目標に作成。
  * 監修者による原典照合が済むまで reviewStatus は unverified（画面に「要確認」と表示）。
  */
@@ -12,7 +13,7 @@ const SRC = [...LOC, "anatomy-general"];
 const trad = (text: string): ClaimItem => ({ text, kind: "traditional", reviewStatus: "unverified", sourceIds: ["jp-textbook-points"] });
 const modern = (text: string, sourceIds: string[] = ["app-original"]): ClaimItem => ({ text, kind: "modern", reviewStatus: "unverified", sourceIds });
 
-export const points: AcuPoint[] = [
+const confluentPoints: AcuPoint[] = [
   {
     code: "SI3",
     name: "後渓",
@@ -311,5 +312,8 @@ export const points: AcuPoint[] = [
     safety: ["足底側は刺激痛が強い。浅刺・弱刺激から始める", "足部の皮膚状態（傷・感染・感覚低下）を事前に確認する"],
   },
 ];
+
+/** 辞典の全経穴（八脈交会穴 8穴 ＋ 要穴・頻用穴） */
+export const points: AcuPoint[] = [...confluentPoints, ...keyPoints];
 
 export const pointMap = Object.fromEntries(points.map((p) => [p.code, p])) as Record<string, AcuPoint>;

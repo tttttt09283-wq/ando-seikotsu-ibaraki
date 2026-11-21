@@ -76,7 +76,8 @@ export type PointCategory =
   | "八会穴"
   | "下合穴"
   | "八脈交会穴"
-  | "四総穴";
+  | "四総穴"
+  | "交会穴";
 
 export interface ClaimItem {
   text: string;

@@ -14,6 +14,7 @@ import { ContentBlockView } from "./content-block";
 import { ClinicalExampleView } from "./clinical-example";
 import { ReviewStep } from "./review-step";
 import { QuizRunner } from "@/components/quiz/quiz-runner";
+import { publishedLessons } from "@/data/curriculum";
 
 const steps: { id: LessonStepId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "explain", label: "解説", icon: BookText },
@@ -142,7 +143,7 @@ export function LessonPlayer({ lesson, chapter }: { lesson: Lesson; chapter: Cha
             />
           </section>
         )}
-        {step.id === "review" && lesson.review && <ReviewStep keyPoints={lesson.review.keyPoints} cards={lesson.review.cards} completed={completed} />}
+        {step.id === "review" && lesson.review && <ReviewStep keyPoints={lesson.review.keyPoints} cards={lesson.review.cards} completed={completed} next={publishedLessons[publishedLessons.findIndex((l) => l.id === lesson.id) + 1] ?? null} />}
       </div>
 
       {/* 片手操作用の前後ボタン */}

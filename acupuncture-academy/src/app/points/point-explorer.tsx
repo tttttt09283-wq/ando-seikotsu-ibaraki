@@ -13,7 +13,7 @@ import { useLearning } from "@/lib/learning-store";
 import { FavoriteButton } from "@/components/points/favorite-button";
 import { ReviewStatusBadge } from "@/components/common/badges";
 
-const categories: PointCategory[] = ["八脈交会穴", "絡穴", "五兪穴", "四総穴", "原穴", "郄穴", "背部兪穴", "募穴", "八会穴", "下合穴"];
+const categories: PointCategory[] = ["八脈交会穴", "原穴", "絡穴", "五兪穴", "下合穴", "八会穴", "背部兪穴", "募穴", "四総穴", "交会穴", "郄穴"];
 
 function Chip({ active, onClick, children, color }: { active: boolean; onClick: () => void; children: React.ReactNode; color?: string }) {
   return (
@@ -100,7 +100,7 @@ export function PointExplorer() {
 
       {filtered.length === 0 ? (
         <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-          条件に合う経穴がありません。収録は順次追加予定です（初期版は八脈交会穴8穴）。
+          条件に合う経穴がありません。収録は順次追加予定です。
         </p>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
