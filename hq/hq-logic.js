@@ -17,6 +17,7 @@
     { id: "performance", label: "業績", icon: "📈" },
     { id: "marketing", label: "集客", icon: "📣" },
     { id: "people", label: "人材", icon: "👥" },
+    { id: "daily", label: "デイリー稼働", icon: "🗓" },
     { id: "fit", label: "人員の適正判断", icon: "⚖️" },
     { id: "accounting", label: "経理・事務", icon: "🧾" },
     { id: "education", label: "教育", icon: "🎓" },
@@ -785,7 +786,7 @@
     const clinics = [], staffRates = [];
     for (const t of tabs || []) {
       const rows = t.values || [];
-      if (/稼働率/.test(t.title)) { const s = parseStaffRateTab(t.title, rows); if (s) staffRates.push(s); continue; }
+      if (/稼働率/.test(t.title)) { const s = parseStaffRateTab(t.title, rows); if (s) { s.daily = parseStaffRateDaily(rows); staffRates.push(s); } continue; }
       const c = parseDailyClinicTab(t.title, rows);
       if (!c) continue;
       // 「原本」などのひな形タブで同じ院が2回出たら、日別のデータが多い方を使う
@@ -931,6 +932,136 @@
     return { months: idx.length, cur: c, prev: p, yoy: p > 0 ? c / p : null };
   }
 
+  // ===== シフト管理表（院ごとのタブ：日付×午前/午後、営業/休診、スタッフごとに 出勤/休み） =====
+  function parseShiftTab(title, rows) {
+    let hr = -1, fc = -1;
+    for (let r = 0; r < Math.min(rows.length, 8) && hr < 0; r++) { const c = (rows[r] || []).findIndex((v) => headerText(v) === "出勤人数"); if (c >= 0) { hr = r; fc = c; } }
+    if (hr < 0) return null;
+    const head = rows[hr];
+    const staff = [];
+    for (let c = fc + 1; c < head.length; c++) if (!isBlank(head[c])) staff.push({ c, name: String(head[c]).trim() });
+    const days = {};
+    let date = null;
+    for (let r = hr + 1; r < rows.length; r++) {
+      const row = rows[r] || [];
+      const d = row.slice(0, fc).map(intakeDate).find(Boolean);
+      const label = row.slice(0, fc).map((v) => String(v ?? "").trim()).find((v) => /^(午前|午後)$/.test(v));
+      if (d) date = d;
+      if (!label) { if (!d && row.slice(0, fc).some((v) => !isBlank(v) && !intakeDate(v))) date = null; continue; }
+      if (!date) continue;
+      const open = !row.slice(0, fc).some((v) => /休診/.test(String(v ?? "")));
+      const on = [], extra = [];
+      for (const s of staff) {
+        const v = String(row[s.c] ?? "").trim();
+        if (!v) continue;
+        if (/アルバイト|ヘルプ/.test(s.name)) { if (!/^(休|0$)/.test(v)) extra.push(`${s.name}:${v}`); continue; }
+        if (/出/.test(v) && !/休/.test(v)) on.push(s.name);
+      }
+      (days[date] = days[date] || {})[label === "午前" ? "am" : "pm"] = { open, on, extra, count: intakeNum(row[fc]) };
+    }
+    const names = staff.filter((s) => !/アルバイト|ヘルプ/.test(s.name)).map((s) => s.name);
+    return { tab: title, name: title, key: fitClinicKey(title), staff: names, days };
+  }
+  function parseShiftBook(tabs) {
+    return (tabs || []).filter((t) => !/原本|サマリー|シート\d/.test(t.title)).map((t) => parseShiftTab(t.title, t.values || [])).filter((x) => x && Object.keys(x.days).length);
+  }
+  // 「○○稼働率」タブの下の日別の表（スタッフごとに 対応人数・実稼働・稼働枠・稼働率 の4列）
+  function parseStaffRateDaily(rows) {
+    let gr = -1;
+    for (let r = 0; r < rows.length && gr < 0; r++) if ((rows[r] || []).some((v) => /^日付・?曜日$/.test(headerText(v)))) gr = r;
+    if (gr < 0 || !rows[gr + 1]) return [];
+    const group = rows[gr], sub = rows[gr + 1].map(headerText);
+    const groups = [];
+    for (let c = 0; c < group.length; c++) {
+      const name = String(group[c] ?? "").trim();
+      if (!name || /^日付/.test(headerText(name))) continue;
+      const g = { name, total: /合計/.test(name), skip: /照合/.test(name), cols: {} };
+      for (let k = c; k < c + 4 && k < sub.length; k++) {
+        if (/対応/.test(sub[k])) g.cols.handled = k; else if (/実稼働/.test(sub[k])) g.cols.actual = k; else if (/稼働枠/.test(sub[k])) g.cols.slots = k; else if (/稼働率/.test(sub[k])) g.cols.rate = k;
+      }
+      if (!g.skip) groups.push(g);
+    }
+    const out = [];
+    for (let r = gr + 2; r < rows.length; r++) {
+      const row = rows[r] || [];
+      const date = row.slice(0, 3).map(intakeDate).find(Boolean);
+      if (!date) continue;
+      const rec = { date, staff: {}, total: null };
+      let any = false;
+      for (const g of groups) {
+        const v = {};
+        for (const k of ["handled", "actual", "slots", "rate"]) v[k] = g.cols[k] !== undefined ? intakeNum(row[g.cols[k]]) : null;
+        if (v.slots) any = true;
+        if (g.total) rec.total = v; else rec.staff[g.name] = v;
+      }
+      // 院の合計はスタッフの数字を足して出す（シートの「院全体合計」は見出しと中身がずれていることがあるため。稼働率＝実稼働÷稼働枠）
+      const st = Object.values(rec.staff);
+      const tot = (k) => sum(st.map((x) => x[k]));
+      const slots = tot("slots");
+      rec.total = { handled: tot("handled"), actual: tot("actual"), slots, rate: slots ? tot("actual") / slots : (rec.total ? rec.total.rate : null) };
+      if (any) out.push(rec);
+    }
+    return out;
+  }
+  // 1日の院ごとの状況：来院数（日計表）・出勤（シフト）・稼働（稼働率タブ）と、要チェックの判定
+  const DAILY_DEFAULTS = { lowRate: 0.7, surplus: 1, busyPerStaff: 15 };
+  function dailyOverview({ book, shifts, date, opt }) {
+    const o = { ...DAILY_DEFAULTS, ...(opt || {}) };
+    const keys = [];
+    const add = (k, name) => { if (k && !keys.some((x) => x.key === k)) keys.push({ key: k, name }); };
+    ((book && book.clinics) || []).forEach((c) => add(c.key, c.name));
+    (shifts || []).forEach((s) => add(s.key, s.name));
+    const rows = keys.map(({ key, name }) => {
+      const c = ((book && book.clinics) || []).find((x) => x.key === key) || null;
+      const day = c ? c.days.find((d) => d.date === date) : null;
+      const sh = (shifts || []).find((x) => x.key === key);
+      const sd = sh && sh.days[date] ? sh.days[date] : null;
+      const sr = ((book && book.staffRates) || []).find((x) => x.key === key);
+      const rd = sr && sr.daily ? sr.daily.find((d) => d.date === date) : null;
+      const onNames = sd ? [...new Set([...(sd.am ? sd.am.on : []), ...(sd.pm ? sd.pm.on : [])])] : rd ? Object.keys(rd.staff).filter((n) => rd.staff[n].slots) : [];
+      const open = sd ? !!((sd.am && sd.am.open) || (sd.pm && sd.pm.open)) : null;
+      const visits = day ? day.values["総来院数"] ?? null : null;
+      const total = rd ? rd.total : null;
+      const rate = total && total.slots ? (total.actual ?? 0) / total.slots : null;
+      const staffN = onNames.length || null;
+      const perStaff = visits !== null && staffN ? visits / staffN : null;
+      const surplus = rate !== null && staffN ? Math.round(staffN * (1 - rate) * 10) / 10 : null;
+      const flags = [];
+      if (open === false && visits) flags.push({ level: "info", text: "休診の日に来院の記録があります" });
+      if (rate !== null && rate < o.lowRate) flags.push({ level: "warn", text: `稼働率 ${Math.round(rate * 100)}%（${Math.round(o.lowRate * 100)}%未満）` });
+      if (surplus !== null && surplus >= o.surplus) flags.push({ level: "warn", text: `余剰 約${surplus}人分（空いている枠）` });
+      if (perStaff !== null && perStaff >= o.busyPerStaff) flags.push({ level: "ng", text: `1人あたり来院 ${Math.round(perStaff * 10) / 10}人（${o.busyPerStaff}人以上・人手不足の可能性）` });
+      return {
+        key, name, open, visits, newPatients: day ? day.values["新患数"] ?? null : null, sales: day ? day.values["総売上"] ?? null : null,
+        am: sd ? sd.am || null : null, pm: sd ? sd.pm || null : null, on: onNames, staffN, perStaff,
+        rate, total, staffRates: rd ? rd.staff : {}, surplus, flags, hasShift: !!sd, hasRate: !!rd, hasDay: !!day,
+      };
+    });
+    return { date, rows };
+  }
+  // 1か月の院×日の稼働率（日別の表から）
+  function monthlyRates(book, month) {
+    return ((book && book.staffRates) || []).map((s) => ({
+      key: s.key, name: s.clinic || s.label,
+      days: Object.fromEntries((s.daily || []).filter((d) => d.date.startsWith(month)).map((d) => [d.date, d.total && d.total.slots ? (d.total.actual ?? 0) / d.total.slots : null])),
+    }));
+  }
+  // 生産性と給与：個人売上（月平均）÷ 人件費（月平均）
+  function payVsProductivity({ people, labor, multiplier, months }) {
+    const mult = Number(multiplier) > 0 ? Number(multiplier) : LABOR_DEFAULT_MULT;
+    const norm = (s) => String(s || "").replace(/[\s　]/g, "").replace(/﨑/g, "崎");
+    return (labor || []).map((l) => {
+      const p = (people || []).find((x) => norm(x.name) === norm(l.name) || (norm(l.name).length >= 2 && norm(x.name).startsWith(norm(l.name))));
+      const ms = p ? (p.monthlySales || []).filter((m) => m.total !== null && m.total !== undefined && (!months || months.includes(m.month))) : [];
+      const recent = ms.slice(-3).filter((m) => m.total > 0);
+      const sales = recent.length ? sum(recent.map((m) => m.total)) / recent.length : null;
+      const pay = Number(l.avg) || 0;
+      const ratio = sales !== null && pay ? sales / pay : null;
+      const verdict = ratio === null ? { id: "nodata", label: "売上データなし" } : ratio >= mult ? { id: "ok", label: "見合っている" } : ratio >= mult * 0.75 ? { id: "warn", label: "やや不足" } : { id: "ng", label: "見合っていない" };
+      return { name: l.name, clinic: l.clinic || (p && (p.clinics || [])[0]) || "", grade: p ? p.grade : "", pay, sales, months: recent.length, ratio, target: pay * mult, gap: sales !== null ? sales - pay * mult : null, verdict, est: !!l.est };
+    }).sort((a, b) => (a.ratio ?? 99) - (b.ratio ?? 99));
+  }
+
   function uid(prefix) {
     return `${prefix || "x"}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
   }
@@ -945,6 +1076,7 @@
     roleCounts, capacityOf, fitVerdict, fitMonth, fitAdvice, fitYear,
     INTAKE_DEPTS, intakeDefaultDepts, intakeAdditive, intakeFileMonth, intakeDate, parseDailyClinicTab, parseStaffRateTab, parseDailyBook,
     intakeColumnId, intakeDeptsOf, intakeDeptTable,
+    parseShiftTab, parseShiftBook, parseStaffRateDaily, DAILY_DEFAULTS, dailyOverview, monthlyRates, payVsProductivity,
     parseWageTab, clinicOfPerson, parseKpiTab, kpiIsRate, kpiSeries, kpiAdditive, kpiYearTotals,
     LABOR_DEFAULT_MULT, laborVerdict, laborPlan, parseOrgIssues, issueClinics, issueId, ISSUE_STATUSES, mergeIssues,
   };
