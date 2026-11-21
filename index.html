@@ -16031,6 +16031,165 @@ function PassFollowCard({passes,bookings,refunds,trainingMode,nameCell,loading})
     </div>
   );
 }
+// ===== 回数券・フリーパスの更新状況 =====
+// 更新＝同じ方（電話番号か、空白を除いた名前）が、そのパスより後に回数券・フリーパスを買ったこと。買えば自動で「更新済み」になる
+// 終了＝フリーパスは期限が過ぎた日、回数券は使い切った（残り0回）か期限が過ぎた日
+const PASS_RENEWAL_REASONS=["未確認","提案済み・検討中","症状が良くなった（卒業）","回数券・単発に切り替え","費用面","通う時間が取れない","効果を感じにくい","引越し・転院","連絡がつかない","その他"];
+const passIsFP=p=>(p.pass_type||"").includes("フリーパス");
+const passNameKey=s=>String(s||"").replace(/[\s　]/g,"");
+// パスID → そのあとに買ったパス（いちばん早いもの）
+function passRenewalMap(passes){
+  const out={};
+  const list=(passes||[]).filter(p=>p.purchased_date);
+  list.forEach(p=>{
+    const k=passNameKey(p.patient_name);
+    let best=null;
+    list.forEach(q=>{
+      if(q.id===p.id||!!q.is_training!==!!p.is_training) return;
+      const same=(k&&passNameKey(q.patient_name)===k)||(p.phone&&q.phone&&p.phone===q.phone);
+      if(!same) return;
+      const later=q.purchased_date>p.purchased_date||(q.purchased_date===p.purchased_date&&q.id>p.id);
+      if(!later) return;
+      if(!best||q.purchased_date<best.purchased_date||(q.purchased_date===best.purchased_date&&q.id<best.id)) best=q;
+    });
+    if(best) out[p.id]=best;
+  });
+  return out;
+}
+async function savePassRenewalNote(passId,patch){
+  let uid=null; try{ uid=(JSON.parse(sessionStorage.getItem("ando_user")||"null")||{}).id||null; }catch(e){}
+  const body={pass_id:passId,updated_at:new Date().toISOString(),updated_by:uid,...patch};
+  const {data:{session}}=await supabaseClient.auth.getSession();
+  if(!session) throw new Error("ログインが切れています。もう一度ログインしてください");
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/pass_renewal_notes?on_conflict=pass_id`,{method:"POST",
+    headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${session.access_token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=representation"},
+    body:JSON.stringify(body)});
+  const txt=await res.text(); let data=null; try{ data=txt?JSON.parse(txt):null; }catch(e){}
+  if(!res.ok||!Array.isArray(data)||!data[0]) throw new Error((data&&data.message)||`保存できませんでした（HTTP ${res.status}）`);
+  return data[0];
+}
+
+function PassRenewalCard({passes,renewal,bookings,trainingMode,nameCell,notes,onNoteSaved,loading}){
+  const today=fmtDate(new Date());
+  const [month,setMonth]=React.useState(today.slice(0,7));
+  const [tab,setTab]=React.useState("not");
+  const [msg,setMsg]=React.useState("");
+  const [memoDraft,setMemoDraft]=React.useState({});
+  const dayDiff=(a,b)=>Math.round((new Date(b+"T00:00:00")-new Date(a+"T00:00:00"))/86400000);
+  // 来院日（キャンセル除く）
+  const visits=React.useMemo(()=>{
+    const byName={},byPhone={};
+    (bookings||[]).forEach(b=>{
+      if(b.cancelled||!b.date||!!b.is_training!==!!trainingMode) return;
+      const k=passNameKey(b.patient_name); if(k)(byName[k]=byName[k]||[]).push(b.date);
+      if(b.phone)(byPhone[b.phone]=byPhone[b.phone]||[]).push(b.date);
+    });
+    return {byName,byPhone};
+  },[bookings,trainingMode]);
+  const datesOf=p=>[...new Set([...(visits.byName[passNameKey(p.patient_name)]||[]),...(p.phone?(visits.byPhone[p.phone]||[]):[])])].sort();
+  const rows=React.useMemo(()=>(passes||[]).map(p=>{
+    const fp=passIsFP(p), next=renewal[p.id]||null;
+    const ds=datesOf(p), past=ds.filter(d=>d<=today);
+    const last=past[past.length-1]||null, nextBk=ds.find(d=>d>today)||null;
+    let end=null, ended=false;
+    if(fp){ end=p.expiry_date||null; ended=!!end&&end<today; }
+    else{
+      const usedUp=(p.remaining_count||0)<=0, expired=!!p.expiry_date&&p.expiry_date<today;
+      ended=usedUp||expired;
+      end=expired?p.expiry_date:usedUp?(past.filter(d=>d>=(p.purchased_date||"")).slice(-1)[0]||p.purchased_date):(p.expiry_date||null);
+    }
+    const status=next?"renewed":ended?(p.active===false?"closed":"not"):"before";
+    return {p,fp,next,end,ended,status,last,nextBk,note:notes[p.id]||null};
+  }).filter(r=>r.end&&(month==="all"||r.end.slice(0,7)===month)&&r.status!=="closed")
+    .sort((a,b)=>(a.end||"").localeCompare(b.end||"")),[passes,renewal,notes,month,visits,today]);
+  const renewed=rows.filter(r=>r.status==="renewed"), notR=rows.filter(r=>r.status==="not"), before=rows.filter(r=>r.status==="before");
+  const endedN=renewed.length+notR.length;
+  const rate=endedN?Math.round(renewed.length/endedN*100):null;
+  const noReason=notR.filter(r=>!r.note||!r.note.reason||r.note.reason==="未確認");
+  const reasonCount={}; notR.forEach(r=>{ const k=(r.note&&r.note.reason)||"未確認"; reasonCount[k]=(reasonCount[k]||0)+1; });
+  const list=tab==="not"?notR:tab==="renewed"?renewed:tab==="before"?before:rows;
+  const staffName=id=>(STAFF_ACCOUNTS.find(s=>s.id===id)||{}).name||"";
+  async function save(r,patch){
+    setMsg("");
+    try{ const row=await savePassRenewalNote(r.p.id,{reason:(r.note&&r.note.reason)||null,memo:(r.note&&r.note.memo)||null,...patch}); onNoteSaved(row); setMsg(`✓ ${r.p.patient_name} 様の理由を保存しました`); }
+    catch(e){ setMsg("⚠ "+e.message); }
+  }
+  const months=(()=>{ const a=[]; const d=new Date(today+"T00:00:00"); for(let i=-1;i<=11;i++){ const x=new Date(d.getFullYear(),d.getMonth()-i,1); a.push(`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}`); } return a; })();
+  const th={padding:"8px 10px",textAlign:"left",fontWeight:800,color:"#64748b",whiteSpace:"nowrap"};
+  const td={padding:"8px 10px",whiteSpace:"nowrap",verticalAlign:"top"};
+  const tabBtn=(id,label,n,color)=>(<button key={id} type="button" onClick={()=>setTab(id)} style={{padding:"6px 12px",borderRadius:16,border:"1.5px solid "+(tab===id?color:"#e2e8f0"),background:tab===id?color:"white",color:tab===id?"white":"#475569",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>{label} {n}</button>);
+  const passLabel=p=>`${p.pass_type}${passIsFP(p)?"":`（残${p.remaining_count||0}/${p.total_count||0}）`}`;
+  return(
+    <div className="card" style={{marginBottom:14}}>
+      <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9"}}>
+        <div style={{fontWeight:800,fontSize:15,color:"#6d28d9",marginBottom:4}}>🔁 更新状況（回数券・フリーパス）</div>
+        <div style={{fontSize:11,color:"#64748b",lineHeight:1.6,marginBottom:8}}>
+          同じ方が新しく回数券・フリーパスを買うと、<b>自動で「更新済み」</b>になり、下の対象者一覧からも外れます。<b>期限が過ぎた（回数券は使い切った）のに更新していない方</b>は「未更新」に出るので、理由とメモを残してください。
+        </div>
+        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{fontSize:12,fontWeight:700,color:"#475569"}}>終了した月</span>
+          <select value={month} onChange={e=>setMonth(e.target.value)} aria-label="終了した月" style={{padding:"5px 8px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700,fontFamily:"inherit"}}>
+            {months.map(m=><option key={m} value={m}>{m.replace("-","年")}月</option>)}
+            <option value="all">すべての月</option>
+          </select>
+        </div>
+        <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
+          <div style={{background:"#f5f3ff",border:"1px solid #ddd6fe",borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:800,color:"#5b21b6"}}>更新率 <span style={{fontSize:20}}>{rate==null?"—":rate+"%"}</span> <span style={{fontWeight:700}}>（{renewed.length}/{endedN}名）</span></div>
+          <div style={{background:"#ecfdf5",border:"1px solid #a7f3d0",borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:800,color:"#047857"}}>更新済み <span style={{fontSize:20}}>{renewed.length}</span> 名</div>
+          <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:800,color:"#b91c1c"}}>未更新 <span style={{fontSize:20}}>{notR.length}</span> 名{noReason.length>0&&<span>（理由未入力 {noReason.length}）</span>}</div>
+          {before.length>0&&<div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:800,color:"#92400e"}}>これから期限 <span style={{fontSize:20}}>{before.length}</span> 名</div>}
+        </div>
+        {notR.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8,fontSize:11.5}}>
+          <span style={{fontWeight:800,color:"#475569"}}>未更新の理由：</span>
+          {Object.entries(reasonCount).sort((a,b)=>b[1]-a[1]).map(([k,v])=><span key={k} style={{background:k==="未確認"?"#fef2f2":"#f1f5f9",color:k==="未確認"?"#b91c1c":"#334155",borderRadius:12,padding:"2px 9px",fontWeight:700}}>{k} {v}名</span>)}
+        </div>}
+        <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}}>
+          {tabBtn("not","未更新",notR.length,"#dc2626")}
+          {tabBtn("renewed","更新済み",renewed.length,"#059669")}
+          {tabBtn("before","これから期限",before.length,"#d97706")}
+          {tabBtn("all","すべて",rows.length,"#475569")}
+        </div>
+        {msg&&<div style={{marginTop:8,fontSize:12,fontWeight:700,color:msg.startsWith("⚠")?"#b91c1c":"#047857"}}>{msg}</div>}
+      </div>
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:900}}>
+          <thead><tr style={{background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}>
+            {["状況","患者名","パス","終了日","最終来院","次回予約","更新・理由","メモ"].map(h=><th key={h} style={th}>{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {loading?(<tr><td colSpan={8} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>読み込み中...</td></tr>)
+            :list.length===0?(<tr><td colSpan={8} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>{tab==="not"?"✅ 未更新の方はいません":"対象の方はいません"}</td></tr>)
+            :list.map(r=>{
+              const p=r.p, n=r.note||{};
+              const badge=r.status==="renewed"?["#d1fae5","#047857","更新済み"]:r.status==="not"?["#fee2e2","#b91c1c","未更新"]:["#fef3c7","#92400e",r.end>=today?`あと${dayDiff(today,r.end)}日`:"期限前"];
+              return(<tr key={p.id} style={{borderBottom:"1px solid #f1f5f9"}}>
+                <td style={td}><span style={{background:badge[0],color:badge[1],borderRadius:6,padding:"2px 8px",fontWeight:800}}>{badge[2]}</span></td>
+                <td style={{...td,fontWeight:700}}>{nameCell(p.patient_name)}{p.phone&&<div style={{fontSize:10.5,color:"#94a3b8",fontWeight:400}}>{p.phone}</div>}</td>
+                <td style={td}>{passLabel(p)}<div style={{fontSize:10.5,color:"#94a3b8"}}>購入 {p.purchased_date||"—"}</div></td>
+                <td style={{...td,fontWeight:700,color:r.ended&&r.status==="not"?"#dc2626":"#1e293b"}}>{r.end}{r.ended&&<div style={{fontSize:10.5,fontWeight:700}}>{dayDiff(r.end,today)}日経過</div>}</td>
+                <td style={td}>{r.last||"—"}{r.last&&<div style={{fontSize:10.5,color:"#94a3b8"}}>{dayDiff(r.last,today)}日前</div>}</td>
+                <td style={{...td,color:r.nextBk?"#059669":"#94a3b8",fontWeight:700}}>{r.nextBk||"なし"}</td>
+                <td style={td}>{r.status==="renewed"
+                  ?<span style={{color:"#047857",fontWeight:700}}>→ {r.next.pass_type}<div style={{fontSize:10.5,color:"#64748b",fontWeight:400}}>{r.next.purchased_date} に購入{r.end&&r.next.purchased_date?`（${r.next.purchased_date<=r.end?"期限内に更新":`期限から${dayDiff(r.end,r.next.purchased_date)}日後`}）`:""}</div></span>
+                  :<select value={n.reason||"未確認"} onChange={e=>save(r,{reason:e.target.value})} aria-label={`${p.patient_name}の未更新の理由`}
+                    style={{padding:"5px 6px",border:"1.5px solid "+(!n.reason||n.reason==="未確認"?"#fca5a5":"#e2e8f0"),borderRadius:6,fontSize:12,fontFamily:"inherit",background:"white"}}>
+                    {PASS_RENEWAL_REASONS.map(x=><option key={x} value={x}>{x}</option>)}
+                  </select>}</td>
+                <td style={{...td,whiteSpace:"normal",minWidth:200}}>{r.status==="renewed"?<span style={{color:"#94a3b8"}}>—</span>:<>
+                  <input value={memoDraft[p.id]!=null?memoDraft[p.id]:(n.memo||"")} onChange={e=>setMemoDraft(d=>({...d,[p.id]:e.target.value}))}
+                    onBlur={()=>{ const v=memoDraft[p.id]; if(v!=null&&v!==(n.memo||"")) save(r,{memo:v}); setMemoDraft(d=>{ const x={...d}; delete x[p.id]; return x; }); }}
+                    placeholder="例：11/20 電話。来月から再開予定" aria-label={`${p.patient_name}のメモ`} style={{width:"100%",padding:"5px 8px",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+                  {n.updated_at&&<div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>{staffName(n.updated_by)&&`${staffName(n.updated_by)}・`}{fmtDate(new Date(n.updated_at))} 更新</div>}
+                </>}</td>
+              </tr>);
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function PassHoldersPanel({payments,bookings,refunds,trainingMode,onOpenPatient}){
   // 患者様の名前を押すと、患者管理のその方の画面を開く
   const nameCell=name=>onOpenPatient?(
@@ -16044,8 +16203,19 @@ function PassHoldersPanel({payments,bookings,refunds,trainingMode,onOpenPatient}
       setPasses(Array.isArray(rows)?rows:[]);setLoading(false);
     }).catch(()=>setLoading(false));
   },[]);
+  // 未更新の理由（pass_renewal_notes）
+  const [notes,setNotes]=React.useState({});
+  React.useEffect(()=>{
+    sb.select("pass_renewal_notes").then(rows=>{ if(Array.isArray(rows)){ const m={}; rows.forEach(r=>{ m[r.pass_id]=r; }); setNotes(m); } }).catch(()=>{});
+  },[]);
+  const [showRenewed,setShowRenewed]=React.useState(false);
   // トレーニングモードの表示中は練習用の回数券・FPだけを、通常時は本番のものだけを表示する
-  const activePasses=passes.filter(p=>p.active!==false&&!!p.is_training===!!trainingMode);
+  const modePasses=passes.filter(p=>!!p.is_training===!!trainingMode);
+  // あとで同じ方が回数券・FPを買っていれば「更新済み」（自動）。更新済みの古いパスは一覧から外す
+  const renewal=React.useMemo(()=>passRenewalMap(modePasses),[passes,trainingMode]);
+  const activeAll=modePasses.filter(p=>p.active!==false);
+  const renewedHidden=activeAll.filter(p=>renewal[p.id]);
+  const activePasses=showRenewed?activeAll:activeAll.filter(p=>!renewal[p.id]);
   const ticketPasses=activePasses.filter(p=>!(p.pass_type||"").includes("フリーパス")).sort((a,b)=>(a.remaining_count||0)-(b.remaining_count||0));
   const fpPasses=activePasses.filter(p=>(p.pass_type||"").includes("フリーパス")).sort((a,b)=>(a.expiry_date||"").localeCompare(b.expiry_date||""));
   function daysUntil(dateStr){ if(!dateStr) return null; return Math.ceil((new Date(dateStr+"T00:00:00")-new Date())/86400000); }
@@ -16143,7 +16313,9 @@ function PassHoldersPanel({payments,bookings,refunds,trainingMode,onOpenPatient}
   }
   return(
     <div style={{maxWidth:1000,margin:"0 auto"}}>
-      <PassFollowCard passes={passes} bookings={bookings} refunds={refunds} trainingMode={trainingMode} nameCell={nameCell} loading={loading}/>
+      <PassFollowCard passes={passes.filter(p=>!renewal[p.id])} bookings={bookings} refunds={refunds} trainingMode={trainingMode} nameCell={nameCell} loading={loading}/>
+      <PassRenewalCard passes={modePasses} renewal={renewal} bookings={bookings} trainingMode={trainingMode} nameCell={nameCell} notes={notes} loading={loading}
+        onNoteSaved={row=>setNotes(m=>({...m,[row.pass_id]:row}))}/>
       <div className="card" style={{marginBottom:14,padding:"14px 16px"}}>
         <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:10}}>🎫 パス・保険サマリー</div>
         <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)}
@@ -16205,6 +16377,10 @@ function PassHoldersPanel({payments,bookings,refunds,trainingMode,onOpenPatient}
           <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f"}}>🎫 回数券・フリーパス対象者一覧（{ticketPasses.length+fpPasses.length}名／合計{(ticketPasses.reduce((s,p)=>s+(p.amount||0),0)+fpPasses.reduce((s,p)=>s+(p.amount||0),0)).toLocaleString()}円）</div>
           <button onClick={exportPassesCSV} style={{padding:"7px 14px",background:"#059669",color:"white",border:"none",borderRadius:8,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>⬇ CSVダウンロード</button>
         </div>
+        {renewedHidden.length>0&&<div style={{padding:"8px 16px",fontSize:11.5,color:"#475569",background:"#f0fdf4",borderBottom:"1px solid #f1f5f9"}}>
+          🔁 更新済み（あとで新しいパスを購入）の古いパス {renewedHidden.length}件は{showRenewed?"表示中":"一覧から外しています"}。
+          <label style={{marginLeft:8,cursor:"pointer",fontWeight:700}}><input type="checkbox" checked={showRenewed} onChange={e=>setShowRenewed(e.target.checked)}/> 更新済みも表示</label>
+        </div>}
         <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:680}}>
             <thead>
@@ -16239,7 +16415,10 @@ function PassHoldersPanel({payments,bookings,refunds,trainingMode,onOpenPatient}
                       <td style={{padding:"8px 10px"}}>{p.pass_type}</td>
                       <td style={{padding:"8px 10px",fontWeight:700,color:"#1e293b"}}>{(p.amount||0).toLocaleString()}円</td>
                       <td style={{padding:"8px 10px"}}>{methodBadge(p)}</td>
-                      <td style={{padding:"8px 10px",fontWeight:700,color:d!=null&&d<=7?"#dc2626":"#1e293b"}}>{p.expiry_date||"—"}{d!=null?`（残り${d}日）`:""}</td>
+                      <td style={{padding:"8px 10px",fontWeight:700,color:d!=null&&d<=7?"#dc2626":"#1e293b"}}>{p.expiry_date||"—"}{d!=null?`（残り${d}日）`:""}
+                        {renewal[p.id]?<div><span style={{fontSize:10.5,background:"#d1fae5",color:"#047857",borderRadius:5,padding:"1px 6px"}}>更新済み → {renewal[p.id].purchased_date}</span></div>
+                          :d!=null&&d<0?<div><span style={{fontSize:10.5,background:"#fee2e2",color:"#b91c1c",borderRadius:5,padding:"1px 6px"}}>未更新：{(notes[p.id]&&notes[p.id].reason)||"理由未入力"}</span></div>:null}
+                      </td>
                     </tr>
                   );
                 })}
