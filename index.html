@@ -212,6 +212,11 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 .ss-range::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:50%;background:#fff;border:3px solid var(--ss-c);box-shadow:0 1px 4px rgba(0,0,0,.2)}
 .ss-range::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#fff;border:3px solid var(--ss-c);box-shadow:0 1px 4px rgba(0,0,0,.2)}
 .ss-range:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 5px rgba(30,58,95,.2)}
+.ss-kpi4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.ss-kpi{container-type:inline-size;min-width:0;padding:12px 14px}
+.ss-kpi .ss-s{display:none}
+@container (max-width:140px){.ss-kpi .ss-l{display:none}.ss-kpi span.ss-s{display:inline}.ss-kpi div.ss-s{display:block}}
+@media (max-width:600px){.ss-kpi4{gap:6px}.ss-kpi{padding:9px 7px}}
 </style>
 </head>
 <body>
@@ -14211,13 +14216,24 @@ function SSSection({tone,icon,title,desc,total,results,children}){
   );
 }
 
-function SSKpi({label,value,unit,dark,valueColor,footer,span}){
-  return(
-    <div style={{...ssCard,marginBottom:0,padding:"12px 14px",minWidth:0,background:dark?SS_COLOR.navy:"white",border:dark?"none":ssCard.border,gridColumn:span?"1 / -1":undefined}}>
-      <div style={{fontSize:12,fontWeight:700,color:dark?"rgba(255,255,255,.7)":"#64748b"}}>{label}</div>
-      <div style={{...ssNum,fontSize:"clamp(20px,5.4vw,28px)",fontWeight:900,lineHeight:1.25,color:dark?"white":(valueColor||"#0f172a"),marginTop:2,whiteSpace:"nowrap"}}>
-        {value}{value!=="—"&&<span style={{fontSize:13,fontWeight:700,marginLeft:3,color:dark?"rgba(255,255,255,.7)":"#64748b"}}>{unit}</span>}
+// 上の4つの数字（スマホでも4つ横並び）。カードの幅に合わせて文字の大きさを変える。
+// カードが狭いときは見出しを短くし、金額は「万円」（例：205.5万円）にして数字を大きく見せる（正確な総売上は上の帯に出ている）
+function SSKpi({label,short,value,unit,narrowValue,narrowUnit,dark,valueColor,footer}){
+  const color=dark?"white":(valueColor||"#0f172a"), unitColor=dark?"rgba(255,255,255,.7)":"#64748b";
+  const line=(v,u,cls)=>{
+    const w=String(v).length*0.6+(v!=="—"?String(u).length*0.5+0.1:0)+0.2; // 数字と単位のおおよその幅（文字の大きさに対する比）
+    return(
+      <div className={cls} style={{...ssNum,fontSize:`clamp(10px,calc(100cqi / ${w.toFixed(2)}),28px)`,fontWeight:900,lineHeight:1.25,color,marginTop:2,whiteSpace:"nowrap"}}>
+        {v}{v!=="—"&&<span style={{fontSize:"0.5em",fontWeight:700,marginLeft:"0.1em",color:unitColor}}>{u}</span>}
       </div>
+    );
+  };
+  return(
+    <div className="ss-kpi" style={{...ssCard,marginBottom:0,background:dark?SS_COLOR.navy:"white",border:dark?"none":ssCard.border}}>
+      <div style={{fontSize:12,fontWeight:700,color:dark?"rgba(255,255,255,.7)":"#64748b",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+        <span className="ss-l">{label}</span><span className="ss-s">{short||label}</span>
+      </div>
+      {narrowValue===undefined?line(value,unit):<>{line(value,unit,"ss-l")}{line(narrowValue,narrowUnit,"ss-s")}</>}
       {footer}
     </div>
   );
@@ -14363,14 +14379,15 @@ function SSSimulatorTab({S,input,result,update,actuals}){
   const rate=r.achievementRate, achieved=rate!=null&&rate>=100;
   const two={display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,220px),1fr))",gap:16};
   const ar=actuals.row;
+  const man=v=>S.formatOneDecimal(v/10000); // 万円（小数第1位）
   return(<>
-    {/* 上の4つ（スマホは2列） */}
-    <div style={{...ssGrid(150),marginBottom:12}}>
-      <SSKpi label="月間総売上" value={S.formatInt(r.totalSales)} unit="円" dark/>
-      <SSKpi label="目標売上" value={S.formatInt(b.targetSales)} unit="円"/>
-      <SSKpi label="目標達成率" value={rate==null?"—":S.formatOneDecimal(rate)} unit="%"
+    {/* 上の4つ（スマホでも横並び） */}
+    <div className="ss-kpi4">
+      <SSKpi label="月間総売上" short="総売上" value={S.formatInt(r.totalSales)} unit="円" narrowValue={man(r.totalSales)} narrowUnit="万円" dark/>
+      <SSKpi label="目標売上" short="目標" value={S.formatInt(b.targetSales)} unit="円" narrowValue={man(b.targetSales)} narrowUnit="万円"/>
+      <SSKpi label="目標達成率" short="達成率" value={rate==null?"—":S.formatOneDecimal(rate)} unit="%"
         footer={<div style={{height:6,background:"#e2e8f0",borderRadius:4,marginTop:8,overflow:"hidden"}}><div style={{height:"100%",width:Math.min(100,rate||0)+"%",background:achieved?SS_COLOR.acu:SS_COLOR.navy,borderRadius:4,transition:"width .2s"}}/></div>}/>
-      <SSKpi label={achieved?"目標超過額":"目標までの不足金額"} value={S.formatInt(achieved?r.surplus:r.shortfall)} unit="円" valueColor={achieved?SS_COLOR.acu:r.shortfall>0?SS_COLOR.red:undefined}/>
+      <SSKpi label={achieved?"目標超過額":"目標までの不足金額"} short={achieved?"超過額":"不足額"} value={S.formatInt(achieved?r.surplus:r.shortfall)} unit="円" narrowValue={man(achieved?r.surplus:r.shortfall)} narrowUnit="万円" valueColor={achieved?SS_COLOR.acu:r.shortfall>0?SS_COLOR.red:undefined}/>
     </div>
 
     {/* 実績の読み込み */}
