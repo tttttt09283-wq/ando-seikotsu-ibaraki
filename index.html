@@ -217,6 +217,14 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 .ss-kpi .ss-s{display:none}
 @container (max-width:140px){.ss-kpi .ss-l{display:none}.ss-kpi span.ss-s{display:inline}.ss-kpi div.ss-s{display:block}}
 @media (max-width:600px){.ss-kpi4{gap:6px}.ss-kpi{padding:9px 7px}}
+.ss-sec-wrap{container-type:inline-size}
+.ss-sections{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:start}
+.ss-sec-nav{display:none}
+@container (max-width:959px){.ss-sections{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@container (max-width:599px){.ss-sections{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;gap:10px;padding:2px 2px 8px;scroll-padding-left:2px;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}.ss-sections>*{flex:0 0 88%;scroll-snap-align:start}.ss-sec-nav{display:grid}}
+.ss-sec-body{container-type:inline-size}
+.ss-field-input{position:relative;width:150px;flex-shrink:0}
+@container (max-width:300px){.ss-field-head{flex-direction:column;align-items:stretch!important;gap:5px!important}.ss-field-input{width:100%}}
 </style>
 </head>
 <body>
@@ -14166,9 +14174,9 @@ function SSField({label,value,onChange,unit,max,sliderMax,step,decimal,accent,hi
   const color=SS_COLOR[accent||"navy"];
   return(
     <div style={{opacity:disabled?.55:1}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+      <div className="ss-field-head" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
         <label style={{fontSize:13,fontWeight:700,color:"#334155",lineHeight:1.35}}>{label}</label>
-        <div style={{position:"relative",width:150,flexShrink:0}}>
+        <div className="ss-field-input">
           <input inputMode={decimal?"decimal":"numeric"} autoComplete="off" disabled={disabled} value={text} aria-label={label}
             onFocus={e=>{ setFocused(true); setText(String(decimal?value:Math.round(value))); const t=e.target; setTimeout(()=>t.select(),0); }}
             onBlur={()=>{ setFocused(false); setText(show(value)); }}
@@ -14195,13 +14203,13 @@ function SSRow({label,value,unit,strong}){
   );
 }
 
-function SSSection({tone,icon,title,desc,total,results,children}){
+function SSSection({id,tone,icon,title,desc,total,results,children}){
   const S=window.SalesSim;
   return(
-    <div style={{...ssCard,overflow:"hidden",marginBottom:0}}>
+    <div id={id} style={{...ssCard,overflow:"hidden",marginBottom:0,minWidth:0}}>
       <div style={{height:4,background:SS_COLOR[tone]}}/>
-      <div style={{padding:"14px 16px 16px"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+      <div className="ss-sec-body" style={{padding:"14px 14px 16px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}>
           <span style={{width:36,height:36,borderRadius:10,background:SS_SOFT[tone],display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{icon}</span>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>{title}</div>
@@ -14311,7 +14319,7 @@ function SalesSimulatorPanel({payments,bookings,stores,todayStr}){
   const tabs=[["sim","🧮","シミュレーター"],["reverse","🎯","目標逆算"],["dash","📊","ダッシュボード"]];
 
   return(
-    <div style={{maxWidth:1100,margin:"0 auto"}}>
+    <div style={{maxWidth:1440,margin:"0 auto"}}>
       {/* 見出しと、いつも見える総売上 */}
       <div style={{background:SS_COLOR.navy,color:"white",borderRadius:14,padding:"14px 16px",marginBottom:12,position:"sticky",top:0,zIndex:20,boxShadow:"0 4px 14px rgba(15,39,68,.25)"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
@@ -14405,8 +14413,16 @@ function SSSimulatorTab({S,input,result,update,actuals}){
       {r.warnings.map(w=><div key={w}>⚠️ {w}</div>)}
     </div>}
 
-    <div style={{...ssGrid(340),alignItems:"start"}}>
-      <SSSection tone="navy" icon="🏥" title="基本設定" desc="患者数と来院頻度"
+    {/* 基本・柔整・鍼灸・自費を横並び（PCは4列、タブレットは2列、スマホは横にスワイプ） */}
+    <div className="ss-sec-wrap">
+    <div className="ss-sec-nav" style={{gridTemplateColumns:"repeat(4,1fr)",gap:6,marginBottom:8}}>
+      {[["ss-sec-basic","基本","navy"],["ss-sec-judo","柔整","judo"],["ss-sec-acu","鍼灸","acu"],["ss-sec-self","自費","self"]].map(([id,label,tone])=>(
+        <button key={id} onClick={()=>{ const el=document.getElementById(id); if(el) el.parentElement.scrollTo({left:el.offsetLeft-el.parentElement.offsetLeft-2,behavior:"smooth"}); }}
+          style={{padding:"7px 0",borderRadius:20,border:"1.5px solid "+SS_COLOR[tone],background:SS_SOFT[tone],color:SS_COLOR[tone],fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>{label}</button>
+      ))}
+    </div>
+    <div className="ss-sections">
+      <SSSection id="ss-sec-basic" tone="navy" icon="🏥" title="基本設定" desc="患者数と来院頻度"
         results={<>
           <SSRow label="月間延べ来院数（自動計算）" value={S.formatInt(r.totalVisits)} unit="回" strong/>
           <SSRow label="1日あたり平均来院数" value={S.formatOneDecimal(r.visitsPerDay)} unit="回"/>
@@ -14420,7 +14436,7 @@ function SSSimulatorTab({S,input,result,update,actuals}){
         <SSField label="月間目標売上" unit="円" step={50000} value={b.targetSales} sliderMax={15000000} onChange={v=>update(d=>{d.basic.targetSales=v;})}/>
       </SSSection>
 
-      <SSSection tone="judo" icon="🦴" title="柔整保険" desc="延べ来院数のうち柔整保険で対応した割合" total={r.judo.total}
+      <SSSection id="ss-sec-judo" tone="judo" icon="🦴" title="柔整保険" desc="延べ来院数のうち柔整保険で対応した割合" total={r.judo.total}
         results={<>
           <SSRow label="柔整保険 延べ対応数" value={S.formatInt(r.judo.count)} unit="回"/>
           <SSRow label="柔整保険 窓口売上" value={S.formatInt(r.judo.copaySales)} unit="円"/>
@@ -14439,7 +14455,7 @@ function SSSimulatorTab({S,input,result,update,actuals}){
         <SSField label="1対応あたり平均保険者請求額" unit="円" accent="judo" step={10} value={j.claim} sliderMax={6000} onChange={v=>update(d=>{d.judo.claim=v;})}/>
       </SSSection>
 
-      <SSSection tone="acu" icon="🪡" title="鍼灸保険" desc="柔整との併用も可（来院数は重複して数えません）" total={r.acu.total}
+      <SSSection id="ss-sec-acu" tone="acu" icon="🪡" title="鍼灸保険" desc="柔整との併用も可（来院数は重複して数えません）" total={r.acu.total}
         results={<>
           <SSRow label="鍼灸保険 延べ対応数" value={S.formatInt(r.acu.count)} unit="回"/>
           <SSRow label="内訳（1術 / 2術）" value={`${S.formatInt(r.acu.oneCount)} / ${S.formatInt(r.acu.twoCount)}`} unit="回"/>
@@ -14473,7 +14489,7 @@ function SSSimulatorTab({S,input,result,update,actuals}){
         </div>
       </SSSection>
 
-      <SSSection tone="self" icon="✨" title="自費売上" desc="自費施術・EMS・物販・その他は別々に1回だけ計上" total={r.self.total}
+      <SSSection id="ss-sec-self" tone="self" icon="✨" title="自費売上" desc="自費施術・EMS・物販・その他は別々に1回だけ計上" total={r.self.total}
         results={<>
           <SSRow label="自費施術 売上" value={S.formatInt(r.self.treatmentSales)} unit="円"/>
           <SSRow label="EMS 利用件数" value={S.formatInt(r.self.emsCount)} unit="件"/>
@@ -14494,6 +14510,7 @@ function SSSimulatorTab({S,input,result,update,actuals}){
           <SSField label="その他売上" unit="円" accent="self" step={10000} value={s.otherSales} sliderMax={1000000} onChange={v=>update(d=>{d.self.otherSales=v;})}/>
         </div>
       </SSSection>
+    </div>
     </div>
   </>);
 }
