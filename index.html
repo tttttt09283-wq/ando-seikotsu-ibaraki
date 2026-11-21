@@ -9454,9 +9454,17 @@ function useMonthlySalesTarget(month,storeId){
 }
 // その院（null＝全社）の、日ごとの出勤人数と休診の判定、月の延べ人数（休診日を除く）
 function shiftUnitsFor(result,closedSet,stores,storeId){
-  const unitsOf=d=>storeId!=null?((result.perStore[storeId]&&result.perStore[storeId][d])||0):(result.total[d]||0);
-  const isClosed=d=>storeId!=null?closedSet.has(`${storeId}_${d}`):stores.length>0&&stores.every(st=>closedSet.has(`${st.id}_${d}`));
-  const sumStore=id=>result.dates.reduce((t,{date})=>t+(closedSet.has(`${id}_${date}`)?0:((result.perStore[id]&&result.perStore[id][date])||0)),0);
+  // 休診日（定休日・臨時休業）は、シフトで出勤になっていても人数に数えない（目標も出さない）
+  const storeUnits=(id,d)=>closedSet.has(`${id}_${d}`)?0:((result.perStore[id]&&result.perStore[id][d])||0);
+  const sumStore=id=>result.dates.reduce((t,{date})=>t+storeUnits(id,date),0);
+  const usedStores=stores.filter(st=>result.dates.some(({date})=>((result.perStore[st.id]&&result.perStore[st.id][date])||0)>0));
+  // 全社：開いている院の人数の合計（勤務院が未設定の人は、どこかの院が開いている日だけ数える）
+  const allOn=d=>{
+    const open=usedStores.some(st=>!closedSet.has(`${st.id}_${d}`));
+    return stores.reduce((t,st)=>t+storeUnits(st.id,d),0)+(open?(result.unassigned[d]||0):0);
+  };
+  const unitsOf=d=>storeId!=null?storeUnits(storeId,d):allOn(d);
+  const isClosed=d=>storeId!=null?closedSet.has(`${storeId}_${d}`):(usedStores.length?usedStores:stores).length>0&&(usedStores.length?usedStores:stores).every(st=>closedSet.has(`${st.id}_${d}`));
   const allUnits=stores.reduce((t,st)=>t+sumStore(st.id),0);
   return {unitsOf,isClosed,share:storeId==null?1:(allUnits>0?sumStore(storeId)/allUnits:0)};
 }
@@ -16096,7 +16104,8 @@ function PassRenewalCard({passes,renewal,bookings,trainingMode,nameCell,notes,on
     else{
       const usedUp=(p.remaining_count||0)<=0, expired=!!p.expiry_date&&p.expiry_date<today;
       ended=usedUp||expired;
-      end=expired?p.expiry_date:usedUp?(past.filter(d=>d>=(p.purchased_date||"")).slice(-1)[0]||p.purchased_date):(p.expiry_date||null);
+      // 使い切った日＝購入後の最後の来院日。まだ残っていて残り2回以下なら「これから」として今月に出す
+      end=expired?p.expiry_date:usedUp?(past.filter(d=>d>=(p.purchased_date||"")&&(!next||d<=next.purchased_date)).slice(-1)[0]||(next&&next.purchased_date)||p.purchased_date):(p.expiry_date||((p.remaining_count||0)<=2?today:null));
     }
     const status=next?"renewed":ended?(p.active===false?"closed":"not"):"before";
     return {p,fp,next,end,ended,status,last,nextBk,note:notes[p.id]||null};
@@ -16124,7 +16133,7 @@ function PassRenewalCard({passes,renewal,bookings,trainingMode,nameCell,notes,on
       <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9"}}>
         <div style={{fontWeight:800,fontSize:15,color:"#6d28d9",marginBottom:4}}>🔁 更新状況（回数券・フリーパス）</div>
         <div style={{fontSize:11,color:"#64748b",lineHeight:1.6,marginBottom:8}}>
-          同じ方が新しく回数券・フリーパスを買うと、<b>自動で「更新済み」</b>になり、下の対象者一覧からも外れます。<b>期限が過ぎた（回数券は使い切った）のに更新していない方</b>は「未更新」に出るので、理由とメモを残してください。
+          フリーパスも回数券も、同じ方が新しく回数券・フリーパスを買うと、<b>自動で「更新済み」</b>になり、下の対象者一覧からも外れます。<b>期限が過ぎた（回数券は使い切った）のに更新していない方</b>は「未更新」に出るので、理由とメモを残してください。
         </div>
         <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
           <span style={{fontSize:12,fontWeight:700,color:"#475569"}}>終了した月</span>
@@ -16161,12 +16170,12 @@ function PassRenewalCard({passes,renewal,bookings,trainingMode,nameCell,notes,on
             :list.length===0?(<tr><td colSpan={8} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>{tab==="not"?"✅ 未更新の方はいません":"対象の方はいません"}</td></tr>)
             :list.map(r=>{
               const p=r.p, n=r.note||{};
-              const badge=r.status==="renewed"?["#d1fae5","#047857","更新済み"]:r.status==="not"?["#fee2e2","#b91c1c","未更新"]:["#fef3c7","#92400e",r.end>=today?`あと${dayDiff(today,r.end)}日`:"期限前"];
+              const badge=r.status==="renewed"?["#d1fae5","#047857","更新済み"]:r.status==="not"?["#fee2e2","#b91c1c","未更新"]:["#fef3c7","#92400e",!r.fp&&(p.remaining_count||0)<=2?`残り${p.remaining_count||0}回`:r.end>=today?`あと${dayDiff(today,r.end)}日`:"期限前"];
               return(<tr key={p.id} style={{borderBottom:"1px solid #f1f5f9"}}>
                 <td style={td}><span style={{background:badge[0],color:badge[1],borderRadius:6,padding:"2px 8px",fontWeight:800}}>{badge[2]}</span></td>
                 <td style={{...td,fontWeight:700}}>{nameCell(p.patient_name)}{p.phone&&<div style={{fontSize:10.5,color:"#94a3b8",fontWeight:400}}>{p.phone}</div>}</td>
                 <td style={td}>{passLabel(p)}<div style={{fontSize:10.5,color:"#94a3b8"}}>購入 {p.purchased_date||"—"}</div></td>
-                <td style={{...td,fontWeight:700,color:r.ended&&r.status==="not"?"#dc2626":"#1e293b"}}>{r.end}{r.ended&&<div style={{fontSize:10.5,fontWeight:700}}>{dayDiff(r.end,today)}日経過</div>}</td>
+                <td style={{...td,fontWeight:700,color:r.ended&&r.status==="not"?"#dc2626":"#1e293b"}}>{!r.fp&&!r.ended&&!p.expiry_date?"使用中":r.end}{!r.fp&&r.ended&&(p.remaining_count||0)<=0&&<div style={{fontSize:10.5,color:"#64748b"}}>使い切り</div>}{r.ended&&<div style={{fontSize:10.5,fontWeight:700}}>{dayDiff(r.end,today)}日経過</div>}</td>
                 <td style={td}>{r.last||"—"}{r.last&&<div style={{fontSize:10.5,color:"#94a3b8"}}>{dayDiff(r.last,today)}日前</div>}</td>
                 <td style={{...td,color:r.nextBk?"#059669":"#94a3b8",fontWeight:700}}>{r.nextBk||"なし"}</td>
                 <td style={td}>{r.status==="renewed"
@@ -16402,7 +16411,11 @@ function PassHoldersPanel({payments,bookings,refunds,trainingMode,onOpenPatient}
                     <td style={{padding:"8px 10px"}}>{p.pass_type}</td>
                     <td style={{padding:"8px 10px",fontWeight:700,color:"#1e293b"}}>{(p.amount||0).toLocaleString()}円</td>
                     <td style={{padding:"8px 10px"}}>{methodBadge(p)}</td>
-                    <td style={{padding:"8px 10px",fontWeight:700,color:(p.remaining_count||0)<=2?"#dc2626":"#1e293b"}}>{p.remaining_count}/{p.total_count}枚</td>
+                    <td style={{padding:"8px 10px",fontWeight:700,color:(p.remaining_count||0)<=2?"#dc2626":"#1e293b"}}>{p.remaining_count}/{p.total_count}枚
+                      {renewal[p.id]?<div><span style={{fontSize:10.5,background:"#d1fae5",color:"#047857",borderRadius:5,padding:"1px 6px"}}>更新済み → {renewal[p.id].purchased_date}</span></div>
+                        :(p.remaining_count||0)<=0||(p.expiry_date&&p.expiry_date<fmtDate(new Date()))?<div><span style={{fontSize:10.5,background:"#fee2e2",color:"#b91c1c",borderRadius:5,padding:"1px 6px"}}>未更新：{(notes[p.id]&&notes[p.id].reason)||"理由未入力"}</span></div>
+                        :(p.remaining_count||0)<=2?<div><span style={{fontSize:10.5,background:"#fef3c7",color:"#92400e",borderRadius:5,padding:"1px 6px"}}>もうすぐ終了・更新の声かけ</span></div>:null}
+                    </td>
                   </tr>
                 ))}
                 {fpPasses.filter(byMethodFilter).map(p=>{
