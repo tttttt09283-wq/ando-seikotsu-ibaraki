@@ -597,7 +597,7 @@ const sb = {
 // ===== 全端末で共有する設定（月次シフト・休暇残・売上目標） =====
 // 以前はブラウザ（localStorage）にだけ保存していたため、端末ごとに設定し直す必要があった。
 // サーバー（app_settings）を正として、localStorage はその写し（すぐ読めるようにするための控え）として使う。
-const SHARED_SETTING_PREFIXES=["shifts_","shifthalf_","shiftstore_","shift_required","holiday_balance","ando_sales_target_","attendance_rules","sales_simulator_"];
+const SHARED_SETTING_PREFIXES=["shifts_","shifthalf_","shiftstore_","shift_required","holiday_balance","ando_sales_target_","attendance_rules","sales_simulator_","away_custom_reasons"];
 // ===== 半日出勤（シフト表の「午前出勤」＝午後休み／「午後出勤」＝午前休み） =====
 // 午前・午後の時間帯は、設定「shift_half_times」（平日／土日・祝それぞれ）。未設定なら HALF_SHIFT_DEFAULT_TIMES
 const HALF_SHIFT={"午前出勤":"am","午後出勤":"pm"};
@@ -1213,11 +1213,16 @@ function LoginScreen({onLogin}){
 // 新患の仮枠の名前・電話・メモは個人情報なので、誰でも読める staff_breaks ではなく staff_break_notes（スタッフのみ）に保存する
 const AWAY_REASONS=["銀行","用事","研修","外出","会議","その他"];
 const NEWPT_HOLD_REASON="新患仮枠";
-const AWAY_ICONS={"銀行":"🏦","用事":"🚶","研修":"📚","外出":"🚶","会議":"💬","その他":"📌"};
+const AWAY_ICONS={"休憩":"☕","銀行":"🏦","用事":"🚶","研修":"📚","外出":"🚶","会議":"💬","その他":"📌"};
+// 不在枠に自分で追加した内容（全端末で共有。例：「往診」「片付け」）
+const AWAY_CUSTOM_KEY="away_custom_reasons";
+function readAwayCustomReasons(){ try{ const v=JSON.parse(localStorage.getItem(AWAY_CUSTOM_KEY)||"[]"); return Array.isArray(v)?v.filter(x=>typeof x==="string"&&x.trim()).slice(0,30):[]; }catch(e){ return []; } }
+function saveAwayCustomReasons(list){ sharedSettings.set(AWAY_CUSTOM_KEY,JSON.stringify(list)); window.dispatchEvent(new Event("ando-shared-settings")); }
 function breakStyleOf(reason){
   if(reason===NEWPT_HOLD_REASON) return {bg:"repeating-linear-gradient(135deg,#ecfdf5,#ecfdf5 6px,#d1fae5 6px,#d1fae5 12px)",border:"2px dashed #059669",color:"#047857",icon:"🆕",label:"仮枠"};
-  if(AWAY_REASONS.includes(reason)) return {bg:"repeating-linear-gradient(135deg,#fffbeb,#fffbeb 6px,#fef3c7 6px,#fef3c7 12px)",border:"1.5px solid #f59e0b",color:"#92400e",icon:AWAY_ICONS[reason]||"📌",label:reason};
-  return {bg:"#f1f5f9",border:"1px solid #e2e8f0",color:"#94a3b8",icon:"",label:reason||"休憩"};
+  // 休憩（内容なしも休憩）はグレー、それ以外（銀行・用事や自分で入れた内容）は不在枠の色
+  if(reason&&reason!=="休憩"&&reason!=="昼休み") return {bg:"repeating-linear-gradient(135deg,#fffbeb,#fffbeb 6px,#fef3c7 6px,#fef3c7 12px)",border:"1.5px solid #f59e0b",color:"#92400e",icon:AWAY_ICONS[reason]||"📌",label:reason};
+  return {bg:"#f1f5f9",border:"1px solid #e2e8f0",color:"#94a3b8",icon:"",label:"休憩"};
 }
 // 休憩・不在枠・仮枠の伸縮。edge="right"は終わりを、"left"は始まりを動かす（反対側は固定）。steps＝10分単位の移動量
 function breakResizeResult(br,edge,steps){
@@ -1240,12 +1245,29 @@ function CalendarHoldModal({init,onClose,onSaved}){
   const [menu,setMenu]=React.useState("");
   const [memo,setMemo]=React.useState("");
   const [saving,setSaving]=React.useState(false);
+  const ver=useSharedSettingsVersion();
+  const custom=React.useMemo(()=>readAwayCustomReasons(),[ver]);
+  const [extra,setExtra]=React.useState(""); // 追加入力
   const staff=STAFF_ACCOUNTS.find(x=>x.id===init.staffId)||{name:"",color:"#64748b"};
+  const allReasons=["休憩",...AWAY_REASONS,...custom.filter(c=>c!=="休憩"&&!AWAY_REASONS.includes(c))];
+  function addExtra(){
+    const v=extra.trim().replace(/[<>]/g,"").slice(0,20); if(!v) return;
+    if(!allReasons.includes(v)) saveAwayCustomReasons([...custom,v]);
+    setReason(v); setExtra("");
+  }
+  function removeCustom(v){
+    if(!window.confirm(`「${v}」を選択肢から消しますか？（入れ済みの枠はそのままです）`)) return;
+    saveAwayCustomReasons(custom.filter(c=>c!==v)); if(reason===v) setReason("休憩");
+  }
   const durs=[10,20,30,40,60,90,120,180];
   async function save(){
     setSaving(true);
     try{
-      const rows=await sb.insert("staff_breaks",{staff_id:init.staffId,date:init.date,time,duration,reason});
+      // 追加入力に書いたまま「追加」を押していなければ、その内容で入れる
+      const typed=extra.trim().replace(/[<>]/g,"").slice(0,20);
+      const reasonToSave=!isNew&&typed?typed:reason;
+      if(!isNew&&typed&&!allReasons.includes(typed)) saveAwayCustomReasons([...custom,typed]);
+      const rows=await sb.insert("staff_breaks",{staff_id:init.staffId,date:init.date,time,duration,reason:reasonToSave});
       if(!Array.isArray(rows)||rows.length===0) throw new Error((rows&&rows.message)||"登録できませんでした");
       let note=null;
       if(isNew&&(name.trim()||phone.trim()||menu||memo.trim())){
@@ -1262,7 +1284,7 @@ function CalendarHoldModal({init,onClose,onSaved}){
       <div className="modal-box" style={{overflowY:"auto",maxWidth:460}} onClick={e=>e.stopPropagation()}>
         <div className="modal-header" style={{background:isNew?"linear-gradient(135deg,#047857,#059669)":"linear-gradient(135deg,#b45309,#d97706)"}}>
           <div>
-            <div style={{fontWeight:800,fontSize:16,color:"white"}}>{isNew?"🆕 新患の仮枠を取る":"🏦 不在枠を入れる（銀行・用事・研修など）"}</div>
+            <div style={{fontWeight:800,fontSize:16,color:"white"}}>{isNew?"🆕 新患の仮枠を取る":"🏦 不在枠を入れる（休憩・銀行・用事・研修など）"}</div>
             <div style={{fontSize:12,color:"rgba(255,255,255,.85)",marginTop:2}}>{init.date}　{staff.name}</div>
           </div>
           <button className="modal-close" onClick={onClose}>✕</button>
@@ -1270,7 +1292,19 @@ function CalendarHoldModal({init,onClose,onSaved}){
         <div style={{padding:18}}>
           {!isNew&&<div className="form-group">
             <label className="form-label">内容</label>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{AWAY_REASONS.map(r=><button key={r} type="button" onClick={()=>setReason(r)} style={chip(reason===r)}>{AWAY_ICONS[r]} {r}</button>)}</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{allReasons.map(r=>{
+              const isCustom=custom.includes(r)&&r!=="休憩"&&!AWAY_REASONS.includes(r);
+              return <span key={r} style={{display:"inline-flex",alignItems:"center"}}>
+                <button type="button" onClick={()=>setReason(r)} style={chip(reason===r&&!extra.trim())}>{AWAY_ICONS[r]||"📌"} {r}</button>
+                {isCustom&&<button type="button" onClick={()=>removeCustom(r)} title={`「${r}」を選択肢から消す`} aria-label={`${r}を選択肢から消す`} style={{marginLeft:-4,width:20,height:20,borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#94a3b8",fontSize:11,cursor:"pointer",padding:0,lineHeight:"18px"}}>×</button>}
+              </span>;
+            })}</div>
+            <div style={{display:"flex",gap:6,marginTop:8}}>
+              <input className="form-input" value={extra} onChange={e=>setExtra(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); addExtra(); } }}
+                placeholder="ほかの内容を入力（例：往診・片付け）" aria-label="不在枠の内容を追加入力" maxLength={20} style={{flex:1,marginBottom:0}}/>
+              <button type="button" onClick={addExtra} disabled={!extra.trim()} style={{...chip(false),whiteSpace:"nowrap",opacity:extra.trim()?1:.5}}>＋ 追加</button>
+            </div>
+            <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>追加した内容は次から選択肢に出ます（全端末で共有。×で消せます）</div>
           </div>}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <div className="form-group">
@@ -1376,7 +1410,7 @@ function BreakModal({onClose,bookings,breaks,setBreaks}){
             <div className="form-group" style={{marginBottom:14}}>
               <label className="form-label">理由</label>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                {["休憩","昼休み","銀行","用事","研修","外出","会議","その他"].map(r=>(<button key={r} onClick={()=>setReason(r)} className="btn" style={{padding:"5px 10px",borderRadius:7,border:`2px solid ${reason===r?"#1e3a5f":"#e2e8f0"}`,background:reason===r?"#1e3a5f":"white",color:reason===r?"white":"#374151",fontSize:12,fontWeight:reason===r?700:400}}>{r}</button>))}
+                {["休憩","昼休み","銀行","用事","研修","外出","会議","その他",...readAwayCustomReasons().filter(c=>!["休憩","昼休み","銀行","用事","研修","外出","会議","その他"].includes(c))].map(r=>(<button key={r} onClick={()=>setReason(r)} className="btn" style={{padding:"5px 10px",borderRadius:7,border:`2px solid ${reason===r?"#1e3a5f":"#e2e8f0"}`,background:reason===r?"#1e3a5f":"white",color:reason===r?"white":"#374151",fontSize:12,fontWeight:reason===r?700:400}}>{r}</button>))}
               </div>
             </div>
             <button onClick={addBreak} disabled={saving} className="btn btn-primary" style={{width:"100%",justifyContent:"center",padding:11,fontSize:14,borderRadius:9,opacity:saving?.7:1}}>{saving?"登録中...":"休憩を登録する"}</button>
@@ -19576,7 +19610,7 @@ function Dashboard({user,onLogout}){
               <button onClick={()=>{ setHoldModal({kind:"newpt",date:timePickerPopup.date,time:timePickerPopup.centerTime,staffId:timePickerPopup.staffId}); setTimePickerPopup(null); }}
                 style={{width:"100%",padding:"10px 8px",border:"none",borderTop:"2px solid #e2e8f0",background:"#ecfdf5",color:"#047857",fontWeight:800,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>🆕 新患の仮枠</button>
               <button onClick={()=>{ setHoldModal({kind:"away",date:timePickerPopup.date,time:timePickerPopup.centerTime,staffId:timePickerPopup.staffId}); setTimePickerPopup(null); }}
-                style={{width:"100%",padding:"10px 8px",border:"none",borderTop:"1px solid #fde68a",background:"#fffbeb",color:"#92400e",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit",lineHeight:1.3}}>🏦 不在枠<br/><span style={{fontSize:10,fontWeight:700}}>銀行・用事・研修など</span></button>
+                style={{width:"100%",padding:"10px 8px",border:"none",borderTop:"1px solid #fde68a",background:"#fffbeb",color:"#92400e",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit",lineHeight:1.3}}>🏦 不在枠<br/><span style={{fontSize:10,fontWeight:700}}>休憩・銀行・用事など</span></button>
             </div>
           </>
         );
@@ -19587,7 +19621,7 @@ function Dashboard({user,onLogout}){
         setBreaks(prev=>[...prev,br]);
         if(note) setBreakNotes(prev=>({...prev,[br.id]:note}));
         setHoldModal(null);
-        showToast(br.reason===NEWPT_HOLD_REASON?"新患の仮枠を取りました":`${br.reason}の不在枠を入れました`);
+        showToast(br.reason===NEWPT_HOLD_REASON?"新患の仮枠を取りました":br.reason==="休憩"?"休憩を入れました":`${br.reason}の不在枠を入れました`);
       }}/>}
 
       {/* カレンダー上の休憩・不在枠・仮枠をタップしたとき */}
