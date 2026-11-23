@@ -2402,14 +2402,17 @@ const BOOKING_MENU_COLORS=[
   {key:"nail",label:"巻き爪",color:"#0d9488",grad:"linear-gradient(135deg,#14b8a6,#0f766e)"},
   {key:"beauty",label:"美容鍼",color:"#db2777",grad:"linear-gradient(135deg,#f472b6,#be185d)"},
   {key:"slim",label:"痩身",color:"#c2410c",grad:"linear-gradient(135deg,#fb923c,#c2410c)"},
+  {key:"consent",label:"鍼灸同意者",color:"#b91c1c",grad:"linear-gradient(135deg,#ef4444,#b91c1c)"},
 ];
-function bookingMenuKind(b){
+// 鍼灸同意者＝鍼灸保険対応者（会計の区分が鍼灸の方、または同意書の期限を入れた方）。患者様のキー（空白なしの名前）の集合を渡す
+function bookingMenuKind(b,acuConsentKeys){
   if(!b) return BOOKING_MENU_COLORS[0];
   const by=k=>BOOKING_MENU_COLORS.find(x=>x.key===k);
   const sp=specialBookingKind(b);
   if(sp) return by(sp.key==="nail"?"nail":"beauty");
   const text=[b.menu,...(Array.isArray(b.menus)?b.menus:[]),b.memo].filter(Boolean).join(" ");
   if(/痩身|ダイエット|脂肪|EMS|ボディメイク|スリム/i.test(text)) return by("slim");
+  if(acuConsentKeys&&acuConsentKeys.has(patientMarkKey(b.patient_name))) return by("consent");
   if(b._seg==="acu") return by("acu");
   if(b._seg==="ju") return by("ju");
   if(/鍼灸|はり|鍼/.test(text)) return by("acu");
@@ -17869,6 +17872,13 @@ function Dashboard({user,onLogout}){
   }
   const [allPayments,setAllPayments]=React.useState([]);
   const [patientMarks,setPatientMarks]=React.useState({}); // {名前（空白なし）: 口コミ・鍼灸保険の印}
+  // 鍼灸同意者（カレンダーの色分け用）：会計の保険区分が鍼灸の方＋同意書の期限を入れた方
+  const acuConsentKeys=React.useMemo(()=>{
+    const set=new Set();
+    (allPayments||[]).forEach(p=>{ if(!p.is_refund&&!p.is_training&&/鍼灸/.test(String(p.insurance_type||""))){ const k=patientMarkKey(p.patient_name); if(k) set.add(k); } });
+    Object.values(patientMarks||{}).forEach(m=>{ if(m&&m.acu_consent_until&&m.patient_key) set.add(m.patient_key); });
+    return set;
+  },[allPayments,patientMarks]);
   const loadPatientMarks=React.useCallback(()=>{
     sb.select("patient_marks").then(rows=>{ if(Array.isArray(rows)){ const m={}; rows.forEach(r=>{ m[r.patient_key]=r; }); setPatientMarks(m); } }).catch(()=>{});
   },[]);
@@ -19421,7 +19431,7 @@ function Dashboard({user,onLogout}){
                                     // 見た目を少し薄くして区別し、ドラッグ移動・リサイズのハンドルも出さない（タップして閲覧はできる）
                                     const isReadOnlyReal=trainingMode&&!b.is_training;
                                     const sp=specialBookingKind(b);
-                                    const mk=calColorMode==="menu"?bookingMenuKind(b):null;
+                                    const mk=calColorMode==="menu"?bookingMenuKind(b,acuConsentKeys):null;
                                     const base=b._seg?(dayBookings.find(x=>x.id===b.id)||b):b; // 分けた部分を押したときは、もとの予約を開く
                                     return(
                                       <div key={`${b.id}-${b._seg||"all"}`}
@@ -19643,6 +19653,22 @@ function Dashboard({user,onLogout}){
           const upd=await attemptResizeBreak(br,{time:st,duration:_hm(en)-_hm(st)});
           setHoldPopup(hp=>hp?{...hp,br:upd}:hp);
         }
+        // 内容（休憩・銀行・自分で入れた内容など）を変える
+        const reasonChoices=["休憩",...AWAY_REASONS,...readAwayCustomReasons().filter(c=>c!=="休憩"&&!AWAY_REASONS.includes(c))];
+        if(br.reason&&!reasonChoices.includes(br.reason)) reasonChoices.push(br.reason);
+        async function changeReason(v){
+          const nv=String(v||"").trim().replace(/[<>]/g,"").slice(0,20);
+          if(!nv||nv===br.reason) return;
+          if(![...AWAY_REASONS,"休憩",...readAwayCustomReasons()].includes(nv)) saveAwayCustomReasons([...readAwayCustomReasons(),nv]);
+          try{
+            const r=await sb.update("staff_breaks",br.id,{reason:nv});
+            if(r&&!Array.isArray(r)&&r.message) throw new Error(r.message);
+            const upd={...br,reason:nv};
+            setBreaks(prev=>prev.map(x=>x.id===br.id?upd:x));
+            setHoldPopup(hp=>hp?{...hp,br:upd,reasonDraft:""}:hp);
+            showToast(`内容を「${nv}」に変えました`);
+          }catch(e){ showToast("変更できませんでした："+(e.message||""),"delete"); }
+        }
         function convert(){
           openAdd(br.date,br.time,note.patient_name||"",note.phone||"");
           setForm(f=>f?{...f,staff_id:br.staff_id,menu:note.menu||f.menu}:f);
@@ -19660,6 +19686,19 @@ function Dashboard({user,onLogout}){
               <select aria-label="始まりの時間" value={br.time} onChange={e=>changeTime("start",e.target.value)} style={{fontSize:12,padding:"3px 4px",borderRadius:5,border:"1.5px solid #cbd5e1"}}>{HALF_TIME_OPTIONS.filter(t=>t<endStr).map(t=><option key={t} value={t}>{t}</option>)}</select>
               <span>〜</span>
               <select aria-label="終わりの時間" value={endStr} onChange={e=>changeTime("end",e.target.value)} style={{fontSize:12,padding:"3px 4px",borderRadius:5,border:"1.5px solid #cbd5e1"}}>{HALF_TIME_OPTIONS.filter(t=>t>br.time).map(t=><option key={t} value={t}>{t}</option>)}</select>
+            </div>}
+            {!isNew&&canEditBreak(br)&&<div style={{padding:"8px 12px",borderBottom:"1px solid #f1f5f9",fontSize:12}}>
+              <div style={{display:"flex",alignItems:"center",gap:4}}>
+                <span style={{fontWeight:700,color:"#475569",marginRight:2}}>内容</span>
+                <select aria-label="不在枠の内容" value={br.reason||"休憩"} onChange={e=>changeReason(e.target.value)} style={{flex:1,fontSize:12,padding:"3px 4px",borderRadius:5,border:"1.5px solid #cbd5e1"}}>
+                  {reasonChoices.map(r=><option key={r} value={r}>{AWAY_ICONS[r]||"📌"} {r}</option>)}
+                </select>
+              </div>
+              <div style={{display:"flex",gap:4,marginTop:6}}>
+                <input value={holdPopup.reasonDraft||""} onChange={e=>{ const v=e.target.value; setHoldPopup(hp=>hp?{...hp,reasonDraft:v}:hp); }} onKeyDown={e=>{ if(e.key==="Enter") changeReason(holdPopup.reasonDraft); }}
+                  placeholder="ほかの内容を入力" aria-label="不在枠の内容を入力" maxLength={20} style={{flex:1,minWidth:0,fontSize:12,padding:"4px 6px",borderRadius:5,border:"1.5px solid #cbd5e1",fontFamily:"inherit"}}/>
+                <button type="button" onClick={()=>changeReason(holdPopup.reasonDraft)} disabled={!(holdPopup.reasonDraft||"").trim()} style={{fontSize:12,fontWeight:800,padding:"4px 8px",borderRadius:5,border:"1.5px solid #cbd5e1",background:"white",cursor:"pointer",fontFamily:"inherit",opacity:(holdPopup.reasonDraft||"").trim()?1:.5}}>変更</button>
+              </div>
             </div>}
             {isNew&&<div style={{padding:"8px 12px",fontSize:12.5,lineHeight:1.7,borderBottom:"1px solid #f1f5f9"}}>
               <div>👤 {note.patient_name||<span style={{color:"#94a3b8"}}>お名前未入力</span>}</div>
