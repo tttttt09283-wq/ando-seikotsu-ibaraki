@@ -2398,21 +2398,46 @@ const SPECIAL_BOOKING_KINDS=[
 // 柔整（手技・再診など）／鍼灸併用（メニューに「鍼灸」、または柔整と鍼灸の担当を分けた予約の鍼灸の部分）／巻き爪／美容鍼（小顔を含む）／痩身
 const BOOKING_MENU_COLORS=[
   {key:"ju",label:"柔整",color:"#2563eb",grad:"linear-gradient(135deg,#3b82f6,#1d4ed8)"},
-  {key:"acu",label:"鍼灸併用",color:"#7c3aed",grad:"linear-gradient(135deg,#8b5cf6,#6d28d9)"},
+  {key:"acu",label:"鍼灸（併用・同意者）",color:"#7c3aed",grad:"linear-gradient(135deg,#8b5cf6,#6d28d9)"},
   {key:"nail",label:"巻き爪",color:"#0d9488",grad:"linear-gradient(135deg,#14b8a6,#0f766e)"},
   {key:"beauty",label:"美容鍼",color:"#db2777",grad:"linear-gradient(135deg,#f472b6,#be185d)"},
   {key:"slim",label:"痩身",color:"#c2410c",grad:"linear-gradient(135deg,#fb923c,#c2410c)"},
-  {key:"consent",label:"鍼灸同意者",color:"#b91c1c",grad:"linear-gradient(135deg,#ef4444,#b91c1c)"},
+  {key:"pass",label:"パス更新時期（FP期限2週間以内・回数券残り3回以下）",short:"パス更新時期",color:"#b91c1c",grad:"linear-gradient(135deg,#ef4444,#b91c1c)"},
 ];
+const PASS_ALERT_FP_DAYS=14;     // フリーパスの期限まで何日で色を変えるか
+const PASS_ALERT_TICKET_LEFT=3;  // 回数券の残り何回以下で色を変えるか
+// 患者様（空白なしの名前・電話番号）→ 更新時期のパス。更新済み（あとで別のパスを購入）のものは除く
+function passAlertIndex(passes,todayStr,training){
+  const list=(passes||[]).filter(p=>p.active!==false&&!!p.is_training===!!training);
+  const renewal=passRenewalMap((passes||[]).filter(p=>!!p.is_training===!!training));
+  const byName={},byPhone={};
+  list.forEach(p=>{
+    if(renewal[p.id]) return;
+    let info=null;
+    if(passIsFP(p)){
+      if(!p.expiry_date) return;
+      const days=Math.round((Date.parse(p.expiry_date+"T00:00:00")-Date.parse(todayStr+"T00:00:00"))/86400000);
+      if(days<=PASS_ALERT_FP_DAYS) info={kind:"fp",pass:p,days,label:days<0?`FP 期限切れ（${p.expiry_date}）`:`FP 期限 ${p.expiry_date}（あと${days}日）`};
+    }else{
+      const left=p.remaining_count||0;
+      if(left<=PASS_ALERT_TICKET_LEFT) info={kind:"ticket",pass:p,left,label:`回数券 残り${left}回（${p.pass_type}）`};
+    }
+    if(!info) return;
+    const k=passNameKey(p.patient_name); if(k) byName[k]=byName[k]||info;
+    if(p.phone) byPhone[p.phone]=byPhone[p.phone]||info;
+  });
+  return {byName,byPhone,of:b=>b?(byName[passNameKey(b.patient_name)]||(b.phone&&byPhone[b.phone])||null):null};
+}
 // 鍼灸同意者＝鍼灸保険対応者（会計の区分が鍼灸の方、または同意書の期限を入れた方）。患者様のキー（空白なしの名前）の集合を渡す
-function bookingMenuKind(b,acuConsentKeys){
+function bookingMenuKind(b,acuConsentKeys,passAlert){
   if(!b) return BOOKING_MENU_COLORS[0];
   const by=k=>BOOKING_MENU_COLORS.find(x=>x.key===k);
+  if(passAlert&&passAlert.of(b)) return by("pass"); // パスの更新時期の方を優先して目立たせる
   const sp=specialBookingKind(b);
   if(sp) return by(sp.key==="nail"?"nail":"beauty");
   const text=[b.menu,...(Array.isArray(b.menus)?b.menus:[]),b.memo].filter(Boolean).join(" ");
   if(/痩身|ダイエット|脂肪|EMS|ボディメイク|スリム/i.test(text)) return by("slim");
-  if(acuConsentKeys&&acuConsentKeys.has(patientMarkKey(b.patient_name))) return by("consent");
+  if(acuConsentKeys&&acuConsentKeys.has(patientMarkKey(b.patient_name))) return by("acu"); // 鍼灸同意者も鍼灸と同じ色
   if(b._seg==="acu") return by("acu");
   if(b._seg==="ju") return by("ju");
   if(/鍼灸|はり|鍼/.test(text)) return by("acu");
@@ -17872,6 +17897,12 @@ function Dashboard({user,onLogout}){
   }
   const [allPayments,setAllPayments]=React.useState([]);
   const [patientMarks,setPatientMarks]=React.useState({}); // {名前（空白なし）: 口コミ・鍼灸保険の印}
+  // 回数券・フリーパス（カレンダーで更新時期の方の色を変える用）
+  const [calPasses,setCalPasses]=React.useState([]);
+  React.useEffect(()=>{
+    const load=()=>sb.select("passes","?select=id,patient_name,phone,pass_type,total_count,remaining_count,expiry_date,purchased_date,active,is_training").then(r=>{ if(Array.isArray(r)) setCalPasses(r); }).catch(()=>{});
+    load(); const t=setInterval(load,5*60*1000); return()=>clearInterval(t);
+  },[]);
   // 鍼灸同意者（カレンダーの色分け用）：会計の保険区分が鍼灸の方＋同意書の期限を入れた方
   const acuConsentKeys=React.useMemo(()=>{
     const set=new Set();
@@ -17879,6 +17910,7 @@ function Dashboard({user,onLogout}){
     Object.values(patientMarks||{}).forEach(m=>{ if(m&&m.acu_consent_until&&m.patient_key) set.add(m.patient_key); });
     return set;
   },[allPayments,patientMarks]);
+  const passAlert=React.useMemo(()=>passAlertIndex(calPasses,fmtDate(new Date()),trainingMode),[calPasses,trainingMode]);
   const loadPatientMarks=React.useCallback(()=>{
     sb.select("patient_marks").then(rows=>{ if(Array.isArray(rows)){ const m={}; rows.forEach(r=>{ m[r.patient_key]=r; }); setPatientMarks(m); } }).catch(()=>{});
   },[]);
@@ -19190,7 +19222,7 @@ function Dashboard({user,onLogout}){
                       style={{padding:"2px 10px",borderRadius:12,border:"1.5px solid "+(calColorMode===k?"#1e3a5f":"#e2e8f0"),background:calColorMode===k?"#1e3a5f":"white",color:calColorMode===k?"white":"#475569",fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
                   ))}
                   {calColorMode==="menu"?<>
-                    {BOOKING_MENU_COLORS.map(c=><span key={c.key} style={{display:"inline-flex",alignItems:"center",gap:4,fontWeight:700,color:"#334155"}}><span style={{width:12,height:12,borderRadius:3,background:c.grad,display:"inline-block"}}/>{c.label}</span>)}
+                    {BOOKING_MENU_COLORS.map(c=><span key={c.key} title={c.label} style={{display:"inline-flex",alignItems:"center",gap:4,fontWeight:700,color:"#334155"}}><span style={{width:12,height:12,borderRadius:3,background:c.grad,display:"inline-block"}}/>{c.short||c.label}</span>)}
                     <span style={{display:"inline-flex",alignItems:"center",gap:4,fontWeight:700,color:"#334155"}}><span style={{width:12,height:12,borderRadius:3,background:"linear-gradient(135deg,#9ca3af,#6b7280)",borderLeft:"4px solid #2563eb",display:"inline-block"}}/>会計済み（左の線がメニューの色）</span>
                   </>:<span style={{color:"#64748b"}}>担当スタッフの色（オレンジ＝新患・グレー＝会計済み）</span>}
                 </div>
@@ -19431,7 +19463,7 @@ function Dashboard({user,onLogout}){
                                     // 見た目を少し薄くして区別し、ドラッグ移動・リサイズのハンドルも出さない（タップして閲覧はできる）
                                     const isReadOnlyReal=trainingMode&&!b.is_training;
                                     const sp=specialBookingKind(b);
-                                    const mk=calColorMode==="menu"?bookingMenuKind(b,acuConsentKeys):null;
+                                    const mk=calColorMode==="menu"?bookingMenuKind(b,acuConsentKeys,passAlert):null;
                                     const base=b._seg?(dayBookings.find(x=>x.id===b.id)||b):b; // 分けた部分を押したときは、もとの予約を開く
                                     return(
                                       <div key={`${b.id}-${b._seg||"all"}`}
@@ -19765,7 +19797,26 @@ function Dashboard({user,onLogout}){
                 {b.booked_via_line&&<div style={{fontSize:12,fontWeight:800,color:"white",background:"#06C755",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>LINE予約</div>}
                 {b.from_body_check&&<div title={b.body_check_summary||""} style={{fontSize:12,fontWeight:800,color:"#0c5961",background:"#d0f0f3",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>📋 カラダチェック経由{b.body_check_summary?"："+b.body_check_summary:""}</div>}
                 {b.referrer_name&&<div style={{fontSize:12,fontWeight:800,color:"#6d28d9",background:"#ede9fe",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>🎁 紹介：{b.referrer_name}</div>}
+                {(()=>{ const pa=passAlert.of(b); return pa?<div style={{fontSize:12,fontWeight:800,color:"#991b1b",background:"#fee2e2",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>🎫 {pa.label}・更新の声かけを</div>:null; })()}
                 {b.memo&&<div style={{fontSize:13,color:"white",background:"rgba(255,255,255,.18)",borderRadius:6,padding:"5px 8px",marginTop:6,lineHeight:1.5}}>📝 {b.memo}</div>}
+                {(()=>{
+                  // この方の今日以降の予約（キャンセル除く）。2件以上あれば一覧にする
+                  const k=passNameKey(b.patient_name), today=fmtDate(new Date());
+                  const mine=bookings.filter(x=>!x.cancelled&&x.date>=today&&((k&&passNameKey(x.patient_name)===k)||(b.phone&&x.phone===b.phone)))
+                    .sort((x,y)=>(x.date+(x.time||"")).localeCompare(y.date+(y.time||"")));
+                  if(mine.length<2) return null;
+                  const DJ=["日","月","火","水","木","金","土"];
+                  return(<div style={{marginTop:6,background:"rgba(255,255,255,.95)",borderRadius:8,padding:"6px 8px",color:"#1e293b"}}>
+                    <div style={{fontSize:12,fontWeight:800,color:"#1e3a5f",marginBottom:3}}>📅 この方の予約 {mine.length}件（今日以降）</div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                      {mine.map(x=>{ const d=new Date(x.date+"T00:00:00"), st=STAFF_ACCOUNTS.find(y=>y.id===x.staff_id)||{name:""}, cur=x.id===b.id;
+                        return <button key={x.id} type="button" disabled={cur} onClick={()=>setBookingPopup({booking:x,x:bookingPopup.x,y:bookingPopup.y})} title={`${x.menu||""}`}
+                          style={{fontSize:12,fontWeight:700,padding:"3px 8px",borderRadius:6,border:"1.5px solid "+(cur?"#1e3a5f":"#cbd5e1"),background:cur?"#1e3a5f":"white",color:cur?"white":"#1e293b",cursor:cur?"default":"pointer",fontFamily:"inherit"}}>
+                          {d.getMonth()+1}/{d.getDate()}({DJ[d.getDay()]}) {x.time} {st.name.split(/\s/)[0]}{cur?"（この予約）":""}
+                        </button>; })}
+                    </div>
+                  </div>);
+                })()}
                 {isReadOnlyReal&&<div style={{fontSize:12,fontWeight:800,color:"#1e293b",background:"#fff",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4}}>🔒 本番の予約（閲覧のみ）</div>}
               </div>
               <div style={{display:"grid",gridTemplateColumns:wide?"1fr 1fr":"1fr",alignItems:"start"}}>
