@@ -13574,6 +13574,8 @@ const MARK_REVIEW={
 };
 const MARK_ACU={
   guided:{label:"鍼灸保険 案内済み",short:"案内済み",chip:"鍼案",color:"#1e40af",bg:"#dbeafe"},
+  handed:{label:"鍼灸 同意書を渡した",short:"同意書渡し",chip:"同渡",color:"#92400e",bg:"#fde68a"},
+  received:{label:"鍼灸 同意書をもらった",short:"同意書受取",chip:"同受",color:"#065f46",bg:"#a7f3d0"},
   got:{label:"鍼灸保険 獲得",short:"獲得",chip:"鍼✓",color:"#065f46",bg:"#d1fae5"},
   no:{label:"鍼灸保険 ✖（見送り）",short:"✖",chip:"鍼✖",color:"#991b1b",bg:"#fee2e2"},
 };
@@ -13600,6 +13602,16 @@ async function savePatientMark(name,patch,staffId){
   const txt=await res.text(); let data=null; try{ data=txt?JSON.parse(txt):null; }catch(e){}
   if(!res.ok||!Array.isArray(data)||!data[0]) throw new Error((data&&data.message)||`保存できませんでした（HTTP ${res.status}）`);
   return data[0];
+}
+// 予約ごとの印：鍼灸保険の何回目か（1回目＝赤、2回目以降＝紫）、柔整のその月の1回目（月初）
+const VISIT_CHIP={
+  acu1:{label:"鍼灸保険 1回目",chip:"鍼保1",color:"#ffffff",bg:"#dc2626"},
+  acu2:{label:"鍼灸保険 2回目以降",chip:"鍼保",color:"#ffffff",bg:"#6d28d9"},
+  monthFirst:{label:"柔整 今月の1回目（月初）",chip:"月初",color:"#713f12",bg:"#fde047"},
+};
+function VisitChips({items}){
+  if(!items||!items.length) return null;
+  return <>{items.map(m=><span key={m.chip} title={m.title||m.label} style={{display:"inline-block",background:m.bg,color:m.color,borderRadius:4,padding:"0 3px",marginRight:2,fontSize:9,fontWeight:900,textShadow:"none",textDecoration:"none",verticalAlign:"1px",lineHeight:"13px",border:"1px solid rgba(255,255,255,.7)"}}>{m.text||m.chip}</span>)}</>;
 }
 // カレンダーの予約枠に出す小さな印
 function PatientMarkChips({mark,month}){
@@ -13665,6 +13677,8 @@ function PatientMarkEditor({name,mark,onSaved,staffId,compact,month}){
         <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
           {btn(!ac,null,()=>set({acu:null}),"未")}
           {btn(ac==="guided",MARK_ACU.guided,()=>set({acu:"guided"}),"案内済み")}
+          {btn(ac==="handed",MARK_ACU.handed,()=>set({acu:"handed"}),"同意書渡し")}
+          {btn(ac==="received",MARK_ACU.received,()=>set({acu:"received"}),"同意書受取")}
           {btn(ac==="got",MARK_ACU.got,()=>set({acu:"got"}),"獲得")}
           {btn(ac==="no",MARK_ACU.no,()=>set({acu:"no"}),"✖")}
         </div>
@@ -17938,6 +17952,35 @@ function Dashboard({user,onLogout}){
     return set;
   },[allPayments,patientMarks]);
   const passAlert=React.useMemo(()=>passAlertIndex(calPasses,fmtDate(new Date()),trainingMode),[calPasses,trainingMode]);
+  // 患者様ごとの鍼灸保険の来院日（会計の保険区分が鍼灸。同じ日は1回）
+  const acuInsDates=React.useMemo(()=>{
+    const m={};
+    (allPayments||[]).forEach(p=>{ if(p.is_refund||!!p.is_training!==!!trainingMode||!/鍼灸/.test(String(p.insurance_type||""))||!p.payment_date) return; const k=patientMarkKey(p.patient_name); if(!k) return; (m[k]=m[k]||new Set()).add(p.payment_date); });
+    Object.keys(m).forEach(k=>{ m[k]=[...m[k]].sort(); });
+    return m;
+  },[allPayments,trainingMode]);
+  // 患者様ごと・月ごとの最初の予約（キャンセル除く）＝月初の1回目
+  const monthFirstIds=React.useMemo(()=>{
+    const first={};
+    bookings.forEach(b=>{ if(b.cancelled||!b.date) return; const k=patientMarkKey(b.patient_name)+"|"+b.date.slice(0,7); const cur=first[k]; if(!cur||(b.date+(b.time||""))<(cur.date+(cur.time||""))) first[k]=b; });
+    return new Set(Object.values(first).map(b=>b.id));
+  },[bookings]);
+  // その予約の「鍼灸保険の何回目」「月初」の印
+  function visitChipsOf(b){
+    const out=[]; if(!b||b.cancelled) return out;
+    const k=patientMarkKey(b.patient_name), mark=patientMarks[k]||{};
+    const sp=specialBookingKind(b);
+    const dates=acuInsDates[k]||[];
+    const acuPatient=dates.length>0||mark.acu==="received"||mark.acu==="got"||!!mark.acu_consent_until;
+    if(acuPatient&&!sp){
+      const paidSame=dates.includes(b.date);
+      const n=dates.filter(d=>d<b.date).length+1;
+      // 会計済みで鍼灸保険でなかった日は出さない。未会計（これから）の予約は次の回数として出す
+      if(paidSame||!paidBookingIds.has(b.id)) out.push(n===1?{...VISIT_CHIP.acu1}:{...VISIT_CHIP.acu2,text:`鍼保${n}`,title:`鍼灸保険 ${n}回目（2回目以降）`});
+    }
+    if(!sp&&!/体験|カウンセリング/.test(String(b.menu||""))&&monthFirstIds.has(b.id)&&(visitCounts[b.id]||1)>1) out.push(VISIT_CHIP.monthFirst);
+    return out;
+  }
   const loadPatientMarks=React.useCallback(()=>{
     sb.select("patient_marks").then(rows=>{ if(Array.isArray(rows)){ const m={}; rows.forEach(r=>{ m[r.patient_key]=r; }); setPatientMarks(m); } }).catch(()=>{});
   },[]);
@@ -19252,6 +19295,9 @@ function Dashboard({user,onLogout}){
                     {BOOKING_MENU_COLORS.map(c=><span key={c.key} title={c.label} style={{display:"inline-flex",alignItems:"center",gap:4,fontWeight:700,color:"#334155"}}><span style={{width:12,height:12,borderRadius:3,background:c.grad,display:"inline-block"}}/>{c.short||c.label}</span>)}
                     <span style={{display:"inline-flex",alignItems:"center",gap:4,fontWeight:700,color:"#334155"}}><span style={{width:12,height:12,borderRadius:3,background:"linear-gradient(135deg,#9ca3af,#6b7280)",borderLeft:"4px solid #2563eb",display:"inline-block"}}/>会計済み（左の線がメニューの色）</span>
                   </>:<span style={{color:"#64748b"}}>担当スタッフの色（オレンジ＝新患・グレー＝会計済み）</span>}
+                  <span style={{display:"inline-flex",alignItems:"center",gap:4,flexWrap:"wrap",marginLeft:6,color:"#475569",fontWeight:700}}>印：
+                    {[MARK_ACU.handed,MARK_ACU.received,VISIT_CHIP.acu1,{...VISIT_CHIP.acu2,chip:"鍼保2〜"},VISIT_CHIP.monthFirst].map(m=><span key={m.chip} style={{display:"inline-flex",alignItems:"center",gap:2}}><span style={{background:m.bg,color:m.color,borderRadius:4,padding:"0 4px",fontSize:10,fontWeight:900}}>{m.chip}</span>{m.label.replace(/^鍼灸 /,"").replace("柔整 今月の1回目（月初）","柔整の月初1回目")}</span>)}
+                  </span>
                 </div>
                 {/* 個人絞り込み時：週間リスト切り替えボタン */}
                 {selStaff&&(
@@ -19520,7 +19566,8 @@ function Dashboard({user,onLogout}){
                                           }}
                                           title={(sp?`${sp.icon}${sp.label}の予約\n`:"")+"ダブルクリックで患者情報を見る"}
                                           style={{fontWeight:800,fontSize:12,color:"white",textShadow:"0 1px 2px rgba(0,0,0,.55)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",letterSpacing:0.2,textDecoration:"underline",textDecorationColor:"rgba(255,255,255,.35)",textUnderlineOffset:2,cursor:"pointer"}}>{sp&&<span style={{display:"inline-block",background:"white",color:sp.color,borderRadius:4,padding:"0 3px",marginRight:3,fontSize:10,fontWeight:900,textShadow:"none",textDecoration:"none",verticalAlign:"1px"}}>{sp.icon}{sp.label}</span>}{isCheckedIn?"📷":""}{isPaid?"✓ ":""}{b.patient_name}</div>
-                                        {patientMarks[patientMarkKey(b.patient_name)]&&<div style={{lineHeight:1,whiteSpace:"nowrap",overflow:"hidden",marginTop:1}}><PatientMarkChips mark={patientMarks[patientMarkKey(b.patient_name)]} month={(b.date||"").slice(0,7)}/></div>}
+                                        {(()=>{ const vc=visitChipsOf(base), mk2=patientMarks[patientMarkKey(b.patient_name)]; if(!vc.length&&!mk2) return null;
+                                          return <div style={{lineHeight:1,whiteSpace:"nowrap",overflow:"hidden",marginTop:1}}><VisitChips items={vc}/>{mk2&&<PatientMarkChips mark={mk2} month={(b.date||"").slice(0,7)}/>}</div>; })()}
                                         {/* 時間などの詳細は、普段は隠して名前だけのすっきり表示にし、バーをタップ（予約ポップアップ表示中）または対応時間をリサイズ中だけ表示する */}
                                         {(isBeingResized||(bookingPopup&&bookingPopup.booking&&bookingPopup.booking.id===b.id))&&(
                                         <div style={{fontSize:10,color:"rgba(255,255,255,.95)",textShadow:"0 1px 2px rgba(0,0,0,.45)",fontWeight:700}}>{b.time}{cnt>1&&<span style={{marginLeft:2,background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}{isBeingResized&&<span style={{marginLeft:2,fontWeight:800}}>{Math.max(10,(b.duration||DURATION[b.menu]||30)+Math.round(resizeDeltaPx/CELL_W)*10)}分</span>}</div>
@@ -19824,6 +19871,7 @@ function Dashboard({user,onLogout}){
                 {b.booked_via_line&&<div style={{fontSize:12,fontWeight:800,color:"white",background:"#06C755",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>LINE予約</div>}
                 {b.from_body_check&&<div title={b.body_check_summary||""} style={{fontSize:12,fontWeight:800,color:"#0c5961",background:"#d0f0f3",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>📋 カラダチェック経由{b.body_check_summary?"："+b.body_check_summary:""}</div>}
                 {b.referrer_name&&<div style={{fontSize:12,fontWeight:800,color:"#6d28d9",background:"#ede9fe",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>🎁 紹介：{b.referrer_name}</div>}
+                {visitChipsOf(b).map(c=><div key={c.chip} style={{fontSize:12,fontWeight:800,color:c.color,background:c.bg,display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>{c.chip==="月初"?"📅 柔整 今月の1回目（月初）":c.title||c.label}</div>)}
                 {(()=>{ const pa=passAlert.of(b); return pa?<div style={{fontSize:12,fontWeight:800,color:"#991b1b",background:"#fee2e2",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>🎫 {pa.label}・更新の声かけを</div>:null; })()}
                 {b.memo&&<div style={{fontSize:13,color:"white",background:"rgba(255,255,255,.18)",borderRadius:6,padding:"5px 8px",marginTop:6,lineHeight:1.5}}>📝 {b.memo}</div>}
                 {(()=>{
