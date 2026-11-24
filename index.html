@@ -12935,7 +12935,7 @@ function TeamLinkPanel({user,isAdmin,onUnreadChange}){
     }catch(e){}
     setLoading(false);
   }
-  React.useEffect(()=>{ load(); const t=setInterval(load,60000); return()=>clearInterval(t); },[]);
+  React.useEffect(()=>{ load(); const t=setInterval(()=>{ if(!document.hidden) load(); },60000); return()=>clearInterval(t); },[]);
   React.useEffect(()=>{ if(onUnreadChange) onUnreadChange(teamUnreadCount(posts,reads,me)); },[posts,reads,me]);
   const nameOf=id=>(STAFF_ACCOUNTS.find(s=>s.id===id)||{}).name||"";
   const canEdit=p=>isAdmin||(me&&p.created_by===me);
@@ -17865,7 +17865,7 @@ function Dashboard({user,onLogout}){
       }catch(e){}
     }
     // 「あなたは」を選び直したときや、既読・投稿をしたときはすぐ数え直す
-    count(); const t=setInterval(count,120000); window.addEventListener("ando-team-changed",count);
+    count(); const t=setInterval(()=>{ if(!document.hidden) count(); },120000); window.addEventListener("ando-team-changed",count);
     return()=>{ alive=false; clearInterval(t); window.removeEventListener("ando-team-changed",count); };
   },[]);
   const [holdModal,setHoldModal]=React.useState(null); // 不在枠・新患仮枠の登録 {kind:"away"|"newpt", date, time, staffId}
@@ -18063,18 +18063,64 @@ function Dashboard({user,onLogout}){
     }).catch(()=>{});
   },[]);
 
-  async function fetchAll(){
-    reloadRefunds();
-    loadPatientMarks();
-    // シフト・目標などの共有設定も30秒ごとに取り込む（他の通信を止めないようawaitはしない）
-    sharedSettings.pull().catch(()=>{});
+  // ===== データの読み込み（通信量を抑える） =====
+  // 以前は30秒ごとに予約・会計を全件読み直していたため、開いている端末の数だけ通信量が増え、Supabaseの上限を超えた。
+  // ・予約・会計・休憩は、最初（と30分ごと）だけ全件。ふだんは「前回から変わった分（updated_at）」だけ読む
+  // ・消された行は3分ごとに id だけ読んで反映する
+  // ・スタッフ・メニュー・シフトなどの小さい表と共有設定は2分ごと
+  // ・画面が裏に回っている（別のタブ・スリープ）間は読まない。戻ったらすぐ読む
+  const syncRef=React.useRef({full:0,small:0,idCheck:0,since:{},busy:false});
+  const SYNC_FULL_MS=30*60*1000, SYNC_SMALL_MS=2*60*1000, SYNC_ID_MS=3*60*1000;
+  const maxUpdatedAt=(rows,prev)=>{ let m=prev||null; (rows||[]).forEach(r=>{ if(r&&r.updated_at&&(!m||r.updated_at>m)) m=r.updated_at; }); return m; };
+  function mergeById(prev,rows,sortFn){
+    if(!rows||!rows.length) return prev;
+    const m=new Map((prev||[]).map(x=>[x.id,x])); rows.forEach(r=>m.set(r.id,r));
+    return [...m.values()].sort(sortFn);
+  }
+  const sortBookings=(a,b)=>(a.date||"").localeCompare(b.date||"")||(a.time||"").localeCompare(b.time||"")||a.id-b.id;
+  const sortPayments=(a,b)=>(b.payment_date||"").localeCompare(a.payment_date||"")||b.id-a.id;
+  async function fetchAll(opts){
+    const S=syncRef.current, now=Date.now(), force=!!(opts&&opts.force);
+    const full=force||!S.full||now-S.full>SYNC_FULL_MS;
+    if(!full&&typeof document!=="undefined"&&document.hidden) return; // 裏に回っている間は読まない
+    if(S.busy&&!force) return; S.busy=true;
+    const smallDue=full||now-S.small>SYNC_SMALL_MS;
     const startedAt=Date.now();
     try{
-      const [b,br,py,st,ws,cs,mn,dov]=await Promise.all([sb.select("bookings","?order=date.asc,time.asc"),sb.select("staff_breaks","?order=date.asc,time.asc"),sb.select("payments","?order=payment_date.desc"),sb.select("stores","?order=id.asc"),sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc"),sb.select("clinic_staff","?select=id,store_ids,allowed_menus,lane_count,name,email,password,role,color,initial,event_only"),sb.select("menus","?active=eq.true&order=display_order.asc,id.asc"),sb.select("staff_date_overrides","?order=date.asc")]);
-      // 読み込みに失敗した表は前の内容のまま（空にしない）。読み込み中にこの端末で予約を触った場合も上書きしない
-      if(Array.isArray(b)&&lastLocalBookingEditRef.current<startedAt) setAllBookingsRaw(b);
-      if(Array.isArray(br)) setBreaks(br);
-      if(Array.isArray(py)) setAllPayments(py);
+      if(full){
+        const [b,br,py]=await Promise.all([sb.select("bookings","?order=date.asc,time.asc"),sb.select("staff_breaks","?order=date.asc,time.asc"),sb.select("payments","?order=payment_date.desc")]);
+        // 読み込みに失敗した表は前の内容のまま（空にしない）。読み込み中にこの端末で予約を触った場合も上書きしない
+        if(Array.isArray(b)&&lastLocalBookingEditRef.current<startedAt) setAllBookingsRaw(b);
+        if(Array.isArray(br)) setBreaks(br);
+        if(Array.isArray(py)) setAllPayments(py);
+        if(Array.isArray(b)&&Array.isArray(br)&&Array.isArray(py)){
+          // 空の表でも差分を読めるよう、無ければ読み込みを始めた時刻（端末の時計のずれを見込んで5分前）から
+          const base=new Date(startedAt-5*60*1000).toISOString();
+          S.since={bookings:maxUpdatedAt(b)||base,staff_breaks:maxUpdatedAt(br)||base,payments:maxUpdatedAt(py)||base};
+          S.full=now; S.idCheck=now;
+        }
+      }else{
+        // 前回から変わった分だけ（少し前から取り直して取りこぼしを防ぐ）
+        const q=t=>{ const v=S.since[t]; if(!v) return null; const d=new Date(Date.parse(v)-2000).toISOString(); return `?updated_at=gt.${encodeURIComponent(d)}`; };
+        const [b,br,py]=await Promise.all([q("bookings")?sb.select("bookings",q("bookings")):null,q("staff_breaks")?sb.select("staff_breaks",q("staff_breaks")):null,q("payments")?sb.select("payments",q("payments")):null]);
+        if(Array.isArray(b)&&b.length){ setAllBookingsRaw(prev=>mergeById(prev,b,sortBookings)); S.since.bookings=maxUpdatedAt(b,S.since.bookings); }
+        if(Array.isArray(br)&&br.length){ setBreaks(prev=>mergeById(prev,br,sortBookings)); S.since.staff_breaks=maxUpdatedAt(br,S.since.staff_breaks); }
+        if(Array.isArray(py)&&py.length){ setAllPayments(prev=>mergeById(prev,py,sortPayments)); S.since.payments=maxUpdatedAt(py,S.since.payments); }
+        // 消された行（id だけ読んで、無くなったものを外す）
+        if(now-S.idCheck>SYNC_ID_MS){
+          S.idCheck=now;
+          const [bi,bri,pyi]=await Promise.all([sb.select("bookings","?select=id"),sb.select("staff_breaks","?select=id"),sb.select("payments","?select=id")]);
+          const prune=(ids,setter)=>{ if(!Array.isArray(ids)) return; const set=new Set(ids.map(x=>x.id)); setter(prev=>{ const next=prev.filter(x=>set.has(x.id)); if(set.size>next.length) S.full=0; return next.length===prev.length?prev:next; }); };
+          prune(bi,setAllBookingsRaw); prune(bri,setBreaks); prune(pyi,setAllPayments);
+        }
+      }
+      if(!smallDue){ S.busy=false; return; }
+      S.small=now;
+      reloadRefunds();
+      loadPatientMarks();
+      // シフト・目標などの共有設定（他の通信を止めないようawaitはしない）
+      sharedSettings.pull().catch(()=>{});
+      const [st,ws,cs,mn,dov]=await Promise.all([sb.select("stores","?order=id.asc"),sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc"),sb.select("clinic_staff","?select=id,store_ids,allowed_menus,lane_count,name,email,password,role,color,initial,event_only"),sb.select("menus","?active=eq.true&order=display_order.asc,id.asc"),sb.select("staff_date_overrides","?order=date.asc")]);
       const storeList=Array.isArray(st)?st:[];
       setStores(storeList);
       // selStoreId===nullは「全店舗」を意味する正当な値なので、初回（まだ一度もセットされていない時）だけ
@@ -18118,8 +18164,9 @@ function Dashboard({user,onLogout}){
       MENUS=[...BASE_MENUS,...custom.map(m=>m.name)];
       DURATION={...BASE_DURATION,...Object.fromEntries(custom.map(m=>[m.name,m.duration||30]))};
       MENU_PRICE={...BASE_MENU_PRICE,...Object.fromEntries(custom.map(m=>[m.name,m.price||0]))};
+      sb.select("staff_break_notes","").then(rows=>{ if(Array.isArray(rows)) setBreakNotes(Object.fromEntries(rows.map(r=>[r.break_id,r]))); }).catch(()=>{});
     }catch(e){console.error(e);}
-    sb.select("staff_break_notes","").then(rows=>{ if(Array.isArray(rows)) setBreakNotes(Object.fromEntries(rows.map(r=>[r.break_id,r]))); }).catch(()=>{});
+    S.busy=false;
     setLoading(false);
   }
 
@@ -18205,7 +18252,14 @@ function Dashboard({user,onLogout}){
     }).catch(()=>{});
   },[selStoreId]);
 
-  React.useEffect(()=>{fetchAll();const t=setInterval(fetchAll,30000);return()=>clearInterval(t);},[]);
+  React.useEffect(()=>{
+    fetchAll();
+    const t=setInterval(()=>fetchAll(),30000);
+    // 画面に戻ってきたら（別タブ・スリープから）すぐ最新にする
+    const onVis=()=>{ if(!document.hidden) fetchAll(); };
+    document.addEventListener("visibilitychange",onVis);
+    return()=>{ clearInterval(t); document.removeEventListener("visibilitychange",onVis); };
+  },[]);
 
   function showToast(msg,type="success"){setToast({msg,type});setTimeout(()=>setToast(null),3000);}
 
@@ -19037,7 +19091,7 @@ function Dashboard({user,onLogout}){
                 </button>
                 {showMenu&&(
                   <div style={{position:"absolute",right:0,top:"calc(100% + 8px)",background:"white",borderRadius:10,boxShadow:"0 8px 32px rgba(0,0,0,.18)",minWidth:160,zIndex:200,overflow:"hidden",border:"1px solid #e2e8f0"}}>
-                    <button onClick={()=>{fetchAll();setShowMenu(false);}} style={{width:"100%",padding:"10px 14px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontSize:13,color:"#2563eb",fontWeight:700}}>同期</button>
+                    <button onClick={()=>{fetchAll({force:true});setShowMenu(false);}} style={{width:"100%",padding:"10px 14px",background:"none",border:"none",textAlign:"left",cursor:"pointer",fontSize:13,color:"#2563eb",fontWeight:700}}>同期</button>
                   </div>
                 )}
               </div>
