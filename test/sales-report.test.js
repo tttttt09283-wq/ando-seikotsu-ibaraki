@@ -55,9 +55,12 @@ test("性別・年代・新規のきっかけ（問診票の記入から）", ()
 
 test("支払方法・消費税（保険は非課税）・返金", () => {
   const r = SR.buildReport(payments, { from: "2026-10-01", to: "2026-10-31", bookings });
-  assert.deepEqual(plain(r.pay.cash), { count: 2, amount: 1900 });
+  // 返金（返金方法の記録なし＝現金）は現金から引く
+  assert.deepEqual(plain(r.pay.cash), { count: 2, amount: 1900 - 1100 });
   assert.deepEqual(plain(r.pay.credit), { count: 1, amount: 8500 });
   assert.deepEqual(plain(r.pay.emoney), { count: 1, amount: 1100 });
+  // 支払内訳の合計＝総売上
+  assert.equal(Object.values(r.pay).reduce((t, x) => t + x.amount, 0), r.total.amount);
   assert.equal(r.taxable, 8500); // 自費の鍼＋物販（保険の返金は非課税側から引く）
   assert.equal(r.nonTaxable, 800 + 1100 + 1100 - 1100);
   assert.equal(r.taxIncluded, Math.round(8500 * 10 / 110));
@@ -82,7 +85,7 @@ test("保険の窓口負担を柔整・鍼灸に分ける（分けて保存し�
   assert.deepEqual(plain(r.acuIns), { count: 1, amount: 600 });
 });
 
-test("部門：保険診療＋鍼灸併用は両方に数え、請求（見込み）は実人数×1,000円", () => {
+test("部門：保険診療＋鍼灸併用は両方に数え、請求（見込み）は来院回数×1,000円", () => {
   const P = (id, name, date, ins, type, ju, acu) => ({ id, booking_id: id, patient_name: name, payment_date: date, staff_id: 1, insurance_amount: ins, jifee_amount: 0, total_amount: ins, insurance_type: type, ju_insurance_amount: ju, acu_insurance_amount: acu });
   const r = SR.buildReport([
     P(1, "架空 一", "2026-11-01", 1400, "手技療法＋鍼灸併用", 800, 600),
@@ -90,6 +93,82 @@ test("部門：保険診療＋鍼灸併用は両方に数え、請求（見込�
     P(3, "架空 二", "2026-11-02", 800, "手技療法", 800, 0),
     P(4, "架空 三", "2026-11-03", 0, "鍼灸のみ", 0, 0), // 医療助成0円でも鍼灸の部門
   ], { from: "2026-11-01", to: "2026-11-30", bookings: [] });
-  assert.deepEqual(plain(r.dept.ju), { visits: 3, amount: 2400, peopleCount: 2, claim: 2000 });
-  assert.deepEqual(plain(r.dept.acu), { visits: 3, amount: 1200, peopleCount: 2, claim: 2000 });
+  assert.deepEqual(plain(r.dept.ju), { visits: 3, amount: 2400, peopleCount: 2, claim: 3000 });
+  assert.deepEqual(plain(r.dept.acu), { visits: 3, amount: 1200, peopleCount: 2, claim: 3000 });
+});
+
+test("月次KPI：売上＝窓口＋保険請求、カルテ枚数・新患・再診・離反・単価", () => {
+  const P = (id, name, date, ins, jif, type, ju, acu, staff = 1) => ({ id, booking_id: id, patient_name: name, payment_date: date, staff_id: staff, insurance_amount: ins, jifee_amount: jif, total_amount: ins + jif, insurance_type: type, ju_insurance_amount: ju, acu_insurance_amount: acu });
+  const pays = [
+    P(1, "架空 一", "2026-09-10", 800, 0, "手技療法", 800, 0),
+    P(2, "架空 二", "2026-09-12", 0, 3600, null, null, null, 2),
+    P(3, "架空 一", "2026-10-11", 1400, 0, "手技療法＋鍼灸併用", 800, 600), // 1か月以上あいて来院＝再診
+    P(4, "架空 三", "2026-10-11", 600, 0, "鍼灸のみ", 0, 600),         // 新患
+    P(5, "架空 三", "2026-10-15", 600, 3000, "鍼灸のみ", 0, 600),
+  ];
+  const [sep, oct] = SR.buildMonthlyKpi(pays, { months: ["2026-09", "2026-10"], bookings: [] });
+  assert.equal(oct.visits, 3);
+  assert.equal(oct.windowSales, 1400 + 600 + 3600);
+  assert.equal(oct.claimJu, 1000);   // 柔整の来院1回×1,000円（仮）
+  assert.equal(oct.claimAcu, 3000);  // 鍼灸の来院3回×1,000円（仮）
+  assert.equal(oct.sales, 5600 + 4000);
+  assert.deepEqual(plain([oct.karte, oct.karteJu, oct.karteAcu, oct.acuVisits]), [2, 1, 2, 3]);
+  assert.deepEqual(plain([oct.newPatients, oct.revisits]), [1, 1]);
+  assert.equal(oct.churn, 2);          // 9/10の架空 一（次は10/11＝1か月超）・9/12の架空 二（以後なし）が10月に1か月通院なし
+  assert.equal(Math.round(oct.churnRate), 100); // 前の月の実人数2人に対して
+  assert.equal(Math.round(oct.ltv), Math.round(9600 / 2)); // 売上÷カルテ枚数
+  assert.equal(oct.avgVisitsPerPatient, 3 / 2);            // 総来院数÷カルテ枚数
+  assert.equal(Math.round(oct.claimUnitAcu), 1000);
+  assert.equal(oct.days, 2);
+  assert.equal(sep.claimEstimated, true);
+  // 手入力した請求額・施術者人数・営業利益を使う
+  const [oct2] = SR.buildMonthlyKpi(pays, { months: ["2026-10"], bookings: [], manual: { "2026-10": { claimJu: "5000", claimAcu: "4000", therapists: "2.5", operatingProfit: "3000" } } });
+  assert.equal(oct2.sales, 5600 + 9000);
+  assert.equal(oct2.claimEstimated, false);
+  assert.equal(oct2.productivity, 14600 / 2.5);
+  assert.equal(Math.round(oct2.operatingMargin * 10) / 10, Math.round(3000 / 14600 * 1000) / 10);
+  assert.deepEqual(plain(SR.fiscalMonths("2026-07", 12).slice(-1)), ["2027-06"]);
+  assert.equal(SR.fiscalStartMonth("あんど整骨院 香里園駅前院"), 10);
+  assert.equal(SR.fiscalStartMonth("あんど整骨院　茨木院"), 7);
+  // 今日より後に1か月がたつ方は、まだ離反に数えない
+  const [nov] = SR.buildMonthlyKpi(pays, { months: ["2026-11"], bookings: [], today: "2026-11-10" });
+  assert.equal(nov.churn, 0); // 架空 一（最後10/11→11/11で1か月）・架空 三（最後10/15→11/15）はまだ1か月たっていない
+  const [nov2] = SR.buildMonthlyKpi(pays, { months: ["2026-11"], bookings: [], today: "2026-11-20" });
+  assert.equal(nov2.churn, 2); // 11/20には2人とも1か月通院なし
+
+});
+
+test("技術・店販別 日別一覧：支払方法ごと（お釣りは除く）・技術と店販の割合・累計・返金", () => {
+  const P = (id, b, date, ins, items, method) => ({ id, booking_id: b, patient_name: "架空", payment_date: date, staff_id: 1, insurance_amount: ins, jifee_amount: items.reduce((a, i) => a + i.amount, 0), total_amount: ins + items.reduce((a, i) => a + i.amount, 0), jifee_items: items, payment_method: method });
+  const pays = [
+    P(1, 1, "2026-11-01", 800, [], "現金:¥1,000"),                                         // お釣り200円 → 現金800
+    P(2, 2, "2026-11-01", 1100, [{ label: "物販：インソール", amount: 4400 }], "カード:¥5,500"), // 技術1,100・店販4,400
+    P(3, 3, "2026-11-03", 0, [], "現金:¥0"),                                               // ¥0（回数券）でも客数
+    P(4, 4, "2026-11-03", 600, [], "PayPay:¥600"),
+    { id: "refund_1", is_refund: true, booking_id: 1, patient_name: "架空", payment_date: "2026-11-03", staff_id: 1, total_amount: -800, insurance_amount: -800, refund_method: "現金" },
+  ];
+  const r = SR.buildDailyMethodReport(pays, { from: "2026-11-01", to: "2026-11-03", bookings: [] });
+  assert.equal(r.length, 3);
+  const [d1, d2, d3] = r;
+  assert.deepEqual(plain([d1.visits, d1.cumVisits, d2.visits, d2.cumVisits, d3.visits, d3.cumVisits]), [2, 2, 0, 2, 2, 4]);
+  assert.deepEqual(plain(d1.rows.cash), { tech: 800, goods: 0, total: 800 });
+  assert.deepEqual(plain(d1.rows.credit), { tech: 1100, goods: 4400, total: 5500 });
+  assert.deepEqual(plain(d1.rows.all), { tech: 1900, goods: 4400, total: 6300 });
+  assert.deepEqual(plain(d3.rows.cash), { tech: -800, goods: 0, total: -800 });
+  assert.deepEqual(plain(d3.rows.emoney), { tech: 600, goods: 0, total: 600 });
+  assert.deepEqual(plain(d3.cumRows.all), { tech: 1700, goods: 4400, total: 6100 });
+  assert.deepEqual(plain(d3.cumRows.cash), { tech: 0, goods: 0, total: 0 });
+});
+
+test("支払内訳：現金はお預かりではなく実際の金額（お釣りを除く）、返金は返金した方法から引く", () => {
+  const ps = [
+    pay(11, 11, "架空 一郎", "2026-10-05", 3200, [], "現金:¥10,000"),                // 1万円札で払った（お釣り6,800円）
+    pay(12, 12, "架空 二郎", "2026-10-05", 1000, [{ label: "鍼", amount: 4000 }], "現金:¥2,000・カード:¥4,000"), // 現金は1,000円＋お釣り
+    { id: "refund_2", is_refund: true, booking_id: 12, patient_name: "架空 二郎", payment_date: "2026-10-06", staff_id: 1, total_amount: -4000, insurance_amount: 0, jifee_amount: -4000, refund_method: "カード" },
+  ];
+  const r = SR.buildReport(ps, { from: "2026-10-01", to: "2026-10-31", bookings: [] });
+  assert.deepEqual(plain(r.pay.cash), { count: 2, amount: 3200 + 1000 });
+  assert.deepEqual(plain(r.pay.credit), { count: 1, amount: 4000 - 4000 });
+  assert.equal(r.total.amount, 3200 + 5000 - 4000);
+  assert.equal(Object.values(r.pay).reduce((t, x) => t + x.amount, 0), r.total.amount);
 });

@@ -166,3 +166,308 @@ test("ダッシュボード：アラートをまとめる", () => {
   assert.equal(a[0].level, "ng");
   assert.equal(a[a.length - 1].level, "info");
 });
+
+// ===== 人員の適正判断（組織図 × 年間予算） =====
+const orgGrid = (clinics, roleRows, rateRows = []) => [
+  ["", "", ...clinics.map(() => "")],
+  ["", "院名", ...clinics],
+  ...roleRows.map(([role, ...names]) => ["", role, ...names]),
+  ["", "ブロックマネージャー", "架空BM"],
+  ["", "", ""],
+  ...rateRows.map((r) => ["", r]),
+];
+
+test("parseOrgSheet：院ごとのメンバー・役割・目安の単価を読む", () => {
+  const o = HQ.parseOrgSheet("2026.9.17〜（架空）", orgGrid(["東町院", "西町院"], [
+    ["院長", "院長A", "院長B"], ["副院長", "", ""], ["施術者", "甲", "乙"], ["施術者", "中途", ""],
+    ["時短施術者", "", "丙"], ["施術者(ア)", "丁", ""], ["受付", "", "戊"],
+  ], ["施術者：800000"]));
+  assert.equal(o.start, "2026-09-17");
+  assert.equal(o.scenario, false);
+  assert.deepEqual(plain(o.clinics.map((c) => c.key)), ["東町", "西町"]);
+  assert.deepEqual(plain(HQ.roleCounts(o.clinics[0].members)), { "院長": 1, "施術者": 2, "施術者（ア）": 1 });
+  assert.equal(o.rates["施術者"], 800000);
+  // A：院長110万＋施術者80万×2＋ア30万 ／ B：院長110万＋施術者80万＋時短50万（受付は0）
+  assert.equal(HQ.capacityOf(o.clinics[0].members, o.rates), 1_100_000 + 1_600_000 + 300_000);
+  assert.equal(HQ.capacityOf(o.clinics[1].members, o.rates), 1_100_000 + 800_000 + 500_000);
+  assert.equal(HQ.parseOrgSheet("出店時(理想)", orgGrid(["東町院"], [["院長", "x"]])).scenario, true);
+  assert.equal(HQ.orgTabStart("20278店舗目出店時"), null);
+  assert.equal(HQ.orgTabStart("2026.12(架空入社)"), "2026-12-01");
+});
+
+test("parseBudgetSheet：期間の行＝予算・1年前＝前年、実績の行、比率の行は読まない", () => {
+  const months = [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6].map((m) => `${m}月`);
+  const grid = [
+    ["", "年間予算", "", 999],
+    ["", "", "", "", ...months],
+    ["", "", "R8.7~R9.6", 12, 100, 110, 120, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    ["", "", "R7.7~R8.6", 10, 90, 90, 90],
+    ["", "", "予算前年比", 1.2, 1.1, 1.2, 1.3],
+    ["", "東町院", "R8.7~R9.6", 1, 3_000_000, 3_000_000, 3_000_000],
+    ["", "", "R7.7~R8.6", 1, 2_500_000, 2_600_000, 2_700_000],
+    ["", "", "実績", 1, 3_300_000, "", ""],
+    ["", "", "進捗率 / 達成率", 1, 1.1],
+    ["", "西町", "R8.7~R9.6", 1, 2_000_000, 2_000_000, 2_000_000],
+  ];
+  const b = HQ.parseBudgetSheet("架空", grid);
+  assert.equal(b.fy, 2026);
+  assert.equal(b.hasActual, true);
+  assert.deepEqual(plain(b.clinics.map((c) => c.key)), ["全社", "東町", "西町"]);
+  assert.deepEqual(plain(b.clinics[1].months[7]), { budget: 3_000_000, lastYear: 2_500_000, actual: 3_300_000 });
+  assert.equal(b.clinics[1].months[8].actual, null);
+  assert.equal(b.clinics[2].months[9].budget, 2_000_000);
+});
+
+test("orgTabForMonth：月初までに始まった最新のタブ。月の途中の切り替えも返す", () => {
+  const tabs = ["2026.7", "2026.9.1〜", "2026.9.17〜", "2026.12(入社)", "理想"].map((t) => HQ.parseOrgSheet(t, orgGrid(["東町院"], [["院長", "x"]])));
+  assert.equal(HQ.orgTabForMonth(tabs, "2026-08").tab.title, "2026.7");
+  const sep = HQ.orgTabForMonth(tabs, "2026-09");
+  assert.equal(sep.tab.title, "2026.9.1〜");
+  assert.deepEqual(plain(sep.changes.map((t) => t.title)), ["2026.9.17〜"]);
+  assert.equal(HQ.orgTabForMonth(tabs, "2027-03").tab.title, "2026.12(入社)");
+  assert.equal(HQ.orgTabForMonth(tabs, "2026-06").tab, null);
+});
+
+test("fitMonth：予算÷目安で 人員不足・適正・人員に余裕・未配置 を判定する", () => {
+  const org = HQ.parseOrgSheet("2026.7", orgGrid(["東町院", "西町院", "南町院", "北町院"], [
+    ["院長", "a", "b", "c", ""], ["施術者", "a1", "b1", "c1", ""], ["施術者", "a2", "", "", ""],
+  ]));
+  // 目安：A=290万 B=200万 C=200万 D=0
+  const budget = { fy: 2026, clinics: [
+    { key: "全社", name: "全社", months: { 7: { budget: 1, lastYear: null, actual: null } } },
+    { key: "東町", name: "東町", months: { 7: { budget: 3_500_000, lastYear: null, actual: 2_000_000 } } }, // 121% → 不足
+    { key: "西町", name: "西町", months: { 7: { budget: 2_100_000, lastYear: null, actual: null } } },    // 105% → 適正
+    { key: "南町", name: "南町", months: { 7: { budget: 1_500_000, lastYear: null, actual: null } } },    // 75% → 余裕
+    { key: "北町", name: "北町", months: { 7: { budget: 1_000_000, lastYear: null, actual: null } } },    // 人がいない
+    { key: "中町", name: "中町", months: { 7: { budget: null, lastYear: null, actual: null } } },         // 人も予算もない → 出さない
+  ] };
+  const r = HQ.fitMonth({ org, budget, month: 7, tol: 0.1 });
+  const by = Object.fromEntries(r.rows.map((x) => [x.key, x]));
+  assert.deepEqual(plain(r.rows.map((x) => x.key)), ["東町", "西町", "南町", "北町"]);
+  assert.equal(by["東町"].verdict.id, "short");
+  assert.equal(by["東町"].gap, 600_000);
+  assert.equal(by["東町"].staffGap, 0.7);
+  assert.ok(by["東町"].advice.some((t) => /売上が届いていません/.test(t))); // 実績は目安の69%
+  assert.equal(by["西町"].verdict.id, "ok");
+  assert.equal(by["南町"].verdict.id, "surplus");
+  assert.equal(by["北町"].verdict.id, "nostaff");
+  assert.equal(r.total.capacity, 6_900_000);
+  assert.equal(r.total.budget, 8_100_000);
+  // 判定の幅を広げると B・C の判定が変わる
+  assert.equal(HQ.fitMonth({ org, budget, month: 7, tol: 0.3 }).rows.find((x) => x.key === "南町").verdict.id, "ok");
+  assert.equal(HQ.fitVerdict(null, 100, 0.1).id, "nobudget");
+});
+
+test("laborPlan：院ごとに 人件費×倍率＝売上設定 を出し、予算と比べる", () => {
+  const budget = { fy: 2026, clinics: [
+    { key: "東町", name: "東町", months: { 11: { budget: 3_000_000, lastYear: null, actual: 2_700_000 } } },
+    { key: "西町", name: "西町", months: { 11: { budget: 2_000_000, lastYear: null, actual: null } } },
+    { key: "南町", name: "南町", months: { 11: { budget: 4_000_000, lastYear: null, actual: null } } },
+  ] };
+  const people = [
+    { name: "甲", clinic: "東町院", avg: 600_000 }, { name: "乙", clinic: "東町院", avg: 400_000 }, // 100万×3＝300万 → 予算300万で適正
+    { name: "丙", clinic: "西町院", avg: 1_000_000 },                                               // 300万 → 予算200万は低め
+    { name: "丁", clinic: "南町院", avg: 1_000_000 },                                               // 300万 → 予算400万は高め
+    { name: "本部", clinic: "", avg: 500_000 },
+  ];
+  const r = HQ.laborPlan({ people, multiplier: 3, budget, month: 11, tol: 0.1, clinicNames: ["東町院", "西町院", "南町院"] });
+  const by = Object.fromEntries(r.rows.map((x) => [x.key, x]));
+  assert.equal(by["東町"].target, 3_000_000);
+  assert.equal(by["東町"].verdict.id, "ok");
+  assert.equal(by["東町"].actualLaborRate, 1_000_000 / 2_700_000);
+  assert.equal(by["西町"].verdict.id, "low");
+  assert.equal(by["西町"].laborRate, 0.5);
+  assert.equal(by["南町"].verdict.id, "high");
+  assert.equal(r.total.labor, 3_000_000);
+  assert.equal(r.total.unassigned, 500_000);
+  assert.equal(r.total.companyTarget, 10_500_000);
+  assert.equal(HQ.laborPlan({ people, multiplier: "", budget, month: 11, clinicNames: [] }).mult, 3);
+});
+
+test("問題点：組織図の「問題点」列を読み、院を推測し、本部で追加した分とまとめる", () => {
+  const grid = orgGrid(["東町院", "西町院"], [["院長", "a", "b"], ["施術者", "c", ""]]);
+  grid[1].push("", "問題点");
+  grid[2].push("", "東町の土日");
+  grid[3].push("", "東町・西町の余剰人員");
+  const o = HQ.parseOrgSheet("2026.12(異動案)", grid);
+  assert.deepEqual(plain(o.issues), ["東町の土日", "東町・西町の余剰人員"]);
+  assert.equal(o.clinics.length, 2); // 問題点の列は院として読まない（院名の列は空欄で終わる）
+  const fitDoc = {
+    sheetIssues: { [HQ.issueId("2026.12(異動案)", "東町の土日")]: { status: "対応中", memo: "土日シフト調整" } },
+    issues: [{ id: "i1", tab: "2026.12(異動案)", text: "西町の受付", clinic: "", status: "未対応" }],
+  };
+  const all = HQ.mergeIssues([o], fitDoc, ["東町院", "西町院"]);
+  assert.equal(all.length, 3);
+  assert.equal(all[0].status, "対応中");
+  assert.equal(all[0].memo, "土日シフト調整");
+  assert.deepEqual(plain(all[1].clinics), ["東町院", "西町院"]);
+  assert.equal(all[2].source, "hq");
+  assert.deepEqual(plain(all[2].clinics), ["西町院"]);
+  assert.equal(HQ.issueId("a", "b"), HQ.issueId("a", "b"));
+  assert.notEqual(HQ.issueId("a", "b"), HQ.issueId("a", "c"));
+});
+
+test("データ取り込み：日計表の院タブ・稼働率タブを読み、列を部門に振り分ける", () => {
+  const clinicTab = [
+    ["", "院名：", "東町院"],
+    [],
+    ["", "", "", "売上管理", "", "母数管理", "マーケティング管理", ""],
+    ["", "", "", "窓口単価", "総売上", "新患数", "Google\n口コミ", "キャンセル率"],
+    ["", "合計", "", 2000, 300000, 3, 2, 0.1],
+    ["", 46327, "日", 2000, 100000, 1, 1, 0.1], // 2026-11-01（シートの通し番号）
+    ["", "2026-11-02 00:00:00", "月", 2000, 200000, 2, 1, 0.1],
+    ["", "2026-11-03 00:00:00", "火", "#DIV/0!", 0, "", 0, 0], // 空の日は数えない
+  ];
+  const rateTab = [
+    ["", "東町院 施術スタッフ別"],
+    ["", "スタッフ名", "対応人数", "実稼働", "稼働枠", "稼働率"],
+    ["", "甲", 10, 12, 12, 1],
+    ["", "乙", 5, 6, 12, 0.5],
+    ["", "院合計", 15, 18, 24, 0.75],
+    ["", "■ 日別"],
+    ["", "2026-11-01 00:00:00", 1, 1, 1, 1],
+  ];
+  const book = HQ.parseDailyBook([{ title: "東町院", values: clinicTab }, { title: "東町稼働率", values: rateTab }, { title: "原本", values: [["", "院名：", "東町院"], [], ["", "", "", "売上管理", "母数管理"], ["", "", "", "総売上", "新患数"]] }]);
+  assert.equal(book.clinics.length, 1);
+  const c = book.clinics[0];
+  assert.equal(c.days.length, 2);
+  assert.equal(c.days[0].date, "2026-11-01");
+  assert.equal(c.total["総売上"], 300000);
+  assert.equal(book.staffRates[0].staff.length, 2);
+  assert.equal(book.staffRates[0].total.rate, 0.75);
+  assert.equal(book.staffRates[0].clinic, "東町院");
+  const col = (h) => book.columns.find((x) => x.header === h);
+  assert.deepEqual(plain(HQ.intakeDefaultDepts(col("総売上").section, "総売上")), ["performance"]);
+  assert.deepEqual(plain(HQ.intakeDefaultDepts("母数管理", "新患数")).sort(), ["marketing", "performance"]);
+  assert.deepEqual(plain(HQ.intakeDefaultDepts("マーケティング管理", "Google口コミ")), ["marketing"]);
+  assert.equal(col("キャンセル率").additive, false);
+  const mk = HQ.intakeDeptTable(book, "marketing", {});
+  assert.deepEqual(plain(mk.cols.map((x) => x.header)), ["新患数", "Google口コミ", "キャンセル率"]);
+  assert.equal(mk.total["新患数"], 3);
+  assert.equal(mk.total["キャンセル率"], null);
+  // 本部が「総売上」を集客にも入れたら、集客の表に出る
+  const map = { [HQ.intakeColumnId("総売上")]: { depts: ["performance", "marketing"] } };
+  assert.ok(HQ.intakeDeptTable(book, "marketing", map).cols.some((x) => x.header === "総売上"));
+  assert.equal(HQ.intakeFileMonth("EnejoyHand様日計表R8.11"), "2026-11");
+  assert.equal(HQ.intakeFileMonth("EnejoyHand様日計表2026.6"), "2026-06");
+  assert.equal(HQ.intakeFileMonth("EnejoyHand様日計表原本"), null);
+});
+
+test("勤怠：賃金管理表のタブ（金額の列を除いたもの）から日数・時間を読み、組織図の院を名字で探す", () => {
+  const rows = [
+    ["残業代計算表", "R", "", "", "", "8", "年", "9", "月"],
+    [],
+    ["", "", "", "", "", "", "", "", "今月総勤務数（ｈ）"],
+    [36, "出勤日数", "別バイト\n別MG業", "休日\n(バイト等含)", "有休", "有給残", "特休", "通常", "うち深夜", "固定\n残業数", "超過\n残業数"],
+    ["定井　彪雅", 20, 0, 10, 1, 12, 0, 183, 0, 23, -5],
+    ["", "", "", "", "", "", "", "", "", "", ""],
+    ["山﨑　航平", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // 全部0の人は出さない
+  ];
+  const t = HQ.parseWageTab("R8.9", rows);
+  assert.equal(t.month, "2026-09");
+  assert.deepEqual(plain(t.cols.map((c) => c.label)), ["出勤日数（日）", "別バイト別MG業（日）", "休日(バイト等含)（日）", "有休（日）", "有給残（日）", "特休（日）", "総勤務（時間）", "深夜（時間）", "固定残業数（時間）", "超過残業数（時間）"]);
+  assert.equal(t.people.length, 1);
+  assert.equal(t.people[0].name, "定井 彪雅");
+  assert.equal(t.people[0].values["総勤務（時間）"], 183);
+  assert.equal(HQ.parseWageTab("原本", rows), null);
+  const org = HQ.parseOrgSheet("2026.9.1〜", orgGrid(["東町院", "西町院"], [["院長", "大皿", "原田"], ["施術者", "定井", "山崎"]]));
+  assert.deepEqual(plain(HQ.clinicOfPerson("定井　彪雅", org)), { clinic: "東町院", role: "施術者" });
+  assert.deepEqual(plain(HQ.clinicOfPerson("山﨑 航平", org)), { clinic: "西町院", role: "施術者" });
+  assert.equal(HQ.clinicOfPerson("誰か", org), null);
+});
+
+test("KPI：「11期」「10期」の表を読み、項目の年度推移と昨対比（率は前年差）を出す", () => {
+  const months = (y) => [7, 8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6].map((m) => `${m >= 7 ? y : y + 1}-${String(m).padStart(2, "0")}-01 00:00:00`);
+  const rows = [
+    [],
+    ["", "11期", ...months(2026)],
+    ["", "売上", 2_200_000, 2_000_000, "", ""],
+    ["", "離反率", 0.13, 0.17],
+    ["", "窓口単価", 2100, 2200],
+    [],
+    ["", "10期", ...months(2025)],
+    ["", "売上", 2_000_000, 2_500_000, 2_000_000],
+    ["", "離反率", 0.18, 0.16],
+    ["", "窓口単価", 1700, 1800],
+  ];
+  const t = HQ.parseKpiTab("全社", rows);
+  assert.deepEqual(plain(t.periods.map((p) => [p.label, p.fy, p.items.length])), [["11期", 2026, 3], ["10期", 2025, 3]]);
+  const s = HQ.kpiSeries(t, "売上", 2026);
+  assert.equal(s.months[0], "2026-07");
+  assert.deepEqual(plain(s.cur.slice(0, 3)), [2_200_000, 2_000_000, null]);
+  assert.deepEqual(plain(s.prev.slice(0, 3)), [2_000_000, 2_500_000, 2_000_000]);
+  assert.equal(s.yoy[0], 1.1);
+  assert.equal(s.yoy[1], 0.8);
+  assert.equal(s.yoy[2], null);
+  const r = HQ.kpiSeries(t, "離反率", 2026);
+  assert.equal(r.rate, true);
+  assert.ok(Math.abs(r.yoy[0] - -0.05) < 1e-9); // 率は差（ポイント）
+  const tot = HQ.kpiYearTotals(s);
+  assert.equal(tot.months, 2);
+  assert.equal(tot.yoy, 4_200_000 / 4_500_000);
+  assert.equal(HQ.kpiYearTotals(HQ.kpiSeries(t, "窓口単価", 2026)), null); // 単価は足さない
+});
+
+test("デイリー稼働：シフト（午前/午後の出勤）と稼働率タブの日別を読み、1日の院の状況をチェックする", () => {
+  const shiftRows = [
+    [],
+    ["", "2026-12-01 00:00:00", "", "", "店舗", "出勤人数", "甲", "乙", "丙", "アルバイト", "ヘルプ"],
+    ["", "2026-12-01 00:00:00", "火", "午前", "営業", 3, "出勤", "出勤", "出勤"],
+    ["", "", "", "午後", "営業", 2, "出勤", "休み", "出勤", "", "1"],
+    ["", "2026-12-02 00:00:00", "水", "午前", "休診", 0, "休み", "休み", "休み"],
+    ["", "", "", "午後", "休診", 0, "休み", "休み", "休み"],
+    ["", "月間スタッフ別集計"],
+    ["", "出勤コマ数", "", "", "", 5, 2, 1, 2],
+  ];
+  const sh = HQ.parseShiftBook([{ title: "東町院", values: shiftRows }, { title: "全院サマリー", values: [] }]);
+  assert.equal(sh.length, 1);
+  assert.deepEqual(plain(sh[0].staff), ["甲", "乙", "丙"]);
+  assert.deepEqual(plain(sh[0].days["2026-12-01"].am.on), ["甲", "乙", "丙"]);
+  assert.deepEqual(plain(sh[0].days["2026-12-01"].pm.on), ["甲", "丙"]);
+  assert.deepEqual(plain(sh[0].days["2026-12-01"].pm.extra), ["ヘルプ:1"]);
+  assert.equal(sh[0].days["2026-12-02"].am.open, false);
+  assert.equal(Object.keys(sh[0].days).length, 2); // 下の集計の行は日付にしない
+
+  const rateRows = [
+    ["", "スタッフ名", "対応人数", "実稼働", "稼働枠", "稼働率"],
+    ["", "甲", 10, 12, 12, 1],
+    ["", "院合計", 0, 0, 0, 0],
+    ["", "■ 日別"],
+    ["", "日付・曜日", "", "甲", "", "", "", "乙", "", "", "", "院全体合計"],
+    ["", "日付", "曜日", "対応人数", "実稼働", "稼働枠", "稼働率", "対応人数", "実稼働", "稼働枠", "稼働率", "総枠", "実稼働", "総対応", "全体稼働率"],
+    ["", "2026-12-01 00:00:00", "火", 10, 9, 12, 0.75, 5, 3, 12, 0.25, 15, 12, 24, 0.5],
+    ["", "2026-12-02 00:00:00", "水", "", "", "", 0, "", "", "", 0, 0, 0, 0, 0],
+  ];
+  const clinicTab = [["", "院名：", "東町院"], [], ["", "", "", "売上管理", "母数管理"], ["", "", "", "総売上", "総来院数"], ["", "2026-12-01 00:00:00", "火", 100000, 40]];
+  const book = HQ.parseDailyBook([{ title: "東町院", values: clinicTab }, { title: "東町稼働率", values: rateRows }]);
+  const daily = book.staffRates[0].daily;
+  assert.equal(daily.length, 1); // 記録のない日は入れない
+  assert.deepEqual(plain(daily[0].total), { handled: 15, actual: 12, slots: 24, rate: 0.5 }); // 合計はスタッフの足し算から
+  const ov = HQ.dailyOverview({ book, shifts: sh, date: "2026-12-01", opt: { lowRate: 0.7, surplus: 1, busyPerStaff: 12 } });
+  const r = ov.rows[0];
+  assert.equal(r.staffN, 3); // シフトの出勤（午前・午後のどちらか）
+  assert.equal(r.visits, 40);
+  assert.equal(r.rate, 0.5);
+  assert.equal(r.surplus, 1.5);
+  assert.ok(r.flags.some((f) => /稼働率 50%/.test(f.text)));
+  assert.ok(r.flags.some((f) => /余剰 約1.5人分/.test(f.text)));
+  assert.ok(r.flags.some((f) => /1人あたり来院 13.3人/.test(f.text)));
+  assert.deepEqual(plain(HQ.monthlyRates(book, "2026-12")[0].days), { "2026-12-01": 0.5 });
+});
+
+test("生産性と給与：個人売上（直近3か月平均）÷ 人件費 を倍率で判定する", () => {
+  const people = [
+    { name: "架空 一郎", clinics: ["東町院"], grade: "G2", monthlySales: [{ month: 7, total: 600000 }, { month: 8, total: 900000 }, { month: 9, total: 900000 }, { month: 10, total: 900000 }] },
+    { name: "架空 二郎", clinics: ["西町院"], grade: "G2", monthlySales: [{ month: 9, total: 500000 }, { month: 10, total: 500000 }] },
+  ];
+  const labor = [{ name: "架空一郎", clinic: "東町院", avg: 300000 }, { name: "架空二郎", clinic: "西町院", avg: 250000 }, { name: "架空三郎", clinic: "", avg: 200000 }];
+  const r = HQ.payVsProductivity({ people, labor, multiplier: 3 });
+  const by = Object.fromEntries(r.map((x) => [x.name, x]));
+  assert.equal(by["架空一郎"].sales, 900000); // 直近3か月
+  assert.equal(by["架空一郎"].ratio, 3);
+  assert.equal(by["架空一郎"].verdict.id, "ok");
+  assert.equal(by["架空二郎"].ratio, 2);
+  assert.equal(by["架空二郎"].verdict.id, "ng"); // 2.25倍未満
+  assert.equal(by["架空三郎"].verdict.id, "nodata");
+  assert.equal(r[0].name, "架空二郎"); // 倍率の低い順
+});

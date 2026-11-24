@@ -186,7 +186,9 @@ test("PIN login helpers: random pins avoid easy ones, tokens verify and expire, 
   assert.ok(!isLocked(afterAttempt(e, true), 2000));
   const sheet = parseLoginSheet([LOGIN_HEADER, ["院", "茨木", "IBARAKI", "", "0456", 0, "", ""], ["個人", "茨木", "", "山田 太郎", 789, 2, "", ""]]);
   assert.equal(sheet.clinics.get("茨木").clinicId, "ibaraki");
-  assert.equal(sheet.people.get("山田太郎").pin, "0789");
+  // 個人の行のPASSは文字のまま読む（2026-11-17 から個人PASSは8文字。以前の4桁は「未作成」扱いで作り直す）
+  assert.equal(sheet.people.get("山田太郎").pin, "789");
+  assert.equal(sheet.byId.size, 0);
   assert.equal(sheet.people.get("山田太郎").fails, 2);
 });
 

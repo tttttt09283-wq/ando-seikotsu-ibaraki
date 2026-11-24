@@ -1,4 +1,4 @@
-# 予約管理システムのデプロイには本部システム（hq/）を含めない。本部は別の Vercel プロジェクト（Root Directory = hq）
-/hq
-# マニュアルシステム（manual/）も別の Vercel プロジェクト（Root Directory = manual）
-/manual
+# 本部システム（hq/）は別の Vercel プロジェクト（Root Directory = hq）。
+# ここで /hq を除外すると、そのプロジェクトのデプロイも空になる（404）ので除外しない。
+# 予約管理のサイトから /hq/... を開かれないよう、vercel.json の redirects でトップへ戻している。
+/iwanaga-booking

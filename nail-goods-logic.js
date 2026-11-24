@@ -1,6 +1,6 @@
 // 巻き爪 × 物販（インソール・室内サンダル）の数値管理ロジック
 // 画面（nail-goods.html）から切り離した純粋な関数。テストは test/nail-goods.test.js。
-// 各センターの巻き爪分析表（門真・茨木・津田・交野・枚方）の項目・指標をそのまま使う。
+// 各センターの巻き爪分析表（門真・茨木・津田・交野・枚方・枚方市駅前）の項目・指標をそのまま使う。
 (function(root){
   // ===== 巻き爪分析表の指標（分析表「打込み方」シートの◎指標数値／◎理想・優良者） =====
   // higher=true は高いほど良い、false は低いほど良い
@@ -34,6 +34,8 @@
   // 各センターの巻き爪分析表の実績（2026年11月にいただいた分析表から読み取り）
   // 売上が「万」表記の表（門真・茨木のPDF）は、一人平均単価×総人数から円に戻した値。
   // 茨木の4月は表の単価の計算式が崩れていた（58,804円）ため、売上70.6万円をそのまま入れている。
+  // 枚方市駅前：9・10月は表の総人数が0（計算式の不具合）のため、新規＋再診＋継続＋治癒で入れている（1〜8月もこの式で表と一致）。
+  //   2025年の表の1・2月は2026年1・2月と同じ数字が入っていたため取り込まず、2025年は8〜11月だけ。仕入れ＋広告費は広告費5万円＋10月の仕入れ7万円。
   const SEED_CENTERS=[
     {id:"kadoma",name:"門真巻き爪センター",staff:"伊牟田",source:"R8巻き爪分析表（PDF）",nail:{
       "2026-01":{days:24,"newCount":8,"web":4,"other":4,"total":24,"four":4,"second":4,"cont":16,"cured":0,"avgVisits":1,"sales":384456,"inquiry":10,"drop":2},
@@ -106,6 +108,22 @@
       "2026-08":{days:19,"newCount":4,"web":2,"inStore":2,"revisit":2,"total":41,"four":3,"second":4,"cont":35,"cured":0,"avgVisits":2.5,"sales":546150,"lastYearSales":486000,"inquiry":4,"drop":2},
       "2026-09":{days:18,"newCount":7,"web":6,"inStore":1,"total":48,"four":3,"second":3,"cont":41,"cured":0,"avgVisits":1.5,"sales":696180,"lastYearSales":513000,"inquiry":7,"drop":1,"cost":158510},
       "2026-10":{days:18,"newCount":7,"web":5,"nobori":1,"inStore":1,"revisit":1,"total":45,"four":1,"cont":36,"cured":1,"avgVisits":1,"sales":585300,"lastYearSales":437000,"inquiry":8,"drop":1},
+    }},
+    {id:"hirakata_ekimae",name:"枚方市駅前巻き爪センター",staff:"原田",source:"最新巻き爪分析表（スプレッドシート）",nail:{
+      "2025-08":{days:26,"newCount":2,"nobori":1,"inStore":1,"revisit":0,"total":2,"four":0,"second":2,"cont":0,"cured":0,"avgVisits":6,"sales":20900,"inquiry":2,"drop":0},
+      "2025-09":{days:26,"newCount":3,"web":1,"inStore":2,"revisit":0,"total":5,"four":2,"second":2,"cont":2,"cured":0,"avgVisits":2.3,"sales":67650,"inquiry":4,"drop":1},
+      "2025-10":{days:26,"newCount":0,"revisit":0,"total":4,"four":0,"second":0,"cont":4,"cured":0,"sales":17600,"inquiry":0,"drop":0},
+      "2025-11":{days:26,"newCount":1,"web":1,"revisit":0,"total":5,"four":0,"second":1,"cont":4,"cured":0,"avgVisits":3,"sales":43450,"inquiry":1,"drop":0},
+      "2026-01":{days:24,"newCount":5,"web":3,"inStore":2,"revisit":0,"total":10,"four":3,"second":5,"cont":5,"cured":0,"avgVisits":3.8,"sales":111650,"inquiry":8,"drop":3,"cost":50000},
+      "2026-02":{days:24,"newCount":2,"web":1,"nobori":1,"revisit":0,"total":4,"four":1,"second":2,"cont":2,"cured":0,"avgVisits":4,"sales":57200,"inquiry":4,"drop":2,"cost":50000},
+      "2026-03":{days:27,"newCount":1,"web":1,"revisit":0,"total":11,"four":1,"second":1,"cont":10,"cured":0,"avgVisits":7,"sales":158400,"inquiry":2,"drop":1,"cost":50000},
+      "2026-04":{days:25,"newCount":3,"web":2,"inStore":1,"revisit":0,"total":10,"four":1,"second":3,"cont":7,"cured":0,"avgVisits":5.3,"sales":86350,"inquiry":3,"drop":0,"cost":50000},
+      "2026-05":{days:26,"newCount":1,"referral":1,"revisit":0,"total":9,"four":0,"second":1,"cont":7,"cured":1,"avgVisits":5,"sales":103401,"inquiry":2,"drop":1,"cost":50000},
+      "2026-06":{days:26,"newCount":5,"web":2,"inStore":1,"other":2,"revisit":0,"total":14,"four":2,"second":3,"cont":8,"cured":1,"avgVisits":2.8,"sales":151844,"inquiry":6,"drop":1,"cost":50000},
+      "2026-07":{days:26,"newCount":0,"revisit":0,"total":8,"four":1,"second":0,"cont":7,"cured":1,"sales":71904,"inquiry":1,"drop":1,"cost":50000},
+      "2026-08":{days:27,"newCount":2,"web":1,"inStore":1,"revisit":0,"total":13,"four":0,"second":0,"cont":10,"cured":1,"avgVisits":5,"sales":121953,"lastYearSales":20900,"inquiry":2,"drop":0,"cost":50000},
+      "2026-09":{days:26,"newCount":4,"web":2,"nobori":1,"inStore":1,"revisit":0,"total":9,"four":2,"second":2,"cont":5,"cured":0,"avgVisits":2.1,"sales":116000,"lastYearSales":67650,"inquiry":4,"drop":0,"cost":50000},
+      "2026-10":{days:26,"newCount":1,"inStore":1,"revisit":0,"total":10,"four":0,"cont":9,"cured":0,"avgVisits":1,"sales":126000,"lastYearSales":17600,"inquiry":2,"drop":1,"cost":120000},
     }},
   ];
   // 以前の版との互換（門真の実績）

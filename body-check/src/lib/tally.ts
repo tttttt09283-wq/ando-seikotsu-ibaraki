@@ -101,6 +101,65 @@ export function buildTally(event: TallyEvent, state: CheckState, result?: ScoreR
   return body;
 }
 
+// ===== URLを開いた回数（匿名） =====
+// チェックのページ（/check。/age・/qr・/th・/ig から来た場合も）と、シェアされたページ（/s）を開くたびに1件送る。
+// 「開いた人数」を数えるため、端末ごとの匿名ID（この端末のブラウザにだけ保存）を付ける。個人情報は送らない。
+export type ViewPage = "check" | "share";
+const VISITOR_KEY = "ando-bodycheck-visitor";
+
+/** 端末ごとの匿名ID（無ければ作って保存する。保存できない端末では毎回新しいID） */
+export function visitorId(storage: Pick<Storage, "getItem" | "setItem"> | null): string {
+  try {
+    const v = storage?.getItem(VISITOR_KEY);
+    if (v && /^[A-Za-z0-9-]{8,64}$/.test(v)) return v;
+  } catch {
+    /* 保存できない端末 */
+  }
+  const id =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  try {
+    storage?.setItem(VISITOR_KEY, id);
+  } catch {
+    /* 保存できない端末 */
+  }
+  return id;
+}
+
+/** 送る内容を作る（テストしやすいよう、送信とは分けています） */
+export function buildView(page: ViewPage, visitor: string, search: string, ua = "") {
+  const ref = readRef(search);
+  return {
+    visitor_id: visitor,
+    page,
+    source: readSource(search) ?? appSourceFromUa(ua) ?? (ref ? "share" : "web"),
+    in_line: isInLine(ua),
+  };
+}
+
+export async function sendView(page: ViewPage): Promise<boolean> {
+  if (typeof window === "undefined" || isDemo()) return false;
+  try {
+    let storage: Storage | null = null;
+    try {
+      storage = window.localStorage;
+    } catch {
+      storage = null;
+    }
+    const body = buildView(page, visitorId(storage), window.location.search, navigator.userAgent || "");
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/record_body_check_view`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ p: body }),
+      keepalive: true,
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function sendTally(
   event: TallyEvent,
   state: CheckState,

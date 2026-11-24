@@ -133,8 +133,8 @@
       acu:/鍼灸/.test(t)||sp.acu>0,
     };
   }
-  // 保険の請求（見込み）：部門ごとに 実人数 × この金額（あとで実際の請求額に合わせて変えられるよう定数にしておく）
-  const CLAIM_PER_PERSON={ju:1000,acu:1000};
+  // 保険の請求（見込み）：部門ごとに 来院回数 × この金額（あとで実際の請求額に合わせて変えられるよう定数にしておく）
+  const CLAIM_PER_VISIT={ju:1000,acu:1000};
   const DEPTS=[{key:"ju",label:"柔整（保険診療）"},{key:"acu",label:"鍼灸保険"}];
 
   // ===== 会計1件の内訳 =====
@@ -192,7 +192,8 @@
         const a=splitAmounts(p);
         sum.total+=a.total; sum.ins+=a.ins; sum.tech+=a.tech; sum.goods+=a.goods;
         Object.entries(a.goodsByKind).forEach(([k,x])=>{ sum.goodsByKind[k]=(sum.goodsByKind[k]||0)+x; });
-        parsePayments(p.payment_method,p.total_amount).forEach(x=>{ if(x.amount>0){ r.pay[x.kind].count++; r.pay[x.kind].amount+=x.amount; } });
+        // 支払内訳は実際に受け取った金額：現金＝会計の合計−現金以外（お預かりのお釣りは含めない）
+        Object.entries(methodAmounts(p)).forEach(([k,x])=>{ if(x>0&&r.pay[k]){ r.pay[k].count++; r.pay[k].amount+=x; } });
       });
       staff.add(v.staffId);
       r.total.count++; r.total.amount+=sum.total;
@@ -221,12 +222,15 @@
     refunds.forEach(p=>{
       const a=Number(p.total_amount)||0, ins=Math.max(a,Number(p.insurance_amount)||0), rest=a-ins;
       r.total.amount+=a; r.tech.amount+=a;
+      // 支払内訳からも、返金した方法（現金など）で引く（件数は数えない）。これで支払内訳の合計＝総売上になる
+      const rk=(PAY_KINDS.find(k=>k.match(String(p.refund_method||"現金")))||{key:"other"}).key;
+      r.pay[rk].amount+=a;
       if(ins){ r.techRows[rateKey((bookingById[p.booking_id]||{}).insurance_rate)].amount+=ins; r.nonTaxable+=ins; r.juIns.amount+=ins; }
       if(rest){ r.techRows.other.amount+=rest; r.taxable+=rest; }
     });
     r.staffCount=[...staff].filter(Boolean).length;
     // 実人数と請求（見込み）
-    DEPTS.forEach(d=>{ const x=r.dept[d.key]; x.peopleCount=x.people.size; x.claim=x.peopleCount*CLAIM_PER_PERSON[d.key]; delete x.people; });
+    DEPTS.forEach(d=>{ const x=r.dept[d.key]; x.peopleCount=x.people.size; x.claim=x.visits*CLAIM_PER_VISIT[d.key]; delete x.people; });
     r.taxIncluded=Math.round(r.taxable*10/110);
     r.netSales=r.total.amount-r.taxIncluded;
 
@@ -244,7 +248,141 @@
     return r;
   }
 
-  const api={insuranceSplit,insuranceDepts,CLAIM_PER_PERSON,DEPTS,GOODS_KINDS,isGoods,goodsKind,PAY_KINDS,parsePayments,visitsOf,classifyVisits,VISIT_CLASSES,patientProfiles,GENDERS,genderKey,
+  // ===== 月次KPI（期ごとの月別の表：売上・来院数・カルテ枚数・単価・LTV・離反など） =====
+  // 店舗ごとの年度の始まりの月（香里園駅前院は2026年10月開業のため10月始まり、ほかは7月始まりの「期」）
+  const fiscalStartMonth=storeName=>/香里園/.test(String(storeName||""))?10:7;
+  // 売上＝窓口の売上（返金を引く）＋保険請求。保険請求・施術者人数・営業利益は月ごとに手入力でき、
+  // 入っていない月は 保険請求＝来院回数×1,000円（柔整・鍼灸それぞれ）、施術者人数＝その月に担当した人数 で仮に計算する
+  const addMonthsYm=(ym,n)=>{ const [y,m]=ym.split("-").map(Number); const d=new Date(Date.UTC(y,m-1+n,1)); return d.toISOString().slice(0,7); };
+  function fiscalMonths(startYm,count){ return Array.from({length:count||12},(_,i)=>addMonthsYm(startYm,i)); }
+  function buildMonthlyKpi(payments,opts){
+    const o=opts||{};
+    const bookingById={}; (o.bookings||[]).forEach(b=>{ bookingById[b.id]=b; });
+    const inStore=p=>o.storeId==null||p.booking_id==null||((bookingById[p.booking_id]||{}).store_id||1)===o.storeId;
+    const pays=(payments||[]).filter(inStore);
+    const visits=visitsOf(pays);
+    // 再診＝前回の来院から1か月以上あいて来た来院（日計表と同じ）
+    const byPatient={};
+    visits.forEach(v=>{ (byPatient[v.patient]=byPatient[v.patient]||[]).push(v); });
+    const revisit=new Set(), firstVisit=new Set();
+    // 離反＝最後の来院から1か月、通院が無かった方。1か月たった日の月に1人と数える（まだ1か月たっていない方は数えない）
+    const oneMonthAfter=d=>{ const [y,m,dd]=d.split("-").map(Number); const last=new Date(Date.UTC(y,m+1,0)).getUTCDate(); return new Date(Date.UTC(y,m,Math.min(dd,last))).toISOString().slice(0,10); };
+    const today=o.today||"9999-12-31";
+    const churnByMonth={}, churnBaseByMonth={};
+    Object.values(byPatient).forEach(list=>{
+      list.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+      list.forEach((v,i)=>{
+        const next=list[i+1]?list[i+1].date:null;
+        const t=oneMonthAfter(v.date);
+        if(next!==v.date&&(!next||next>t)&&t<=today) churnByMonth[t.slice(0,7)]=(churnByMonth[t.slice(0,7)]||0)+1;
+        if(i===0){ firstVisit.add(v.key); return; }
+        const prev=list[i-1].date, back=addMonthsYm(prev.slice(0,7),1)+prev.slice(7);
+        if(v.date>=back) revisit.add(v.key);
+      });
+    });
+    const manual=o.manual||{};
+    const num=v=>v===""||v===null||v===undefined?null:(Number.isFinite(Number(v))?Number(v):null);
+    const rowOf=month=>{
+      const mv=visits.filter(v=>v.date.slice(0,7)===month);
+      const refunds=pays.filter(p=>p.is_refund&&String(p.payment_date||"").slice(0,7)===month);
+      const counter=Object.fromEntries(["ju","acu"].map(k=>[k,{visits:0,people:new Set()}]));
+      const people=new Set(), staff=new Set(), days=new Set();
+      let window_=0;
+      mv.forEach(v=>{
+        people.add(v.patient||v.key); staff.add(v.staffId); days.add(v.date);
+        v.payments.forEach(p=>{ window_+=Number(p.total_amount)||0; });
+        const dj=v.payments.some(p=>insuranceDepts(p).ju), da=v.payments.some(p=>insuranceDepts(p).acu);
+        if(dj){ counter.ju.visits++; counter.ju.people.add(v.patient||v.key); }
+        if(da){ counter.acu.visits++; counter.acu.people.add(v.patient||v.key); }
+      });
+      refunds.forEach(p=>{ window_+=Number(p.total_amount)||0; });
+      const m=manual[month]||{};
+      const claimJu=num(m.claimJu)!==null?num(m.claimJu):counter.ju.visits*CLAIM_PER_VISIT.ju;
+      const claimAcu=num(m.claimAcu)!==null?num(m.claimAcu):counter.acu.visits*CLAIM_PER_VISIT.acu;
+      const claimEstimated=num(m.claimJu)===null||num(m.claimAcu)===null;
+      const therapists=num(m.therapists)!==null?num(m.therapists):[...staff].filter(Boolean).length;
+      const sales=window_+claimJu+claimAcu;
+      const n=mv.length, d=days.size, ppl=people.size;
+      const karte=new Set([...counter.ju.people,...counter.acu.people]).size;
+      // 離反数＝この月に「最後の来院から1か月通院が無い」状態になった方。離反率は前の月の実人数に対する割合
+      const prevPeople=new Set(visits.filter(v=>v.date.slice(0,7)===addMonthsYm(month,-1)).map(v=>v.patient||v.key));
+      const churn=churnByMonth[month]||0;
+      const div=(a,b)=>b?a/b:null;
+      const op=num(m.operatingProfit);
+      return {
+        month, empty:n===0,
+        sales, windowSales:window_, claimJu, claimAcu, claim:claimJu+claimAcu, claimEstimated,
+        visits:n, karte,
+        karteJu:counter.ju.people.size, karteAcu:counter.acu.people.size, acuVisits:counter.acu.visits, juVisits:counter.ju.visits,
+        newPatients:mv.filter(v=>firstVisit.has(v.key)).length, revisits:mv.filter(v=>revisit.has(v.key)).length,
+        windowUnit:div(window_,n), claimUnit:div(claimJu+claimAcu,n),
+        claimUnitJu:div(claimJu,counter.ju.visits), claimUnitAcu:div(claimAcu,counter.acu.visits),
+        // LTV（1ヶ月）＝カルテ1枚あたりの月の売上、平均通院回数＝総来院数÷カルテ枚数
+        totalUnit:div(sales,n), ltv:div(sales,karte), avgPerDay:div(n,d), avgVisitsPerPatient:div(n,karte),
+        churn, churnRate:prevPeople.size?churn/prevPeople.size*100:null,
+        therapists, therapistsEstimated:num(m.therapists)===null, productivity:div(sales,therapists), salesPerDay:div(sales,d),
+        days:d, people:ppl, operatingProfit:op, operatingMargin:op===null?null:div(op,sales)!==null?div(op,sales)*100:null,
+      };
+    };
+    return (o.months||[]).map(rowOf);
+  }
+
+  // ===== 技術・店販別売上集計 日別一覧（POSの帳票と同じ形：日ごと×支払方法ごとに 技術／店販／合計 とその累計） =====
+  // 支払方法ごとの金額：お預かりにお釣りが含まれることがあるため、現金＝会計の合計−現金以外 とする。
+  // 1つの会計に技術と店販（物販）がある場合は、各支払方法の金額を技術と店販の金額の割合で分ける。
+  // 返金は返金日に、返金した方法（現金など）の技術からマイナスする。客数＝来院（同じ予約の会計は1人、¥0の会計も数える）
+  const DAILY_METHODS=[{key:"cash",label:"現金"},{key:"credit",label:"クレジット"},{key:"emoney",label:"電子マネー（PayPay等）"},{key:"other",label:"その他"}];
+  function methodAmounts(p){
+    const total=Number(p.total_amount)||0;
+    const parts=parsePayments(p.payment_method,total);
+    const nonCash={credit:0,emoney:0,other:0};
+    parts.forEach(x=>{ if(x.kind!=="cash") nonCash[x.kind]=(nonCash[x.kind]||0)+x.amount; });
+    const nc=nonCash.credit+nonCash.emoney+nonCash.other;
+    const hasCash=parts.some(x=>x.kind==="cash")||!parts.length;
+    return {cash:hasCash?Math.max(0,total-nc):0,...nonCash};
+  }
+  function buildDailyMethodReport(payments,opts){
+    const o=opts||{};
+    const bookingById={}; (o.bookings||[]).forEach(b=>{ bookingById[b.id]=b; });
+    const inStore=p=>o.storeId==null||p.booking_id==null||((bookingById[p.booking_id]||{}).store_id||1)===o.storeId;
+    const zeroRow=()=>Object.fromEntries(DAILY_METHODS.map(m=>[m.key,{tech:0,goods:0}]));
+    const days=[];
+    for(let d=o.from; d&&d<=o.to; ){ days.push(d); const t=new Date(d+"T00:00:00Z"); t.setUTCDate(t.getUTCDate()+1); d=t.toISOString().slice(0,10); }
+    const byDay=Object.fromEntries(days.map(d=>[d,{date:d,visits:new Set(),rows:zeroRow()}]));
+    (payments||[]).filter(inStore).forEach(p=>{
+      const day=byDay[p.payment_date]; if(!day) return;
+      if(p.is_refund){
+        const kind=(PAY_KINDS.find(k=>k.match(String(p.refund_method||"現金")))||{key:"other"}).key;
+        day.rows[kind].tech+=Number(p.total_amount)||0;
+        return;
+      }
+      day.visits.add(p.booking_id!=null?"b"+p.booking_id:"p"+p.id);
+      const a=splitAmounts(p), total=a.total;
+      const goodsShare=total>0?a.goods/total:0;
+      const m=methodAmounts(p);
+      DAILY_METHODS.forEach(({key})=>{
+        const amt=m[key]||0; if(!amt) return;
+        const g=Math.round(amt*goodsShare);
+        day.rows[key].goods+=g; day.rows[key].tech+=amt-g;
+      });
+    });
+    const cum=zeroRow(); let cumVisits=0;
+    return days.map(d=>{
+      const x=byDay[d]; cumVisits+=x.visits.size;
+      const rows={}, cumRows={};
+      DAILY_METHODS.forEach(({key})=>{
+        cum[key].tech+=x.rows[key].tech; cum[key].goods+=x.rows[key].goods;
+        rows[key]={...x.rows[key],total:x.rows[key].tech+x.rows[key].goods};
+        cumRows[key]={tech:cum[key].tech,goods:cum[key].goods,total:cum[key].tech+cum[key].goods};
+      });
+      const sumOf=rs=>({tech:DAILY_METHODS.reduce((s,m)=>s+rs[m.key].tech,0),goods:DAILY_METHODS.reduce((s,m)=>s+rs[m.key].goods,0)});
+      const all=sumOf(rows), allCum=sumOf(cumRows);
+      rows.all={...all,total:all.tech+all.goods}; cumRows.all={...allCum,total:allCum.tech+allCum.goods};
+      return {date:d,visits:x.visits.size,cumVisits,rows,cumRows};
+    });
+  }
+
+  const api={buildDailyMethodReport,DAILY_METHODS,methodAmounts,buildMonthlyKpi,fiscalMonths,fiscalStartMonth,insuranceSplit,insuranceDepts,CLAIM_PER_VISIT,DEPTS,GOODS_KINDS,isGoods,goodsKind,PAY_KINDS,parsePayments,visitsOf,classifyVisits,VISIT_CLASSES,patientProfiles,GENDERS,genderKey,
     AGE_BANDS,ageBand,SOURCES,sourceKey,splitAmounts,rateKey,TECH_ROWS,buildReport};
   root.SalesReport=api;
 })(typeof window!=="undefined"?window:globalThis);

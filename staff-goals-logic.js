@@ -12,8 +12,19 @@
   }
 
   // 会計1件を、担当スタッフごとの 技術・商品 の金額に分ける。
-  // 保険分＝insurance_staff_id、自費の各項目＝項目の staff_id。指定が無いもの・項目の合計とのずれは会計の担当へ。
+  // 保険分＝insurance_staff_id（鍼灸保険の分は acu_insurance_staff_id）、自費の各項目＝項目の staff_id。指定が無いもの・項目の合計とのずれは会計の担当へ。
   // 返金（is_refund のマイナス行）は全額を元の担当の技術から引く。
+  // 保険の窓口負担を担当ごとに分ける：鍼灸保険の担当（acu_insurance_staff_id）があれば、
+  // 柔整の分（insurance_amount−acu_insurance_amount）＝insurance_staff_id、鍼灸の分＝acu_insurance_staff_id。
+  // 鍼灸の担当が無い（古い会計など）・金額が合わないときは、これまでどおり全額を insurance_staff_id へ
+  function insuranceShares(p,def){
+    const ins=Number(p.insurance_amount)||0;
+    if(!ins) return [];
+    const juStaff=p.insurance_staff_id||def;
+    const acu=Number(p.acu_insurance_amount)||0;
+    if(!p.acu_insurance_staff_id||acu<=0||acu>ins) return [{staffId:juStaff,amount:ins}];
+    return [{staffId:juStaff,amount:ins-acu},{staffId:p.acu_insurance_staff_id,amount:acu}].filter(x=>x.amount);
+  }
   function splitPayment(p){
     const def=p.staff_id||0;
     const total=Number(p.total_amount)||0;
@@ -22,7 +33,7 @@
     if(p.is_refund){ row(def).tech+=total; return Object.values(m); }
     const items=Array.isArray(p.jifee_items)?p.jifee_items.filter(Boolean):[];
     const ins=Number(p.insurance_amount)||0;
-    if(ins) row(p.insurance_staff_id||def).tech+=ins;
+    insuranceShares(p,def).forEach(x=>{ row(x.staffId).tech+=x.amount; });
     let rest=total-ins;
     items.forEach(i=>{
       const a=Number(i.amount)||0;
@@ -148,7 +159,7 @@
     return {from:`${month}-01`,to:`${month}-${String(last).padStart(2,"0")}`};
   }
 
-  const api={GOODS_PREFIX,isGoodsLabel,splitPayment,firstVisitDates,summarize,SORTS,rank,
+  const api={GOODS_PREFIX,isGoodsLabel,insuranceShares,splitPayment,firstVisitDates,summarize,SORTS,rank,
     MANDALA_GRID,LEVELS,METRICS,emptyMandala,normalizeCells,achievement,actualOf,monthRange};
   root.StaffGoals=api;
 })(typeof window!=="undefined"?window:globalThis);

@@ -5,10 +5,30 @@
       "schedule": "0 9 * * *"
     }
   ],
+  "redirects": [
+    {
+      "source": "/hq",
+      "destination": "/",
+      "permanent": false
+    },
+    {
+      "source": "/hq/:path*",
+      "destination": "/",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/mandala",
       "destination": "/api/evaluation?__mandala=1"
+    },
+    {
+      "source": "/api/manual",
+      "destination": "/api/evaluation?__manual=1"
+    },
+    {
+      "source": "/manual",
+      "destination": "/manual.html"
     },
     {
       "source": "/beauty",
