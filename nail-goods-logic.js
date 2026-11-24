@@ -73,7 +73,7 @@
       "2026-09":{days:20,"newCount":9,"web":9,"total":40,"four":3,"second":6,"cont":29,"cured":2,"avgVisits":1.7,"sales":508700,"lastYearSales":307250,"inquiry":10,"drop":0},
       "2026-10":{days:19,"newCount":9,"web":5,"nobori":2,"referral":1,"other":1,"total":45,"four":5,"second":1,"cont":36,"cured":0,"avgVisits":1.1,"sales":554400,"lastYearSales":358600,"inquiry":10,"drop":0,"cost":136680},
     }},
-    {id:"katano",name:"交野巻き爪センター",staff:"藤原",source:"巻き爪分析表.xlsx",nail:{
+    {id:"katano",name:"交野巻き爪センター",staff:"藤原",source:"巻き爪分析表（11月に10月分まで更新）",nail:{
       "2026-01":{days:23.0,"newCount":2,"nobori":2,"total":18,"four":2,"second":2.0,"cont":16,"avgVisits":3.0,"sales":305050,"inquiry":2,"drop":0},
       "2026-02":{days:24.0,"newCount":1,"nobori":1,"total":13,"four":1,"second":0.0,"cont":12,"avgVisits":1.0,"sales":263450,"inquiry":1,"drop":0},
       "2026-03":{days:25.0,"newCount":2,"web":1,"nobori":1,"total":19,"four":1,"second":1.0,"cont":17,"avgVisits":1.0,"sales":294800,"inquiry":2,"drop":0},
@@ -82,8 +82,8 @@
       "2026-06":{days:25.0,"newCount":2,"web":1,"referral":1,"total":21,"four":1,"second":2.0,"cont":19,"avgVisits":1.0,"sales":363600,"inquiry":2,"drop":0},
       "2026-07":{days:25.0,"newCount":3,"web":2,"nobori":1,"total":23,"four":3,"second":3.0,"cont":20,"avgVisits":1.0,"sales":395550,"inquiry":3,"drop":0},
       "2026-08":{days:26.0,"newCount":4,"web":1,"nobori":2,"other":1,"total":34,"four":4,"second":4.0,"cont":30,"avgVisits":1.0,"sales":560350,"inquiry":4,"drop":0},
-      "2026-09":{days:24.0,"newCount":3,"web":1,"nobori":2,"total":39,"four":2,"second":2.0,"cont":36,"avgVisits":1.0,"sales":593500,"inquiry":3,"drop":0},
-      "2026-10":{days:27.0,"newCount":1,"nobori":1,"total":28,"four":1,"cont":27,"inquiry":1},
+      "2026-09":{days:24.0,"newCount":3,"web":1,"nobori":2,"total":39,"four":2,"second":3.0,"cont":36,"avgVisits":1.0,"sales":593500,"inquiry":3,"drop":0,"cost":50000},
+      "2026-10":{days:27.0,"newCount":4,"web":2,"nobori":1,"referral":1,"total":31,"four":3,"second":4.0,"cont":27,"avgVisits":1.0,"sales":419850,"inquiry":1,"drop":0,"cost":138000},
     }},
     {id:"hirakata",name:"枚方巻き爪センター",staff:"木村",source:"巻き爪分析表2025・2026.xlsx",nail:{
       "2025-01":{days:19,"newCount":6,"web":5,"inStore":1,"revisit":4,"total":44,"four":1,"second":6,"cont":29,"cured":5,"avgVisits":5.3,"sales":483850,"lastYearSales":365000,"inquiry":7,"drop":3},
@@ -207,6 +207,9 @@
   //   正式な分析表（10月は19日・554,400円。ほかの月の2回目継続・平均通院回数も修正あり）で2026年1〜10月を差し替える。
   const SEED_PATCHES=[
     {id:"tsuda-2026-official",center:"tsuda",months:["2026-01","2026-02","2026-03","2026-04","2026-05","2026-06","2026-07","2026-08","2026-09","2026-10"]},
+    // 交野：10月分（売上419,850円・新規4人）を入力済みの分析表で更新。9月の2回目継続（2→3）と広告費（9月5万・10月13.8万）も反映。
+    //   11月は途中（新規4人だけで売上が未入力）のため取り込まない。
+    {id:"katano-2026-11",center:"katano",months:["2026-01","2026-02","2026-03","2026-04","2026-05","2026-06","2026-07","2026-08","2026-09","2026-10"]},
   ];
   // まだ反映していない差し替えを centers に反映し、反映済みの id の一覧を返す
   function applySeedPatches(centers,applied){

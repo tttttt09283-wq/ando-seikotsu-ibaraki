@@ -37,8 +37,8 @@ test("門真の1〜10月の合計・平均が分析表（PDF）と一致する",
 test("5センターの2026年の売上合計・平均単価が各分析表と一致する", () => {
   const sum = (id, y) => NG.nailSummary(NG.SEED_CENTERS.find((c) => c.id === id).nail, y);
   const ids = ["kadoma", "ibaraki", "tsuda", "katano", "hirakata"];
-  assert.deepEqual(ids.map((id) => Math.round(sum(id, "2026").sum.sales / 1000)), [4686, 7144, 3830, 3401, 5532]);
-  assert.deepEqual(ids.map((id) => Math.round(sum(id, "2026").metrics.unitPrice)), [12874, 12511, 10521, 14598, 13234]);
+  assert.deepEqual(ids.map((id) => Math.round(sum(id, "2026").sum.sales / 1000)), [4686, 7144, 3830, 3821, 5532]);
+  assert.deepEqual(ids.map((id) => Math.round(sum(id, "2026").metrics.unitPrice)), [12874, 12511, 10521, 16192, 13234]);
   // 枚方は2025年分もある（12か月・新規87人・売上577.2万）
   const h25 = sum("hirakata", "2025");
   assert.equal(h25.count, 12);
@@ -67,7 +67,7 @@ test("津田の正式な分析表（10月は19日・554,400円）を、保存済
   // 以前の数字（10月は5日分・148,500円）が保存されている場合
   const saved = [{ id: "tsuda", name: "津田巻き爪センター", nail: { "2026-10": { days: 5, total: 10, sales: 148500 }, "2026-11": { total: 30, sales: 400000 } } }];
   const applied = NG.applySeedPatches(saved, []);
-  assert.deepEqual(applied, ["tsuda-2026-official"]);
+  assert.deepEqual(applied, ["tsuda-2026-official", "katano-2026-11"]);
   assert.equal(saved[0].nail["2026-10"].sales, 554400);
   assert.equal(saved[0].nail["2026-11"].sales, 400000); // 手で入れた別の月は残す
   // 2回目は反映しない（その後に手で直した数字を上書きしない）
@@ -87,7 +87,7 @@ test("センターを足し合わせる（平均通院回数は平均）", () =>
   assert.equal(m["2026-01"].total, 30);
   assert.equal(m["2026-01"].avgVisits, 3);
   const all = NG.nailSummary(NG.combineCenters(NG.SEED_CENTERS), "2026");
-  assert.equal(all.sum.newCount, 340);
+  assert.equal(all.sum.newCount, 343);
   assert.equal(all.last.cont, 191);
 });
 
