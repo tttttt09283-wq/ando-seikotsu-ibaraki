@@ -427,7 +427,7 @@ function viewNail() {
   const cellVal = (f, v) => f.yen ? yen(v) : f.agg === "avg" ? n1(v) : n0(v);
   return `
   ${centerChips()}
-  <div class="note">${c ? `${esc(c.name)}（施術者 ${esc(c.staff || "-")}）の分析表（${esc(c.source || "手入力")}）の数字を読み取って入れています。月ごとの数字はこの表に直接入力できます。` : "5センター（門真・茨木・津田・交野・枚方）の分析表を足し合わせた数字です。センターごとの数字を直すときは、上のボタンでセンターを選んでください。"}計算式（2回目継続率・4箇所施術率・平均単価・離脱率）は分析表と同じです。</div>
+  <div class="note">${c ? `${esc(c.name)}（施術者 ${esc(c.staff || "-")}）の分析表（${esc(c.source || "手入力")}）の数字を読み取って入れています。月ごとの数字はこの表に直接入力できます。` : `${data.centers.length}センター（${data.centers.map((x) => x.name.replace("巻き爪センター", "")).join("・")}）の分析表を足し合わせた数字です。センターごとの数字を直すときは、上のボタンでセンターを選んでください。`}計算式（2回目継続率・4箇所施術率・平均単価・離脱率）は分析表と同じです。</div>
   ${c ? "" : compareCard(y)}
   ${trendCard()}
   <div class="card"><div class="card-h"><span>${esc(curName())}の指標（${esc(y)}年・${s.count}か月分${s.months.length ? "・" + monthLabel(s.months[0]) + "〜" + monthLabel(s.lastKey) : ""}）</span>
@@ -685,7 +685,7 @@ function addPurchase() {
 }
 function delPurchase(id) { if (!confirm("この仕入れの記録を削除しますか？")) return; data.purchases = data.purchases.filter((x) => x.id !== id); save(); render(); }
 function resetSeed() {
-  if (!confirm("5センターの巻き爪の実績を、いただいた分析表から読み取った数字に戻します。手で入れた数字や追加したセンターは消えます。よろしいですか？")) return;
+  if (!confirm("全センターの巻き爪の実績を、いただいた分析表から読み取った数字に戻します。手で入れた数字や追加したセンターは消えます。よろしいですか？")) return;
   data.centers = JSON.parse(JSON.stringify(NG.SEED_CENTERS)); data.centerId = "all"; data.year = "2026"; save(); render();
 }
 function exportCsv() {
