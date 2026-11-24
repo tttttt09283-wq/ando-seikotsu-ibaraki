@@ -61,7 +61,7 @@
       "2026-09":{days:22,"newCount":5,"web":5,"revisit":1,"total":48,"four":3,"second":3,"cont":41,"cured":1,"avgVisits":1.6,"sales":562944,"lastYearSales":607000,"inquiry":5,"drop":2},
       "2026-10":{days:21,"newCount":9,"web":9,"total":59,"four":3,"cont":47,"cured":3,"avgVisits":1.2,"sales":721629,"lastYearSales":675000,"inquiry":9,"drop":2,"cost":50000},
     }},
-    {id:"tsuda",name:"津田巻き爪センター",staff:"大森",source:"巻き爪分析表2026（11月に正式な売上で差し替え）",nail:{
+    {id:"tsuda",name:"津田巻き爪センター",staff:"大森",staffChanges:[{from:"2026-01",staff:"児玉"},{from:"2026-11",staff:"大森"}],source:"巻き爪分析表2026（11月に正式な売上で差し替え）",nail:{
       "2026-01":{days:19.5,"newCount":7,"web":6,"other":1,"total":34,"four":1,"second":3,"cont":25,"cured":2,"avgVisits":2.1,"sales":393250,"inquiry":8,"drop":1},
       "2026-02":{days:18,"newCount":7,"web":5,"nobori":2,"total":45,"four":0,"second":7,"cont":28,"cured":10,"avgVisits":4,"sales":305900,"inquiry":7,"drop":0},
       "2026-03":{days:18,"newCount":9,"web":8,"other":1,"total":39,"four":3,"second":8,"cont":22,"cured":8,"avgVisits":3.7,"sales":387000,"inquiry":10,"drop":1},
@@ -209,6 +209,8 @@
     {id:"tsuda-2026-official",center:"tsuda",months:["2026-01","2026-02","2026-03","2026-04","2026-05","2026-06","2026-07","2026-08","2026-09","2026-10"]},
     // 交野：10月分（売上419,850円・新規4人）を入力済みの分析表で更新。9月の2回目継続（2→3）と広告費（9月5万・10月13.8万）も反映。
     //   11月は途中（新規4人だけで売上が未入力）のため取り込まない。
+    // 津田：2026年11月から担当を大森さんに（10月までは児玉さん）
+    {id:"tsuda-staff-2026-11",center:"tsuda",months:[],staff:true},
     {id:"katano-2026-11",center:"katano",months:["2026-01","2026-02","2026-03","2026-04","2026-05","2026-06","2026-07","2026-08","2026-09","2026-10"]},
   ];
   // まだ反映していない差し替えを centers に反映し、反映済みの id の一覧を返す
@@ -221,11 +223,33 @@
       if(seed&&c){
         c.nail=c.nail||{};
         pt.months.forEach(ym=>{ if(seed.nail[ym]) c.nail[ym]=JSON.parse(JSON.stringify(seed.nail[ym])); });
-        if(seed.source) c.source=seed.source;
+        if(seed.source&&pt.months.length) c.source=seed.source;
+        if(pt.staff){ c.staff=seed.staff; c.staffChanges=JSON.parse(JSON.stringify(seed.staffChanges||[])); }
       }
       done.push(pt.id);
     });
     return done;
+  }
+
+  // ===== 担当者の交代 =====
+  // center.staffChanges：[{from:"YYYY-MM", staff:"名前"}]。その月から担当がその人になる。無ければ center.staff
+  function sortedChanges(center){
+    return (center&&Array.isArray(center.staffChanges)?center.staffChanges:[]).filter(x=>x&&/^\d{4}-\d{2}$/.test(x.from||"")&&x.staff).slice().sort((a,b)=>a.from.localeCompare(b.from));
+  }
+  // その月の担当者（交代の記録より前の月は、いちばん古い記録の担当者）
+  function staffAt(center,ym){
+    const ch=sortedChanges(center);
+    if(!ch.length) return (center&&center.staff)||"";
+    let cur=ch[0].staff;
+    ch.forEach(x=>{ if(x.from<=ym) cur=x.staff; });
+    return cur;
+  }
+  // 表示用：「児玉→大森（26年11月〜）」のように交代が分かる名前
+  function staffLabel(center){
+    const ch=sortedChanges(center);
+    if(ch.length<2) return (center&&center.staff)||(ch[0]&&ch[0].staff)||"";
+    const last=ch[ch.length-1];
+    return `${ch[ch.length-2].staff}→${last.staff}（${last.from.slice(2,4)}年${Number(last.from.slice(5))}月〜）`;
   }
 
   // 以前の保存データ（門真だけの nail）を、センター別の形にする。分析表から読み取った月はその数字で上書きし、手で入れた別の月は残す
@@ -420,7 +444,7 @@
     return bought-num(soldUnits);
   }
 
-  const api={NAIL_KPIS,NAIL_FIELDS,SEED_NAIL_2026,SEED_CENTERS,SEED_PATCHES,applySeedPatches,combineCenters,migrateCenters,DEFAULT_PRODUCTS,DEFAULT_SEGMENTS,SCENARIOS,GOODS_LABEL_PREFIX,
+  const api={NAIL_KPIS,NAIL_FIELDS,SEED_NAIL_2026,SEED_CENTERS,SEED_PATCHES,applySeedPatches,staffAt,staffLabel,sortedChanges,combineCenters,migrateCenters,DEFAULT_PRODUCTS,DEFAULT_SEGMENTS,SCENARIOS,GOODS_LABEL_PREFIX,
     goodsLabel,nailMonthMetrics,judgeKpi,nailSummary,segmentsFromNail,forecast,requiredForTarget,
     aggregatePayments,aggregateProposals,stockLeft};
   root.NailGoods=api;
