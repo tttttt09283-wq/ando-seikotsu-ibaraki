@@ -61,17 +61,17 @@
       "2026-09":{days:22,"newCount":5,"web":5,"revisit":1,"total":48,"four":3,"second":3,"cont":41,"cured":1,"avgVisits":1.6,"sales":562944,"lastYearSales":607000,"inquiry":5,"drop":2},
       "2026-10":{days:21,"newCount":9,"web":9,"total":59,"four":3,"cont":47,"cured":3,"avgVisits":1.2,"sales":721629,"lastYearSales":675000,"inquiry":9,"drop":2,"cost":50000},
     }},
-    {id:"tsuda",name:"津田巻き爪センター",staff:"大森",source:"巻き爪分析表2026.xlsx",nail:{
+    {id:"tsuda",name:"津田巻き爪センター",staff:"大森",source:"巻き爪分析表2026（11月に正式な売上で差し替え）",nail:{
       "2026-01":{days:19.5,"newCount":7,"web":6,"other":1,"total":34,"four":1,"second":3,"cont":25,"cured":2,"avgVisits":2.1,"sales":393250,"inquiry":8,"drop":1},
       "2026-02":{days:18,"newCount":7,"web":5,"nobori":2,"total":45,"four":0,"second":7,"cont":28,"cured":10,"avgVisits":4,"sales":305900,"inquiry":7,"drop":0},
-      "2026-03":{days:18,"newCount":9,"web":8,"other":1,"total":39,"four":3,"second":8,"cont":22,"cured":8,"avgVisits":3.4,"sales":387000,"inquiry":10,"drop":1},
+      "2026-03":{days:18,"newCount":9,"web":8,"other":1,"total":39,"four":3,"second":8,"cont":22,"cured":8,"avgVisits":3.7,"sales":387000,"inquiry":10,"drop":1},
       "2026-04":{days:20,"newCount":5,"web":4,"other":1,"total":27,"four":4,"second":2,"cont":19,"cured":3,"avgVisits":3.2,"sales":250800,"inquiry":8,"drop":0},
-      "2026-05":{days:14,"newCount":10,"web":5,"nobori":4,"other":1,"total":35,"four":6,"second":9,"cont":20,"cured":5,"avgVisits":3.1,"sales":372350,"inquiry":12,"drop":0},
-      "2026-06":{days:14,"newCount":8,"web":6,"nobori":1,"referral":1,"total":33,"four":5,"second":7,"cont":19,"cured":6,"avgVisits":3,"sales":335500,"inquiry":10,"drop":0},
-      "2026-07":{days:18,"newCount":6,"web":4,"nobori":2,"total":31,"four":3,"second":6,"cont":21,"cured":4,"avgVisits":2.8,"sales":359700,"lastYearSales":51000,"inquiry":8,"drop":0},
-      "2026-08":{days:15,"newCount":9,"web":4,"nobori":3,"other":2,"total":35,"four":5,"second":8,"cont":24,"cured":2,"avgVisits":2.2,"sales":362150,"lastYearSales":225000,"inquiry":10,"drop":0},
-      "2026-09":{days:20,"newCount":9,"web":9,"total":40,"four":3,"second":2,"cont":29,"cured":2,"avgVisits":1.2,"sales":508700,"lastYearSales":307250,"inquiry":10,"drop":0},
-      "2026-10":{days:5,"newCount":2,"web":2,"total":10,"four":2,"second":0,"cont":8,"cured":0,"avgVisits":1,"sales":148500,"lastYearSales":358600,"inquiry":2,"drop":0,"cost":136680},
+      "2026-05":{days:14,"newCount":10,"web":5,"nobori":4,"other":1,"total":35,"four":6,"second":9,"cont":20,"cured":5,"avgVisits":3.7,"sales":372350,"inquiry":12,"drop":0},
+      "2026-06":{days:14,"newCount":8,"web":6,"nobori":1,"referral":1,"total":33,"four":5,"second":8,"cont":19,"cured":6,"avgVisits":3.4,"sales":335500,"inquiry":10,"drop":0},
+      "2026-07":{days:18,"newCount":6,"web":4,"nobori":2,"total":31,"four":3,"second":6,"cont":21,"cured":4,"avgVisits":3.3,"sales":359700,"lastYearSales":51000,"inquiry":8,"drop":0},
+      "2026-08":{days:15,"newCount":9,"web":4,"nobori":3,"other":2,"total":35,"four":5,"second":8,"cont":24,"cured":2,"avgVisits":3.2,"sales":362150,"lastYearSales":225000,"inquiry":10,"drop":0},
+      "2026-09":{days:20,"newCount":9,"web":9,"total":40,"four":3,"second":6,"cont":29,"cured":2,"avgVisits":1.7,"sales":508700,"lastYearSales":307250,"inquiry":10,"drop":0},
+      "2026-10":{days:19,"newCount":9,"web":5,"nobori":2,"referral":1,"other":1,"total":45,"four":5,"second":1,"cont":36,"cured":0,"avgVisits":1.1,"sales":554400,"lastYearSales":358600,"inquiry":10,"drop":0,"cost":136680},
     }},
     {id:"katano",name:"交野巻き爪センター",staff:"藤原",source:"巻き爪分析表.xlsx",nail:{
       "2026-01":{days:23.0,"newCount":2,"nobori":2,"total":18,"four":2,"second":2.0,"cont":16,"avgVisits":3.0,"sales":305050,"inquiry":2,"drop":0},
@@ -200,6 +200,29 @@
     });
     Object.values(out).forEach(o=>{delete o._avgN;});
     return out;
+  }
+
+  // ===== 分析表の差し替え（保存済みのデータにも1回だけ反映する） =====
+  // 津田：担当者が大森さんから変わる時期で、10月の売上などが正式な数字になっていなかった（5日分・148,500円）。
+  //   正式な分析表（10月は19日・554,400円。ほかの月の2回目継続・平均通院回数も修正あり）で2026年1〜10月を差し替える。
+  const SEED_PATCHES=[
+    {id:"tsuda-2026-official",center:"tsuda",months:["2026-01","2026-02","2026-03","2026-04","2026-05","2026-06","2026-07","2026-08","2026-09","2026-10"]},
+  ];
+  // まだ反映していない差し替えを centers に反映し、反映済みの id の一覧を返す
+  function applySeedPatches(centers,applied){
+    const done=Array.isArray(applied)?applied.slice():[];
+    SEED_PATCHES.forEach(pt=>{
+      if(done.includes(pt.id)) return;
+      const seed=SEED_CENTERS.find(c=>c.id===pt.center);
+      const c=(centers||[]).find(x=>x.id===pt.center);
+      if(seed&&c){
+        c.nail=c.nail||{};
+        pt.months.forEach(ym=>{ if(seed.nail[ym]) c.nail[ym]=JSON.parse(JSON.stringify(seed.nail[ym])); });
+        if(seed.source) c.source=seed.source;
+      }
+      done.push(pt.id);
+    });
+    return done;
   }
 
   // 以前の保存データ（門真だけの nail）を、センター別の形にする。分析表から読み取った月はその数字で上書きし、手で入れた別の月は残す
@@ -394,7 +417,7 @@
     return bought-num(soldUnits);
   }
 
-  const api={NAIL_KPIS,NAIL_FIELDS,SEED_NAIL_2026,SEED_CENTERS,combineCenters,migrateCenters,DEFAULT_PRODUCTS,DEFAULT_SEGMENTS,SCENARIOS,GOODS_LABEL_PREFIX,
+  const api={NAIL_KPIS,NAIL_FIELDS,SEED_NAIL_2026,SEED_CENTERS,SEED_PATCHES,applySeedPatches,combineCenters,migrateCenters,DEFAULT_PRODUCTS,DEFAULT_SEGMENTS,SCENARIOS,GOODS_LABEL_PREFIX,
     goodsLabel,nailMonthMetrics,judgeKpi,nailSummary,segmentsFromNail,forecast,requiredForTarget,
     aggregatePayments,aggregateProposals,stockLeft};
   root.NailGoods=api;

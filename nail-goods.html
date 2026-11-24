@@ -202,11 +202,16 @@ async function load() {
   data = Object.assign(defaultData(), saved);
   // 以前の版（門真だけ）の保存データは、センター別の形に直す
   data.centers = NG.migrateCenters(saved);
+  // 分析表の差し替え（例：津田の正式な売上）を、保存済みのデータにも1回だけ反映する
+  const before = (data.appliedPatches || []).length;
+  data.appliedPatches = NG.applySeedPatches(data.centers, data.appliedPatches);
+  const patched = data.appliedPatches.length !== before && !!(remote || local);
   delete data.nail; delete data.center;
   if (data.centerId !== "all" && !data.centers.some((c) => c.id === data.centerId)) data.centerId = "all";
   setSaveSt(session ? (remote ? "サーバーに保存済み" : "まだ保存していません") : "未ログイン：この端末だけに保存");
   try { stores = await sbGet("stores", "?select=id,name&order=id"); } catch (e) { stores = []; }
   render();
+  if (patched) save();
 }
 function save() {
   lsSet(LS_KEY, JSON.stringify(data));
@@ -686,7 +691,7 @@ function addPurchase() {
 function delPurchase(id) { if (!confirm("この仕入れの記録を削除しますか？")) return; data.purchases = data.purchases.filter((x) => x.id !== id); save(); render(); }
 function resetSeed() {
   if (!confirm("全センターの巻き爪の実績を、いただいた分析表から読み取った数字に戻します。手で入れた数字や追加したセンターは消えます。よろしいですか？")) return;
-  data.centers = JSON.parse(JSON.stringify(NG.SEED_CENTERS)); data.centerId = "all"; data.year = "2026"; save(); render();
+  data.centers = JSON.parse(JSON.stringify(NG.SEED_CENTERS)); data.appliedPatches = NG.SEED_PATCHES.map((x) => x.id); data.centerId = "all"; data.year = "2026"; save(); render();
 }
 function exportCsv() {
   const pName = (id) => (data.products.find((p) => p.id === id) || {}).name || id;
