@@ -46,6 +46,19 @@ test("5センターの2026年の売上合計・平均単価が各分析表と一
   assert.equal(Math.round(h25.sum.sales / 1000), 5772);
 });
 
+test("枚方市駅前（原田）の分析表：新規・売上・各率が表の合計と一致する", () => {
+  const nail = NG.SEED_CENTERS.find((c) => c.id === "hirakata_ekimae").nail;
+  const s = NG.nailSummary(nail, "2026");
+  assert.equal(s.count, 10);
+  assert.equal(s.sum.newCount, 24);
+  assert.equal(Math.round(s.sum.sales / 1000), 1105); // 110.4万（端数は単価×総人数）
+  assert.equal(Math.round(s.metrics.secondRate), 71);
+  assert.equal(Math.round(s.metrics.fourRate), 46);
+  assert.equal(Math.round(s.metrics.dropRate), 29);
+  assert.equal(nail["2026-09"].total, 9); // 表では0になっていた月は 新規＋再診＋継続＋治癒
+  assert.equal(NG.nailSummary(nail, "2025").count, 4); // 2025年は8〜11月
+});
+
 test("センターを足し合わせる（平均通院回数は平均）", () => {
   const centers = [
     { nail: { "2026-01": { newCount: 2, total: 10, sales: 100000, avgVisits: 4 } } },
@@ -57,8 +70,8 @@ test("センターを足し合わせる（平均通院回数は平均）", () =>
   assert.equal(m["2026-01"].total, 30);
   assert.equal(m["2026-01"].avgVisits, 3);
   const all = NG.nailSummary(NG.combineCenters(NG.SEED_CENTERS), "2026");
-  assert.equal(all.sum.newCount, 309);
-  assert.equal(all.last.cont, 154);
+  assert.equal(all.sum.newCount, 333);
+  assert.equal(all.last.cont, 163);
 });
 
 test("昨対比・費用対効果は数字が入っている月だけで計算する", () => {
@@ -73,12 +86,12 @@ test("昨対比・費用対効果は数字が入っている月だけで計算�
 
 test("以前の保存データ（門真だけ）をセンター別に直す", () => {
   const list = NG.migrateCenters({ center: "門真巻き爪センター", nail: { "2026-11": { total: 40, newCount: 5 }, "2026-01": { total: 1 } } });
-  assert.equal(list.length, 5);
+  assert.equal(list.length, 6);
   const kad = list.find((c) => c.id === "kadoma");
   assert.equal(kad.nail["2026-11"].total, 40); // 手で入れた月は残す
   assert.equal(kad.nail["2026-01"].total, 24); // 分析表の月は分析表の数字
   const kept = NG.migrateCenters({ centers: [{ id: "kadoma", name: "門真", nail: {} }] });
-  assert.equal(kept.length, 5);
+  assert.equal(kept.length, 6);
   assert.deepEqual(kept[0].nail, {});
 });
 
