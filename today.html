@@ -577,8 +577,10 @@ async function loadData(showSpinner){
 let pollTimer=null;
 function startPolling(){
   if(pollTimer) clearInterval(pollTimer);
-  pollTimer=setInterval(()=>loadData(false),20000);
+  // 画面が裏に回っている間は読まない（通信量を抑える）。戻ったらすぐ読む
+  pollTimer=setInterval(()=>{ if(!document.hidden) loadData(false); },20000);
 }
+document.addEventListener("visibilitychange",()=>{ if(!document.hidden&&pollTimer) loadData(false); });
 
 let realtimeChannel=null;
 function startRealtime(){
