@@ -67,13 +67,29 @@ test("津田の正式な分析表（10月は19日・554,400円）を、保存済
   // 以前の数字（10月は5日分・148,500円）が保存されている場合
   const saved = [{ id: "tsuda", name: "津田巻き爪センター", nail: { "2026-10": { days: 5, total: 10, sales: 148500 }, "2026-11": { total: 30, sales: 400000 } } }];
   const applied = NG.applySeedPatches(saved, []);
-  assert.deepEqual(applied, ["tsuda-2026-official", "katano-2026-11"]);
+  assert.deepEqual(applied, ["tsuda-2026-official", "tsuda-staff-2026-11", "katano-2026-11"]);
   assert.equal(saved[0].nail["2026-10"].sales, 554400);
   assert.equal(saved[0].nail["2026-11"].sales, 400000); // 手で入れた別の月は残す
   // 2回目は反映しない（その後に手で直した数字を上書きしない）
   saved[0].nail["2026-10"].sales = 560000;
   NG.applySeedPatches(saved, applied);
   assert.equal(saved[0].nail["2026-10"].sales, 560000);
+});
+
+test("津田の担当は10月まで児玉、11月から大森（保存済みのデータにも反映）", () => {
+  const t = NG.SEED_CENTERS.find((c) => c.id === "tsuda");
+  assert.equal(NG.staffAt(t, "2026-10"), "児玉");
+  assert.equal(NG.staffAt(t, "2026-11"), "大森");
+  assert.equal(NG.staffAt(t, "2027-03"), "大森");
+  assert.equal(NG.staffLabel(t), "児玉→大森（26年11月〜）");
+  // 交代の記録が無いセンターは、そのままの担当者
+  assert.equal(NG.staffAt({ staff: "伊牟田" }, "2026-05"), "伊牟田");
+  assert.equal(NG.staffLabel({ staff: "伊牟田" }), "伊牟田");
+  // 保存済みのデータ（担当が大森だけ）にも交代の記録が入る
+  const saved = [{ id: "tsuda", staff: "大森", nail: { "2026-10": { total: 45, sales: 554400 } } }];
+  NG.applySeedPatches(saved, ["tsuda-2026-official", "katano-2026-11"]);
+  assert.equal(NG.staffAt(saved[0], "2026-10"), "児玉");
+  assert.equal(saved[0].nail["2026-10"].sales, 554400); // 数字はそのまま
 });
 
 test("センターを足し合わせる（平均通院回数は平均）", () => {
