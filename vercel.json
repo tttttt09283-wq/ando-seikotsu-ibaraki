@@ -1,4 +1,10 @@
 {
+  "git": {
+    "deploymentEnabled": {
+      "claude/*": false,
+      "claude/**": false
+    }
+  },
   "crons": [
     {
       "path": "/api/send-reminders",
