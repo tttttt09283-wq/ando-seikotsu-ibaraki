@@ -424,7 +424,7 @@ test("デイリー稼働：シフト（午前/午後の出勤）と稼働率タ�
   assert.deepEqual(plain(sh[0].staff), ["甲", "乙", "丙"]);
   assert.deepEqual(plain(sh[0].days["2026-12-01"].am.on), ["甲", "乙", "丙"]);
   assert.deepEqual(plain(sh[0].days["2026-12-01"].pm.on), ["甲", "丙"]);
-  assert.deepEqual(plain(sh[0].days["2026-12-01"].pm.extra), ["ヘルプ:1"]);
+  assert.deepEqual(plain(sh[0].days["2026-12-01"].pm.extra), ["1"]); // 数字・予定のメモは人数に入れない
   assert.equal(sh[0].days["2026-12-02"].am.open, false);
   assert.equal(Object.keys(sh[0].days).length, 2); // 下の集計の行は日付にしない
 
@@ -470,4 +470,37 @@ test("生産性と給与：個人売上（直近3か月平均）÷ 人件費 を
   assert.equal(by["架空二郎"].verdict.id, "ng"); // 2.25倍未満
   assert.equal(by["架空三郎"].verdict.id, "nodata");
   assert.equal(r[0].name, "架空二郎"); // 倍率の低い順
+});
+
+test("当日・翌日の配置：シフトの施術スタッフ（受付を除く・ヘルプの名前は入れる）と見込み来院から適正人数を判定する", () => {
+  assert.equal(HQ.intakeFileMonth("Enejoy Hand　シフト管理表（R8/12)"), "2026-12");
+  const rows = [
+    [],
+    ["", "2026-12-01 00:00:00", "", "", "店舗", "出勤人数", "甲", "乙", "受付子", "アルバイト", "ヘルプ"],
+    ["", "2026-12-01 00:00:00", "火", "午前", "営業", 3, "出勤", "出勤", "出勤", "", "丙"],
+    ["", "", "", "午後", "営業", 2, "出勤", "休み", "出勤", "", "有給"],
+    ["", "2026-12-02 00:00:00", "水", "午前", "休診", 0, "休み", "休み", "休み"],
+    ["", "", "", "午後", "休診", 0, "休み", "休み", "休み"],
+  ];
+  const sh = HQ.mergeShiftBooks([HQ.parseShiftBook([{ title: "東町院", values: rows }])]);
+  assert.deepEqual(plain(sh[0].days["2026-12-01"].am.on), ["甲", "乙", "受付子", "丙（ヘルプ）"]);
+  assert.deepEqual(plain(sh[0].days["2026-12-01"].pm.extra), ["有給"]); // 予定のメモは人数に入れない
+  // 過去の同じ曜日（火曜）の来院：40, 50 → 平均45
+  const dayRecords = [{ key: "東町", date: "2026-11-24", visits: 40 }, { key: "東町", date: "2026-11-17", visits: 50 }, { key: "東町", date: "2026-11-18", visits: 99 }];
+  const isReception = (clinic, name) => name === "受付子";
+  const [r] = HQ.staffingPlan({ shifts: sh, date: "2026-12-01", dayRecords, bookings: {}, opt: { perStaff: 12, margin: 1 }, isReception });
+  assert.equal(r.staff, 2); // 午前3人（甲・乙・丙）、午後1人（甲）→ 平均2人
+  assert.deepEqual(plain(r.reception), ["受付子"]);
+  assert.equal(r.expected, 45);
+  assert.equal(r.need, 4); // 45÷12 切り上げ
+  assert.equal(r.verdict.id, "short");
+  // 予約があれば予約数を使う
+  const [b] = HQ.staffingPlan({ shifts: sh, date: "2026-12-01", dayRecords, bookings: { "東町": 10 }, opt: { perStaff: 12, margin: 1 }, isReception });
+  assert.equal(b.expectedSource, "予約");
+  assert.equal(b.need, 1);
+  assert.equal(b.verdict.id, "ok"); // 2人−1人＝差1（余剰とみなす差1以内）
+  const [c] = HQ.staffingPlan({ shifts: sh, date: "2026-12-02", dayRecords, bookings: {}, isReception });
+  assert.equal(c.verdict.id, "closed");
+  const [d] = HQ.staffingPlan({ shifts: sh, date: "2026-12-09", dayRecords, bookings: {}, isReception });
+  assert.equal(d.verdict.id, "noshift");
 });

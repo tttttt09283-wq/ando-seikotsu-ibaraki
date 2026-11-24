@@ -699,9 +699,9 @@
   // ファイル名 → 月（「R8.11」→ 2026-11、「2026.6」→ 2026-06）。原本などは null
   function intakeFileMonth(name) {
     const s = toHalf(name);
-    let m = s.match(/R(\d{1,2})[.\-年](\d{1,2})(?!\d)/);
+    let m = s.match(/R(\d{1,2})[.\-/年](\d{1,2})(?!\d)/);
     if (m) return `${2018 + Number(m[1])}-${pad(Number(m[2]))}`;
-    m = s.match(/(20\d{2})[.\-年](\d{1,2})(?!\d)/);
+    m = s.match(/(20\d{2})[.\-/年](\d{1,2})(?!\d)/);
     if (m) return `${m[1]}-${pad(Number(m[2]))}`;
     return null;
   }
@@ -954,7 +954,13 @@
       for (const s of staff) {
         const v = String(row[s.c] ?? "").trim();
         if (!v) continue;
-        if (/アルバイト|ヘルプ/.test(s.name)) { if (!/^(休|0$)/.test(v)) extra.push(`${s.name}:${v}`); continue; }
+        if (/アルバイト|ヘルプ/.test(s.name)) {
+          // 名前（例「山﨑」）なら応援として人数に入れる。「有給」「研修」「振休」など予定のメモは人数に入れない
+          if (/^(休|0$)/.test(v)) continue;
+          if (/休|有給|有休|研修|欠|振|予定|メモ|[0-9０-９\/／(（]/.test(v)) extra.push(`${v}`);
+          else on.push(`${v}（${s.name === "ヘルプ" ? "ヘルプ" : "アルバイト"}）`);
+          continue;
+        }
         if (/出/.test(v) && !/休/.test(v)) on.push(s.name);
       }
       (days[date] = days[date] || {})[label === "午前" ? "am" : "pm"] = { open, on, extra, count: intakeNum(row[fc]) };
@@ -963,7 +969,50 @@
     return { tab: title, name: title, key: fitClinicKey(title), staff: names, days };
   }
   function parseShiftBook(tabs) {
-    return (tabs || []).filter((t) => !/原本|サマリー|シート\d/.test(t.title)).map((t) => parseShiftTab(t.title, t.values || [])).filter((x) => x && Object.keys(x.days).length);
+    return (tabs || []).filter((t) => !/原本|サマリー|シート\d|スケジュール/.test(t.title)).map((t) => parseShiftTab(t.title, t.values || [])).filter((x) => x && Object.keys(x.days).length);
+  }
+  // 月ごとのシフト表（複数ファイル）を院ごとにまとめる
+  function mergeShiftBooks(books) {
+    const out = [];
+    for (const b of books || []) for (const c of b || []) {
+      const hit = out.find((x) => x.key === c.key);
+      if (!hit) { out.push({ ...c, staff: [...c.staff], days: { ...c.days } }); continue; }
+      c.staff.forEach((n) => { if (!hit.staff.includes(n)) hit.staff.push(n); });
+      Object.assign(hit.days, c.days);
+    }
+    return out;
+  }
+  const sameClinic = (a, b) => !!a && !!b && (a === b || a.startsWith(b) || b.startsWith(a));
+  // 見込み来院：その院の同じ曜日の直近（最大4回）の来院数の平均（日計表）。予約システムの予約があればそれを使う
+  function expectedVisits({ clinicKey, date, dayRecords, bookings }) {
+    if (bookings && bookings[clinicKey] !== undefined && bookings[clinicKey] !== null) return { value: bookings[clinicKey], source: "予約" };
+    const wd = new Date(`${date}T00:00:00Z`).getUTCDay();
+    const past = (dayRecords || []).filter((d) => sameClinic(d.key, clinicKey) && d.date < date && d.visits && new Date(`${d.date}T00:00:00Z`).getUTCDay() === wd)
+      .sort((a, b) => b.date.localeCompare(a.date)).slice(0, 4);
+    if (!past.length) return { value: null, source: null };
+    return { value: Math.round(sum(past.map((d) => d.visits)) / past.length * 10) / 10, source: `同じ曜日の平均（${past.length}回）` };
+  }
+  // 当日・翌日などの配置：シフトの出勤人数（午前・午後の平均）と、見込み来院から出した適正人数を比べる
+  const STAFFING_DEFAULTS = { perStaff: 12, margin: 1 };
+  // isReception(院名, スタッフ名) が true の人（受付）は施術の人数に入れない
+  function staffingPlan({ shifts, date, dayRecords, bookings, opt, isReception }) {
+    const o = { ...STAFFING_DEFAULTS, ...(opt || {}) };
+    const rec = (sh, n) => !!(isReception && isReception(sh.name, String(n).replace(/（(ヘルプ|アルバイト)）$/, "")));
+    return (shifts || []).map((sh) => {
+      const sd = sh.days[date] || null;
+      if (!sd) return { key: sh.key, name: sh.name, hasShift: false, verdict: { id: "noshift", label: "シフト表なし" } };
+      const halves = [sd.am, sd.pm].filter((h) => h && h.open);
+      const open = halves.length > 0;
+      const treat = (h) => h.on.filter((n) => !rec(sh, n));
+      const staff = open ? Math.round(sum(halves.map((h) => treat(h).length)) / halves.length * 10) / 10 : 0;
+      const reception = open ? [...new Set(halves.flatMap((h) => h.on.filter((n) => rec(sh, n))))] : [];
+      const exp = open ? expectedVisits({ clinicKey: sh.key, date, dayRecords, bookings }) : { value: 0, source: null };
+      const need = !open ? 0 : exp.value === null ? null : Math.max(1, Math.ceil(exp.value / o.perStaff));
+      const diff = need === null ? null : Math.round((staff - need) * 10) / 10;
+      const verdict = !open ? { id: "closed", label: "休診" } : need === null ? { id: "nodata", label: "見込みなし" }
+        : diff < 0 ? { id: "short", label: `不足（${Math.abs(diff)}人）` } : diff > o.margin ? { id: "surplus", label: `余剰（+${diff}人）` } : { id: "ok", label: "適正" };
+      return { key: sh.key, name: sh.name, hasShift: true, open, am: sd.am || null, pm: sd.pm || null, staff, reception, expected: exp.value, expectedSource: exp.source, need, diff, verdict };
+    });
   }
   // 「○○稼働率」タブの下の日別の表（スタッフごとに 対応人数・実稼働・稼働枠・稼働率 の4列）
   function parseStaffRateDaily(rows) {
@@ -1076,7 +1125,7 @@
     roleCounts, capacityOf, fitVerdict, fitMonth, fitAdvice, fitYear,
     INTAKE_DEPTS, intakeDefaultDepts, intakeAdditive, intakeFileMonth, intakeDate, parseDailyClinicTab, parseStaffRateTab, parseDailyBook,
     intakeColumnId, intakeDeptsOf, intakeDeptTable,
-    parseShiftTab, parseShiftBook, parseStaffRateDaily, DAILY_DEFAULTS, dailyOverview, monthlyRates, payVsProductivity,
+    parseShiftTab, parseShiftBook, mergeShiftBooks, expectedVisits, STAFFING_DEFAULTS, staffingPlan, parseStaffRateDaily, DAILY_DEFAULTS, dailyOverview, monthlyRates, payVsProductivity,
     parseWageTab, clinicOfPerson, parseKpiTab, kpiIsRate, kpiSeries, kpiAdditive, kpiYearTotals,
     LABOR_DEFAULT_MULT, laborVerdict, laborPlan, parseOrgIssues, issueClinics, issueId, ISSUE_STATUSES, mergeIssues,
   };
