@@ -192,7 +192,8 @@
         const a=splitAmounts(p);
         sum.total+=a.total; sum.ins+=a.ins; sum.tech+=a.tech; sum.goods+=a.goods;
         Object.entries(a.goodsByKind).forEach(([k,x])=>{ sum.goodsByKind[k]=(sum.goodsByKind[k]||0)+x; });
-        parsePayments(p.payment_method,p.total_amount).forEach(x=>{ if(x.amount>0){ r.pay[x.kind].count++; r.pay[x.kind].amount+=x.amount; } });
+        // 支払内訳は実際に受け取った金額：現金＝会計の合計−現金以外（お預かりのお釣りは含めない）
+        Object.entries(methodAmounts(p)).forEach(([k,x])=>{ if(x>0&&r.pay[k]){ r.pay[k].count++; r.pay[k].amount+=x; } });
       });
       staff.add(v.staffId);
       r.total.count++; r.total.amount+=sum.total;
@@ -221,6 +222,9 @@
     refunds.forEach(p=>{
       const a=Number(p.total_amount)||0, ins=Math.max(a,Number(p.insurance_amount)||0), rest=a-ins;
       r.total.amount+=a; r.tech.amount+=a;
+      // 支払内訳からも、返金した方法（現金など）で引く（件数は数えない）。これで支払内訳の合計＝総売上になる
+      const rk=(PAY_KINDS.find(k=>k.match(String(p.refund_method||"現金")))||{key:"other"}).key;
+      r.pay[rk].amount+=a;
       if(ins){ r.techRows[rateKey((bookingById[p.booking_id]||{}).insurance_rate)].amount+=ins; r.nonTaxable+=ins; r.juIns.amount+=ins; }
       if(rest){ r.techRows.other.amount+=rest; r.taxable+=rest; }
     });
