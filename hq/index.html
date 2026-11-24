@@ -328,6 +328,7 @@ async function loadAll() {
     selectAll("bookings", "select=id,patient_name,date,store_id,how_know,cancelled,is_training").then((b) => { S.bookings = b; }).catch((e) => { S.bookingsErr = e.message; }),
     loadFit(false),
     loadIntake(false),
+    loadShift(false),
   ];
   await Promise.all(jobs.map((j) => j.then(render)));
 }
@@ -365,8 +366,8 @@ function np() { return S.bookings ? HQ.newPatients(S.bookings, storesById()) : n
 function accDoc() { const a = doc("accounting"); if (!a.routines) a.routines = HQ.DEFAULT_ROUTINES.map((r) => ({ ...r })); return a; }
 function orgDoc() { const o = doc("org"); if (!o.depts) o.depts = HQ.DEFAULT_DEPTS.map((d) => ({ ...d })); return o; }
 function alertsNow() {
-  if (!S.model) return fitAlerts();
-  return [...HQ.alerts({ model: S.model, perf: perf(), docs: { ...S.docs, accounting: accDoc() }, todayStr, monthKey: thisMonth }), ...fitAlerts()];
+  if (!S.model) return [...fitAlerts(), ...staffingAlerts()];
+  return [...staffingAlerts(), ...HQ.alerts({ model: S.model, perf: perf(), docs: { ...S.docs, accounting: accDoc() }, todayStr, monthKey: thisMonth }), ...fitAlerts()];
 }
 // 今月の組織図×予算で「人員不足・未配置」の院
 function fitAlerts() {
@@ -833,13 +834,101 @@ function intakeStatusHtml() {
   return "";
 }
 // ---------- デイリー稼働（日計表の来院・稼働率タブの日別 × シフト管理表） ----------
+// 読むシフトの月：今日・明日・選んだ日・日計表の月
+const addDays = (d, n) => { const t = new Date(`${d}T00:00:00Z`); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
+function shiftMonthsWanted() {
+  const base = S.ui.staffDate || todayStr;
+  return [...new Set([todayStr, addDays(todayStr, 1), base, addDays(base, 1), S.ui.dailyDate || "", S.intakeMonth ? `${S.intakeMonth}-01` : ""].filter(Boolean).map((d) => d.slice(0, 7)))].sort().slice(-4);
+}
 async function loadShift(refresh) {
-  S.shift = "loading"; S.shiftErr = null; render();
+  const months = shiftMonthsWanted();
+  S.shift = "loading"; S.shiftErr = null; S.shiftKey = months.join(","); render();
   try {
-    const raw = await apiGet(`/api/intake?shift=1${refresh ? "&refresh=1" : ""}`);
-    S.shift = { url: raw.url, clinics: HQ.parseShiftBook(raw.tabs) };
+    const raw = await apiGet(`/api/intake?shift=1&months=${encodeURIComponent(months.join(","))}${refresh ? "&refresh=1" : ""}`);
+    S.shift = { folderUrl: raw.folderUrl, folderErr: raw.folderErr, files: raw.files || [], books: (raw.books || []).map((b) => ({ month: b.month, name: b.name, url: b.url })),
+      clinics: HQ.mergeShiftBooks((raw.books || []).map((b) => HQ.parseShiftBook(b.tabs))) };
   } catch (e) { S.shift = null; S.shiftErr = e.message; }
   render();
+}
+function ensureShift() {
+  if (S.shift === "loading") return;
+  if ((!S.shift && !S.shiftErr) || (S.shift && S.shiftKey !== shiftMonthsWanted().join(","))) setTimeout(() => loadShift(false), 0);
+}
+// 受付かどうか（組織図のその月のタブの役割から）
+function isReceptionFor(month) {
+  const tab = S.fit && S.fit.org ? HQ.orgTabForMonth(S.fit.org, month).tab : null;
+  return (clinic, name) => { const hit = tab ? HQ.clinicOfPerson(name, tab) : null; return !!(hit && /受付/.test(hit.role)); };
+}
+// 日計表の日別の来院（読み込んである月すべて）
+function dayRecordsAll() {
+  const out = [];
+  Object.values(S.intakeBooks || {}).forEach((b) => { if (b && b.clinics) b.clinics.forEach((c) => c.days.forEach((d) => { const v = d.values["総来院数"]; if (v) out.push({ key: c.key, date: d.date, visits: v }); })); });
+  return out;
+}
+// 予約システムの予約数（その日・院ごと。キャンセル・トレーニングは除く）
+function bookingCounts(date) {
+  if (!S.bookings) return {};
+  const names = storesById();
+  const out = {};
+  for (const b of S.bookings) {
+    if (b.date !== date || b.cancelled || b.is_training) continue;
+    const k = HQ.fitClinicKey(names[b.store_id] || "");
+    if (k) out[k] = (out[k] || 0) + 1;
+  }
+  // シフト表の院（「香里園院」）と予約の院（「香里園駅前院」）の名前の違いを合わせる
+  const shifts = S.shift && S.shift.clinics ? S.shift.clinics : [];
+  const mapped = {};
+  for (const sh of shifts) { const k = Object.keys(out).find((x) => x === sh.key || x.startsWith(sh.key) || sh.key.startsWith(x)); if (k) mapped[sh.key] = out[k]; }
+  return mapped;
+}
+function staffOpt() {
+  const d = doc("daily");
+  const num = (v, def) => (v === null || v === undefined || v === "" || !isFinite(v) ? def : Number(v));
+  return { perStaff: num(d.perStaff, HQ.STAFFING_DEFAULTS.perStaff), margin: num(d.margin, HQ.STAFFING_DEFAULTS.margin) };
+}
+function staffingFor(date) {
+  if (!S.shift || S.shift === "loading") return null;
+  return HQ.staffingPlan({ shifts: S.shift.clinics, date, dayRecords: dayRecordsAll(), bookings: bookingCounts(date), opt: staffOpt(), isReception: isReceptionFor(date.slice(0, 7)) });
+}
+// 明日の不足をダッシュボードに出す
+function staffingAlerts() {
+  const tm = addDays(todayStr, 1);
+  const plan = staffingFor(tm);
+  if (!plan) return [];
+  return plan.filter((r) => r.verdict.id === "short").map((r) => ({ level: "warn", section: "daily", text: `明日（${Number(tm.slice(5, 7))}/${Number(tm.slice(8))}）${r.name}：施術スタッフ ${r.staff}人／適正 ${r.need}人（見込み来院 ${r.expected}人）` }));
+}
+function staffingCard() {
+  ensureShift();
+  const base = S.ui.staffDate || todayStr;
+  const head = `<div class="card-h"><span>👥 当日・翌日のスタッフ配置（シフト表 × 見込み来院）</span>
+    <span style="display:flex;gap:6px;align-items:center;font-size:12px;"><button class="btn btn-gray btn-sm" onclick="ui('staffDate',addDays('${base}',-1))">◀</button><input type="date" value="${base}" onchange="ui('staffDate',this.value)"/><button class="btn btn-gray btn-sm" onclick="ui('staffDate',addDays('${base}',1))">▶</button>${base !== todayStr ? `<button class="btn btn-gray btn-sm" onclick="ui('staffDate','')">今日へ</button>` : ""}</span></div>`;
+  if (S.shiftErr) return `<div class="card">${head}<div class="card-b"><div class="err">${esc(S.shiftErr)}</div><button class="btn btn-gray btn-sm" onclick="loadShift(true)">もう一度読み込む</button></div></div>`;
+  if (!S.shift || S.shift === "loading") return `<div class="card">${head}<div class="card-b muted">シフト表を読み込み中...</div></div>`;
+  const d = doc("daily");
+  const o = staffOpt();
+  const tables = [base, addDays(base, 1)].map((date, idx) => {
+    const plan = staffingFor(date) || [];
+    const wd = "日月火水木金土"[new Date(`${date}T00:00:00Z`).getUTCDay()];
+    const label = date === todayStr ? "今日" : date === addDays(todayStr, 1) ? "明日" : idx === 0 ? "この日" : "翌日";
+    const any = plan.some((r) => r.hasShift);
+    const cls = (id) => id === "ok" ? "ok" : id === "short" ? "short" : id === "surplus" ? "surplus" : "nobudget";
+    const half = (h) => !h ? "-" : !h.open ? '<span class="tag">休診</span>' : `${h.on.length}人<div class="small">${esc(h.on.join("・"))}${h.extra.length ? `<br>📝${esc(h.extra.join("・"))}` : ""}</div>`;
+    const body = any ? `<table><tr><th class="l">院</th><th class="l">午前</th><th class="l">午後</th><th>施術スタッフ</th><th>見込み来院</th><th>適正人数</th><th class="l">判定</th></tr>
+      ${plan.map((r) => !r.hasShift ? `<tr><td class="l"><b>${esc(r.name)}</b></td><td colspan="6" class="l muted">シフト表にこの日がありません</td></tr>`
+        : `<tr><td class="l"><b>${esc(r.name)}</b></td><td class="l wrap" style="min-width:140px;">${half(r.am)}</td><td class="l wrap" style="min-width:140px;">${half(r.pm)}</td>
+          <td><b>${r.open ? `${r.staff}人` : "-"}</b>${r.reception && r.reception.length ? `<div class="small">受付 ${esc(r.reception.join("・"))}</div>` : ""}</td>
+          <td>${r.open ? (r.expected ?? "-") : "-"}${r.expectedSource ? `<div class="small">${esc(r.expectedSource)}</div>` : ""}</td><td>${r.open && r.need !== null ? `${r.need}人` : "-"}</td>
+          <td class="l"><span class="vtag ${cls(r.verdict.id)}">${esc(r.verdict.label)}</span></td></tr>`).join("")}
+      </table>` : `<div class="muted">シフト表に ${esc(monthLabel(date.slice(0, 7)))} のファイルがありません。${S.shift.files.length ? `（シフト表があるのは ${esc(S.shift.files.map((f) => monthLabel(f.month)).join("・"))}）` : ""}</div>`;
+    const short = plan.filter((r) => r.verdict.id === "short").length, sur = plan.filter((r) => r.verdict.id === "surplus").length;
+    return `<div style="margin-bottom:14px;"><div style="font-weight:800;font-size:14px;margin-bottom:6px;">${label}　${Number(date.slice(5, 7))}/${Number(date.slice(8))}（${wd}）${any ? ` <span class="vtag short">不足 ${short}院</span> <span class="vtag surplus">余剰 ${sur}院</span>` : ""}</div><div class="scroll">${body}</div></div>`;
+  }).join("");
+  const settings = `<div class="ctl" style="margin-top:4px;">
+      <div><label>施術者1人で1日に対応できる来院</label>${inp("daily", "perStaff", d.perStaff ?? HQ.STAFFING_DEFAULTS.perStaff, { num: 1, r: 1, style: "width:64px;" })}</div>
+      <div><label>余剰とみなす差（人）</label>${inp("daily", "margin", d.margin ?? HQ.STAFFING_DEFAULTS.margin, { num: 1, r: 1, style: "width:64px;" })}</div>
+      <div style="margin-left:auto;display:flex;gap:6px;"><a class="btn btn-gray btn-sm" href="${esc(S.shift.folderUrl)}" target="_blank" rel="noopener" style="text-decoration:none;">シフト表のフォルダ ↗</a><button class="btn btn-gray btn-sm" onclick="loadShift(true)">🔄 再読込</button></div></div>
+    <div class="small" style="margin-top:6px;">施術スタッフ＝シフトの出勤（午前・午後の平均、ヘルプの名前も入れる。組織図で「受付」の人は除く）。見込み来院＝予約システムの予約数（香里園）か、日計表の同じ曜日の直近の平均。適正人数＝見込み来院÷${o.perStaff}人（切り上げ）。不足＝適正より少ない、余剰＝適正より${o.margin}人を超えて多い。${S.shift.folderErr ? `<br><span class="warn">シフト表のフォルダを読めませんでした（${esc(S.shift.folderErr)}）。1つのシフト表から読んでいます。</span>` : ""}</div>`;
+  return `<div class="card">${head}<div class="card-b">${tables}${settings}</div></div>`;
 }
 function dailyOpt() {
   const d = doc("daily");
@@ -865,12 +954,12 @@ function rateCell(rate, lowRate) {
 }
 function secDaily() {
   const head = `<div class="h2">🗓 デイリー稼働</div><div class="lead">1日ごとに、院の営業・誰が出勤しているか（シフト管理表）、来院数・売上（日計表）、スタッフごとの稼働率（日計表の「稼働率」タブ）を1画面で確認します。稼働率が低い院・余剰が出ている院・1人あたりの来院が多すぎる院を自動でチェックします。</div>`;
-  if (!S.shift && !S.shiftErr) setTimeout(() => loadShift(false), 0);
+  const staffing = staffingCard();
   const st = intakeStatusHtml();
-  if (st) return head + `<div class="card"><div class="card-b">${st}</div></div>`;
+  if (st) return head + staffing + `<div class="card"><div class="card-b">${st}</div></div>`;
   const { book } = intakeBook();
   const dates = dailyDates(book);
-  if (!dates.length) return head + `<div class="card"><div class="card-b muted">この月の日計表にまだ入力がありません。</div></div>`;
+  if (!dates.length) return head + staffing + `<div class="card"><div class="card-b muted">この月の日計表にまだ入力がありません。</div></div>`;
   let date = S.ui.dailyDate && S.ui.dailyDate.startsWith(S.intakeMonth) ? S.ui.dailyDate : dates[dates.length - 1];
   if (!dates.includes(date)) date = dates.filter((d) => d <= date).pop() || dates[0];
   const opt = dailyOpt();
@@ -931,7 +1020,7 @@ function secDaily() {
     ${mr.map((c) => { const vals = mDates.map((x) => c.days[x]); const low = vals.filter((v) => v !== null && v !== undefined && v < opt.lowRate).length;
       return `<tr><td class="l"><b>${esc(c.name)}</b></td>${mDates.map((x) => { const v = c.days[x]; return `<td style="padding:2px;" onclick="dailyGo('${x}')">${v === undefined ? "" : `<span class="fitcell ${v === null ? "nobudget" : v >= opt.lowRate ? "ok" : v >= opt.lowRate - 0.15 ? "surplus" : "short"} ${x === date ? "sel" : ""}" style="min-width:38px;font-size:11px;">${v === null ? "-" : Math.round(v * 100)}</span>`}</td>`; }).join("")}<td class="${low ? "warn" : ""}">${low}日</td></tr>`; }).join("")}
   </table><div class="legend"><span class="vtag ok">${Math.round(opt.lowRate * 100)}%以上</span><span class="vtag surplus">${Math.round((opt.lowRate - 0.15) * 100)}〜${Math.round(opt.lowRate * 100)}%</span><span class="vtag short">${Math.round((opt.lowRate - 0.15) * 100)}%未満</span><span>空欄＝稼働率タブに記録なし</span></div></div></div>` : "";
-  return head + controls + shiftNote + tiles + alertsHtml + table + (staffHtml ? `<div class="card"><div class="card-h">スタッフ別（${esc(date)}）</div><div class="card-b scroll">${staffHtml}</div></div>` : "") + heat;
+  return head + staffing + controls + shiftNote + tiles + alertsHtml + table + (staffHtml ? `<div class="card"><div class="card-h">スタッフ別（${esc(date)}）</div><div class="card-b scroll">${staffHtml}</div></div>` : "") + heat;
 }
 // ---- 生産性と給与（人材・salary_viewer だけ） ----
 function payCard() {

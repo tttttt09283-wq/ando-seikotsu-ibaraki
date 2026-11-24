@@ -22,7 +22,17 @@ const DAILY_FOLDER_ID = process.env.DAILY_FOLDER_ID || "1QMZIVjuQNNA6UMC9D_YFx1S
 const WAGE_SHEET_ID = process.env.WAGE_SHEET_ID || "1fe0GypQIWsfvA1AzBnCS0Q77Q7NNozxC";
 // 給与の入ったファイル（日計表の ?file= では読ませない）
 const SALARY_FILE_IDS = [WAGE_SHEET_ID, "1fe0GypQIWsfvA1AzBnCS0Q77Q7NNozxC", "1QHrZ68ulP8h9Y2nAZWaq8Q1VgMybjnbFK_eBh9n2wDo"];
+// シフト管理表：月ごとのファイル（「シフト管理表（R8/12)」など）を入れたフォルダ。月はファイル名から判断（「原本」は読まない）
+const SHIFT_FOLDER_ID = process.env.SHIFT_FOLDER_ID || "1CCFgGZl5wvVUEpgdKOxhto91WIPVWZiq";
+// フォルダが読めないときに使う1つのシフト表
 const SHIFT_SHEET_ID = process.env.SHIFT_SHEET_ID || "1mwAeFrqHpzWdEB-qfXIf10_MWvyrDptGOPmPZYWvet8";
+const fileMonth = (name) => {
+  const s = String(name || "").replace(/[０-９]/g, (c) => String("０１２３４５６７８９".indexOf(c)));
+  let m = s.match(/R(\d{1,2})[.\-/年](\d{1,2})(?!\d)/);
+  if (m) return `${2018 + Number(m[1])}-${String(Number(m[2])).padStart(2, "0")}`;
+  m = s.match(/(20\d{2})[.\-/年](\d{1,2})(?!\d)/);
+  return m ? `${m[1]}-${String(Number(m[2])).padStart(2, "0")}` : null;
+};
 const KPI_SHEET_ID = process.env.KPI_SHEET_ID || "1WT9BF6rrpRPZvRjAvYqSg4_fKs3S6lv_e4AL6sZ98w8";
 const SUPABASE_URL = "https://dctlirxcwitcupaewiyt.supabase.co";
 // 賃金管理表は A〜P 列だけ（日数・時間）。H列（欠勤控除）は金額なので捨てる。Q列から右（計算用・残業代・基礎賃金・時給）は読まない
@@ -59,14 +69,27 @@ export default async function handler(req, res) {
   const refresh = q.refresh === "1";
   try {
     if (q.shift) {
-      const data = await cached("shift", refresh, async () => {
-        let titles;
-        try { titles = await getSheetTitles(SHIFT_SHEET_ID); } catch (e) {
-          throw new Error(`シフト管理表を読み込めませんでした。サービスアカウントに「閲覧者」で共有されているか確認してください（${e.message}）`);
+      // months=2026-11,2026-12（その月のファイルだけ読む。最大4か月）
+      const months = String(q.months || "").split(",").map((x) => x.trim()).filter((x) => /^\d{4}-\d{2}$/.test(x)).slice(0, 4);
+      const readBook = async (id) => {
+        const titles = (await getSheetTitles(id)).filter((t) => !/原本|サマリー|スケジュール/.test(t));
+        const values = titles.length ? await batchGet(id, titles.map((t) => `${quote(t)}!A1:Z90`)) : [];
+        return titles.map((title, i) => ({ title, values: values[i] || [] }));
+      };
+      const data = await cached(`shift:${months.join(",")}`, refresh, async () => {
+        let files = [], folderErr = null;
+        try { files = (await listFolderSpreadsheets(SHIFT_FOLDER_ID)).map((f) => ({ id: f.id, name: f.name, month: fileMonth(f.name) })).filter((f) => f.month); } catch (e) { folderErr = e.message; }
+        const books = [];
+        for (const f of files.filter((x) => !months.length || months.includes(x.month))) {
+          books.push({ month: f.month, id: f.id, name: f.name, url: `https://docs.google.com/spreadsheets/d/${f.id}/edit`, tabs: await readBook(f.id) });
         }
-        titles = titles.filter((t) => !/原本|サマリー/.test(t));
-        const values = titles.length ? await batchGet(SHIFT_SHEET_ID, titles.map((t) => `${quote(t)}!A1:Z90`)) : [];
-        return { url: `https://docs.google.com/spreadsheets/d/${SHIFT_SHEET_ID}/edit`, tabs: titles.map((title, i) => ({ title, values: values[i] || [] })), loadedAt: new Date().toISOString() };
+        if (!files.length) {
+          // フォルダが読めない・ファイルがない → 1つのシフト表
+          try { books.push({ month: null, id: SHIFT_SHEET_ID, name: "シフト管理表", url: `https://docs.google.com/spreadsheets/d/${SHIFT_SHEET_ID}/edit`, tabs: await readBook(SHIFT_SHEET_ID) }); } catch (e) {
+            throw new Error(`シフト管理表を読み込めませんでした。${folderErr ? `フォルダ：${folderErr}。` : ""}サービスアカウントに「閲覧者」で共有されているか確認してください（${e.message}）`);
+          }
+        }
+        return { folderUrl: `https://drive.google.com/drive/folders/${SHIFT_FOLDER_ID}`, folderErr, files, books, loadedAt: new Date().toISOString() };
       });
       res.status(200).json(data);
       return;
