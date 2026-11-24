@@ -407,3 +407,67 @@ test("KPI：「11期」「10期」の表を読み、項目の年度推移と昨�
   assert.equal(tot.yoy, 4_200_000 / 4_500_000);
   assert.equal(HQ.kpiYearTotals(HQ.kpiSeries(t, "窓口単価", 2026)), null); // 単価は足さない
 });
+
+test("デイリー稼働：シフト（午前/午後の出勤）と稼働率タブの日別を読み、1日の院の状況をチェックする", () => {
+  const shiftRows = [
+    [],
+    ["", "2026-12-01 00:00:00", "", "", "店舗", "出勤人数", "甲", "乙", "丙", "アルバイト", "ヘルプ"],
+    ["", "2026-12-01 00:00:00", "火", "午前", "営業", 3, "出勤", "出勤", "出勤"],
+    ["", "", "", "午後", "営業", 2, "出勤", "休み", "出勤", "", "1"],
+    ["", "2026-12-02 00:00:00", "水", "午前", "休診", 0, "休み", "休み", "休み"],
+    ["", "", "", "午後", "休診", 0, "休み", "休み", "休み"],
+    ["", "月間スタッフ別集計"],
+    ["", "出勤コマ数", "", "", "", 5, 2, 1, 2],
+  ];
+  const sh = HQ.parseShiftBook([{ title: "東町院", values: shiftRows }, { title: "全院サマリー", values: [] }]);
+  assert.equal(sh.length, 1);
+  assert.deepEqual(plain(sh[0].staff), ["甲", "乙", "丙"]);
+  assert.deepEqual(plain(sh[0].days["2026-12-01"].am.on), ["甲", "乙", "丙"]);
+  assert.deepEqual(plain(sh[0].days["2026-12-01"].pm.on), ["甲", "丙"]);
+  assert.deepEqual(plain(sh[0].days["2026-12-01"].pm.extra), ["ヘルプ:1"]);
+  assert.equal(sh[0].days["2026-12-02"].am.open, false);
+  assert.equal(Object.keys(sh[0].days).length, 2); // 下の集計の行は日付にしない
+
+  const rateRows = [
+    ["", "スタッフ名", "対応人数", "実稼働", "稼働枠", "稼働率"],
+    ["", "甲", 10, 12, 12, 1],
+    ["", "院合計", 0, 0, 0, 0],
+    ["", "■ 日別"],
+    ["", "日付・曜日", "", "甲", "", "", "", "乙", "", "", "", "院全体合計"],
+    ["", "日付", "曜日", "対応人数", "実稼働", "稼働枠", "稼働率", "対応人数", "実稼働", "稼働枠", "稼働率", "総枠", "実稼働", "総対応", "全体稼働率"],
+    ["", "2026-12-01 00:00:00", "火", 10, 9, 12, 0.75, 5, 3, 12, 0.25, 15, 12, 24, 0.5],
+    ["", "2026-12-02 00:00:00", "水", "", "", "", 0, "", "", "", 0, 0, 0, 0, 0],
+  ];
+  const clinicTab = [["", "院名：", "東町院"], [], ["", "", "", "売上管理", "母数管理"], ["", "", "", "総売上", "総来院数"], ["", "2026-12-01 00:00:00", "火", 100000, 40]];
+  const book = HQ.parseDailyBook([{ title: "東町院", values: clinicTab }, { title: "東町稼働率", values: rateRows }]);
+  const daily = book.staffRates[0].daily;
+  assert.equal(daily.length, 1); // 記録のない日は入れない
+  assert.deepEqual(plain(daily[0].total), { handled: 15, actual: 12, slots: 24, rate: 0.5 }); // 合計はスタッフの足し算から
+  const ov = HQ.dailyOverview({ book, shifts: sh, date: "2026-12-01", opt: { lowRate: 0.7, surplus: 1, busyPerStaff: 12 } });
+  const r = ov.rows[0];
+  assert.equal(r.staffN, 3); // シフトの出勤（午前・午後のどちらか）
+  assert.equal(r.visits, 40);
+  assert.equal(r.rate, 0.5);
+  assert.equal(r.surplus, 1.5);
+  assert.ok(r.flags.some((f) => /稼働率 50%/.test(f.text)));
+  assert.ok(r.flags.some((f) => /余剰 約1.5人分/.test(f.text)));
+  assert.ok(r.flags.some((f) => /1人あたり来院 13.3人/.test(f.text)));
+  assert.deepEqual(plain(HQ.monthlyRates(book, "2026-12")[0].days), { "2026-12-01": 0.5 });
+});
+
+test("生産性と給与：個人売上（直近3か月平均）÷ 人件費 を倍率で判定する", () => {
+  const people = [
+    { name: "架空 一郎", clinics: ["東町院"], grade: "G2", monthlySales: [{ month: 7, total: 600000 }, { month: 8, total: 900000 }, { month: 9, total: 900000 }, { month: 10, total: 900000 }] },
+    { name: "架空 二郎", clinics: ["西町院"], grade: "G2", monthlySales: [{ month: 9, total: 500000 }, { month: 10, total: 500000 }] },
+  ];
+  const labor = [{ name: "架空一郎", clinic: "東町院", avg: 300000 }, { name: "架空二郎", clinic: "西町院", avg: 250000 }, { name: "架空三郎", clinic: "", avg: 200000 }];
+  const r = HQ.payVsProductivity({ people, labor, multiplier: 3 });
+  const by = Object.fromEntries(r.map((x) => [x.name, x]));
+  assert.equal(by["架空一郎"].sales, 900000); // 直近3か月
+  assert.equal(by["架空一郎"].ratio, 3);
+  assert.equal(by["架空一郎"].verdict.id, "ok");
+  assert.equal(by["架空二郎"].ratio, 2);
+  assert.equal(by["架空二郎"].verdict.id, "ng"); // 2.25倍未満
+  assert.equal(by["架空三郎"].verdict.id, "nodata");
+  assert.equal(r[0].name, "架空二郎"); // 倍率の低い順
+});

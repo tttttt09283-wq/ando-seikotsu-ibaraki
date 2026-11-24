@@ -13,6 +13,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="/staff-goals-logic.js"></script>
 <script src="/sales-report-logic.js"></script>
+<script src="/sales-simulator-logic.js"></script>
 <script src="/attendance-logic.js"></script>
 <script src="/shift-logic.js"></script>
 <script src="/petty-cash-logic.js"></script>
@@ -206,6 +207,24 @@ body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;backgroun
 .sidebar-icon{font-size:14px;flex-shrink:0;width:16px;text-align:center;}
 
 .scroll-x{overflow-x:auto;}
+.ss-range{-webkit-appearance:none;appearance:none;width:100%;height:8px;margin:12px 0 4px;border-radius:4px;background:linear-gradient(to right,var(--ss-c) var(--ss-p),#e2e8f0 var(--ss-p));outline:none;cursor:pointer;touch-action:pan-y}
+.ss-range:disabled{cursor:default}
+.ss-range::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:50%;background:#fff;border:3px solid var(--ss-c);box-shadow:0 1px 4px rgba(0,0,0,.2)}
+.ss-range::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#fff;border:3px solid var(--ss-c);box-shadow:0 1px 4px rgba(0,0,0,.2)}
+.ss-range:focus-visible::-webkit-slider-thumb{box-shadow:0 0 0 5px rgba(30,58,95,.2)}
+.ss-kpi4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.ss-kpi{container-type:inline-size;min-width:0;padding:12px 14px}
+.ss-kpi .ss-s{display:none}
+@container (max-width:140px){.ss-kpi .ss-l{display:none}.ss-kpi span.ss-s{display:inline}.ss-kpi div.ss-s{display:block}}
+@media (max-width:600px){.ss-kpi4{gap:6px}.ss-kpi{padding:9px 7px}}
+.ss-sec-wrap{container-type:inline-size}
+.ss-sections{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;align-items:start}
+.ss-sec-nav{display:none}
+@container (max-width:959px){.ss-sections{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@container (max-width:599px){.ss-sections{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;gap:10px;padding:2px 2px 8px;scroll-padding-left:2px;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}.ss-sections>*{flex:0 0 88%;scroll-snap-align:start}.ss-sec-nav{display:grid}}
+.ss-sec-body{container-type:inline-size}
+.ss-field-input{position:relative;width:150px;flex-shrink:0}
+@container (max-width:300px){.ss-field-head{flex-direction:column;align-items:stretch!important;gap:5px!important}.ss-field-input{width:100%}}
 </style>
 </head>
 <body>
@@ -578,7 +597,7 @@ const sb = {
 // ===== 全端末で共有する設定（月次シフト・休暇残・売上目標） =====
 // 以前はブラウザ（localStorage）にだけ保存していたため、端末ごとに設定し直す必要があった。
 // サーバー（app_settings）を正として、localStorage はその写し（すぐ読めるようにするための控え）として使う。
-const SHARED_SETTING_PREFIXES=["shifts_","shifthalf_","shiftstore_","shift_required","holiday_balance","ando_sales_target_","attendance_rules"];
+const SHARED_SETTING_PREFIXES=["shifts_","shifthalf_","shiftstore_","shift_required","holiday_balance","ando_sales_target_","attendance_rules","sales_simulator_","away_custom_reasons"];
 // ===== 半日出勤（シフト表の「午前出勤」＝午後休み／「午後出勤」＝午前休み） =====
 // 午前・午後の時間帯は、設定「shift_half_times」（平日／土日・祝それぞれ）。未設定なら HALF_SHIFT_DEFAULT_TIMES
 const HALF_SHIFT={"午前出勤":"am","午後出勤":"pm"};
@@ -1194,11 +1213,16 @@ function LoginScreen({onLogin}){
 // 新患の仮枠の名前・電話・メモは個人情報なので、誰でも読める staff_breaks ではなく staff_break_notes（スタッフのみ）に保存する
 const AWAY_REASONS=["銀行","用事","研修","外出","会議","その他"];
 const NEWPT_HOLD_REASON="新患仮枠";
-const AWAY_ICONS={"銀行":"🏦","用事":"🚶","研修":"📚","外出":"🚶","会議":"💬","その他":"📌"};
+const AWAY_ICONS={"休憩":"☕","銀行":"🏦","用事":"🚶","研修":"📚","外出":"🚶","会議":"💬","その他":"📌"};
+// 不在枠に自分で追加した内容（全端末で共有。例：「往診」「片付け」）
+const AWAY_CUSTOM_KEY="away_custom_reasons";
+function readAwayCustomReasons(){ try{ const v=JSON.parse(localStorage.getItem(AWAY_CUSTOM_KEY)||"[]"); return Array.isArray(v)?v.filter(x=>typeof x==="string"&&x.trim()).slice(0,30):[]; }catch(e){ return []; } }
+function saveAwayCustomReasons(list){ sharedSettings.set(AWAY_CUSTOM_KEY,JSON.stringify(list)); window.dispatchEvent(new Event("ando-shared-settings")); }
 function breakStyleOf(reason){
   if(reason===NEWPT_HOLD_REASON) return {bg:"repeating-linear-gradient(135deg,#ecfdf5,#ecfdf5 6px,#d1fae5 6px,#d1fae5 12px)",border:"2px dashed #059669",color:"#047857",icon:"🆕",label:"仮枠"};
-  if(AWAY_REASONS.includes(reason)) return {bg:"repeating-linear-gradient(135deg,#fffbeb,#fffbeb 6px,#fef3c7 6px,#fef3c7 12px)",border:"1.5px solid #f59e0b",color:"#92400e",icon:AWAY_ICONS[reason]||"📌",label:reason};
-  return {bg:"#f1f5f9",border:"1px solid #e2e8f0",color:"#94a3b8",icon:"",label:reason||"休憩"};
+  // 休憩（内容なしも休憩）はグレー、それ以外（銀行・用事や自分で入れた内容）は不在枠の色
+  if(reason&&reason!=="休憩"&&reason!=="昼休み") return {bg:"repeating-linear-gradient(135deg,#fffbeb,#fffbeb 6px,#fef3c7 6px,#fef3c7 12px)",border:"1.5px solid #f59e0b",color:"#92400e",icon:AWAY_ICONS[reason]||"📌",label:reason};
+  return {bg:"#f1f5f9",border:"1px solid #e2e8f0",color:"#94a3b8",icon:"",label:"休憩"};
 }
 // 休憩・不在枠・仮枠の伸縮。edge="right"は終わりを、"left"は始まりを動かす（反対側は固定）。steps＝10分単位の移動量
 function breakResizeResult(br,edge,steps){
@@ -1221,12 +1245,29 @@ function CalendarHoldModal({init,onClose,onSaved}){
   const [menu,setMenu]=React.useState("");
   const [memo,setMemo]=React.useState("");
   const [saving,setSaving]=React.useState(false);
+  const ver=useSharedSettingsVersion();
+  const custom=React.useMemo(()=>readAwayCustomReasons(),[ver]);
+  const [extra,setExtra]=React.useState(""); // 追加入力
   const staff=STAFF_ACCOUNTS.find(x=>x.id===init.staffId)||{name:"",color:"#64748b"};
+  const allReasons=["休憩",...AWAY_REASONS,...custom.filter(c=>c!=="休憩"&&!AWAY_REASONS.includes(c))];
+  function addExtra(){
+    const v=extra.trim().replace(/[<>]/g,"").slice(0,20); if(!v) return;
+    if(!allReasons.includes(v)) saveAwayCustomReasons([...custom,v]);
+    setReason(v); setExtra("");
+  }
+  function removeCustom(v){
+    if(!window.confirm(`「${v}」を選択肢から消しますか？（入れ済みの枠はそのままです）`)) return;
+    saveAwayCustomReasons(custom.filter(c=>c!==v)); if(reason===v) setReason("休憩");
+  }
   const durs=[10,20,30,40,60,90,120,180];
   async function save(){
     setSaving(true);
     try{
-      const rows=await sb.insert("staff_breaks",{staff_id:init.staffId,date:init.date,time,duration,reason});
+      // 追加入力に書いたまま「追加」を押していなければ、その内容で入れる
+      const typed=extra.trim().replace(/[<>]/g,"").slice(0,20);
+      const reasonToSave=!isNew&&typed?typed:reason;
+      if(!isNew&&typed&&!allReasons.includes(typed)) saveAwayCustomReasons([...custom,typed]);
+      const rows=await sb.insert("staff_breaks",{staff_id:init.staffId,date:init.date,time,duration,reason:reasonToSave});
       if(!Array.isArray(rows)||rows.length===0) throw new Error((rows&&rows.message)||"登録できませんでした");
       let note=null;
       if(isNew&&(name.trim()||phone.trim()||menu||memo.trim())){
@@ -1243,7 +1284,7 @@ function CalendarHoldModal({init,onClose,onSaved}){
       <div className="modal-box" style={{overflowY:"auto",maxWidth:460}} onClick={e=>e.stopPropagation()}>
         <div className="modal-header" style={{background:isNew?"linear-gradient(135deg,#047857,#059669)":"linear-gradient(135deg,#b45309,#d97706)"}}>
           <div>
-            <div style={{fontWeight:800,fontSize:16,color:"white"}}>{isNew?"🆕 新患の仮枠を取る":"🏦 不在枠を入れる（銀行・用事・研修など）"}</div>
+            <div style={{fontWeight:800,fontSize:16,color:"white"}}>{isNew?"🆕 新患の仮枠を取る":"🏦 不在枠を入れる（休憩・銀行・用事・研修など）"}</div>
             <div style={{fontSize:12,color:"rgba(255,255,255,.85)",marginTop:2}}>{init.date}　{staff.name}</div>
           </div>
           <button className="modal-close" onClick={onClose}>✕</button>
@@ -1251,7 +1292,19 @@ function CalendarHoldModal({init,onClose,onSaved}){
         <div style={{padding:18}}>
           {!isNew&&<div className="form-group">
             <label className="form-label">内容</label>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{AWAY_REASONS.map(r=><button key={r} type="button" onClick={()=>setReason(r)} style={chip(reason===r)}>{AWAY_ICONS[r]} {r}</button>)}</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{allReasons.map(r=>{
+              const isCustom=custom.includes(r)&&r!=="休憩"&&!AWAY_REASONS.includes(r);
+              return <span key={r} style={{display:"inline-flex",alignItems:"center"}}>
+                <button type="button" onClick={()=>setReason(r)} style={chip(reason===r&&!extra.trim())}>{AWAY_ICONS[r]||"📌"} {r}</button>
+                {isCustom&&<button type="button" onClick={()=>removeCustom(r)} title={`「${r}」を選択肢から消す`} aria-label={`${r}を選択肢から消す`} style={{marginLeft:-4,width:20,height:20,borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#94a3b8",fontSize:11,cursor:"pointer",padding:0,lineHeight:"18px"}}>×</button>}
+              </span>;
+            })}</div>
+            <div style={{display:"flex",gap:6,marginTop:8}}>
+              <input className="form-input" value={extra} onChange={e=>setExtra(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter"){ e.preventDefault(); addExtra(); } }}
+                placeholder="ほかの内容を入力（例：往診・片付け）" aria-label="不在枠の内容を追加入力" maxLength={20} style={{flex:1,marginBottom:0}}/>
+              <button type="button" onClick={addExtra} disabled={!extra.trim()} style={{...chip(false),whiteSpace:"nowrap",opacity:extra.trim()?1:.5}}>＋ 追加</button>
+            </div>
+            <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>追加した内容は次から選択肢に出ます（全端末で共有。×で消せます）</div>
           </div>}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <div className="form-group">
@@ -1357,7 +1410,7 @@ function BreakModal({onClose,bookings,breaks,setBreaks}){
             <div className="form-group" style={{marginBottom:14}}>
               <label className="form-label">理由</label>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                {["休憩","昼休み","銀行","用事","研修","外出","会議","その他"].map(r=>(<button key={r} onClick={()=>setReason(r)} className="btn" style={{padding:"5px 10px",borderRadius:7,border:`2px solid ${reason===r?"#1e3a5f":"#e2e8f0"}`,background:reason===r?"#1e3a5f":"white",color:reason===r?"white":"#374151",fontSize:12,fontWeight:reason===r?700:400}}>{r}</button>))}
+                {["休憩","昼休み","銀行","用事","研修","外出","会議","その他",...readAwayCustomReasons().filter(c=>!["休憩","昼休み","銀行","用事","研修","外出","会議","その他"].includes(c))].map(r=>(<button key={r} onClick={()=>setReason(r)} className="btn" style={{padding:"5px 10px",borderRadius:7,border:`2px solid ${reason===r?"#1e3a5f":"#e2e8f0"}`,background:reason===r?"#1e3a5f":"white",color:reason===r?"white":"#374151",fontSize:12,fontWeight:reason===r?700:400}}>{r}</button>))}
               </div>
             </div>
             <button onClick={addBreak} disabled={saving} className="btn btn-primary" style={{width:"100%",justifyContent:"center",padding:11,fontSize:14,borderRadius:9,opacity:saving?.7:1}}>{saving?"登録中...":"休憩を登録する"}</button>
@@ -2341,6 +2394,55 @@ const SPECIAL_BOOKING_KINDS=[
   {key:"beauty",label:"美容鍼",icon:"✨",color:"#db2777",grad:"linear-gradient(135deg,#f472b6,#be185d)",re:/美容鍼|美容はり|美容針/},
   {key:"kogao",label:"小顔矯正",icon:"🌸",color:"#7c3aed",grad:"linear-gradient(135deg,#a78bfa,#6d28d9)",re:/小顔/},
 ];
+// ===== 予約カレンダーのメニュー別の色分け =====
+// 柔整（手技・再診など）／鍼灸併用（メニューに「鍼灸」、または柔整と鍼灸の担当を分けた予約の鍼灸の部分）／巻き爪／美容鍼（小顔を含む）／痩身
+const BOOKING_MENU_COLORS=[
+  {key:"ju",label:"柔整",color:"#2563eb",grad:"linear-gradient(135deg,#3b82f6,#1d4ed8)"},
+  {key:"acu",label:"鍼灸（併用・同意者）",color:"#7c3aed",grad:"linear-gradient(135deg,#8b5cf6,#6d28d9)"},
+  {key:"nail",label:"巻き爪",color:"#0d9488",grad:"linear-gradient(135deg,#14b8a6,#0f766e)"},
+  {key:"beauty",label:"美容鍼",color:"#db2777",grad:"linear-gradient(135deg,#f472b6,#be185d)"},
+  {key:"slim",label:"痩身",color:"#c2410c",grad:"linear-gradient(135deg,#fb923c,#c2410c)"},
+  {key:"pass",label:"パス更新時期（FP期限2週間以内・回数券残り3回以下）",short:"パス更新時期",color:"#b91c1c",grad:"linear-gradient(135deg,#ef4444,#b91c1c)"},
+];
+const PASS_ALERT_FP_DAYS=14;     // フリーパスの期限まで何日で色を変えるか
+const PASS_ALERT_TICKET_LEFT=3;  // 回数券の残り何回以下で色を変えるか
+// 患者様（空白なしの名前・電話番号）→ 更新時期のパス。更新済み（あとで別のパスを購入）のものは除く
+function passAlertIndex(passes,todayStr,training){
+  const list=(passes||[]).filter(p=>p.active!==false&&!!p.is_training===!!training);
+  const renewal=passRenewalMap((passes||[]).filter(p=>!!p.is_training===!!training));
+  const byName={},byPhone={};
+  list.forEach(p=>{
+    if(renewal[p.id]) return;
+    let info=null;
+    if(passIsFP(p)){
+      if(!p.expiry_date) return;
+      const days=Math.round((Date.parse(p.expiry_date+"T00:00:00")-Date.parse(todayStr+"T00:00:00"))/86400000);
+      if(days<=PASS_ALERT_FP_DAYS) info={kind:"fp",pass:p,days,label:days<0?`FP 期限切れ（${p.expiry_date}）`:`FP 期限 ${p.expiry_date}（あと${days}日）`};
+    }else{
+      const left=p.remaining_count||0;
+      if(left<=PASS_ALERT_TICKET_LEFT) info={kind:"ticket",pass:p,left,label:`回数券 残り${left}回（${p.pass_type}）`};
+    }
+    if(!info) return;
+    const k=passNameKey(p.patient_name); if(k) byName[k]=byName[k]||info;
+    if(p.phone) byPhone[p.phone]=byPhone[p.phone]||info;
+  });
+  return {byName,byPhone,of:b=>b?(byName[passNameKey(b.patient_name)]||(b.phone&&byPhone[b.phone])||null):null};
+}
+// 鍼灸同意者＝鍼灸保険対応者（会計の区分が鍼灸の方、または同意書の期限を入れた方）。患者様のキー（空白なしの名前）の集合を渡す
+function bookingMenuKind(b,acuConsentKeys,passAlert){
+  if(!b) return BOOKING_MENU_COLORS[0];
+  const by=k=>BOOKING_MENU_COLORS.find(x=>x.key===k);
+  if(passAlert&&passAlert.of(b)) return by("pass"); // パスの更新時期の方を優先して目立たせる
+  const sp=specialBookingKind(b);
+  if(sp) return by(sp.key==="nail"?"nail":"beauty");
+  const text=[b.menu,...(Array.isArray(b.menus)?b.menus:[]),b.memo].filter(Boolean).join(" ");
+  if(/痩身|ダイエット|脂肪|EMS|ボディメイク|スリム/i.test(text)) return by("slim");
+  if(acuConsentKeys&&acuConsentKeys.has(patientMarkKey(b.patient_name))) return by("acu"); // 鍼灸同意者も鍼灸と同じ色
+  if(b._seg==="acu") return by("acu");
+  if(b._seg==="ju") return by("ju");
+  if(/鍼灸|はり|鍼/.test(text)) return by("acu");
+  return by("ju");
+}
 // 予約のメニュー・初診/再診・所要時間を1行で表す（美容メニューは「美容鍼／初診／80分」のように分けて表示）
 function bookingMenuSummary(b){
   if(!b) return "";
@@ -9414,7 +9516,238 @@ function PatientsPanel({bookings,setView,setForm,setEditId,setConflict,todayStr,
 // 全社：院ごとの出勤人数（必要人数との過不足）と、所属院ごとのスタッフ別シフト
 // 各院：その院で働く人（所属＋応援）のシフトと、その院の人数
 // 集計は shift-logic.js（ShiftLogic）。シフトの種類は月次シフト表と同じ「shifts_YYYY-MM」、その日の勤務院は「shiftstore_YYYY-MM」に保存
-function ShiftOverviewPanel({onShiftsSaved}){
+// ===== 月の目標売上・シフト人数の共通処理（シフト管理のカレンダーと、予約カレンダー上の「1日の目標」で使う） =====
+// 月の目標売上：予約分析・サマリーの月間売上目標 → 無ければ経営ダッシュボードの目標。storeId=null は全社
+function useMonthlySalesTarget(month,storeId){
+  useSharedSettingsVersion(); // 目標が変わったら読み直す
+  const [dash,setDash]=React.useState({});
+  React.useEffect(()=>{
+    let alive=true; setDash({});
+    sb.select("clinic_monthly_targets",`?target_month=eq.${month}-01&select=store_id,target_sales`)
+      .then(r=>{ if(!alive||!Array.isArray(r)) return; const m={}; r.forEach(x=>{ if(x.target_sales) m[x.store_id==null?"all":String(x.store_id)]=Number(x.target_sales); }); setDash(m); }).catch(()=>{});
+    return()=>{ alive=false; };
+  },[month]);
+  const one=id=>{
+    let l=0; try{ l=Number(String(localStorage.getItem(`ando_sales_target_store_${id}_${month}`)||"").replace(/[^0-9]/g,""))||0; }catch(e){}
+    if(l) return {value:l,source:"予約分析・サマリーの月間売上目標"};
+    if(dash[id]) return {value:dash[id],source:"経営ダッシュボードの目標"};
+    return {value:0,source:""};
+  };
+  return {own:one(storeId==null?"all":String(storeId)),all:one("all"),key:`ando_sales_target_store_${storeId==null?"all":storeId}_${month}`};
+}
+// その院（null＝全社）の、日ごとの出勤人数と休診の判定、月の延べ人数（休診日を除く）
+function shiftUnitsFor(result,closedSet,stores,storeId){
+  // 休診日（定休日・臨時休業）は、シフトで出勤になっていても人数に数えない（目標も出さない）
+  const storeUnits=(id,d)=>closedSet.has(`${id}_${d}`)?0:((result.perStore[id]&&result.perStore[id][d])||0);
+  const sumStore=id=>result.dates.reduce((t,{date})=>t+storeUnits(id,date),0);
+  const usedStores=stores.filter(st=>result.dates.some(({date})=>((result.perStore[st.id]&&result.perStore[st.id][date])||0)>0));
+  // 全社：開いている院の人数の合計（勤務院が未設定の人は、どこかの院が開いている日だけ数える）
+  const allOn=d=>{
+    const open=usedStores.some(st=>!closedSet.has(`${st.id}_${d}`));
+    return stores.reduce((t,st)=>t+storeUnits(st.id,d),0)+(open?(result.unassigned[d]||0):0);
+  };
+  const unitsOf=d=>storeId!=null?storeUnits(storeId,d):allOn(d);
+  const isClosed=d=>storeId!=null?closedSet.has(`${storeId}_${d}`):(usedStores.length?usedStores:stores).length>0&&(usedStores.length?usedStores:stores).every(st=>closedSet.has(`${st.id}_${d}`));
+  const allUnits=stores.reduce((t,st)=>t+sumStore(st.id),0);
+  return {unitsOf,isClosed,share:storeId==null?1:(allUnits>0?sumStore(storeId)/allUnits:0)};
+}
+// 目標を決める：その院の目標が無ければ、全社の目標をその院の月の延べ出勤人数の割合で分ける
+function resolveSalesTarget(T,storeId,share){
+  if(T.own.value) return {target:T.own.value,source:T.own.source,derived:false};
+  if(storeId!=null&&T.all.value&&share>0) return {target:Math.round(T.all.value*share),source:`全社の目標 ¥${T.all.value.toLocaleString()} を出勤人数（${Math.round(share*100)}%）で按分`,derived:true};
+  return {target:0,source:"",derived:false};
+}
+// 予約カレンダー用：シフトのデータを読み込み、その月の人数を計算する（シフト管理の画面と同じ計算）
+const _shiftBaseCache={p:null};
+function useShiftMonth(month){
+  const SL=window.ShiftLogic;
+  const ver=useSharedSettingsVersion();
+  const [base,setBase]=React.useState(null);
+  React.useEffect(()=>{
+    let alive=true;
+    if(!_shiftBaseCache.p) _shiftBaseCache.p=Promise.all([
+      sb.select("stores","?order=id.asc"),
+      sb.select("clinic_staff","?select=id,store_ids"),
+      sb.select("staff_weekly_shifts","?order=staff_id.asc,day_of_week.asc"),
+      sb.select("business_hours","?select=store_id,day_of_week,is_open"),
+      sb.select("temp_closures","?select=store_id,date,is_closed,memo"),
+    ]).then(([st,cs,ws,b,tc])=>{
+      const staffStores={}; if(Array.isArray(cs)) cs.forEach(r=>{ if(Array.isArray(r.store_ids)&&r.store_ids.length) staffStores[r.id]=r.store_ids; });
+      return {stores:Array.isArray(st)?st:[],staffStores,weekly:SL.weeklyMap(Array.isArray(ws)?ws:[]),bh:Array.isArray(b)?b:[],closures:Array.isArray(tc)?tc:[]};
+    }).catch(e=>{ _shiftBaseCache.p=null; throw e; });
+    _shiftBaseCache.p.then(v=>{ if(alive) setBase(v); }).catch(()=>{});
+    // 10分ごとに読み直す（週固定シフトや休診日の変更を反映）
+    const t=setInterval(()=>{ _shiftBaseCache.p=null; },10*60*1000);
+    return()=>{ alive=false; clearInterval(t); };
+  },[month]);
+  return React.useMemo(()=>{
+    if(!base||!SL) return null;
+    const read=k=>{ try{ const v=JSON.parse(localStorage.getItem(k)||"null"); return v&&typeof v==="object"?v:{}; }catch(e){ return {}; } };
+    const closed=new Set();
+    base.stores.forEach(st=>SL.monthDates(month).forEach(({date,day})=>{
+      const c=base.closures.find(x=>x.store_id===st.id&&x.date===date);
+      if(c){ if(c.is_closed) closed.add(`${st.id}_${date}`); return; }
+      const h=base.bh.find(x=>x.store_id===st.id&&x.day_of_week===day);
+      if(h&&h.is_open===false) closed.add(`${st.id}_${date}`);
+    }));
+    const holidays=(window.Attendance&&Attendance.holidaySetFrom)?Attendance.holidaySetFrom(base.closures):new Set();
+    const result=SL.buildMonth({month,staff:STAFF_ACCOUNTS.filter(s=>!s.eventOnly),stores:base.stores,shifts:read(`shifts_${month}`),storeOverrides:read(`shiftstore_${month}`),
+      weekly:base.weekly,staffStores:base.staffStores,required:{},holidays,closed});
+    return {result,closed,stores:base.stores};
+  },[base,month,ver]);
+}
+// 月の売上（日ごと）。storeId を渡すと予約の院で分ける
+function dailySalesMap(payments,bookings,month,storeId,firstStoreId){
+  const storeOf={}; if(storeId!=null) (bookings||[]).forEach(b=>{ storeOf[b.id]=b.store_id||firstStoreId; });
+  const m={};
+  (payments||[]).forEach(p=>{
+    if(!p.payment_date||p.payment_date.slice(0,7)!==month) return;
+    if(storeId!=null&&storeOf[p.booking_id]!==storeId) return;
+    m[p.payment_date]=(m[p.payment_date]||0)+(Number(p.total_amount)||0);
+  });
+  return m;
+}
+// 予約カレンダーの「その日の売上」の右に出す、1日の売上目標
+function DailyTargetBadge({date,storeId,payments,bookings,todayStr}){
+  const SL=window.ShiftLogic;
+  const month=date.slice(0,7);
+  const sm=useShiftMonth(month);
+  const T=useMonthlySalesTarget(month,storeId);
+  const firstStoreId=sm&&sm.stores.length?sm.stores[0].id:1;
+  const actual=React.useMemo(()=>dailySalesMap(payments,bookings,month,storeId,firstStoreId),[payments,bookings,month,storeId,firstStoreId]);
+  if(!sm||!SL) return null;
+  const u=shiftUnitsFor(sm.result,sm.closed,sm.stores,storeId);
+  const {target,source}=resolveSalesTarget(T,storeId,u.share);
+  const pill={fontSize:12,fontWeight:700,padding:"3px 10px",borderRadius:20,whiteSpace:"nowrap"};
+  if(!target) return <span style={{...pill,marginLeft:"auto",color:"#64748b",background:"#f1f5f9"}} title="予約分析・サマリーの月間売上目標を入れると、1日の目標が出ます">🎯 1日の目標：月の目標が未設定</span>;
+  const units={}; sm.result.dates.forEach(({date:d})=>{ units[d]=u.unitsOf(d); });
+  const plan=SL.dailySalesPlan({dates:sm.result.dates,units,closed:u.isClosed,target,actual,today:todayStr});
+  const day=plan.days.find(x=>x.date===date);
+  if(!day) return null;
+  const yen=v=>"¥"+Math.round(v||0).toLocaleString();
+  if(!day.working) return <span style={{...pill,marginLeft:"auto",color:"#64748b",background:"#f1f5f9"}}>🎯 1日の目標：{u.isClosed(date)?"休診日":"出勤0人"}</span>;
+  const got=day.actual!=null?day.actual:null;
+  const rest=got!=null?day.target-got:null;
+  const tip=`月の目標 ${yen(target)}（${source}）\nこの日の出勤 ${SL.fmtUnits(day.units)}人 → 目標 ${yen(day.target)}（1人あたり ${yen(day.perPerson)}）\n基本 ${yen(day.base)}${day.added?`＋前日までの不足分の上乗せ ${yen(day.added)}`:""}`;
+  return(
+    <span title={tip} style={{marginLeft:"auto",display:"inline-flex",alignItems:"center",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
+      <span style={{fontSize:12,fontWeight:800,color:"#7c2d12"}}>🎯 1日の目標</span>
+      <span style={{fontSize:15,fontWeight:800,color:day.added?"#c2410c":"#1e3a5f"}}>{yen(day.target)}</span>
+      <span style={{...pill,color:"#475569",background:"white",border:"1px solid #fde68a"}}>👥 {SL.fmtUnits(day.units)}人・1人 {yen(day.perPerson)}</span>
+      {day.added>0&&<span style={{...pill,color:"#c2410c",background:"#ffedd5"}}>不足分 +{yen(day.added)}</span>}
+      {got!=null&&(rest>0
+        ?<span style={{...pill,color:"#b91c1c",background:"#fee2e2"}}>あと {yen(rest)}</span>
+        :<span style={{...pill,color:"#047857",background:"#d1fae5"}}>✓ 達成 +{yen(-rest)}</span>)}
+    </span>
+  );
+}
+
+// ===== シフト管理：日割りの売上目標カレンダー =====
+// 月の目標売上（予約分析・サマリーの「月間売上目標」、無ければ経営ダッシュボードの院の目標）を、
+// シフトの出勤人数に合わせて1日ずつに配分し、その日の実績と並べて毎日追えるようにする。
+// 足りない分は以降の日に上乗せ、多く売れている日は減らさない（計算は shift-logic.js の dailySalesPlan）
+function DailySalesTargetCard({month,dates,unitsOf,isClosed,share,storeId,storeLabel,payments,bookings,firstStoreId,todayStr}){
+  const SL=window.ShiftLogic;
+  const T=useMonthlySalesTarget(month,storeId);
+  const key=T.key;
+  const [editing,setEditing]=React.useState(false);
+  const [draft,setDraft]=React.useState("");
+  const {target,source,derived}=resolveSalesTarget(T,storeId,share);
+
+  // その月の日ごとの売上（返金はマイナス）。院を選んでいるときは、予約の院で分ける
+  const actual=React.useMemo(()=>dailySalesMap(payments,bookings,month,storeId,firstStoreId),[payments,bookings,month,storeId,firstStoreId]);
+
+  const units={}; dates.forEach(({date})=>{ units[date]=unitsOf(date); });
+  const plan=SL.dailySalesPlan({dates,units,closed:isClosed,target,actual,today:todayStr});
+  const yen=v=>(v<0?"−":"")+"¥"+Math.abs(Math.round(v||0)).toLocaleString();
+  const sYen=v=>{ const a=Math.abs(v); return (v<0?"−":v>0?"+":"")+(a>=10000?(Math.round(a/1000)/10)+"万":a.toLocaleString()); };
+  const lastPast=[...plan.days].reverse().find(d=>d.past);
+  const cum=lastPast?lastPast.cum:0;
+  const todayIn=todayStr.slice(0,7)===month;
+
+  function saveTarget(){
+    const v=String(draft).replace(/[^0-9]/g,"");
+    sharedSettings.set(key,v); setEditing(false);
+    window.dispatchEvent(new Event("ando-shared-settings"));
+  }
+
+  const card={background:"white",borderRadius:12,boxShadow:"0 1px 4px rgba(0,0,0,.06)",border:"1px solid #f1f5f9",marginBottom:14,overflow:"hidden"};
+  const tile=(label,value,sub,color)=>(<div style={{background:"#f8fafc",borderRadius:10,padding:"9px 12px",minWidth:0}}>
+    <div style={{fontSize:11,fontWeight:700,color:"#64748b"}}>{label}</div>
+    <div style={{fontSize:19,fontWeight:900,color:color||"#1e293b",marginTop:1}}>{value}</div>
+    {sub&&<div style={{fontSize:10.5,color:"#64748b",marginTop:1}}>{sub}</div>}
+  </div>);
+  const first=dates.length?new Date(dates[0].date+"T00:00:00").getDay():0;
+  const cells=[...Array(first).fill(null),...plan.days];
+  while(cells.length%7) cells.push(null);
+  const DJ=["日","月","火","水","木","金","土"];
+
+  return(
+    <div style={card}>
+      <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <span style={{fontWeight:800,fontSize:14,color:"#1e3a5f"}}>💴 1日の売上目標（{storeLabel}）</span>
+        <span style={{fontSize:11,color:"#64748b"}}>月の目標をシフトの出勤人数で1日ずつに配分。足りない分は次の日から上乗せ、多く売れても減らしません</span>
+      </div>
+      <div style={{padding:"12px 16px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10,fontSize:12.5}}>
+          <b style={{color:"#1e3a5f"}}>月の目標売上</b>
+          {editing?<>
+            <input value={draft} onChange={e=>setDraft(e.target.value)} inputMode="numeric" placeholder="例：4000000" aria-label="月の目標売上" autoFocus
+              onKeyDown={e=>{ if(e.key==="Enter") saveTarget(); }} style={{width:140,padding:"5px 8px",border:"1.5px solid #93c5fd",borderRadius:6,fontSize:13,fontFamily:"inherit"}}/>
+            <button type="button" onClick={saveTarget} style={{padding:"5px 12px",borderRadius:6,border:"none",background:"#1e3a5f",color:"white",fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>保存</button>
+            <button type="button" onClick={()=>setEditing(false)} style={{padding:"5px 10px",borderRadius:6,border:"1.5px solid #e2e8f0",background:"white",cursor:"pointer",fontFamily:"inherit"}}>やめる</button>
+          </>:<>
+            <span style={{fontSize:16,fontWeight:900,color:target?"#1e293b":"#dc2626"}}>{target?yen(target):"未設定"}</span>
+            {source&&<span style={{fontSize:11,color:"#94a3b8"}}>（{derived?source:`${source}から自動で反映`}）</span>}
+            <button type="button" onClick={()=>{ setDraft(T.own.value?String(T.own.value):""); setEditing(true); }} style={{padding:"3px 10px",borderRadius:6,border:"1.5px solid #e2e8f0",background:"white",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>✏ {T.own.value?"変更":derived?"この院の目標を入力":"入力"}</button>
+          </>}
+        </div>
+        {!target?<div style={{padding:"12px 14px",background:"#fef2f2",borderRadius:8,fontSize:12.5,color:"#b91c1c",fontWeight:700}}>この月の目標売上が入っていません。「予約分析・サマリー」の月間売上目標で入れるか、上の「✏ 入力」から入れると、1日の目標が出ます。</div>:<>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:8,marginBottom:12}}>
+          {tile("ここまでの実績",yen(plan.actualTotal),plan.rate!=null?`達成率 ${plan.rate}%`:"","#0e7490")}
+          {tile("残り",yen(plan.remaining),`残りの稼働日 ${plan.remainDays}日`)}
+          {tile("1日の平均目標",yen(plan.avgDaily),`稼働日 ${plan.workDays}日・延べ ${SL.fmtUnits(plan.totalUnits)}人`)}
+          {todayIn&&plan.next&&tile(plan.next.today?"今日の目標":`次の稼働日（${Number(plan.next.date.slice(8))}日）の目標`,yen(plan.next.target),`${SL.fmtUnits(plan.next.units)}人・1人あたり ${yen(plan.next.perPerson)}${plan.next.added?`（上乗せ ${yen(plan.next.added)}）`:""}`,plan.next.added?"#c2410c":"#1e293b")}
+          {lastPast&&tile("昨日までの目標との差",(cum>=0?"+":"")+yen(cum),cum<0?"足りない分は以降の日に上乗せ":"目標を上回っています",cum<0?"#b91c1c":"#047857")}
+        </div>
+        <div style={{overflowX:"auto"}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,minmax(104px,1fr))",gap:4,minWidth:760}}>
+            {DJ.map((d,i)=><div key={d} style={{textAlign:"center",fontSize:11.5,fontWeight:800,color:i===0?"#dc2626":i===6?"#2563eb":"#64748b",padding:"2px 0"}}>{d}</div>)}
+            {cells.map((c,i)=>{
+              if(!c) return <div key={"e"+i}/>;
+              const dn=Number(c.date.slice(8)), dow=i%7;
+              const bg=c.today?"#fffbeb":!c.working?"#f8fafc":"white";
+              const has=c.actual!=null&&(c.past||c.today);
+              return(<div key={c.date} title={`${c.date}：出勤 ${SL.fmtUnits(c.units)}人\n目標 ${yen(c.target)}（基本 ${yen(c.base)}${c.added?`＋上乗せ ${yen(c.added)}`:""}）${has?`\n実績 ${yen(c.actual)}（差 ${yen(c.diff)}）`:""}`}
+                style={{border:c.today?"2px solid #f59e0b":"1px solid #e2e8f0",borderRadius:8,padding:"5px 7px",background:bg,minHeight:86,fontSize:11.5,lineHeight:1.35}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+                  <b style={{fontSize:13,color:dow===0?"#dc2626":dow===6?"#2563eb":"#1e293b"}}>{dn}</b>
+                  <span style={{fontSize:10.5,color:"#64748b",fontWeight:700}}>{c.working?`👥${SL.fmtUnits(c.units)}人`:isClosed(c.date)?"休診":"出勤0人"}</span>
+                </div>
+                {c.working&&<>
+                  <div style={{color:"#475569"}}>目標 <b style={{color:c.added?"#c2410c":"#1e293b",fontSize:12.5}}>{sYen(c.target).replace("+","")}</b></div>
+                  {c.added>0&&!c.past&&<div style={{fontSize:10,color:"#c2410c",fontWeight:700}}>上乗せ +{sYen(c.added).replace("+","")}</div>}
+                </>}
+                {has&&(c.working||c.actual)?<>
+                  <div style={{color:"#475569"}}>実績 <b style={{color:"#0e7490"}}>{sYen(c.actual).replace("+","")}</b></div>
+                  {c.working&&<div style={{fontWeight:800,color:c.diff>=0?"#047857":"#b91c1c"}}>{c.diff>=0?"▲":"▼"} {sYen(c.diff).replace(/^[+−-]/,"")}{c.today?"（途中）":""}</div>}
+                </>:null}
+              </div>);
+            })}
+          </div>
+        </div>
+        <div style={{fontSize:10.5,color:"#94a3b8",marginTop:8,lineHeight:1.7}}>
+          ※ 1日の目標＝月の目標 × その日の出勤人数 ÷ 月の延べ出勤人数（午前・午後出勤は0.5人）。休診日・出勤0人の日は目標なし。<br/>
+          ※ 前日までの実績が足りないときは、残りの目標を残りの延べ人数で割り直して上乗せします（オレンジ）。目標より多く売れているときは減らさず、基本の目標のままです。<br/>
+          ※ 実績は会計の売上（返金を引いた額）です。過去の日の目標は、その日に見ていた目標（その日までの実績で計算）です。シフトを変えると目標もすぐ変わります。
+        </div>
+        </>}
+      </div>
+    </div>
+  );
+}
+
+function ShiftOverviewPanel({onShiftsSaved,payments,bookings}){
   const SL=window.ShiftLogic;
   const DAYS_JP=["日","月","火","水","木","金","土"];
   const SHIFT_COLORS={"出勤":"#2563eb","午前出勤":"#0ea5e9","午後出勤":"#6366f1","休み":"#9ca3af","有休":"#059669","振替":"#d97706","祝振替":"#7c3aed"};
@@ -9816,7 +10149,14 @@ function ShiftOverviewPanel({onShiftsSaved}){
       </div>}
 
       {stores.length===0?<div style={{...card,padding:20,color:"#64748b"}}>店舗が登録されていません（「店舗管理」で追加してください）。</div>
-        :scopeStore?<StoreView st={scopeStore}/>:<CompanyView/>}
+        :<>
+          {/* 1日の売上目標（院を選んでいればその院、全社なら全社の合計） */}
+          <DailySalesTargetCard key={scopeStore?scopeStore.id:"all"} month={month} dates={dates}
+            {...shiftUnitsFor(result,closed,stores,scopeStore?scopeStore.id:null)}
+            storeId={scopeStore?scopeStore.id:null} storeLabel={scopeStore?SL.shortStoreName(scopeStore.name):"全社"}
+            payments={payments} bookings={bookings} firstStoreId={stores[0].id} todayStr={todayStr}/>
+          {scopeStore?<StoreView st={scopeStore}/>:<CompanyView/>}
+        </>}
       <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>
         {yy}年{mm}月。シフトの種類は「スタッフ・シフト管理」の月次シフト表と同じデータです（どちらで変えても同じ内容になります）。シフト表で変えていない日は週固定シフトの出勤・休みと勤務院を使います。
       </div>
@@ -13234,12 +13574,18 @@ const MARK_REVIEW={
 };
 const MARK_ACU={
   guided:{label:"鍼灸保険 案内済み",short:"案内済み",chip:"鍼案",color:"#1e40af",bg:"#dbeafe"},
+  handed:{label:"鍼灸 同意書を渡した",short:"同意書渡し",chip:"同渡",color:"#92400e",bg:"#fde68a"},
+  received:{label:"鍼灸 同意書をもらった",short:"同意書受取",chip:"同受",color:"#065f46",bg:"#a7f3d0"},
   got:{label:"鍼灸保険 獲得",short:"獲得",chip:"鍼✓",color:"#065f46",bg:"#d1fae5"},
   no:{label:"鍼灸保険 ✖（見送り）",short:"✖",chip:"鍼✖",color:"#991b1b",bg:"#fee2e2"},
 };
 // レセは月ごと（1人1か月に1枚）。patient_marks.rese_months に済みにした月（YYYY-MM）を入れる
 const MARK_RESE={label:"レセ済み",short:"済",chip:"レ✓",color:"#6d28d9",bg:"#ede9fe"};
 const reseDone=(mark,month)=>!!(mark&&month&&Array.isArray(mark.rese_months)&&mark.rese_months.includes(month));
+// 提案中：patient_marks.proposal_menus（null＝提案していない、配列＝提案中。中身は提案しているメニュー）・proposal_note・proposal_at
+const PROPOSAL_MENUS=["回数券","フリーパス","鍼灸保険","鍼灸","美容鍼","巻き爪","痩身","EMS","物販","その他"];
+const MARK_PROPOSAL={label:"提案中",chip:"提案",color:"#9a3412",bg:"#ffedd5"};
+const isProposing=mark=>!!(mark&&Array.isArray(mark.proposal_menus));
 function patientMarkKey(name){ return String(name||"").replace(/[\s　]/g,""); }
 async function savePatientMark(name,patch,staffId){
   const key=patientMarkKey(name); if(!key) throw new Error("お名前がありません");
@@ -13247,6 +13593,7 @@ async function savePatientMark(name,patch,staffId){
   const body={patient_key:key,patient_name:name,updated_at:now,updated_by:staffId||null,...patch};
   if("review" in patch) body.review_at=patch.review?now:null;
   if("acu" in patch) body.acu_at=patch.acu?now:null;
+  if("proposal_menus" in patch&&!("proposal_at" in patch)) body.proposal_at=patch.proposal_menus?now:null;
   const {data:{session}}=await supabaseClient.auth.getSession();
   if(!session) throw new Error("ログインが切れています。もう一度ログインしてください");
   const res=await fetch(`${SUPABASE_URL}/rest/v1/patient_marks?on_conflict=patient_key`,{method:"POST",
@@ -13256,10 +13603,21 @@ async function savePatientMark(name,patch,staffId){
   if(!res.ok||!Array.isArray(data)||!data[0]) throw new Error((data&&data.message)||`保存できませんでした（HTTP ${res.status}）`);
   return data[0];
 }
+// 予約ごとの印：鍼灸保険の何回目か（1回目＝赤、2回目以降＝紫）、柔整のその月の1回目（月初）
+const VISIT_CHIP={
+  acu1:{label:"鍼灸保険 1回目",chip:"鍼保1",color:"#ffffff",bg:"#dc2626"},
+  acu2:{label:"鍼灸保険 2回目以降",chip:"鍼保",color:"#ffffff",bg:"#6d28d9"},
+  monthFirst:{label:"柔整 今月の1回目（月初）",chip:"月初",color:"#713f12",bg:"#fde047"},
+};
+function VisitChips({items}){
+  if(!items||!items.length) return null;
+  return <>{items.map(m=><span key={m.chip} title={m.title||m.label} style={{display:"inline-block",background:m.bg,color:m.color,borderRadius:4,padding:"0 3px",marginRight:2,fontSize:9,fontWeight:900,textShadow:"none",textDecoration:"none",verticalAlign:"1px",lineHeight:"13px",border:"1px solid rgba(255,255,255,.7)"}}>{m.text||m.chip}</span>)}</>;
+}
 // カレンダーの予約枠に出す小さな印
 function PatientMarkChips({mark,month}){
   if(!mark) return null;
-  const items=[mark.review&&MARK_REVIEW[mark.review],mark.acu&&MARK_ACU[mark.acu],reseDone(mark,month)&&MARK_RESE].filter(Boolean);
+  const prop=isProposing(mark)?{...MARK_PROPOSAL,label:`提案中：${mark.proposal_menus.join("・")||"メニュー未選択"}${mark.proposal_note?`（${mark.proposal_note}）`:""}`}:null;
+  const items=[prop,mark.review&&MARK_REVIEW[mark.review],mark.acu&&MARK_ACU[mark.acu],reseDone(mark,month)&&MARK_RESE].filter(Boolean);
   if(!items.length) return null;
   return <>{items.map(m=><span key={m.chip} title={m.label} style={{display:"inline-block",background:m.bg,color:m.color,borderRadius:4,padding:"0 3px",marginRight:2,fontSize:9,fontWeight:900,textShadow:"none",textDecoration:"none",verticalAlign:"1px",lineHeight:1.4}}>{m.chip}</span>)}</>;
 }
@@ -13283,8 +13641,29 @@ function PatientMarkEditor({name,mark,onSaved,staffId,compact,month}){
   const months=Array.isArray(mark&&mark.rese_months)?mark.rese_months:[];
   const setRese=on=>set({rese_months:on?[...new Set([...months,month])].sort():months.filter(m=>m!==month)});
   const head={fontSize:compact?10:13,fontWeight:800,color:"#475569",marginBottom:4};
+  const proposing=isProposing(mark), pm=proposing?mark.proposal_menus:[];
+  const [noteDraft,setNoteDraft]=React.useState(null);
+  const toggleMenu=m=>set({proposal_menus:pm.includes(m)?pm.filter(x=>x!==m):[...pm,m],proposal_at:(mark&&mark.proposal_at)||new Date().toISOString()});
+  const staffName=id=>((STAFF_ACCOUNTS.find(x=>x.id===id)||{}).name||"").split(/\s/)[0];
   return(
     <div style={{display:"flex",flexDirection:"column",gap:compact?6:10}}>
+      <div>
+        <label style={{...head,display:"flex",alignItems:"center",gap:6,cursor:busy?"default":"pointer",marginBottom:proposing?6:0}}>
+          <input type="checkbox" checked={proposing} disabled={busy} onChange={e=>set(e.target.checked?{proposal_menus:[]}:{proposal_menus:null,proposal_note:null})}
+            style={{width:compact?14:18,height:compact?14:18,accentColor:MARK_PROPOSAL.color}} aria-label="提案中"/>
+          💡 提案中
+          {proposing&&mark.proposal_at&&<span style={{fontSize:compact?9.5:11,color:"#94a3b8",fontWeight:600}}>{fmtDate(new Date(mark.proposal_at)).slice(5).replace("-","/")}〜{mark.updated_by&&staffName(mark.updated_by)?`（${staffName(mark.updated_by)}）`:""}</span>}
+        </label>
+        {proposing&&<>
+          <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+            {PROPOSAL_MENUS.map(m=><React.Fragment key={m}>{btn(pm.includes(m),MARK_PROPOSAL,()=>toggleMenu(m),m)}</React.Fragment>)}
+          </div>
+          <input value={noteDraft!=null?noteDraft:(mark.proposal_note||"")} onChange={e=>setNoteDraft(e.target.value)}
+            onBlur={()=>{ if(noteDraft!=null&&noteDraft!==(mark.proposal_note||"")) set({proposal_note:noteDraft.trim()||null,proposal_at:mark.proposal_at||new Date().toISOString()}); setNoteDraft(null); }}
+            placeholder="提案の内容・反応（例：回数券10回、次回までに検討）" aria-label="提案メモ" maxLength={60}
+            style={{width:"100%",marginTop:6,padding:compact?"3px 6px":"7px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:compact?11:13,fontFamily:"inherit",boxSizing:"border-box"}}/>
+        </>}
+      </div>
       <div>
         <div style={head}>⭐ 口コミ</div>
         <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
@@ -13298,6 +13677,8 @@ function PatientMarkEditor({name,mark,onSaved,staffId,compact,month}){
         <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
           {btn(!ac,null,()=>set({acu:null}),"未")}
           {btn(ac==="guided",MARK_ACU.guided,()=>set({acu:"guided"}),"案内済み")}
+          {btn(ac==="handed",MARK_ACU.handed,()=>set({acu:"handed"}),"同意書渡し")}
+          {btn(ac==="received",MARK_ACU.received,()=>set({acu:"received"}),"同意書受取")}
           {btn(ac==="got",MARK_ACU.got,()=>set({acu:"got"}),"獲得")}
           {btn(ac==="no",MARK_ACU.no,()=>set({acu:"no"}),"✖")}
         </div>
@@ -13906,6 +14287,602 @@ function BulkReceiptPanel({payments,bookings,stores,refunds=[]}){
 // 香里園駅前院は2026年10月開業のため10月〜翌9月、ほかの院は7月〜翌6月の「期」で表示する
 // 計算は sales-report-logic.js の buildMonthlyKpi。保険請求・施術者人数・営業利益は月ごとに手入力（共有設定に保存）
 const KPI_FIRST_PERIOD_YEAR=2015; // 11期＝2026年7月〜 → 期の数字＋2015 が始まりの年
+// ===== 総売上シミュレーター（売上シミュレーター／目標逆算／ダッシュボード） =====
+// 計算は sales-simulator-logic.js（window.SalesSim）。3パターンは店舗ごとに共有設定（全端末）へ保存する。
+const SS_COLOR={navy:"#1e3a5f",judo:"#2563eb",acu:"#16a34a",self:"#ea580c",ems:"#f59e0b",fixed:"#94a3b8",red:"#dc2626"};
+const SS_SOFT={navy:"#eef3f9",judo:"#eff5ff",acu:"#effbf3",self:"#fff5ed"};
+const ssCard={background:"white",borderRadius:14,boxShadow:"0 1px 4px rgba(0,0,0,.06)",border:"1px solid #e8edf3",marginBottom:12};
+const ssGrid=min=>({display:"grid",gridTemplateColumns:`repeat(auto-fit,minmax(min(100%,${min}px),1fr))`,gap:12});
+const ssNum={fontVariantNumeric:"tabular-nums"};
+
+// 数値入力＋スライダー（どちらを動かしても同じ値。空欄・マイナス・上限超えは安全な値にする）
+function SSField({label,value,onChange,unit,max,sliderMax,step,decimal,accent,hint,disabled}){
+  const S=window.SalesSim;
+  const show=v=>decimal?S.formatOneDecimal(v):S.formatInt(v);
+  const [focused,setFocused]=React.useState(false);
+  const [text,setText]=React.useState(show(value));
+  React.useEffect(()=>{ if(!focused) setText(show(value)); },[value,focused]);
+  const norm=raw=>{ const v=S.clamp(raw,0,max==null?Number.MAX_SAFE_INTEGER:max); return decimal?Math.round(v*10)/10:Math.round(v); };
+  const color=SS_COLOR[accent||"navy"];
+  return(
+    <div style={{opacity:disabled?.55:1}}>
+      <div className="ss-field-head" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+        <label style={{fontSize:13,fontWeight:700,color:"#334155",lineHeight:1.35}}>{label}</label>
+        <div className="ss-field-input">
+          <input inputMode={decimal?"decimal":"numeric"} autoComplete="off" disabled={disabled} value={text} aria-label={label}
+            onFocus={e=>{ setFocused(true); setText(String(decimal?value:Math.round(value))); const t=e.target; setTimeout(()=>t.select(),0); }}
+            onBlur={()=>{ setFocused(false); setText(show(value)); }}
+            onChange={e=>{ setText(e.target.value); onChange(norm(S.toSafeNumber(e.target.value))); }}
+            style={{...ssNum,width:"100%",boxSizing:"border-box",height:40,padding:"0 34px 0 10px",borderRadius:9,border:"1.5px solid #cbd5e1",fontSize:16,fontWeight:800,textAlign:"right",fontFamily:"inherit",color:"#0f172a",background:disabled?"#f8fafc":"white"}}/>
+          <span style={{position:"absolute",right:10,top:0,bottom:0,display:"flex",alignItems:"center",fontSize:12,fontWeight:700,color:"#64748b",pointerEvents:"none"}}>{unit}</span>
+        </div>
+      </div>
+      <input type="range" className="ss-range" min={0} max={sliderMax} step={step||1} value={Math.min(value,sliderMax)} disabled={disabled} aria-label={label+"（スライダー）"}
+        onChange={e=>onChange(norm(Number(e.target.value)))}
+        style={{"--ss-c":color,"--ss-p":(sliderMax>0?Math.min(100,value/sliderMax*100):0)+"%"}}/>
+      {hint&&<div style={{fontSize:11.5,color:"#64748b",marginTop:2}}>{hint}</div>}
+    </div>
+  );
+}
+
+// 自動計算の結果（入力できない）
+function SSRow({label,value,unit,strong}){
+  return(
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:10,padding:"6px 0",borderBottom:"1px solid rgba(255,255,255,.9)"}}>
+      <span style={{fontSize:13,color:strong?"#0f172a":"#475569",fontWeight:strong?800:500}}>{label}</span>
+      <span style={{...ssNum,fontSize:strong?19:15,fontWeight:800,color:"#0f172a",whiteSpace:"nowrap"}}>{value}{unit&&<span style={{fontSize:11,fontWeight:700,color:"#64748b",marginLeft:2}}>{unit}</span>}</span>
+    </div>
+  );
+}
+
+function SSSection({id,tone,icon,title,desc,total,results,children}){
+  const S=window.SalesSim;
+  return(
+    <div id={id} style={{...ssCard,overflow:"hidden",marginBottom:0,minWidth:0}}>
+      <div style={{height:4,background:SS_COLOR[tone]}}/>
+      <div className="ss-sec-body" style={{padding:"14px 14px 16px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,flexWrap:"wrap"}}>
+          <span style={{width:36,height:36,borderRadius:10,background:SS_SOFT[tone],display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,flexShrink:0}}>{icon}</span>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>{title}</div>
+            {desc&&<div style={{fontSize:11.5,color:"#64748b"}}>{desc}</div>}
+          </div>
+          {total!=null&&<span style={{...ssNum,fontSize:13,fontWeight:800,color:SS_COLOR[tone],background:SS_SOFT[tone],borderRadius:20,padding:"3px 10px",whiteSpace:"nowrap"}}>{S.formatInt(total)}円</span>}
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:16}}>{children}</div>
+        <div style={{marginTop:16,background:SS_SOFT[tone],borderRadius:10,padding:"4px 12px"}}>{results}</div>
+      </div>
+    </div>
+  );
+}
+
+// 上の4つの数字（スマホでも4つ横並び）。カードの幅に合わせて文字の大きさを変える。
+// カードが狭いときは見出しを短くし、金額は「万円」（例：205.5万円）にして数字を大きく見せる（正確な総売上は上の帯に出ている）
+function SSKpi({label,short,value,unit,narrowValue,narrowUnit,dark,valueColor,footer}){
+  const color=dark?"white":(valueColor||"#0f172a"), unitColor=dark?"rgba(255,255,255,.7)":"#64748b";
+  const line=(v,u,cls)=>{
+    const w=String(v).length*0.6+(v!=="—"?String(u).length*0.5+0.1:0)+0.2; // 数字と単位のおおよその幅（文字の大きさに対する比）
+    return(
+      <div className={cls} style={{...ssNum,fontSize:`clamp(10px,calc(100cqi / ${w.toFixed(2)}),28px)`,fontWeight:900,lineHeight:1.25,color,marginTop:2,whiteSpace:"nowrap"}}>
+        {v}{v!=="—"&&<span style={{fontSize:"0.5em",fontWeight:700,marginLeft:"0.1em",color:unitColor}}>{u}</span>}
+      </div>
+    );
+  };
+  return(
+    <div className="ss-kpi" style={{...ssCard,marginBottom:0,background:dark?SS_COLOR.navy:"white",border:dark?"none":ssCard.border}}>
+      <div style={{fontSize:12,fontWeight:700,color:dark?"rgba(255,255,255,.7)":"#64748b",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+        <span className="ss-l">{label}</span><span className="ss-s">{short||label}</span>
+      </div>
+      {narrowValue===undefined?line(value,unit):<>{line(value,unit,"ss-l")}{line(narrowValue,narrowUnit,"ss-s")}</>}
+      {footer}
+    </div>
+  );
+}
+
+function SalesSimulatorPanel({payments,bookings,stores,todayStr}){
+  const S=window.SalesSim, SR=window.SalesReport;
+  const defaultStore=((stores||[]).find(s=>/香里園/.test(s.name||""))||(stores||[])[0]||{id:1}).id;
+  const [storeId,setStoreId]=React.useState(defaultStore);
+  const key=S.storageKey(storeId);
+  const version=useSharedSettingsVersion();
+  const readSaved=()=>{ try{ return S.parseStoredState(localStorage.getItem(key)); }catch(e){ return S.createInitialState(); } };
+  const draftsOf=st=>Object.fromEntries(S.SCENARIOS.map(({id})=>[id,S.cloneInput(st.scenarios[id].input)]));
+  const [saved,setSaved]=React.useState(readSaved);
+  const [drafts,setDrafts]=React.useState(()=>draftsOf(saved));
+  const [active,setActive]=React.useState(saved.active);
+  const [tab,setTab]=React.useState("sim");
+  const [toast,setToast]=React.useState("");
+  const [saving,setSaving]=React.useState(false);
+
+  // 店舗を変えたら、その店舗の保存データを読み直す
+  const loadedKey=React.useRef(key);
+  React.useEffect(()=>{
+    if(loadedKey.current===key) return;
+    loadedKey.current=key;
+    const st=readSaved(); setSaved(st); setDrafts(draftsOf(st)); setActive(st.active);
+  },[key]);
+  // 他の端末で保存されたら、保存データを更新（この端末で編集中のパターンはそのまま）
+  React.useEffect(()=>{
+    if(!version) return;
+    const st=readSaved();
+    setDrafts(prev=>{
+      const next={...prev};
+      S.SCENARIOS.forEach(({id})=>{ if(S.inputsEqual(prev[id],saved.scenarios[id].input)) next[id]=S.cloneInput(st.scenarios[id].input); });
+      return next;
+    });
+    setSaved(st);
+  },[version]);
+  React.useEffect(()=>{ if(!toast) return; const t=setTimeout(()=>setToast(""),2400); return()=>clearTimeout(t); },[toast]);
+
+  const input=drafts[active];
+  const result=React.useMemo(()=>S.calculate(input),[input]);
+  const dirty=Object.fromEntries(S.SCENARIOS.map(({id})=>[id,!S.inputsEqual(drafts[id],saved.scenarios[id].input)]));
+  const activeLabel=S.SCENARIOS.find(s=>s.id===active).label;
+  const update=fn=>setDrafts(prev=>{ const next=S.cloneInput(prev[active]); fn(next); return {...prev,[active]:next}; });
+
+  async function save(){
+    const next={...saved,active,scenarios:{...saved.scenarios,[active]:{input:S.cloneInput(input),savedAt:new Date().toISOString()}}};
+    setSaving(true);
+    const ok=await sharedSettings.saveNow({[key]:JSON.stringify(next)});
+    setSaving(false);
+    setSaved(next);
+    setToast(ok?`「${activeLabel}」を保存しました（全端末で共有）`:`「${activeLabel}」をこの端末に保存しました（サーバーへの保存は失敗）`);
+  }
+  function reset(){
+    if(!window.confirm(`「${activeLabel}」の入力をデモ用の初期値に戻しますか？\n（保存するまで、保存済みのデータは変わりません）`)) return;
+    setDrafts(prev=>({...prev,[active]:S.cloneInput(S.DEFAULT_INPUT)}));
+    setToast("初期値に戻しました");
+  }
+
+  // ===== 月次の実績から読み込む（カルテ枚数・来院回数・診療日数・施術者人数・柔整/鍼灸の対応率。単価は変えない） =====
+  const months=React.useMemo(()=>{ const out=[]; const [y,m]=todayStr.slice(0,7).split("-").map(Number); for(let i=1;i<=12;i++){ const d=new Date(Date.UTC(y,m-1-i,1)); out.push(d.toISOString().slice(0,7)); } return out; },[todayStr]);
+  const [actualMonth,setActualMonth]=React.useState(months[0]);
+  const actualRow=React.useMemo(()=>SR&&SR.buildMonthlyKpi?SR.buildMonthlyKpi(payments,{months:[actualMonth],storeId,bookings,today:todayStr})[0]:null,[payments,bookings,storeId,actualMonth,todayStr]);
+  function loadActuals(){
+    const next=S.fromMonthlyActuals(actualRow,input);
+    if(!next){ setToast("その月の来院データがありません"); return; }
+    setDrafts(prev=>({...prev,[active]:next}));
+    setToast(`${Number(actualMonth.slice(5))}月の実績を「${activeLabel}」に読み込みました（単価はそのまま）`);
+  }
+
+  const btn=(primary)=>({padding:"9px 14px",borderRadius:9,border:primary?"none":"1.5px solid #cbd5e1",background:primary?SS_COLOR.navy:"white",color:primary?"white":"#334155",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"});
+  const savedAt=saved.scenarios[active].savedAt;
+  const rate=result.achievementRate;
+  const tabs=[["sim","🧮","シミュレーター"],["reverse","🎯","目標逆算"],["dash","📊","ダッシュボード"]];
+
+  return(
+    <div style={{maxWidth:1440,margin:"0 auto"}}>
+      {/* 見出しと、いつも見える総売上 */}
+      <div style={{background:SS_COLOR.navy,color:"white",borderRadius:14,padding:"14px 16px",marginBottom:12,position:"sticky",top:0,zIndex:20,boxShadow:"0 4px 14px rgba(15,39,68,.25)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <div style={{fontSize:16,fontWeight:900}}>総売上シミュレーター</div>
+          {(stores||[]).length>1&&<select value={storeId} onChange={e=>setStoreId(Number(e.target.value))} style={{fontSize:12,fontWeight:700,padding:"4px 8px",borderRadius:8,border:"none",fontFamily:"inherit"}} aria-label="店舗">
+            {(stores||[]).map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>}
+        </div>
+        <div style={{display:"flex",alignItems:"baseline",gap:10,marginTop:6,flexWrap:"wrap"}}>
+          <span style={{fontSize:12,color:"rgba(255,255,255,.7)"}}>総売上</span>
+          <span style={{...ssNum,fontSize:22,fontWeight:900}}>{S.formatInt(result.totalSales)}<span style={{fontSize:12,marginLeft:2}}>円</span></span>
+          <span style={{marginLeft:"auto",fontSize:12,color:"rgba(255,255,255,.7)"}}>達成率</span>
+          <span style={{...ssNum,fontSize:18,fontWeight:900,color:rate!=null&&rate>=100?"#86efac":"white"}}>{S.formatPercent(rate)}</span>
+        </div>
+      </div>
+
+      {/* パターン切替・保存 */}
+      <div style={{...ssCard,padding:12,display:"flex",flexWrap:"wrap",gap:8,alignItems:"center"}}>
+        <div role="radiogroup" aria-label="パターン" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,background:"#f1f5f9",borderRadius:10,padding:4,flex:"1 1 280px"}}>
+          {S.SCENARIOS.map(s=>(
+            <button key={s.id} role="radio" aria-checked={active===s.id} onClick={()=>setActive(s.id)}
+              style={{position:"relative",padding:"8px 4px",borderRadius:8,border:"none",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",background:active===s.id?SS_COLOR.navy:"transparent",color:active===s.id?"white":"#475569"}}>
+              {s.label}{dirty[s.id]&&<span title="未保存" style={{position:"absolute",top:4,right:6,width:7,height:7,borderRadius:"50%",background:"#f59e0b"}}/>}
+            </button>
+          ))}
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:6,flex:"1 1 280px"}}>
+        <select value="" onChange={e=>{ const from=e.target.value; if(!from) return; setDrafts(prev=>({...prev,[active]:S.cloneInput(prev[from])})); setToast(`「${S.SCENARIOS.find(s=>s.id===from).label}」の内容をコピーしました`); }}
+          style={{...btn(false),appearance:"auto",padding:"9px 6px",minWidth:0}} aria-label="他のパターンからコピー">
+          <option value="">📋 コピー</option>
+          {S.SCENARIOS.filter(s=>s.id!==active).map(s=><option key={s.id} value={s.id}>「{s.label}」から</option>)}
+        </select>
+        <button onClick={reset} style={btn(false)}>↺ リセット</button>
+        <button onClick={save} disabled={saving} style={{...btn(true),opacity:saving?.6:1}}>💾 {saving?"保存中…":"保存"}</button>
+        </div>
+        <span style={{fontSize:11.5,color:dirty[active]?"#b45309":"#64748b",flexBasis:"100%"}}>
+          {dirty[active]?"未保存の変更があります":savedAt?`保存済み ${new Date(savedAt).toLocaleString("ja-JP",{month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"})}`:"まだ保存していません（初期値はデモ用の仮の数値です）"}
+        </span>
+      </div>
+
+      {/* 画面の切り替え */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:4,background:"white",borderRadius:12,padding:4,marginBottom:12,border:"1px solid #e8edf3"}}>
+        {tabs.map(([id,icon,label])=>(
+          <button key={id} onClick={()=>setTab(id)} aria-pressed={tab===id} style={{padding:"8px 2px",borderRadius:9,border:"none",fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",display:"flex",flexDirection:"column",alignItems:"center",gap:2,background:tab===id?SS_SOFT.navy:"transparent",color:tab===id?SS_COLOR.navy:"#64748b",boxShadow:tab===id?"inset 0 -3px 0 "+SS_COLOR.navy:"none"}}><span style={{fontSize:17}}>{icon}</span>{label}</button>
+        ))}
+      </div>
+
+      {tab==="sim"&&<SSSimulatorTab S={S} input={input} result={result} update={update}
+        actuals={{months,month:actualMonth,setMonth:setActualMonth,row:actualRow,load:loadActuals}}/>}
+      {tab==="reverse"&&<SSReverseTab S={S} input={input} update={update}/>}
+      {tab==="dash"&&<SSDashboardTab S={S} input={input} result={result} drafts={drafts} dirty={dirty} active={active}/>}
+
+      <div style={{fontSize:11.5,color:"#64748b",background:"#f1f5f9",borderRadius:10,padding:"10px 12px",lineHeight:1.7,marginTop:12}}>
+        ⓘ 初期値はデモ用の仮の数値で、実際の保険請求単価・算定額ではありません。保険の単価は実績にもとづく「平均値」として入力してください。
+        本ツールは売上の試算用であり、保険算定の適法性や請求可否を判定するものではありません。
+      </div>
+
+      {toast&&<div role="status" style={{position:"fixed",left:"50%",bottom:24,transform:"translateX(-50%)",background:"#0f172a",color:"white",padding:"9px 18px",borderRadius:20,fontSize:13,fontWeight:700,zIndex:500,boxShadow:"0 6px 20px rgba(0,0,0,.25)",maxWidth:"90vw"}}>{toast}</div>}
+    </div>
+  );
+}
+
+function SSSimulatorTab({S,input,result,update,actuals}){
+  const b=input.basic, j=input.judo, a=input.acu, s=input.self, r=result;
+  const rate=r.achievementRate, achieved=rate!=null&&rate>=100;
+  const two={display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,220px),1fr))",gap:16};
+  const ar=actuals.row;
+  const man=v=>S.formatOneDecimal(v/10000); // 万円（小数第1位）
+  return(<>
+    {/* 上の4つ（スマホでも横並び） */}
+    <div className="ss-kpi4">
+      <SSKpi label="月間総売上" short="総売上" value={S.formatInt(r.totalSales)} unit="円" narrowValue={man(r.totalSales)} narrowUnit="万円" dark/>
+      <SSKpi label="目標売上" short="目標" value={S.formatInt(b.targetSales)} unit="円" narrowValue={man(b.targetSales)} narrowUnit="万円"/>
+      <SSKpi label="目標達成率" short="達成率" value={rate==null?"—":S.formatOneDecimal(rate)} unit="%"
+        footer={<div style={{height:6,background:"#e2e8f0",borderRadius:4,marginTop:8,overflow:"hidden"}}><div style={{height:"100%",width:Math.min(100,rate||0)+"%",background:achieved?SS_COLOR.acu:SS_COLOR.navy,borderRadius:4,transition:"width .2s"}}/></div>}/>
+      <SSKpi label={achieved?"目標超過額":"目標までの不足金額"} short={achieved?"超過額":"不足額"} value={S.formatInt(achieved?r.surplus:r.shortfall)} unit="円" narrowValue={man(achieved?r.surplus:r.shortfall)} narrowUnit="万円" valueColor={achieved?SS_COLOR.acu:r.shortfall>0?SS_COLOR.red:undefined}/>
+    </div>
+
+    {/* 実績の読み込み */}
+    <div style={{...ssCard,padding:"10px 14px",display:"flex",flexWrap:"wrap",alignItems:"center",gap:8}}>
+      <span style={{fontSize:13,fontWeight:800,color:"#334155"}}>📥 実績から読み込む</span>
+      <select value={actuals.month} onChange={e=>actuals.setMonth(e.target.value)} style={{fontSize:13,padding:"6px 8px",borderRadius:8,border:"1.5px solid #cbd5e1",fontFamily:"inherit"}} aria-label="読み込む月">
+        {actuals.months.map(m=><option key={m} value={m}>{m.slice(0,4)}年{Number(m.slice(5))}月</option>)}
+      </select>
+      <span style={{...ssNum,fontSize:12,color:"#64748b"}}>{ar&&!ar.empty?`カルテ${S.formatInt(ar.karte)}枚・来院${S.formatInt(ar.visits)}回・${ar.days}日`:"来院データなし"}</span>
+      <button onClick={actuals.load} disabled={!ar||ar.empty} style={{marginLeft:"auto",padding:"7px 12px",borderRadius:8,border:"1.5px solid "+SS_COLOR.navy,background:"white",color:SS_COLOR.navy,fontSize:12.5,fontWeight:800,cursor:ar&&!ar.empty?"pointer":"default",opacity:ar&&!ar.empty?1:.5,fontFamily:"inherit"}}>読み込む</button>
+      <div style={{flexBasis:"100%",fontSize:11,color:"#94a3b8"}}>月次KPIと同じ数え方で、カルテ枚数・平均来院回数・診療日数・施術者人数・柔整/鍼灸の対応率を入れます。単価は変えません。</div>
+    </div>
+
+    {r.warnings.length>0&&<div style={{...ssCard,padding:"10px 14px",background:"#fffbeb",border:"1px solid #fcd34d",color:"#78350f",fontSize:13}}>
+      {r.warnings.map(w=><div key={w}>⚠️ {w}</div>)}
+    </div>}
+
+    {/* 基本・柔整・鍼灸・自費を横並び（PCは4列、タブレットは2列、スマホは横にスワイプ） */}
+    <div className="ss-sec-wrap">
+    <div className="ss-sec-nav" style={{gridTemplateColumns:"repeat(4,1fr)",gap:6,marginBottom:8}}>
+      {[["ss-sec-basic","基本","navy"],["ss-sec-judo","柔整","judo"],["ss-sec-acu","鍼灸","acu"],["ss-sec-self","自費","self"]].map(([id,label,tone])=>(
+        <button key={id} onClick={()=>{ const el=document.getElementById(id); if(el) el.parentElement.scrollTo({left:el.offsetLeft-el.parentElement.offsetLeft-2,behavior:"smooth"}); }}
+          style={{padding:"7px 0",borderRadius:20,border:"1.5px solid "+SS_COLOR[tone],background:SS_SOFT[tone],color:SS_COLOR[tone],fontSize:12.5,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>{label}</button>
+      ))}
+    </div>
+    <div className="ss-sections">
+      <SSSection id="ss-sec-basic" tone="navy" icon="🏥" title="基本設定" desc="患者数と来院頻度"
+        results={<>
+          <SSRow label="月間延べ来院数（自動計算）" value={S.formatInt(r.totalVisits)} unit="回" strong/>
+          <SSRow label="1日あたり平均来院数" value={S.formatOneDecimal(r.visitsPerDay)} unit="回"/>
+        </>}>
+        <SSField label="稼働カルテ数" unit="枚" value={b.karteCount} sliderMax={500} onChange={v=>update(d=>{d.basic.karteCount=v;})}/>
+        <SSField label="1カルテあたり月間平均来院回数" unit="回" decimal step={0.1} max={31} value={b.visitsPerKarte} sliderMax={15} onChange={v=>update(d=>{d.basic.visitsPerKarte=v;})}/>
+        <div style={two}>
+          <SSField label="診療日数" unit="日" max={31} value={b.workingDays} sliderMax={31} onChange={v=>update(d=>{d.basic.workingDays=v;})}/>
+          <SSField label="スタッフ人数" unit="人" value={b.staffCount} sliderMax={20} onChange={v=>update(d=>{d.basic.staffCount=v;})}/>
+        </div>
+        <SSField label="月間目標売上" unit="円" step={50000} value={b.targetSales} sliderMax={15000000} onChange={v=>update(d=>{d.basic.targetSales=v;})}/>
+      </SSSection>
+
+      <SSSection id="ss-sec-judo" tone="judo" icon="🦴" title="柔整保険" desc="延べ来院数のうち柔整保険で対応した割合" total={r.judo.total}
+        results={<>
+          <SSRow label="柔整保険 延べ対応数" value={S.formatInt(r.judo.count)} unit="回"/>
+          <SSRow label="柔整保険 窓口売上" value={S.formatInt(r.judo.copaySales)} unit="円"/>
+          <SSRow label="柔整保険 請求売上" value={S.formatInt(r.judo.claimSales)} unit="円"/>
+          <SSRow label="柔整保険 合計売上" value={S.formatInt(r.judo.total)} unit="円" strong/>
+        </>}>
+        <label style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,border:"1px solid #e2e8f0",borderRadius:10,padding:"8px 12px",cursor:"pointer"}}>
+          <span><span style={{fontSize:13,fontWeight:700,color:"#334155"}}>延べ対応数を直接入力</span><br/><span style={{fontSize:11.5,color:"#64748b"}}>オフ：対応率から自動計算</span></span>
+          <input type="checkbox" checked={j.useManualCount} style={{width:20,height:20,accentColor:SS_COLOR.judo}}
+            onChange={e=>{ const on=e.target.checked; update(d=>{ d.judo.useManualCount=on; if(on) d.judo.manualCount=r.judo.count; else if(r.totalVisits>0) d.judo.rate=Math.round(r.judo.count/r.totalVisits*1000)/10; }); }}/>
+        </label>
+        {j.useManualCount
+          ?<SSField label="柔整保険 延べ対応数" unit="回" accent="judo" value={j.manualCount} sliderMax={Math.max(r.totalVisits,1)} hint={`対応率 ${S.formatPercent(r.judo.effectiveRate)}（延べ来院数 ${S.formatInt(r.totalVisits)}回に対して）`} onChange={v=>update(d=>{d.judo.manualCount=v;})}/>
+          :<SSField label="柔整保険 対応率" unit="%" accent="judo" decimal max={100} value={j.rate} sliderMax={100} onChange={v=>update(d=>{d.judo.rate=v;})}/>}
+        <SSField label="1対応あたり平均窓口負担額" unit="円" accent="judo" step={10} value={j.copay} sliderMax={3000} onChange={v=>update(d=>{d.judo.copay=v;})}/>
+        <SSField label="1対応あたり平均保険者請求額" unit="円" accent="judo" step={10} value={j.claim} sliderMax={6000} onChange={v=>update(d=>{d.judo.claim=v;})}/>
+      </SSSection>
+
+      <SSSection id="ss-sec-acu" tone="acu" icon="🪡" title="鍼灸保険" desc="柔整との併用も可（来院数は重複して数えません）" total={r.acu.total}
+        results={<>
+          <SSRow label="鍼灸保険 延べ対応数" value={S.formatInt(r.acu.count)} unit="回"/>
+          <SSRow label="内訳（1術 / 2術）" value={`${S.formatInt(r.acu.oneCount)} / ${S.formatInt(r.acu.twoCount)}`} unit="回"/>
+          <SSRow label="鍼灸保険 窓口売上" value={S.formatInt(r.acu.copaySales)} unit="円"/>
+          <SSRow label="鍼灸保険 請求売上" value={S.formatInt(r.acu.claimSales)} unit="円"/>
+          <SSRow label="鍼灸保険 合計売上" value={S.formatInt(r.acu.total)} unit="円" strong/>
+        </>}>
+        <SSField label="鍼灸保険 対応率" unit="%" accent="acu" decimal max={100} value={a.rate} sliderMax={100} onChange={v=>update(d=>{d.acu.rate=v;})}/>
+        <div style={{border:"1px solid #e2e8f0",borderRadius:10,padding:12,display:"flex",flexDirection:"column",gap:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",fontSize:13,fontWeight:700,color:"#334155"}}><span>1術・2術の構成比</span><span style={{fontSize:11.5,fontWeight:500,color:"#64748b"}}>合計100%</span></div>
+          <div style={{display:"flex",height:26,borderRadius:7,overflow:"hidden",fontSize:11.5,fontWeight:800,color:"white"}}>
+            <div style={{width:r.acu.oneRate+"%",background:"#4ade80",display:"flex",alignItems:"center",justifyContent:"center",color:"#14532d",transition:"width .2s"}}>{r.acu.oneRate>=14&&`1術 ${S.formatPercent(r.acu.oneRate)}`}</div>
+            <div style={{width:r.acu.twoRate+"%",background:SS_COLOR.acu,display:"flex",alignItems:"center",justifyContent:"center",transition:"width .2s"}}>{r.acu.twoRate>=14&&`2術 ${S.formatPercent(r.acu.twoRate)}`}</div>
+          </div>
+          <div style={two}>
+            <SSField label="1術 対応率" unit="%" accent="acu" decimal max={100} value={a.oneRate} sliderMax={100} onChange={v=>update(d=>{d.acu.oneRate=v;})}/>
+            <SSField label="2術 対応率" unit="%" accent="acu" decimal max={100} value={r.acu.twoRate} sliderMax={100} onChange={v=>update(d=>{d.acu.oneRate=Math.round((100-v)*10)/10;})}/>
+          </div>
+        </div>
+        <div style={two}>
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <div style={{fontSize:12,fontWeight:900,color:SS_COLOR.acu}}>1術</div>
+            <SSField label="平均窓口負担額" unit="円" accent="acu" step={10} value={a.one.copay} sliderMax={2000} onChange={v=>update(d=>{d.acu.one.copay=v;})}/>
+            <SSField label="平均保険者請求額" unit="円" accent="acu" step={10} value={a.one.claim} sliderMax={5000} onChange={v=>update(d=>{d.acu.one.claim=v;})}/>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <div style={{fontSize:12,fontWeight:900,color:SS_COLOR.acu}}>2術</div>
+            <SSField label="平均窓口負担額" unit="円" accent="acu" step={10} value={a.two.copay} sliderMax={2000} onChange={v=>update(d=>{d.acu.two.copay=v;})}/>
+            <SSField label="平均保険者請求額" unit="円" accent="acu" step={10} value={a.two.claim} sliderMax={5000} onChange={v=>update(d=>{d.acu.two.claim=v;})}/>
+          </div>
+        </div>
+      </SSSection>
+
+      <SSSection id="ss-sec-self" tone="self" icon="✨" title="自費売上" desc="自費施術・EMS・物販・その他は別々に1回だけ計上" total={r.self.total}
+        results={<>
+          <SSRow label="自費施術 売上" value={S.formatInt(r.self.treatmentSales)} unit="円"/>
+          <SSRow label="EMS 利用件数" value={S.formatInt(r.self.emsCount)} unit="件"/>
+          <SSRow label="EMS 売上" value={S.formatInt(r.self.emsSales)} unit="円"/>
+          <SSRow label="物販・その他" value={S.formatInt(s.productSales+s.otherSales)} unit="円"/>
+          <SSRow label="自費売上 合計" value={S.formatInt(r.self.total)} unit="円" strong/>
+        </>}>
+        <div style={two}>
+          <SSField label="自費施術 延べ件数" unit="件" accent="self" value={s.treatmentCount} sliderMax={Math.max(500,r.totalVisits)} onChange={v=>update(d=>{d.self.treatmentCount=v;})}/>
+          <SSField label="自費施術 平均単価" unit="円" accent="self" step={100} value={s.treatmentPrice} sliderMax={15000} onChange={v=>update(d=>{d.self.treatmentPrice=v;})}/>
+        </div>
+        <div style={two}>
+          <SSField label="EMS 利用率" unit="%" accent="self" decimal max={100} value={s.emsRate} sliderMax={100} hint="延べ来院数に対する割合" onChange={v=>update(d=>{d.self.emsRate=v;})}/>
+          <SSField label="EMS 平均単価" unit="円" accent="self" step={100} value={s.emsPrice} sliderMax={10000} onChange={v=>update(d=>{d.self.emsPrice=v;})}/>
+        </div>
+        <div style={two}>
+          <SSField label="物販売上" unit="円" accent="self" step={10000} value={s.productSales} sliderMax={1000000} onChange={v=>update(d=>{d.self.productSales=v;})}/>
+          <SSField label="その他売上" unit="円" accent="self" step={10000} value={s.otherSales} sliderMax={1000000} onChange={v=>update(d=>{d.self.otherSales=v;})}/>
+        </div>
+      </SSSection>
+    </div>
+    </div>
+  </>);
+}
+
+function SSReverseTab({S,input,update}){
+  const r=React.useMemo(()=>S.reverseCalculate(input),[input]);
+  const achieved=r.gap<=0;
+  const metric=(label,value,unit,big,color)=>(
+    <div style={{...ssCard,marginBottom:0,padding:"14px 16px"}}>
+      <div style={{fontSize:12,fontWeight:700,color:"#64748b"}}>{label}</div>
+      <div style={{...ssNum,fontSize:big?28:22,fontWeight:900,color:color||"#0f172a",marginTop:2}}>{value}{value!=="—"&&<span style={{fontSize:12,fontWeight:700,color:"#64748b",marginLeft:3}}>{unit}</span>}</div>
+    </div>
+  );
+  const split=(label,value,note)=>(
+    <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 12px"}}>
+      <div style={{fontSize:12,fontWeight:700,color:"#64748b"}}>{label}</div>
+      <div style={{...ssNum,fontSize:19,fontWeight:900,color:"#0f172a"}}>{S.formatInt(value)}{value!=null&&<span style={{fontSize:11,color:"#64748b",marginLeft:2}}>円</span>}</div>
+      <div style={{fontSize:11,color:"#94a3b8"}}>{note}</div>
+    </div>
+  );
+  return(<>
+    <div style={{...ssCard,padding:16}}>
+      <div style={{fontSize:15,fontWeight:800,marginBottom:2}}>🎯 目標売上を入力</div>
+      <div style={{fontSize:12,color:"#64748b",marginBottom:12}}>現在の構成比・単価・来院頻度をもとに、必要な数字を逆算します</div>
+      <SSField label="月間目標売上" unit="円" step={50000} value={input.basic.targetSales} sliderMax={15000000} onChange={v=>update(d=>{d.basic.targetSales=v;})}/>
+      <div style={{marginTop:12,borderRadius:10,padding:"12px 14px",background:achieved?SS_SOFT.acu:"#fef2f2",color:achieved?"#14532d":"#7f1d1d"}}>
+        <div style={{fontSize:13,fontWeight:700}}>{achieved?"現状で目標を達成しています":"現状と目標の差"}</div>
+        <div style={{...ssNum,fontSize:28,fontWeight:900}}>{achieved?S.formatSigned(-r.gap,"円"):`あと ${S.formatInt(r.gap)}円`}</div>
+        <div style={{...ssNum,fontSize:12,opacity:.8}}>現状 {S.formatInt(r.currentSales)}円 → 目標 {S.formatInt(r.targetSales)}円</div>
+      </div>
+    </div>
+
+    <div style={{fontSize:13,fontWeight:800,color:"#334155",margin:"4px 2px 8px"}}>カルテ数で達成する場合に必要な数字</div>
+    <div style={{...ssGrid(170),marginBottom:12}}>
+      {metric("必要稼働カルテ数",S.formatInt(r.requiredKarte),"枚",true)}
+      {metric("追加で必要なカルテ数",r.additionalKarte==null?"—":"+"+S.formatInt(r.additionalKarte),"枚",true,r.additionalKarte?SS_COLOR.red:SS_COLOR.acu)}
+      {metric("必要延べ来院数",S.formatInt(r.requiredVisits),"回")}
+      {metric("1日平均必要来院数",S.formatOneDecimal(r.requiredVisitsPerDay),"回")}
+      {metric("スタッフ1人あたり必要売上",S.formatInt(r.requiredSalesPerStaff),"円")}
+      {metric("スタッフ1人あたり現状売上",S.formatInt(r.currentSalesPerStaff),"円")}
+    </div>
+    {r.requiredKarte==null&&<div style={{...ssCard,padding:12,background:"#fffbeb",color:"#78350f",fontSize:13}}>来院数に連動する売上が0のため、カルテ数を増やしても目標に届きません。</div>}
+
+    <div style={{...ssCard,padding:14,...ssGrid(200)}}>
+      {split("固定売上（物販・その他）",r.fixedSales,"カルテ数が変わっても一定")}
+      {split("連動売上（保険・自費施術・EMS）",r.variableSales,"来院数に比例して増減")}
+      {split("カルテ1枚あたり連動売上",r.variablePerKarte,"必要カルテ数は端数を含めて1枚ずつ探索")}
+    </div>
+
+    <div style={{fontSize:13,fontWeight:800,color:"#334155",margin:"4px 2px 2px"}}>4つの改善策を比較</div>
+    <div style={{fontSize:11.5,color:"#64748b",margin:"0 2px 8px"}}>それぞれ「その項目だけ」を変えた場合に、目標を達成する最小の値です（他の条件は現状のまま）。</div>
+    <div style={ssGrid(300)}>
+      {r.cases.map(c=>{
+        const dec=c.key==="visits"||c.key==="acuRate";
+        const f=v=>v==null?"—":dec?S.formatOneDecimal(v):S.formatInt(v);
+        const status=!c.achievable?"ng":c.alreadyAchieved?"done":"ok";
+        const badge={ng:["✕ これだけでは届かない","#f1f5f9","#475569"],ok:["✓ 達成可能",SS_SOFT.navy,SS_COLOR.navy],done:["✓ 達成済み",SS_SOFT.acu,SS_COLOR.acu]}[status];
+        return(
+          <div key={c.key} style={{...ssCard,marginBottom:0,padding:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"flex-start"}}>
+              <div><div style={{fontSize:14.5,fontWeight:800}}>{c.label}</div><div style={{fontSize:11.5,color:"#64748b"}}>{c.description}</div></div>
+              <span style={{fontSize:11,fontWeight:800,background:badge[1],color:badge[2],borderRadius:20,padding:"3px 8px",whiteSpace:"nowrap"}}>{badge[0]}</span>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginTop:10}}>
+              <div style={{flex:1,background:"#f8fafc",borderRadius:10,padding:8,textAlign:"center"}}>
+                <div style={{fontSize:11,color:"#64748b"}}>現在</div>
+                <div style={{...ssNum,fontSize:18,fontWeight:800,color:"#334155"}}>{f(c.current)}<span style={{fontSize:11,marginLeft:2}}>{c.unit}</span></div>
+              </div>
+              <span style={{color:"#94a3b8",fontSize:18}}>→</span>
+              <div style={{flex:1,background:c.achievable?SS_COLOR.navy:"#f1f5f9",color:c.achievable?"white":"#64748b",borderRadius:10,padding:8,textAlign:"center"}}>
+                <div style={{fontSize:11,opacity:.75}}>必要</div>
+                <div style={{...ssNum,fontSize:18,fontWeight:900}}>{f(c.required)}{c.required!=null&&<span style={{fontSize:11,marginLeft:2}}>{c.unit}</span>}</div>
+              </div>
+            </div>
+            <div style={{...ssNum,fontSize:12.5,color:"#475569",marginTop:8}}>
+              {c.achievable
+                ?<>差：<b style={{color:"#0f172a"}}>{S.formatSigned(c.delta,c.key==="acuRate"?"pt":c.unit,dec)}</b><span style={{color:"#94a3b8",marginLeft:8,fontSize:11.5}}>（試算売上 {S.formatInt(c.resultingSales)}円）</span></>
+                :c.note}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  </>);
+}
+
+// ドーナツ（構成比）。各項目の間に白いすき間を入れる
+function SSDonut({rows,total,center,sub}){
+  const R=70, C=2*Math.PI*R;
+  let acc=0;
+  const segs=rows.filter(x=>x.value>0).map(x=>{ const len=x.value/total*C; const seg={...x,len,off:acc}; acc+=len; return seg; });
+  return(
+    <div style={{position:"relative",width:200,height:200,flexShrink:0}}>
+      <svg viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="売上構成比">
+        <circle cx="100" cy="100" r={R} fill="none" stroke="#f1f5f9" strokeWidth="28"/>
+        {segs.map(sg=>(
+          <circle key={sg.key} cx="100" cy="100" r={R} fill="none" stroke={sg.color} strokeWidth="28"
+            strokeDasharray={`${Math.max(0,sg.len-(segs.length>1?2:0))} ${C}`} strokeDashoffset={-sg.off} transform="rotate(-90 100 100)">
+            <title>{sg.name}：{sg.value.toLocaleString("ja-JP")}円</title>
+          </circle>
+        ))}
+      </svg>
+      <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+        <div style={{fontSize:11,color:"#64748b"}}>{sub}</div>
+        <div style={{...ssNum,fontSize:20,fontWeight:900}}>{center}</div>
+      </div>
+    </div>
+  );
+}
+
+// 半円ゲージ（100%で満タン。超えたら数字で見せる）
+function SSGauge({rate}){
+  const S=window.SalesSim;
+  const ratio=Math.min(1,Math.max(0,(rate||0)/100)), C=Math.PI*80, done=rate!=null&&rate>=100;
+  return(
+    <div style={{position:"relative",maxWidth:260,margin:"0 auto"}}>
+      <svg viewBox="0 0 200 112" style={{width:"100%"}} role="img" aria-label={"目標達成率 "+S.formatPercent(rate)}>
+        <path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke="#e2e8f0" strokeWidth="16" strokeLinecap="round"/>
+        <path d="M20 100 A80 80 0 0 1 180 100" fill="none" stroke={done?SS_COLOR.acu:SS_COLOR.navy} strokeWidth="16" strokeLinecap="round" strokeDasharray={`${C*ratio} ${C}`} style={{transition:"stroke-dasharray .2s"}}/>
+      </svg>
+      <div style={{position:"absolute",left:0,right:0,bottom:0,textAlign:"center",...ssNum,fontSize:34,fontWeight:900}}>
+        {rate==null?"—":S.formatOneDecimal(rate)}{rate!=null&&<span style={{fontSize:16,color:"#64748b"}}>%</span>}
+      </div>
+    </div>
+  );
+}
+
+function SSDashboardTab({S,input,result:r,drafts,dirty,active}){
+  const rows=[
+    {key:"judo",name:"柔整保険",value:r.judo.total,color:SS_COLOR.judo},
+    {key:"acu",name:"鍼灸保険",value:r.acu.total,color:SS_COLOR.acu},
+    {key:"self",name:"自費施術",value:r.self.treatmentSales,color:SS_COLOR.self},
+    {key:"ems",name:"EMS",value:r.self.emsSales,color:SS_COLOR.ems},
+    {key:"fixed",name:"物販・その他",value:r.fixedSales,color:SS_COLOR.fixed},
+  ];
+  const tile=(label,value,color,dark)=>(
+    <div style={{...ssCard,marginBottom:0,padding:"12px 14px",background:dark?SS_COLOR.navy:"white",color:dark?"white":"#0f172a"}}>
+      <div style={{fontSize:12,fontWeight:700,color:dark?"rgba(255,255,255,.7)":"#64748b",display:"flex",alignItems:"center",gap:6}}>{color&&<span style={{width:9,height:9,borderRadius:"50%",background:color}}/>}{label}</div>
+      <div style={{...ssNum,fontSize:22,fontWeight:900}}>{S.formatInt(value)}<span style={{fontSize:11,marginLeft:2,opacity:.7}}>円</span></div>
+    </div>
+  );
+  const stat=(label,value,unit,sub)=>(
+    <div style={{...ssCard,marginBottom:0,padding:"12px 14px"}}>
+      <div style={{fontSize:12,fontWeight:700,color:"#64748b"}}>{label}</div>
+      <div style={{...ssNum,fontSize:21,fontWeight:900}}>{value}{value!=="—"&&<span style={{fontSize:11,color:"#64748b",marginLeft:2}}>{unit}</span>}</div>
+      {sub&&<div style={{...ssNum,fontSize:11,color:"#94a3b8"}}>{sub}</div>}
+    </div>
+  );
+  const results=Object.fromEntries(S.SCENARIOS.map(({id})=>[id,S.calculate(drafts[id])]));
+  const maxTotal=Math.max(1,...S.SCENARIOS.map(({id})=>results[id].totalSales));
+  const lines=[
+    ["目標売上",(i)=>S.formatInt(i.basic.targetSales)+"円"],
+    ["目標達成率",(i,x)=>S.formatPercent(x.achievementRate)],
+    ["稼働カルテ数",(i)=>S.formatInt(i.basic.karteCount)+"枚"],
+    ["平均来院回数",(i)=>S.formatOneDecimal(i.basic.visitsPerKarte)+"回"],
+    ["延べ来院数",(i,x)=>S.formatInt(x.totalVisits)+"回"],
+    ["柔整保険売上",(i,x)=>S.formatInt(x.judo.total)+"円"],
+    ["鍼灸保険売上",(i,x)=>S.formatInt(x.acu.total)+"円"],
+    ["自費売上（EMS・物販含む）",(i,x)=>S.formatInt(x.self.total)+"円"],
+    ["来院1回あたり売上",(i,x)=>S.formatInt(x.salesPerVisit)+"円"],
+  ];
+  const th={padding:"8px 6px",textAlign:"right",fontSize:12,fontWeight:700,color:"#64748b",borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap"};
+  const td={...ssNum,padding:"7px 6px",textAlign:"right",fontSize:13,borderBottom:"1px solid #f1f5f9",whiteSpace:"nowrap"};
+  return(<>
+    <div style={{...ssGrid(160),marginBottom:12}}>
+      {tile("総売上",r.totalSales,null,true)}
+      {tile("柔整保険売上",r.judo.total,SS_COLOR.judo)}
+      {tile("鍼灸保険売上",r.acu.total,SS_COLOR.acu)}
+      {tile("自費施術売上",r.self.treatmentSales,SS_COLOR.self)}
+      {tile("EMS売上",r.self.emsSales,SS_COLOR.ems)}
+    </div>
+
+    <div style={{...ssGrid(320),marginBottom:12}}>
+      <div style={{...ssCard,marginBottom:0,padding:16}}>
+        <div style={{fontSize:15,fontWeight:800}}>売上構成比</div>
+        <div style={{fontSize:11.5,color:"#64748b",marginBottom:10}}>総売上に占める各項目の割合</div>
+        {r.totalSales>0?(
+          <div style={{display:"flex",flexWrap:"wrap",alignItems:"center",justifyContent:"center",gap:16}}>
+            <SSDonut rows={rows} total={r.totalSales} sub="保険売上比率" center={S.formatPercent(r.insuranceTotal/r.totalSales*100)}/>
+            <table style={{flex:"1 1 220px",borderCollapse:"collapse",fontSize:13}}>
+              <tbody>{rows.map(x=>(
+                <tr key={x.key} style={{borderBottom:"1px solid #f1f5f9"}}>
+                  <td style={{padding:"7px 0"}}><span style={{display:"inline-block",width:11,height:11,borderRadius:3,background:x.color,marginRight:7,verticalAlign:"-1px"}}/>{x.name}</td>
+                  <td style={{...ssNum,textAlign:"right",fontWeight:800}}>{S.formatInt(x.value)}円</td>
+                  <td style={{...ssNum,textAlign:"right",color:"#64748b",width:58}}>{S.formatPercent(x.value/r.totalSales*100)}</td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        ):<div style={{padding:"40px 0",textAlign:"center",fontSize:13,color:"#94a3b8"}}>売上がまだありません</div>}
+      </div>
+      <div style={{...ssCard,marginBottom:0,padding:16}}>
+        <div style={{fontSize:15,fontWeight:800}}>目標達成率</div>
+        <div style={{...ssNum,fontSize:11.5,color:"#64748b",marginBottom:10}}>目標 {S.formatInt(input.basic.targetSales)}円</div>
+        <SSGauge rate={r.achievementRate}/>
+        <div style={{...ssNum,textAlign:"center",fontSize:13,color:"#475569",marginTop:6}}>
+          {r.achievementRate==null?"目標売上を入力してください":r.shortfall>0?`あと ${S.formatInt(r.shortfall)}円`:`目標を ${S.formatInt(r.surplus)}円 上回っています`}
+        </div>
+      </div>
+    </div>
+
+    <div style={{...ssGrid(160),marginBottom:12}}>
+      {stat("稼働カルテ数",S.formatInt(input.basic.karteCount),"枚")}
+      {stat("延べ来院数",S.formatInt(r.totalVisits),"回",`1日平均 ${S.formatOneDecimal(r.visitsPerDay)}回`)}
+      {stat("カルテ1枚あたり月間売上",S.formatInt(r.salesPerKarte),"円")}
+      {stat("来院1回あたり売上",S.formatInt(r.salesPerVisit),"円")}
+      {stat("スタッフ1人あたり月間売上",S.formatInt(r.salesPerStaff),"円")}
+    </div>
+
+    <div style={{...ssCard,padding:16}}>
+      <div style={{fontSize:15,fontWeight:800}}>3パターン比較</div>
+      <div style={{fontSize:11.5,color:"#64748b",marginBottom:12}}>現在値・改善案・挑戦目標（上のボタンで切り替えて編集・保存）</div>
+      {S.SCENARIOS.map(({id,label})=>(
+        <div key={id} style={{display:"grid",gridTemplateColumns:"72px 1fr auto",alignItems:"center",gap:8,marginBottom:8}}>
+          <span style={{fontSize:13,fontWeight:800,color:id===active?SS_COLOR.navy:"#64748b"}}>{label}</span>
+          <div style={{height:22,background:"#f1f5f9",borderRadius:6,overflow:"hidden"}}>
+            <div style={{height:"100%",width:results[id].totalSales/maxTotal*100+"%",background:id===active?SS_COLOR.navy:"#9fb2cc",borderRadius:6,transition:"width .2s"}}/>
+          </div>
+          <span style={{...ssNum,fontSize:13,fontWeight:800,minWidth:96,textAlign:"right"}}>{S.formatInt(results[id].totalSales)}円</span>
+        </div>
+      ))}
+      <div style={{overflowX:"auto",marginTop:8}}>
+        <table style={{width:"100%",minWidth:460,borderCollapse:"collapse"}}>
+          <thead><tr>
+            <th style={{...th,textAlign:"left"}}>項目</th>
+            {S.SCENARIOS.map(({id,label})=><th key={id} style={{...th,color:id===active?SS_COLOR.navy:th.color}}>{label}{dirty[id]&&<span style={{color:"#f59e0b",marginLeft:3}}>●</span>}</th>)}
+          </tr></thead>
+          <tbody>
+            <tr><td style={{...td,textAlign:"left",fontWeight:800}}>総売上</td>{S.SCENARIOS.map(({id})=><td key={id} style={{...td,fontWeight:900}}>{S.formatInt(results[id].totalSales)}円</td>)}</tr>
+            {lines.map(([label,get])=>(
+              <tr key={label}><td style={{...td,textAlign:"left",color:"#475569"}}>{label}</td>{S.SCENARIOS.map(({id})=><td key={id} style={td}>{get(drafts[id],results[id])}</td>)}</tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{fontSize:11.5,color:"#64748b",marginTop:8}}><span style={{color:"#f59e0b"}}>●</span> は保存していない変更があるパターンです。</div>
+    </div>
+  </>);
+}
+
 function MonthlyKpiPanel({payments,bookings,stores,todayStr}){
   const SR=window.SalesReport;
   const defaultStore=((stores||[]).find(s=>/香里園/.test(s.name||""))||(stores||[])[0]||{id:1}).id;
@@ -15186,6 +16163,166 @@ function PassFollowCard({passes,bookings,refunds,trainingMode,nameCell,loading})
     </div>
   );
 }
+// ===== 回数券・フリーパスの更新状況 =====
+// 更新＝同じ方（電話番号か、空白を除いた名前）が、そのパスより後に回数券・フリーパスを買ったこと。買えば自動で「更新済み」になる
+// 終了＝フリーパスは期限が過ぎた日、回数券は使い切った（残り0回）か期限が過ぎた日
+const PASS_RENEWAL_REASONS=["未確認","提案済み・検討中","症状が良くなった（卒業）","回数券・単発に切り替え","費用面","通う時間が取れない","効果を感じにくい","引越し・転院","連絡がつかない","その他"];
+const passIsFP=p=>(p.pass_type||"").includes("フリーパス");
+const passNameKey=s=>String(s||"").replace(/[\s　]/g,"");
+// パスID → そのあとに買ったパス（いちばん早いもの）
+function passRenewalMap(passes){
+  const out={};
+  const list=(passes||[]).filter(p=>p.purchased_date);
+  list.forEach(p=>{
+    const k=passNameKey(p.patient_name);
+    let best=null;
+    list.forEach(q=>{
+      if(q.id===p.id||!!q.is_training!==!!p.is_training) return;
+      const same=(k&&passNameKey(q.patient_name)===k)||(p.phone&&q.phone&&p.phone===q.phone);
+      if(!same) return;
+      const later=q.purchased_date>p.purchased_date||(q.purchased_date===p.purchased_date&&q.id>p.id);
+      if(!later) return;
+      if(!best||q.purchased_date<best.purchased_date||(q.purchased_date===best.purchased_date&&q.id<best.id)) best=q;
+    });
+    if(best) out[p.id]=best;
+  });
+  return out;
+}
+async function savePassRenewalNote(passId,patch){
+  let uid=null; try{ uid=(JSON.parse(sessionStorage.getItem("ando_user")||"null")||{}).id||null; }catch(e){}
+  const body={pass_id:passId,updated_at:new Date().toISOString(),updated_by:uid,...patch};
+  const {data:{session}}=await supabaseClient.auth.getSession();
+  if(!session) throw new Error("ログインが切れています。もう一度ログインしてください");
+  const res=await fetch(`${SUPABASE_URL}/rest/v1/pass_renewal_notes?on_conflict=pass_id`,{method:"POST",
+    headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${session.access_token}`,"Content-Type":"application/json",Prefer:"resolution=merge-duplicates,return=representation"},
+    body:JSON.stringify(body)});
+  const txt=await res.text(); let data=null; try{ data=txt?JSON.parse(txt):null; }catch(e){}
+  if(!res.ok||!Array.isArray(data)||!data[0]) throw new Error((data&&data.message)||`保存できませんでした（HTTP ${res.status}）`);
+  return data[0];
+}
+
+function PassRenewalCard({passes,renewal,bookings,trainingMode,nameCell,notes,onNoteSaved,loading}){
+  const today=fmtDate(new Date());
+  const [month,setMonth]=React.useState(today.slice(0,7));
+  const [tab,setTab]=React.useState("not");
+  const [msg,setMsg]=React.useState("");
+  const [memoDraft,setMemoDraft]=React.useState({});
+  const dayDiff=(a,b)=>Math.round((new Date(b+"T00:00:00")-new Date(a+"T00:00:00"))/86400000);
+  // 来院日（キャンセル除く）
+  const visits=React.useMemo(()=>{
+    const byName={},byPhone={};
+    (bookings||[]).forEach(b=>{
+      if(b.cancelled||!b.date||!!b.is_training!==!!trainingMode) return;
+      const k=passNameKey(b.patient_name); if(k)(byName[k]=byName[k]||[]).push(b.date);
+      if(b.phone)(byPhone[b.phone]=byPhone[b.phone]||[]).push(b.date);
+    });
+    return {byName,byPhone};
+  },[bookings,trainingMode]);
+  const datesOf=p=>[...new Set([...(visits.byName[passNameKey(p.patient_name)]||[]),...(p.phone?(visits.byPhone[p.phone]||[]):[])])].sort();
+  const rows=React.useMemo(()=>(passes||[]).map(p=>{
+    const fp=passIsFP(p), next=renewal[p.id]||null;
+    const ds=datesOf(p), past=ds.filter(d=>d<=today);
+    const last=past[past.length-1]||null, nextBk=ds.find(d=>d>today)||null;
+    let end=null, ended=false;
+    if(fp){ end=p.expiry_date||null; ended=!!end&&end<today; }
+    else{
+      const usedUp=(p.remaining_count||0)<=0, expired=!!p.expiry_date&&p.expiry_date<today;
+      ended=usedUp||expired;
+      // 使い切った日＝購入後の最後の来院日。まだ残っていて残り2回以下なら「これから」として今月に出す
+      end=expired?p.expiry_date:usedUp?(past.filter(d=>d>=(p.purchased_date||"")&&(!next||d<=next.purchased_date)).slice(-1)[0]||(next&&next.purchased_date)||p.purchased_date):(p.expiry_date||((p.remaining_count||0)<=2?today:null));
+    }
+    const status=next?"renewed":ended?(p.active===false?"closed":"not"):"before";
+    return {p,fp,next,end,ended,status,last,nextBk,note:notes[p.id]||null};
+  }).filter(r=>r.end&&(month==="all"||r.end.slice(0,7)===month)&&r.status!=="closed")
+    .sort((a,b)=>(a.end||"").localeCompare(b.end||"")),[passes,renewal,notes,month,visits,today]);
+  const renewed=rows.filter(r=>r.status==="renewed"), notR=rows.filter(r=>r.status==="not"), before=rows.filter(r=>r.status==="before");
+  const endedN=renewed.length+notR.length;
+  const rate=endedN?Math.round(renewed.length/endedN*100):null;
+  const noReason=notR.filter(r=>!r.note||!r.note.reason||r.note.reason==="未確認");
+  const reasonCount={}; notR.forEach(r=>{ const k=(r.note&&r.note.reason)||"未確認"; reasonCount[k]=(reasonCount[k]||0)+1; });
+  const list=tab==="not"?notR:tab==="renewed"?renewed:tab==="before"?before:rows;
+  const staffName=id=>(STAFF_ACCOUNTS.find(s=>s.id===id)||{}).name||"";
+  async function save(r,patch){
+    setMsg("");
+    try{ const row=await savePassRenewalNote(r.p.id,{reason:(r.note&&r.note.reason)||null,memo:(r.note&&r.note.memo)||null,...patch}); onNoteSaved(row); setMsg(`✓ ${r.p.patient_name} 様の理由を保存しました`); }
+    catch(e){ setMsg("⚠ "+e.message); }
+  }
+  const months=(()=>{ const a=[]; const d=new Date(today+"T00:00:00"); for(let i=-1;i<=11;i++){ const x=new Date(d.getFullYear(),d.getMonth()-i,1); a.push(`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}`); } return a; })();
+  const th={padding:"8px 10px",textAlign:"left",fontWeight:800,color:"#64748b",whiteSpace:"nowrap"};
+  const td={padding:"8px 10px",whiteSpace:"nowrap",verticalAlign:"top"};
+  const tabBtn=(id,label,n,color)=>(<button key={id} type="button" onClick={()=>setTab(id)} style={{padding:"6px 12px",borderRadius:16,border:"1.5px solid "+(tab===id?color:"#e2e8f0"),background:tab===id?color:"white",color:tab===id?"white":"#475569",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>{label} {n}</button>);
+  const passLabel=p=>`${p.pass_type}${passIsFP(p)?"":`（残${p.remaining_count||0}/${p.total_count||0}）`}`;
+  return(
+    <div className="card" style={{marginBottom:14}}>
+      <div style={{padding:"12px 16px",borderBottom:"1px solid #f1f5f9"}}>
+        <div style={{fontWeight:800,fontSize:15,color:"#6d28d9",marginBottom:4}}>🔁 更新状況（回数券・フリーパス）</div>
+        <div style={{fontSize:11,color:"#64748b",lineHeight:1.6,marginBottom:8}}>
+          フリーパスも回数券も、同じ方が新しく回数券・フリーパスを買うと、<b>自動で「更新済み」</b>になり、下の対象者一覧からも外れます。<b>期限が過ぎた（回数券は使い切った）のに更新していない方</b>は「未更新」に出るので、理由とメモを残してください。
+        </div>
+        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{fontSize:12,fontWeight:700,color:"#475569"}}>終了した月</span>
+          <select value={month} onChange={e=>setMonth(e.target.value)} aria-label="終了した月" style={{padding:"5px 8px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:13,fontWeight:700,fontFamily:"inherit"}}>
+            {months.map(m=><option key={m} value={m}>{m.replace("-","年")}月</option>)}
+            <option value="all">すべての月</option>
+          </select>
+        </div>
+        <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
+          <div style={{background:"#f5f3ff",border:"1px solid #ddd6fe",borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:800,color:"#5b21b6"}}>更新率 <span style={{fontSize:20}}>{rate==null?"—":rate+"%"}</span> <span style={{fontWeight:700}}>（{renewed.length}/{endedN}名）</span></div>
+          <div style={{background:"#ecfdf5",border:"1px solid #a7f3d0",borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:800,color:"#047857"}}>更新済み <span style={{fontSize:20}}>{renewed.length}</span> 名</div>
+          <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:800,color:"#b91c1c"}}>未更新 <span style={{fontSize:20}}>{notR.length}</span> 名{noReason.length>0&&<span>（理由未入力 {noReason.length}）</span>}</div>
+          {before.length>0&&<div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"8px 14px",fontSize:12,fontWeight:800,color:"#92400e"}}>これから期限 <span style={{fontSize:20}}>{before.length}</span> 名</div>}
+        </div>
+        {notR.length>0&&<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8,fontSize:11.5}}>
+          <span style={{fontWeight:800,color:"#475569"}}>未更新の理由：</span>
+          {Object.entries(reasonCount).sort((a,b)=>b[1]-a[1]).map(([k,v])=><span key={k} style={{background:k==="未確認"?"#fef2f2":"#f1f5f9",color:k==="未確認"?"#b91c1c":"#334155",borderRadius:12,padding:"2px 9px",fontWeight:700}}>{k} {v}名</span>)}
+        </div>}
+        <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}}>
+          {tabBtn("not","未更新",notR.length,"#dc2626")}
+          {tabBtn("renewed","更新済み",renewed.length,"#059669")}
+          {tabBtn("before","これから期限",before.length,"#d97706")}
+          {tabBtn("all","すべて",rows.length,"#475569")}
+        </div>
+        {msg&&<div style={{marginTop:8,fontSize:12,fontWeight:700,color:msg.startsWith("⚠")?"#b91c1c":"#047857"}}>{msg}</div>}
+      </div>
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:900}}>
+          <thead><tr style={{background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}>
+            {["状況","患者名","パス","終了日","最終来院","次回予約","更新・理由","メモ"].map(h=><th key={h} style={th}>{h}</th>)}
+          </tr></thead>
+          <tbody>
+            {loading?(<tr><td colSpan={8} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>読み込み中...</td></tr>)
+            :list.length===0?(<tr><td colSpan={8} style={{padding:20,textAlign:"center",color:"#94a3b8"}}>{tab==="not"?"✅ 未更新の方はいません":"対象の方はいません"}</td></tr>)
+            :list.map(r=>{
+              const p=r.p, n=r.note||{};
+              const badge=r.status==="renewed"?["#d1fae5","#047857","更新済み"]:r.status==="not"?["#fee2e2","#b91c1c","未更新"]:["#fef3c7","#92400e",!r.fp&&(p.remaining_count||0)<=2?`残り${p.remaining_count||0}回`:r.end>=today?`あと${dayDiff(today,r.end)}日`:"期限前"];
+              return(<tr key={p.id} style={{borderBottom:"1px solid #f1f5f9"}}>
+                <td style={td}><span style={{background:badge[0],color:badge[1],borderRadius:6,padding:"2px 8px",fontWeight:800}}>{badge[2]}</span></td>
+                <td style={{...td,fontWeight:700}}>{nameCell(p.patient_name)}{p.phone&&<div style={{fontSize:10.5,color:"#94a3b8",fontWeight:400}}>{p.phone}</div>}</td>
+                <td style={td}>{passLabel(p)}<div style={{fontSize:10.5,color:"#94a3b8"}}>購入 {p.purchased_date||"—"}</div></td>
+                <td style={{...td,fontWeight:700,color:r.ended&&r.status==="not"?"#dc2626":"#1e293b"}}>{!r.fp&&!r.ended&&!p.expiry_date?"使用中":r.end}{!r.fp&&r.ended&&(p.remaining_count||0)<=0&&<div style={{fontSize:10.5,color:"#64748b"}}>使い切り</div>}{r.ended&&<div style={{fontSize:10.5,fontWeight:700}}>{dayDiff(r.end,today)}日経過</div>}</td>
+                <td style={td}>{r.last||"—"}{r.last&&<div style={{fontSize:10.5,color:"#94a3b8"}}>{dayDiff(r.last,today)}日前</div>}</td>
+                <td style={{...td,color:r.nextBk?"#059669":"#94a3b8",fontWeight:700}}>{r.nextBk||"なし"}</td>
+                <td style={td}>{r.status==="renewed"
+                  ?<span style={{color:"#047857",fontWeight:700}}>→ {r.next.pass_type}<div style={{fontSize:10.5,color:"#64748b",fontWeight:400}}>{r.next.purchased_date} に購入{r.end&&r.next.purchased_date?`（${r.next.purchased_date<=r.end?"期限内に更新":`期限から${dayDiff(r.end,r.next.purchased_date)}日後`}）`:""}</div></span>
+                  :<select value={n.reason||"未確認"} onChange={e=>save(r,{reason:e.target.value})} aria-label={`${p.patient_name}の未更新の理由`}
+                    style={{padding:"5px 6px",border:"1.5px solid "+(!n.reason||n.reason==="未確認"?"#fca5a5":"#e2e8f0"),borderRadius:6,fontSize:12,fontFamily:"inherit",background:"white"}}>
+                    {PASS_RENEWAL_REASONS.map(x=><option key={x} value={x}>{x}</option>)}
+                  </select>}</td>
+                <td style={{...td,whiteSpace:"normal",minWidth:200}}>{r.status==="renewed"?<span style={{color:"#94a3b8"}}>—</span>:<>
+                  <input value={memoDraft[p.id]!=null?memoDraft[p.id]:(n.memo||"")} onChange={e=>setMemoDraft(d=>({...d,[p.id]:e.target.value}))}
+                    onBlur={()=>{ const v=memoDraft[p.id]; if(v!=null&&v!==(n.memo||"")) save(r,{memo:v}); setMemoDraft(d=>{ const x={...d}; delete x[p.id]; return x; }); }}
+                    placeholder="例：11/20 電話。来月から再開予定" aria-label={`${p.patient_name}のメモ`} style={{width:"100%",padding:"5px 8px",border:"1.5px solid #e2e8f0",borderRadius:6,fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
+                  {n.updated_at&&<div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>{staffName(n.updated_by)&&`${staffName(n.updated_by)}・`}{fmtDate(new Date(n.updated_at))} 更新</div>}
+                </>}</td>
+              </tr>);
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function PassHoldersPanel({payments,bookings,refunds,trainingMode,onOpenPatient}){
   // 患者様の名前を押すと、患者管理のその方の画面を開く
   const nameCell=name=>onOpenPatient?(
@@ -15199,8 +16336,19 @@ function PassHoldersPanel({payments,bookings,refunds,trainingMode,onOpenPatient}
       setPasses(Array.isArray(rows)?rows:[]);setLoading(false);
     }).catch(()=>setLoading(false));
   },[]);
+  // 未更新の理由（pass_renewal_notes）
+  const [notes,setNotes]=React.useState({});
+  React.useEffect(()=>{
+    sb.select("pass_renewal_notes").then(rows=>{ if(Array.isArray(rows)){ const m={}; rows.forEach(r=>{ m[r.pass_id]=r; }); setNotes(m); } }).catch(()=>{});
+  },[]);
+  const [showRenewed,setShowRenewed]=React.useState(false);
   // トレーニングモードの表示中は練習用の回数券・FPだけを、通常時は本番のものだけを表示する
-  const activePasses=passes.filter(p=>p.active!==false&&!!p.is_training===!!trainingMode);
+  const modePasses=passes.filter(p=>!!p.is_training===!!trainingMode);
+  // あとで同じ方が回数券・FPを買っていれば「更新済み」（自動）。更新済みの古いパスは一覧から外す
+  const renewal=React.useMemo(()=>passRenewalMap(modePasses),[passes,trainingMode]);
+  const activeAll=modePasses.filter(p=>p.active!==false);
+  const renewedHidden=activeAll.filter(p=>renewal[p.id]);
+  const activePasses=showRenewed?activeAll:activeAll.filter(p=>!renewal[p.id]);
   const ticketPasses=activePasses.filter(p=>!(p.pass_type||"").includes("フリーパス")).sort((a,b)=>(a.remaining_count||0)-(b.remaining_count||0));
   const fpPasses=activePasses.filter(p=>(p.pass_type||"").includes("フリーパス")).sort((a,b)=>(a.expiry_date||"").localeCompare(b.expiry_date||""));
   function daysUntil(dateStr){ if(!dateStr) return null; return Math.ceil((new Date(dateStr+"T00:00:00")-new Date())/86400000); }
@@ -15298,7 +16446,9 @@ function PassHoldersPanel({payments,bookings,refunds,trainingMode,onOpenPatient}
   }
   return(
     <div style={{maxWidth:1000,margin:"0 auto"}}>
-      <PassFollowCard passes={passes} bookings={bookings} refunds={refunds} trainingMode={trainingMode} nameCell={nameCell} loading={loading}/>
+      <PassFollowCard passes={passes.filter(p=>!renewal[p.id])} bookings={bookings} refunds={refunds} trainingMode={trainingMode} nameCell={nameCell} loading={loading}/>
+      <PassRenewalCard passes={modePasses} renewal={renewal} bookings={bookings} trainingMode={trainingMode} nameCell={nameCell} notes={notes} loading={loading}
+        onNoteSaved={row=>setNotes(m=>({...m,[row.pass_id]:row}))}/>
       <div className="card" style={{marginBottom:14,padding:"14px 16px"}}>
         <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:10}}>🎫 パス・保険サマリー</div>
         <input type="month" value={selMonth} onChange={e=>setSelMonth(e.target.value)}
@@ -15360,6 +16510,10 @@ function PassHoldersPanel({payments,bookings,refunds,trainingMode,onOpenPatient}
           <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f"}}>🎫 回数券・フリーパス対象者一覧（{ticketPasses.length+fpPasses.length}名／合計{(ticketPasses.reduce((s,p)=>s+(p.amount||0),0)+fpPasses.reduce((s,p)=>s+(p.amount||0),0)).toLocaleString()}円）</div>
           <button onClick={exportPassesCSV} style={{padding:"7px 14px",background:"#059669",color:"white",border:"none",borderRadius:8,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>⬇ CSVダウンロード</button>
         </div>
+        {renewedHidden.length>0&&<div style={{padding:"8px 16px",fontSize:11.5,color:"#475569",background:"#f0fdf4",borderBottom:"1px solid #f1f5f9"}}>
+          🔁 更新済み（あとで新しいパスを購入）の古いパス {renewedHidden.length}件は{showRenewed?"表示中":"一覧から外しています"}。
+          <label style={{marginLeft:8,cursor:"pointer",fontWeight:700}}><input type="checkbox" checked={showRenewed} onChange={e=>setShowRenewed(e.target.checked)}/> 更新済みも表示</label>
+        </div>}
         <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,minWidth:680}}>
             <thead>
@@ -15381,7 +16535,11 @@ function PassHoldersPanel({payments,bookings,refunds,trainingMode,onOpenPatient}
                     <td style={{padding:"8px 10px"}}>{p.pass_type}</td>
                     <td style={{padding:"8px 10px",fontWeight:700,color:"#1e293b"}}>{(p.amount||0).toLocaleString()}円</td>
                     <td style={{padding:"8px 10px"}}>{methodBadge(p)}</td>
-                    <td style={{padding:"8px 10px",fontWeight:700,color:(p.remaining_count||0)<=2?"#dc2626":"#1e293b"}}>{p.remaining_count}/{p.total_count}枚</td>
+                    <td style={{padding:"8px 10px",fontWeight:700,color:(p.remaining_count||0)<=2?"#dc2626":"#1e293b"}}>{p.remaining_count}/{p.total_count}枚
+                      {renewal[p.id]?<div><span style={{fontSize:10.5,background:"#d1fae5",color:"#047857",borderRadius:5,padding:"1px 6px"}}>更新済み → {renewal[p.id].purchased_date}</span></div>
+                        :(p.remaining_count||0)<=0||(p.expiry_date&&p.expiry_date<fmtDate(new Date()))?<div><span style={{fontSize:10.5,background:"#fee2e2",color:"#b91c1c",borderRadius:5,padding:"1px 6px"}}>未更新：{(notes[p.id]&&notes[p.id].reason)||"理由未入力"}</span></div>
+                        :(p.remaining_count||0)<=2?<div><span style={{fontSize:10.5,background:"#fef3c7",color:"#92400e",borderRadius:5,padding:"1px 6px"}}>もうすぐ終了・更新の声かけ</span></div>:null}
+                    </td>
                   </tr>
                 ))}
                 {fpPasses.filter(byMethodFilter).map(p=>{
@@ -15394,7 +16552,10 @@ function PassHoldersPanel({payments,bookings,refunds,trainingMode,onOpenPatient}
                       <td style={{padding:"8px 10px"}}>{p.pass_type}</td>
                       <td style={{padding:"8px 10px",fontWeight:700,color:"#1e293b"}}>{(p.amount||0).toLocaleString()}円</td>
                       <td style={{padding:"8px 10px"}}>{methodBadge(p)}</td>
-                      <td style={{padding:"8px 10px",fontWeight:700,color:d!=null&&d<=7?"#dc2626":"#1e293b"}}>{p.expiry_date||"—"}{d!=null?`（残り${d}日）`:""}</td>
+                      <td style={{padding:"8px 10px",fontWeight:700,color:d!=null&&d<=7?"#dc2626":"#1e293b"}}>{p.expiry_date||"—"}{d!=null?`（残り${d}日）`:""}
+                        {renewal[p.id]?<div><span style={{fontSize:10.5,background:"#d1fae5",color:"#047857",borderRadius:5,padding:"1px 6px"}}>更新済み → {renewal[p.id].purchased_date}</span></div>
+                          :d!=null&&d<0?<div><span style={{fontSize:10.5,background:"#fee2e2",color:"#b91c1c",borderRadius:5,padding:"1px 6px"}}>未更新：{(notes[p.id]&&notes[p.id].reason)||"理由未入力"}</span></div>:null}
+                      </td>
                     </tr>
                   );
                 })}
@@ -16777,6 +17938,49 @@ function Dashboard({user,onLogout}){
   }
   const [allPayments,setAllPayments]=React.useState([]);
   const [patientMarks,setPatientMarks]=React.useState({}); // {名前（空白なし）: 口コミ・鍼灸保険の印}
+  // 回数券・フリーパス（カレンダーで更新時期の方の色を変える用）
+  const [calPasses,setCalPasses]=React.useState([]);
+  React.useEffect(()=>{
+    const load=()=>sb.select("passes","?select=id,patient_name,phone,pass_type,total_count,remaining_count,expiry_date,purchased_date,active,is_training").then(r=>{ if(Array.isArray(r)) setCalPasses(r); }).catch(()=>{});
+    load(); const t=setInterval(load,5*60*1000); return()=>clearInterval(t);
+  },[]);
+  // 鍼灸同意者（カレンダーの色分け用）：会計の保険区分が鍼灸の方＋同意書の期限を入れた方
+  const acuConsentKeys=React.useMemo(()=>{
+    const set=new Set();
+    (allPayments||[]).forEach(p=>{ if(!p.is_refund&&!p.is_training&&/鍼灸/.test(String(p.insurance_type||""))){ const k=patientMarkKey(p.patient_name); if(k) set.add(k); } });
+    Object.values(patientMarks||{}).forEach(m=>{ if(m&&m.acu_consent_until&&m.patient_key) set.add(m.patient_key); });
+    return set;
+  },[allPayments,patientMarks]);
+  const passAlert=React.useMemo(()=>passAlertIndex(calPasses,fmtDate(new Date()),trainingMode),[calPasses,trainingMode]);
+  // 患者様ごとの鍼灸保険の来院日（会計の保険区分が鍼灸。同じ日は1回）
+  const acuInsDates=React.useMemo(()=>{
+    const m={};
+    (allPayments||[]).forEach(p=>{ if(p.is_refund||!!p.is_training!==!!trainingMode||!/鍼灸/.test(String(p.insurance_type||""))||!p.payment_date) return; const k=patientMarkKey(p.patient_name); if(!k) return; (m[k]=m[k]||new Set()).add(p.payment_date); });
+    Object.keys(m).forEach(k=>{ m[k]=[...m[k]].sort(); });
+    return m;
+  },[allPayments,trainingMode]);
+  // 患者様ごと・月ごとの最初の予約（キャンセル除く）＝月初の1回目
+  const monthFirstIds=React.useMemo(()=>{
+    const first={};
+    bookings.forEach(b=>{ if(b.cancelled||!b.date) return; const k=patientMarkKey(b.patient_name)+"|"+b.date.slice(0,7); const cur=first[k]; if(!cur||(b.date+(b.time||""))<(cur.date+(cur.time||""))) first[k]=b; });
+    return new Set(Object.values(first).map(b=>b.id));
+  },[bookings]);
+  // その予約の「鍼灸保険の何回目」「月初」の印
+  function visitChipsOf(b){
+    const out=[]; if(!b||b.cancelled) return out;
+    const k=patientMarkKey(b.patient_name), mark=patientMarks[k]||{};
+    const sp=specialBookingKind(b);
+    const dates=acuInsDates[k]||[];
+    const acuPatient=dates.length>0||mark.acu==="received"||mark.acu==="got"||!!mark.acu_consent_until;
+    if(acuPatient&&!sp){
+      const paidSame=dates.includes(b.date);
+      const n=dates.filter(d=>d<b.date).length+1;
+      // 会計済みで鍼灸保険でなかった日は出さない。未会計（これから）の予約は次の回数として出す
+      if(paidSame||!paidBookingIds.has(b.id)) out.push(n===1?{...VISIT_CHIP.acu1}:{...VISIT_CHIP.acu2,text:`鍼保${n}`,title:`鍼灸保険 ${n}回目（2回目以降）`});
+    }
+    if(!sp&&!/体験|カウンセリング/.test(String(b.menu||""))&&monthFirstIds.has(b.id)&&(visitCounts[b.id]||1)>1) out.push(VISIT_CHIP.monthFirst);
+    return out;
+  }
   const loadPatientMarks=React.useCallback(()=>{
     sb.select("patient_marks").then(rows=>{ if(Array.isArray(rows)){ const m={}; rows.forEach(r=>{ m[r.patient_key]=r; }); setPatientMarks(m); } }).catch(()=>{});
   },[]);
@@ -16806,6 +18010,9 @@ function Dashboard({user,onLogout}){
   const [staffStoreMap,setStaffStoreMap]=React.useState({}); // {staffId: [storeIds]}
   const [staffMenuMap,setStaffMenuMap]=React.useState({}); // {staffId: [対応可能メニュー名] | undefined(=全メニュー対応)}
   const [dateLaneMap,setDateLaneMap]=React.useState({}); // {"スタッフID|日付": その日だけのレーン数}
+  // 予約の色分け：menu＝メニュー別（柔整・鍼灸併用・巻き爪・美容鍼・痩身）／staff＝担当スタッフの色（端末ごとに保存）
+  const [calColorMode,setCalColorModeRaw]=React.useState(()=>{ try{ return localStorage.getItem("cal_color_mode")||"menu"; }catch(e){ return "menu"; } });
+  const setCalColorMode=v=>{ setCalColorModeRaw(v); try{ localStorage.setItem("cal_color_mode",v); }catch(e){} };
   const [staffLaneMap,setStaffLaneMap]=React.useState({}); // {staffId: 同時受付レーン数（未設定は1）}
   const [customMenus,setCustomMenus]=React.useState([]); // 「メニュー・コース管理」で追加された有効なメニュー一覧
   const [staffVersion,setStaffVersion]=React.useState(0); // STAFF_ACCOUNTS（動的マージ）が更新されたら再描画するためのトリガー
@@ -17743,6 +18950,7 @@ function Dashboard({user,onLogout}){
       {id:"staff_summary",label:"個人サマリー（売上・客数・客単価）",icon:"bar-chart",special:""},
       {id:"sales_report",label:"総合売上日報・日計／累計表",icon:"bar-chart",special:""},
       {id:"monthly_kpi",label:"月次KPI（期ごと：売上・カルテ枚数・単価・LTV・離反）",icon:"trending",special:""},
+      {id:"sales_simulator",label:"総売上シミュレーター（目標逆算・3パターン比較）",icon:"trending",special:""},
     ]},
     {id:"money",label:"お金・会計",color:"#b45309",items:[
       {id:"money_calc",label:"当日の会計明細・金額計算・小口",icon:"receipt",special:""},
@@ -18073,8 +19281,24 @@ function Dashboard({user,onLogout}){
                     <span style={{fontSize:15,fontWeight:800,color:"#d97706"}}>¥{(dayCash+dayOther).toLocaleString()}</span>
                     <span style={{fontSize:12,fontWeight:700,color:"#059669",background:"#ecfdf5",padding:"3px 10px",borderRadius:20}}>💴 現金 ¥{dayCash.toLocaleString()}</span>
                     <span style={{fontSize:12,fontWeight:700,color:"#2563eb",background:"#eff6ff",padding:"3px 10px",borderRadius:20}}>💳 現金以外 ¥{dayOther.toLocaleString()}{dayOtherDetail?`（${dayOtherDetail}）`:""}</span>
+                    {!selStaff&&<DailyTargetBadge date={ds} storeId={selStoreId} payments={paymentsNet} bookings={bookings} todayStr={todayStr}/>}
                   </div>
                 )}
+                {/* 予約の色分け（メニュー別／スタッフ別）と凡例 */}
+                <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"5px 12px",borderBottom:"1px solid #f1f5f9",background:"white",fontSize:11.5}}>
+                  <span style={{fontWeight:800,color:"#475569"}}>予約の色</span>
+                  {[["menu","メニュー別"],["staff","スタッフ別"]].map(([k,l])=>(
+                    <button key={k} type="button" onClick={()=>setCalColorMode(k)} aria-pressed={calColorMode===k}
+                      style={{padding:"2px 10px",borderRadius:12,border:"1.5px solid "+(calColorMode===k?"#1e3a5f":"#e2e8f0"),background:calColorMode===k?"#1e3a5f":"white",color:calColorMode===k?"white":"#475569",fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{l}</button>
+                  ))}
+                  {calColorMode==="menu"?<>
+                    {BOOKING_MENU_COLORS.map(c=><span key={c.key} title={c.label} style={{display:"inline-flex",alignItems:"center",gap:4,fontWeight:700,color:"#334155"}}><span style={{width:12,height:12,borderRadius:3,background:c.grad,display:"inline-block"}}/>{c.short||c.label}</span>)}
+                    <span style={{display:"inline-flex",alignItems:"center",gap:4,fontWeight:700,color:"#334155"}}><span style={{width:12,height:12,borderRadius:3,background:"linear-gradient(135deg,#9ca3af,#6b7280)",borderLeft:"4px solid #2563eb",display:"inline-block"}}/>会計済み（左の線がメニューの色）</span>
+                  </>:<span style={{color:"#64748b"}}>担当スタッフの色（オレンジ＝新患・グレー＝会計済み）</span>}
+                  <span style={{display:"inline-flex",alignItems:"center",gap:4,flexWrap:"wrap",marginLeft:6,color:"#475569",fontWeight:700}}>印：
+                    {[MARK_ACU.handed,MARK_ACU.received,VISIT_CHIP.acu1,{...VISIT_CHIP.acu2,chip:"鍼保2〜"},VISIT_CHIP.monthFirst].map(m=><span key={m.chip} style={{display:"inline-flex",alignItems:"center",gap:2}}><span style={{background:m.bg,color:m.color,borderRadius:4,padding:"0 4px",fontSize:10,fontWeight:900}}>{m.chip}</span>{m.label.replace(/^鍼灸 /,"").replace("柔整 今月の1回目（月初）","柔整の月初1回目")}</span>)}
+                  </span>
+                </div>
                 {/* 個人絞り込み時：週間リスト切り替えボタン */}
                 {selStaff&&(
                   <div style={{padding:"8px 12px",background:"#f8fafc",borderBottom:"1px solid #e2e8f0",display:"flex",gap:8}}>
@@ -18312,6 +19536,7 @@ function Dashboard({user,onLogout}){
                                     // 見た目を少し薄くして区別し、ドラッグ移動・リサイズのハンドルも出さない（タップして閲覧はできる）
                                     const isReadOnlyReal=trainingMode&&!b.is_training;
                                     const sp=specialBookingKind(b);
+                                    const mk=calColorMode==="menu"?bookingMenuKind(b,acuConsentKeys,passAlert):null;
                                     const base=b._seg?(dayBookings.find(x=>x.id===b.id)||b):b; // 分けた部分を押したときは、もとの予約を開く
                                     return(
                                       <div key={`${b.id}-${b._seg||"all"}`}
@@ -18324,7 +19549,7 @@ function Dashboard({user,onLogout}){
                                           setDragBooking(base);
                                         }}
                                         onClick={e=>{e.stopPropagation();}}
-                                        style={{position:"absolute",left:x,top:lane*laneH+3,height:laneH-6,width:Math.max(liveW-2,20),background:isPaid?"linear-gradient(135deg,#9ca3af,#6b7280)":sp?sp.grad:isNewPatient?"linear-gradient(135deg,#f97316,#ea580c)":`linear-gradient(135deg,${staff.color},${staff.color}bb)`,outline:sp?`2px dashed ${isPaid?"#9ca3af":"#ffffff"}`:"none",outlineOffset:-4,borderRadius:6,padding:"2px 5px",cursor:isReadOnlyReal?"pointer":"grab",touchAction:"none",boxShadow:isBeingResized?"0 0 0 2px #2563eb,0 2px 8px rgba(37,99,235,.5)":sameDay?"0 0 0 2px #eab308,0 2px 6px rgba(234,179,8,.5)":isCheckedIn?"0 0 0 2px #facc15,0 2px 6px rgba(0,0,0,.3)":isNewPatient?"0 2px 8px rgba(249,115,22,.6)":(isPaid?"0 1px 3px rgba(0,0,0,.2)":`0 2px 6px ${staff.color}44`),display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden",zIndex:isBeingResized?4:isNewPatient?3:2,opacity:isBeingDragged?.35:isReadOnlyReal?.6:isPaid?.75:1,filter:isReadOnlyReal?"grayscale(35%)":"none"}}>
+                                        style={{position:"absolute",left:x,top:lane*laneH+3,height:laneH-6,width:Math.max(liveW-2,20),background:isPaid?"linear-gradient(135deg,#9ca3af,#6b7280)":mk?mk.grad:sp?sp.grad:isNewPatient?"linear-gradient(135deg,#f97316,#ea580c)":`linear-gradient(135deg,${staff.color},${staff.color}bb)`,borderLeft:isPaid&&mk?`5px solid ${mk.color}`:undefined,outline:sp?`2px dashed ${isPaid?"#9ca3af":"#ffffff"}`:"none",outlineOffset:-4,borderRadius:6,padding:"2px 5px",cursor:isReadOnlyReal?"pointer":"grab",touchAction:"none",boxShadow:isBeingResized?"0 0 0 2px #2563eb,0 2px 8px rgba(37,99,235,.5)":sameDay?"0 0 0 2px #eab308,0 2px 6px rgba(234,179,8,.5)":isCheckedIn?"0 0 0 2px #facc15,0 2px 6px rgba(0,0,0,.3)":isNewPatient?"0 2px 8px rgba(249,115,22,.6)":(isPaid?"0 1px 3px rgba(0,0,0,.2)":`0 2px 6px ${staff.color}44`),display:"flex",flexDirection:"column",justifyContent:"center",overflow:"hidden",zIndex:isBeingResized?4:isNewPatient?3:2,opacity:isBeingDragged?.35:isReadOnlyReal?.6:isPaid?.75:1,filter:isReadOnlyReal?"grayscale(35%)":"none"}}>
                                         {isReadOnlyReal&&<div style={{position:"absolute",top:-1,right:-1,background:"#fff",color:"#475569",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"0 6px 0 4px",lineHeight:1,letterSpacing:0}}>🔒本番</div>}
                                         {b._seg&&<div title={b._seg==="acu"?"柔整鍼灸併用：鍼灸の部分":"柔整鍼灸併用：柔整の部分"} style={{position:"absolute",top:-1,left:sameDay?30:-1,background:b._seg==="acu"?"#7c3aed":"#1d4ed8",color:"white",fontSize:8,fontWeight:900,padding:"1px 4px",borderRadius:"6px 0 4px 0",lineHeight:1,letterSpacing:0}}>{b._seg==="acu"?"鍼灸":"柔整"}</div>}
                                         {!isReadOnlyReal&&isNewPatient&&<div style={{position:"absolute",top:-1,right:-1,background:"#fff",color:"#ea580c",fontSize:8,fontWeight:900,padding:"1px 3px",borderRadius:"0 6px 0 4px",lineHeight:1,letterSpacing:0}}>NEW</div>}
@@ -18341,7 +19566,8 @@ function Dashboard({user,onLogout}){
                                           }}
                                           title={(sp?`${sp.icon}${sp.label}の予約\n`:"")+"ダブルクリックで患者情報を見る"}
                                           style={{fontWeight:800,fontSize:12,color:"white",textShadow:"0 1px 2px rgba(0,0,0,.55)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",letterSpacing:0.2,textDecoration:"underline",textDecorationColor:"rgba(255,255,255,.35)",textUnderlineOffset:2,cursor:"pointer"}}>{sp&&<span style={{display:"inline-block",background:"white",color:sp.color,borderRadius:4,padding:"0 3px",marginRight:3,fontSize:10,fontWeight:900,textShadow:"none",textDecoration:"none",verticalAlign:"1px"}}>{sp.icon}{sp.label}</span>}{isCheckedIn?"📷":""}{isPaid?"✓ ":""}{b.patient_name}</div>
-                                        {patientMarks[patientMarkKey(b.patient_name)]&&<div style={{lineHeight:1,whiteSpace:"nowrap",overflow:"hidden",marginTop:1}}><PatientMarkChips mark={patientMarks[patientMarkKey(b.patient_name)]} month={(b.date||"").slice(0,7)}/></div>}
+                                        {(()=>{ const vc=visitChipsOf(base), mk2=patientMarks[patientMarkKey(b.patient_name)]; if(!vc.length&&!mk2) return null;
+                                          return <div style={{lineHeight:1,whiteSpace:"nowrap",overflow:"hidden",marginTop:1}}><VisitChips items={vc}/>{mk2&&<PatientMarkChips mark={mk2} month={(b.date||"").slice(0,7)}/>}</div>; })()}
                                         {/* 時間などの詳細は、普段は隠して名前だけのすっきり表示にし、バーをタップ（予約ポップアップ表示中）または対応時間をリサイズ中だけ表示する */}
                                         {(isBeingResized||(bookingPopup&&bookingPopup.booking&&bookingPopup.booking.id===b.id))&&(
                                         <div style={{fontSize:10,color:"rgba(255,255,255,.95)",textShadow:"0 1px 2px rgba(0,0,0,.45)",fontWeight:700}}>{b.time}{cnt>1&&<span style={{marginLeft:2,background:"rgba(255,255,255,.25)",borderRadius:2,padding:"0 2px"}}>{cnt}回</span>}{isBeingResized&&<span style={{marginLeft:2,fontWeight:800}}>{Math.max(10,(b.duration||DURATION[b.menu]||30)+Math.round(resizeDeltaPx/CELL_W)*10)}分</span>}</div>
@@ -18414,6 +19640,7 @@ function Dashboard({user,onLogout}){
                              {view==="staff_summary"&&<StaffSummaryPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}
                              {view==="sales_report"&&<SalesReportPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}
                              {view==="monthly_kpi"&&<MonthlyKpiPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}
+                             {view==="sales_simulator"&&<SalesSimulatorPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}
                              {view==="staff_mandala"&&<StaffMandalaPanel user={user} isAdmin={isAdmin} payments={paymentsNet} bookings={bookings} todayStr={todayStr}/>}
                              {view==="pass_holders"&&<PassHoldersPanel payments={payments} bookings={bookings} refunds={refunds} trainingMode={trainingMode} onOpenPatient={openPatientByName}/>}
                              {view==="referral_mgmt"&&<ReferralMgmtPanel bookings={bookings} payments={payments}/>}
@@ -18431,7 +19658,7 @@ function Dashboard({user,onLogout}){
 
           {/* スタッフ・シフト管理（統合） */}
           {view==="staff_mgmt"&&<StaffMgmtPanel currentUser={user} onShiftsSaved={fetchAll}/>}
-          {view==="shift_overview"&&<ShiftOverviewPanel onShiftsSaved={fetchAll}/>}
+          {view==="shift_overview"&&<ShiftOverviewPanel onShiftsSaved={fetchAll} payments={paymentsNet} bookings={bookings}/>}
           {view==="attendance"&&<AttendancePanel currentUser={user} isAdmin={isAdmin}/>}
 
           {/* メニュー・コース管理 */}
@@ -18499,7 +19726,7 @@ function Dashboard({user,onLogout}){
               <button onClick={()=>{ setHoldModal({kind:"newpt",date:timePickerPopup.date,time:timePickerPopup.centerTime,staffId:timePickerPopup.staffId}); setTimePickerPopup(null); }}
                 style={{width:"100%",padding:"10px 8px",border:"none",borderTop:"2px solid #e2e8f0",background:"#ecfdf5",color:"#047857",fontWeight:800,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>🆕 新患の仮枠</button>
               <button onClick={()=>{ setHoldModal({kind:"away",date:timePickerPopup.date,time:timePickerPopup.centerTime,staffId:timePickerPopup.staffId}); setTimePickerPopup(null); }}
-                style={{width:"100%",padding:"10px 8px",border:"none",borderTop:"1px solid #fde68a",background:"#fffbeb",color:"#92400e",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit",lineHeight:1.3}}>🏦 不在枠<br/><span style={{fontSize:10,fontWeight:700}}>銀行・用事・研修など</span></button>
+                style={{width:"100%",padding:"10px 8px",border:"none",borderTop:"1px solid #fde68a",background:"#fffbeb",color:"#92400e",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit",lineHeight:1.3}}>🏦 不在枠<br/><span style={{fontSize:10,fontWeight:700}}>休憩・銀行・用事など</span></button>
             </div>
           </>
         );
@@ -18510,7 +19737,7 @@ function Dashboard({user,onLogout}){
         setBreaks(prev=>[...prev,br]);
         if(note) setBreakNotes(prev=>({...prev,[br.id]:note}));
         setHoldModal(null);
-        showToast(br.reason===NEWPT_HOLD_REASON?"新患の仮枠を取りました":`${br.reason}の不在枠を入れました`);
+        showToast(br.reason===NEWPT_HOLD_REASON?"新患の仮枠を取りました":br.reason==="休憩"?"休憩を入れました":`${br.reason}の不在枠を入れました`);
       }}/>}
 
       {/* カレンダー上の休憩・不在枠・仮枠をタップしたとき */}
@@ -18532,6 +19759,22 @@ function Dashboard({user,onLogout}){
           const upd=await attemptResizeBreak(br,{time:st,duration:_hm(en)-_hm(st)});
           setHoldPopup(hp=>hp?{...hp,br:upd}:hp);
         }
+        // 内容（休憩・銀行・自分で入れた内容など）を変える
+        const reasonChoices=["休憩",...AWAY_REASONS,...readAwayCustomReasons().filter(c=>c!=="休憩"&&!AWAY_REASONS.includes(c))];
+        if(br.reason&&!reasonChoices.includes(br.reason)) reasonChoices.push(br.reason);
+        async function changeReason(v){
+          const nv=String(v||"").trim().replace(/[<>]/g,"").slice(0,20);
+          if(!nv||nv===br.reason) return;
+          if(![...AWAY_REASONS,"休憩",...readAwayCustomReasons()].includes(nv)) saveAwayCustomReasons([...readAwayCustomReasons(),nv]);
+          try{
+            const r=await sb.update("staff_breaks",br.id,{reason:nv});
+            if(r&&!Array.isArray(r)&&r.message) throw new Error(r.message);
+            const upd={...br,reason:nv};
+            setBreaks(prev=>prev.map(x=>x.id===br.id?upd:x));
+            setHoldPopup(hp=>hp?{...hp,br:upd,reasonDraft:""}:hp);
+            showToast(`内容を「${nv}」に変えました`);
+          }catch(e){ showToast("変更できませんでした："+(e.message||""),"delete"); }
+        }
         function convert(){
           openAdd(br.date,br.time,note.patient_name||"",note.phone||"");
           setForm(f=>f?{...f,staff_id:br.staff_id,menu:note.menu||f.menu}:f);
@@ -18549,6 +19792,19 @@ function Dashboard({user,onLogout}){
               <select aria-label="始まりの時間" value={br.time} onChange={e=>changeTime("start",e.target.value)} style={{fontSize:12,padding:"3px 4px",borderRadius:5,border:"1.5px solid #cbd5e1"}}>{HALF_TIME_OPTIONS.filter(t=>t<endStr).map(t=><option key={t} value={t}>{t}</option>)}</select>
               <span>〜</span>
               <select aria-label="終わりの時間" value={endStr} onChange={e=>changeTime("end",e.target.value)} style={{fontSize:12,padding:"3px 4px",borderRadius:5,border:"1.5px solid #cbd5e1"}}>{HALF_TIME_OPTIONS.filter(t=>t>br.time).map(t=><option key={t} value={t}>{t}</option>)}</select>
+            </div>}
+            {!isNew&&canEditBreak(br)&&<div style={{padding:"8px 12px",borderBottom:"1px solid #f1f5f9",fontSize:12}}>
+              <div style={{display:"flex",alignItems:"center",gap:4}}>
+                <span style={{fontWeight:700,color:"#475569",marginRight:2}}>内容</span>
+                <select aria-label="不在枠の内容" value={br.reason||"休憩"} onChange={e=>changeReason(e.target.value)} style={{flex:1,fontSize:12,padding:"3px 4px",borderRadius:5,border:"1.5px solid #cbd5e1"}}>
+                  {reasonChoices.map(r=><option key={r} value={r}>{AWAY_ICONS[r]||"📌"} {r}</option>)}
+                </select>
+              </div>
+              <div style={{display:"flex",gap:4,marginTop:6}}>
+                <input value={holdPopup.reasonDraft||""} onChange={e=>{ const v=e.target.value; setHoldPopup(hp=>hp?{...hp,reasonDraft:v}:hp); }} onKeyDown={e=>{ if(e.key==="Enter") changeReason(holdPopup.reasonDraft); }}
+                  placeholder="ほかの内容を入力" aria-label="不在枠の内容を入力" maxLength={20} style={{flex:1,minWidth:0,fontSize:12,padding:"4px 6px",borderRadius:5,border:"1.5px solid #cbd5e1",fontFamily:"inherit"}}/>
+                <button type="button" onClick={()=>changeReason(holdPopup.reasonDraft)} disabled={!(holdPopup.reasonDraft||"").trim()} style={{fontSize:12,fontWeight:800,padding:"4px 8px",borderRadius:5,border:"1.5px solid #cbd5e1",background:"white",cursor:"pointer",fontFamily:"inherit",opacity:(holdPopup.reasonDraft||"").trim()?1:.5}}>変更</button>
+              </div>
             </div>}
             {isNew&&<div style={{padding:"8px 12px",fontSize:12.5,lineHeight:1.7,borderBottom:"1px solid #f1f5f9"}}>
               <div>👤 {note.patient_name||<span style={{color:"#94a3b8"}}>お名前未入力</span>}</div>
@@ -18615,7 +19871,27 @@ function Dashboard({user,onLogout}){
                 {b.booked_via_line&&<div style={{fontSize:12,fontWeight:800,color:"white",background:"#06C755",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>LINE予約</div>}
                 {b.from_body_check&&<div title={b.body_check_summary||""} style={{fontSize:12,fontWeight:800,color:"#0c5961",background:"#d0f0f3",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>📋 カラダチェック経由{b.body_check_summary?"："+b.body_check_summary:""}</div>}
                 {b.referrer_name&&<div style={{fontSize:12,fontWeight:800,color:"#6d28d9",background:"#ede9fe",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>🎁 紹介：{b.referrer_name}</div>}
+                {visitChipsOf(b).map(c=><div key={c.chip} style={{fontSize:12,fontWeight:800,color:c.color,background:c.bg,display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>{c.chip==="月初"?"📅 柔整 今月の1回目（月初）":c.title||c.label}</div>)}
+                {(()=>{ const pa=passAlert.of(b); return pa?<div style={{fontSize:12,fontWeight:800,color:"#991b1b",background:"#fee2e2",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4,marginLeft:4}}>🎫 {pa.label}・更新の声かけを</div>:null; })()}
                 {b.memo&&<div style={{fontSize:13,color:"white",background:"rgba(255,255,255,.18)",borderRadius:6,padding:"5px 8px",marginTop:6,lineHeight:1.5}}>📝 {b.memo}</div>}
+                {(()=>{
+                  // この方の今日以降の予約（キャンセル除く）。2件以上あれば一覧にする
+                  const k=passNameKey(b.patient_name), today=fmtDate(new Date());
+                  const mine=bookings.filter(x=>!x.cancelled&&x.date>=today&&((k&&passNameKey(x.patient_name)===k)||(b.phone&&x.phone===b.phone)))
+                    .sort((x,y)=>(x.date+(x.time||"")).localeCompare(y.date+(y.time||"")));
+                  if(mine.length<2) return null;
+                  const DJ=["日","月","火","水","木","金","土"];
+                  return(<div style={{marginTop:6,background:"rgba(255,255,255,.95)",borderRadius:8,padding:"6px 8px",color:"#1e293b"}}>
+                    <div style={{fontSize:12,fontWeight:800,color:"#1e3a5f",marginBottom:3}}>📅 この方の予約 {mine.length}件（今日以降）</div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                      {mine.map(x=>{ const d=new Date(x.date+"T00:00:00"), st=STAFF_ACCOUNTS.find(y=>y.id===x.staff_id)||{name:""}, cur=x.id===b.id;
+                        return <button key={x.id} type="button" disabled={cur} onClick={()=>setBookingPopup({booking:x,x:bookingPopup.x,y:bookingPopup.y})} title={`${x.menu||""}`}
+                          style={{fontSize:12,fontWeight:700,padding:"3px 8px",borderRadius:6,border:"1.5px solid "+(cur?"#1e3a5f":"#cbd5e1"),background:cur?"#1e3a5f":"white",color:cur?"white":"#1e293b",cursor:cur?"default":"pointer",fontFamily:"inherit"}}>
+                          {d.getMonth()+1}/{d.getDate()}({DJ[d.getDay()]}) {x.time} {st.name.split(/\s/)[0]}{cur?"（この予約）":""}
+                        </button>; })}
+                    </div>
+                  </div>);
+                })()}
                 {isReadOnlyReal&&<div style={{fontSize:12,fontWeight:800,color:"#1e293b",background:"#fff",display:"inline-block",borderRadius:4,padding:"1px 6px",marginTop:4}}>🔒 本番の予約（閲覧のみ）</div>}
               </div>
               <div style={{display:"grid",gridTemplateColumns:wide?"1fr 1fr":"1fr",alignItems:"start"}}>
@@ -18623,7 +19899,7 @@ function Dashboard({user,onLogout}){
               {!isReadOnlyReal&&(
                 <div style={{padding:"12px 14px",borderBottom:"1px solid #f1f5f9"}}>
                   <PatientMarkEditor name={b.patient_name} month={(b.date||"").slice(0,7)} mark={patientMarks[patientMarkKey(b.patient_name)]} staffId={user&&user.id}
-                    onSaved={row=>{ updatePatientMark(row); showToast("口コミ・鍼灸保険・レセの印を保存しました"); }}/>
+                    onSaved={row=>{ updatePatientMark(row); showToast("提案中・口コミ・鍼灸保険・レセの印を保存しました"); }}/>
                 </div>
               )}
               {!isReadOnlyReal&&(

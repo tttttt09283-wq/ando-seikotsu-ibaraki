@@ -187,6 +187,7 @@ const S = {
   intake: null, intakeErr: null, intakeBooks: {}, intakeMonth: null,
   wage: null, wageErr: null, wageMonth: null,
   kpi: null, kpiErr: null,
+  shift: null, shiftErr: null,
   ui: {},
 };
 if (!HQ.SECTIONS.some((s) => s.id === S.sec)) S.sec = "dashboard";
@@ -229,7 +230,7 @@ async function apiGet(path) {
 // 給与・人件費の台帳は hq_private_docs（clinic_staff.salary_viewer の人だけ読める）
 const PRIVATE_DOC_KEYS = ["labor"];
 const docTable = (key) => PRIVATE_DOC_KEYS.includes(key) ? "hq_private_docs" : "hq_docs";
-const DOC_KEYS = ["org", "people", "fit", "intake", "accounting", "education", "career", "expansion", "annual", "marketing"];
+const DOC_KEYS = ["org", "people", "fit", "intake", "daily", "accounting", "education", "career", "expansion", "annual", "marketing"];
 const saveTimers = {};
 function doc(key) {
   if (!S.docs[key]) S.docs[key] = {};
@@ -407,11 +408,11 @@ function render() {
   const al = alertsNow();
   const badge = (id) => { const n = al.filter((a) => a.section === id && a.level !== "info").length; return n ? `<span class="badge">${n}</span>` : ""; };
   const side = HQ.SECTIONS.map((s) => `${s.id === "performance" ? '<div class="sep">部門</div>' : ""}${s.id === "org" ? '<div class="sep">組織・計画</div>' : ""}<button class="${S.sec === s.id ? "sel" : ""}" onclick="go('${s.id}')"><span>${s.icon}</span>${esc(s.label)}${s.id === "dashboard" ? (al.filter((a) => a.level === "ng").length ? `<span class="badge">${al.filter((a) => a.level === "ng").length}</span>` : "") : badge(s.id)}</button>`).join("");
-  const fn = { dashboard: secDashboard, performance: secPerformance, marketing: secMarketing, people: secPeople, fit: secFit, intake: secIntake, accounting: secAccounting, education: secEducation, org: secOrg, career: secCareer, expansion: secExpansion, annual: secAnnual, mandala: secMandala }[S.sec];
+  const fn = { dashboard: secDashboard, performance: secPerformance, marketing: secMarketing, people: secPeople, daily: secDaily, fit: secFit, intake: secIntake, accounting: secAccounting, education: secEducation, org: secOrg, career: secCareer, expansion: secExpansion, annual: secAnnual, mandala: secMandala }[S.sec];
   let body;
   try { body = fn(); } catch (e) { console.error(e); body = `<div class="err">表示できませんでした：${esc(e.message)}</div>`; }
   if (["performance", "marketing", "people", "accounting"].includes(S.sec)) {
-    try { body += (S.sec === "performance" ? kpiCard() : "") + intakeCard(S.sec) + (S.sec === "people" ? wageCard() : ""); } catch (e) { console.error(e); body += `<div class="err">日計表を表示できませんでした：${esc(e.message)}</div>`; }
+    try { body += (S.sec === "performance" ? kpiCard() : "") + intakeCard(S.sec) + (S.sec === "people" ? payCard() + wageCard() : ""); } catch (e) { console.error(e); body += `<div class="err">日計表を表示できませんでした：${esc(e.message)}</div>`; }
   }
   app.innerHTML = `${topbar()}<div class="layout"><nav class="side">${side}</nav><main class="main">${S.docsErr ? `<div class="err">${esc(S.docsErr)}</div>` : ""}${body}</main></div>`;
   window.scrollTo(0, y);
@@ -831,6 +832,131 @@ function intakeStatusHtml() {
   if (book.error) return `<div class="err">${esc(book.error)}</div>`;
   return "";
 }
+// ---------- デイリー稼働（日計表の来院・稼働率タブの日別 × シフト管理表） ----------
+async function loadShift(refresh) {
+  S.shift = "loading"; S.shiftErr = null; render();
+  try {
+    const raw = await apiGet(`/api/intake?shift=1${refresh ? "&refresh=1" : ""}`);
+    S.shift = { url: raw.url, clinics: HQ.parseShiftBook(raw.tabs) };
+  } catch (e) { S.shift = null; S.shiftErr = e.message; }
+  render();
+}
+function dailyOpt() {
+  const d = doc("daily");
+  const num = (v, def) => (v === null || v === undefined || v === "" || !isFinite(v) ? def : Number(v));
+  return { lowRate: num(d.lowRate, 70) / 100, surplus: num(d.surplus, HQ.DAILY_DEFAULTS.surplus), busyPerStaff: num(d.busyPerStaff, HQ.DAILY_DEFAULTS.busyPerStaff) };
+}
+function dailyDates(book) {
+  const set = new Set();
+  ((book && book.clinics) || []).forEach((c) => c.days.forEach((d) => set.add(d.date)));
+  ((book && book.staffRates) || []).forEach((s) => (s.daily || []).forEach((d) => set.add(d.date)));
+  return [...set].filter((d) => d <= todayStr).sort();
+}
+function dailyGo(date) {
+  S.ui.dailyDate = date;
+  const m = date.slice(0, 7);
+  if (m !== S.intakeMonth && intakeFiles().some((f) => f.month === m)) { S.ui.dailyDate = date; loadIntakeBook(m); return; }
+  render();
+}
+function rateCell(rate, lowRate) {
+  if (rate === null || rate === undefined) return `<span class="fitcell nobudget" style="cursor:default;">-</span>`;
+  const cls = rate >= lowRate ? "ok" : rate >= lowRate - 0.15 ? "surplus" : "short";
+  return `<span class="fitcell ${cls}" style="cursor:default;">${Math.round(rate * 100)}%</span>`;
+}
+function secDaily() {
+  const head = `<div class="h2">🗓 デイリー稼働</div><div class="lead">1日ごとに、院の営業・誰が出勤しているか（シフト管理表）、来院数・売上（日計表）、スタッフごとの稼働率（日計表の「稼働率」タブ）を1画面で確認します。稼働率が低い院・余剰が出ている院・1人あたりの来院が多すぎる院を自動でチェックします。</div>`;
+  if (!S.shift && !S.shiftErr) setTimeout(() => loadShift(false), 0);
+  const st = intakeStatusHtml();
+  if (st) return head + `<div class="card"><div class="card-b">${st}</div></div>`;
+  const { book } = intakeBook();
+  const dates = dailyDates(book);
+  if (!dates.length) return head + `<div class="card"><div class="card-b muted">この月の日計表にまだ入力がありません。</div></div>`;
+  let date = S.ui.dailyDate && S.ui.dailyDate.startsWith(S.intakeMonth) ? S.ui.dailyDate : dates[dates.length - 1];
+  if (!dates.includes(date)) date = dates.filter((d) => d <= date).pop() || dates[0];
+  const opt = dailyOpt();
+  const shifts = S.shift && S.shift !== "loading" ? S.shift.clinics : [];
+  const ov = HQ.dailyOverview({ book, shifts, date, opt });
+  const i = dates.indexOf(date);
+  const wd = "日月火水木金土"[new Date(`${date}T00:00:00`).getDay()];
+  const shiftMonths = [...new Set(shifts.flatMap((s) => Object.keys(s.days).map((d) => d.slice(0, 7))))];
+  const shiftNote = S.shiftErr ? `<div class="err">シフト管理表を読み込めませんでした：${esc(S.shiftErr)}<br>出勤は稼働率タブの記録から出しています。</div>`
+    : S.shift === "loading" || !S.shift ? `<div class="muted small">シフト管理表を読み込み中...</div>`
+    : !ov.rows.some((r) => r.hasShift) ? `<div class="note">シフト管理表にこの日の予定がありません（シフト表にあるのは ${esc(shiftMonths.map(monthLabel).join("・") || "-")}）。出勤は稼働率タブの記録（稼働枠のあるスタッフ）から出しています。</div>` : "";
+  const d = doc("daily");
+  const controls = `<div class="card"><div class="card-b"><div class="ctl">
+      <div><label>月</label>${intakeMonthChips()}</div>
+      <div><label>日付</label><span style="display:flex;gap:4px;align-items:center;"><button class="btn btn-gray btn-sm" ${i <= 0 ? "disabled" : ""} onclick="dailyGo('${dates[i - 1] || ""}')">◀</button>
+        <select onchange="dailyGo(this.value)">${dates.map((x) => `<option value="${x}" ${x === date ? "selected" : ""}>${Number(x.slice(5, 7))}/${Number(x.slice(8))}（${"日月火水木金土"[new Date(`${x}T00:00:00`).getDay()]}）</option>`).join("")}</select>
+        <button class="btn btn-gray btn-sm" ${i >= dates.length - 1 ? "disabled" : ""} onclick="dailyGo('${dates[i + 1] || ""}')">▶</button></span></div>
+      <div><label>稼働率の基準（%）</label>${inp("daily", "lowRate", d.lowRate ?? 70, { num: 1, r: 1, style: "width:64px;" })}</div>
+      <div><label>余剰とみなす（人分）</label>${inp("daily", "surplus", d.surplus ?? HQ.DAILY_DEFAULTS.surplus, { num: 1, r: 1, style: "width:64px;" })}</div>
+      <div><label>1人あたり来院の上限</label>${inp("daily", "busyPerStaff", d.busyPerStaff ?? HQ.DAILY_DEFAULTS.busyPerStaff, { num: 1, r: 1, style: "width:64px;" })}</div>
+      <div style="margin-left:auto;"><button class="btn btn-gray btn-sm" onclick="loadShift(true);loadIntakeBook(S.intakeMonth,true)">🔄 再読込</button></div>
+    </div></div></div>`;
+  const rows = ov.rows;
+  const sumOf = (k) => rows.reduce((a, r) => a + (Number(r[k]) || 0), 0);
+  const tot = rows.reduce((a, r) => { if (r.total && r.total.slots) { a.actual += r.total.actual || 0; a.slots += r.total.slots; } return a; }, { actual: 0, slots: 0 });
+  const flagsAll = rows.flatMap((r) => r.flags.map((f) => ({ ...f, clinic: r.name })));
+  const tiles = `<div class="grid g4" style="margin-bottom:14px;">
+    <div class="tile"><div class="k">${Number(date.slice(5, 7))}/${Number(date.slice(8))}（${wd}）の来院（全院）</div><div class="v">${sumOf("visits")}人</div><div class="s">新患 ${sumOf("newPatients")}人・売上 ${man(sumOf("sales"))}</div></div>
+    <div class="tile"><div class="k">出勤人数（全院）</div><div class="v">${sumOf("staffN")}人</div><div class="s">1人あたり来院 ${sumOf("staffN") ? (Math.round(sumOf("visits") / sumOf("staffN") * 10) / 10) : "-"}人</div></div>
+    <div class="tile"><div class="k">全体の稼働率</div><div class="v">${tot.slots ? `${Math.round(tot.actual / tot.slots * 100)}%` : "-"}</div><div class="s">実稼働 ${tot.actual} ／ 稼働枠 ${tot.slots}</div></div>
+    <div class="tile"><div class="k">要チェック</div><div class="v ${flagsAll.some((f) => f.level !== "info") ? "warn" : "ok"}">${flagsAll.filter((f) => f.level !== "info").length}件</div><div class="s">稼働率・余剰・人手不足</div></div>
+  </div>`;
+  const alertsHtml = flagsAll.length ? `<div class="card"><div class="card-h">⚠️ この日のチェック</div><div class="card-b">${flagsAll.map((f) => `<div class="alert ${f.level}" style="cursor:default;"><span>${f.level === "ng" ? "🚨" : f.level === "warn" ? "⚠️" : "📌"}</span><span><b>${esc(f.clinic)}</b>：${esc(f.text)}</span></div>`).join("")}</div></div>` : "";
+  const half = (h) => !h ? '<span class="muted">-</span>' : !h.open ? '<span class="tag">休診</span>' : `${h.on.length}人<div class="small">${esc(h.on.join("・"))}${h.extra.length ? `＋${esc(h.extra.join("・"))}` : ""}</div>`;
+  const table = `<div class="card"><div class="card-h">院ごとの状況（${esc(date)}）</div><div class="card-b scroll"><table>
+    <tr><th class="l">院</th><th class="l">午前（シフト）</th><th class="l">午後（シフト）</th><th>来院</th><th>新患</th><th>売上</th><th>出勤</th><th>1人あたり来院</th><th>稼働率</th><th>余剰</th><th class="l">チェック</th></tr>
+    ${rows.map((r) => `<tr><td class="l"><b>${esc(r.name)}</b></td><td class="l wrap" style="min-width:120px;">${half(r.am)}</td><td class="l wrap" style="min-width:120px;">${half(r.pm)}</td>
+      <td>${r.visits ?? "-"}</td><td>${r.newPatients ?? "-"}</td><td>${man(r.sales)}</td><td>${r.staffN ?? "-"}${r.staffN ? "人" : ""}</td>
+      <td class="${r.perStaff !== null && r.perStaff >= opt.busyPerStaff ? "ng" : ""}">${r.perStaff !== null ? Math.round(r.perStaff * 10) / 10 : "-"}</td>
+      <td>${rateCell(r.rate, opt.lowRate)}</td><td class="${r.surplus !== null && r.surplus >= opt.surplus ? "warn" : ""}">${r.surplus !== null ? `${r.surplus}人分` : "-"}</td>
+      <td class="l wrap small" style="min-width:180px;">${r.flags.length ? r.flags.map((f) => `<div class="${f.level === "ng" ? "ng" : f.level === "warn" ? "warn" : ""}">${esc(f.text)}</div>`).join("") : r.hasRate || r.hasDay ? '<span class="ok">問題なし</span>' : '<span class="muted">記録なし</span>'}</td></tr>`).join("")}
+  </table><div class="small" style="margin-top:6px;">稼働率＝実稼働÷稼働枠（日計表の「稼働率」タブ、スタッフの合計）。余剰＝出勤人数×（1−稼働率）＝空いている枠を人数に直したもの。1人あたり来院＝来院÷出勤人数。</div></div></div>`;
+  // スタッフ別（この日）
+  const staffHtml = rows.filter((r) => Object.keys(r.staffRates).length || r.am || r.pm).map((r) => {
+    const worked = Object.keys(r.staffRates).filter((n) => { const x = r.staffRates[n]; return x.slots || x.handled || x.actual; });
+    const names = [...new Set([...worked, ...(r.am ? r.am.on : []), ...(r.pm ? r.pm.on : [])])];
+    if (!names.length) return "";
+    return `<details style="margin-bottom:6px;"><summary style="cursor:pointer;font-weight:800;font-size:13px;">${esc(r.name)}（${names.length}人）${r.rate !== null ? `・稼働率 ${Math.round(r.rate * 100)}%` : ""}</summary>
+      <table style="margin-top:6px;"><tr><th class="l">スタッフ</th><th>午前</th><th>午後</th><th>対応人数</th><th>実稼働</th><th>稼働枠</th><th>稼働率</th></tr>
+      ${names.map((n) => { const x = r.staffRates[n] || {}; const rr = x.slots ? (x.actual || 0) / x.slots : null; return `<tr><td class="l">${esc(n)}</td><td>${r.am ? (r.am.on.includes(n) ? "出勤" : r.am.open ? '<span class="muted">休み</span>' : "休診") : "-"}</td><td>${r.pm ? (r.pm.on.includes(n) ? "出勤" : r.pm.open ? '<span class="muted">休み</span>' : "休診") : "-"}</td><td>${x.handled ?? "-"}</td><td>${x.actual ?? "-"}</td><td>${x.slots ?? "-"}</td><td>${rateCell(rr, opt.lowRate)}</td></tr>`; }).join("")}
+      </table></details>`;
+  }).join("");
+  // 1か月の院×日の稼働率
+  const mr = HQ.monthlyRates(book, S.intakeMonth);
+  const mDates = dates;
+  const heat = mr.length ? `<div class="card"><div class="card-h">${esc(monthLabel(S.intakeMonth))}の稼働率（院×日）<span class="small">マスを押すとその日へ</span></div><div class="card-b scroll"><table>
+    <tr><th class="l">院</th>${mDates.map((x) => `<th style="text-align:center;padding:4px 2px;">${Number(x.slice(8))}<div class="small" style="font-weight:600;">${"日月火水木金土"[new Date(`${x}T00:00:00`).getDay()]}</div></th>`).join("")}<th>低い日</th></tr>
+    ${mr.map((c) => { const vals = mDates.map((x) => c.days[x]); const low = vals.filter((v) => v !== null && v !== undefined && v < opt.lowRate).length;
+      return `<tr><td class="l"><b>${esc(c.name)}</b></td>${mDates.map((x) => { const v = c.days[x]; return `<td style="padding:2px;" onclick="dailyGo('${x}')">${v === undefined ? "" : `<span class="fitcell ${v === null ? "nobudget" : v >= opt.lowRate ? "ok" : v >= opt.lowRate - 0.15 ? "surplus" : "short"} ${x === date ? "sel" : ""}" style="min-width:38px;font-size:11px;">${v === null ? "-" : Math.round(v * 100)}</span>`}</td>`; }).join("")}<td class="${low ? "warn" : ""}">${low}日</td></tr>`; }).join("")}
+  </table><div class="legend"><span class="vtag ok">${Math.round(opt.lowRate * 100)}%以上</span><span class="vtag surplus">${Math.round((opt.lowRate - 0.15) * 100)}〜${Math.round(opt.lowRate * 100)}%</span><span class="vtag short">${Math.round((opt.lowRate - 0.15) * 100)}%未満</span><span>空欄＝稼働率タブに記録なし</span></div></div></div>` : "";
+  return head + controls + shiftNote + tiles + alertsHtml + table + (staffHtml ? `<div class="card"><div class="card-h">スタッフ別（${esc(date)}）</div><div class="card-b scroll">${staffHtml}</div></div>` : "") + heat;
+}
+// ---- 生産性と給与（人材・salary_viewer だけ） ----
+function payCard() {
+  if (S.salaryViewer !== true) return "";
+  const head = `<div class="card-h">💴 生産性と給与（個人売上 ÷ 人件費）</div>`;
+  const labor = (doc("labor").people || []);
+  if (!S.model) return `<div class="card">${head}<div class="card-b muted">台帳（個人売上）を読み込み中...</div></div>`;
+  if (!labor.length) return `<div class="card">${head}<div class="card-b muted">スタッフ別の人件費が登録されていません（「人員の適正判断」の「スタッフ別の人件費」から）。</div></div>`;
+  const mult = Number(doc("labor").multiplier) > 0 ? Number(doc("labor").multiplier) : HQ.LABOR_DEFAULT_MULT;
+  const rows = HQ.payVsProductivity({ people: S.model.people, labor, multiplier: mult });
+  const { book } = intakeBook();
+  const rateOf = (name) => { const n = String(name).replace(/[\s　]/g, "").replace(/﨑/g, "崎"); for (const s of (book && book.staffRates) || []) for (const p of s.staff) { if (!p.slots) continue; const sn = String(p.name).replace(/﨑/g, "崎"); if (sn && n.startsWith(sn)) return p.rate; } return null; };
+  const cnt = (id) => rows.filter((r) => r.verdict.id === id).length;
+  const cls = (id) => id === "ok" ? "ok" : id === "warn" ? "surplus" : id === "ng" ? "short" : "nobudget";
+  return `<div class="card">${head}<div class="card-b scroll">
+    <div class="small" style="margin-bottom:8px;">個人売上（台帳・直近3か月の平均）が人件費（月平均）の <b>${mult}倍</b> 以上なら「見合っている」、${mult * 0.75}倍以上なら「やや不足」、それ未満は「見合っていない」。
+      <span class="vtag ok">見合っている ${cnt("ok")}人</span> <span class="vtag surplus">やや不足 ${cnt("warn")}人</span> <span class="vtag short">見合っていない ${cnt("ng")}人</span> <span class="vtag nobudget">売上データなし ${cnt("nodata")}人</span></div>
+    <table><tr><th class="l">氏名</th><th class="l">院</th><th class="l">等級</th><th>人件費（月平均）</th><th>個人売上（月平均）</th><th>倍率</th><th>目安（人件費×${mult}）</th><th>差</th><th class="l">判定</th><th>稼働率（${esc(S.intakeMonth ? monthLabel(S.intakeMonth) : "-")}）</th></tr>
+    ${rows.map((r) => { const rt = rateOf(r.name); return `<tr><td class="l"><b>${esc(r.name)}</b>${r.est ? '<span class="small">（見込み）</span>' : ""}</td><td class="l small">${esc(r.clinic || "-")}</td><td class="l small">${esc(r.grade || "-")}</td>
+      <td>${man(r.pay)}</td><td>${man(r.sales)}${r.months ? `<div class="small">${r.months}か月</div>` : ""}</td><td><b>${r.ratio !== null ? `${(Math.round(r.ratio * 10) / 10).toFixed(1)}倍` : "-"}</b></td>
+      <td>${man(r.target)}</td><td class="${r.gap === null ? "" : r.gap >= 0 ? "ok" : "ng"}">${r.gap === null ? "-" : `${r.gap >= 0 ? "+" : "−"}${man(Math.abs(r.gap))}`}</td>
+      <td class="l"><span class="vtag ${cls(r.verdict.id)}">${esc(r.verdict.label)}</span></td><td>${rt === null || rt === undefined ? "-" : rateCell(rt, dailyOpt().lowRate)}</td></tr>`; }).join("")}
+    </table><div class="small" style="margin-top:6px;">個人売上は進捗売上実績の「個人」シート（台帳）から。人件費は給与明細の支給合計の平均（会社負担の社会保険料は含まない）。院長・受付など個人売上が少ない役割は低く出ます。給与を見る権限（salary_viewer）のある人だけに表示。</div></div></div>`;
+}
+
 // ---- KPI推移と昨対比（店舗別KPIダッシュボード） ----
 async function loadKpi(refresh) {
   S.kpi = "loading"; S.kpiErr = null; render();
@@ -1026,7 +1152,7 @@ function intakeCard(dept) {
   if (dept === "people" && book.staffRates.length) {
     body += `<div class="small" style="font-weight:800;margin:14px 0 6px;">スタッフ別の稼働（各院の「稼働率」タブ）</div>
       <table><tr><th class="l">院</th><th class="l">スタッフ</th><th>対応人数</th><th>実稼働</th><th>稼働枠</th><th>稼働率</th></tr>
-      ${book.staffRates.map((s) => [...s.staff.filter((p) => p.slots || p.handled), ...(s.total ? [{ ...s.total, name: "院合計", tot: true }] : [])].map((p, i) => `<tr ${p.tot ? 'class="total"' : ""}><td class="l">${i === 0 ? `<b>${esc(s.clinic)}</b>` : ""}</td><td class="l">${esc(p.name)}</td><td>${p.handled ?? "-"}</td><td>${p.actual ?? "-"}</td><td>${p.slots ?? "-"}</td><td class="${p.rate !== null && p.rate < 0.7 ? "warn" : ""}">${pct(p.rate, 0)}</td></tr>`).join("")).join("")}</table>`;
+      ${book.staffRates.filter((s) => s.staff.some((p) => p.slots || p.handled)).map((s) => [...s.staff.filter((p) => p.slots || p.handled), ...(s.total ? [{ ...s.total, name: "院合計", tot: true }] : [])].map((p, i) => `<tr ${p.tot ? 'class="total"' : ""}><td class="l">${i === 0 ? `<b>${esc(s.clinic)}</b>` : ""}</td><td class="l">${esc(p.name)}</td><td>${p.handled ?? "-"}</td><td>${p.actual ?? "-"}</td><td>${p.slots ?? "-"}</td><td class="${p.rate !== null && p.rate < 0.7 ? "warn" : ""}">${pct(p.rate, 0)}</td></tr>`).join("")).join("")}</table>`;
   }
   return `<div class="card">${head}<div class="card-b scroll">${body}
     <div class="small" style="margin-top:6px;">出どころ：<a href="${esc(book.url)}" target="_blank" rel="noopener">${esc(file.name || "日計表")}</a>（各院タブの「合計」の行）${lastDays.length ? `・最新の入力 ${esc(lastDays[lastDays.length - 1])}` : ""}。単価・平均・率は院の合計に足していません。</div></div></div>`;
