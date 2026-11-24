@@ -55,9 +55,12 @@ test("性別・年代・新規のきっかけ（問診票の記入から）", ()
 
 test("支払方法・消費税（保険は非課税）・返金", () => {
   const r = SR.buildReport(payments, { from: "2026-10-01", to: "2026-10-31", bookings });
-  assert.deepEqual(plain(r.pay.cash), { count: 2, amount: 1900 });
+  // 返金（返金方法の記録なし＝現金）は現金から引く
+  assert.deepEqual(plain(r.pay.cash), { count: 2, amount: 1900 - 1100 });
   assert.deepEqual(plain(r.pay.credit), { count: 1, amount: 8500 });
   assert.deepEqual(plain(r.pay.emoney), { count: 1, amount: 1100 });
+  // 支払内訳の合計＝総売上
+  assert.equal(Object.values(r.pay).reduce((t, x) => t + x.amount, 0), r.total.amount);
   assert.equal(r.taxable, 8500); // 自費の鍼＋物販（保険の返金は非課税側から引く）
   assert.equal(r.nonTaxable, 800 + 1100 + 1100 - 1100);
   assert.equal(r.taxIncluded, Math.round(8500 * 10 / 110));
@@ -155,4 +158,17 @@ test("技術・店販別 日別一覧：支払方法ごと（お釣りは除く�
   assert.deepEqual(plain(d3.rows.emoney), { tech: 600, goods: 0, total: 600 });
   assert.deepEqual(plain(d3.cumRows.all), { tech: 1700, goods: 4400, total: 6100 });
   assert.deepEqual(plain(d3.cumRows.cash), { tech: 0, goods: 0, total: 0 });
+});
+
+test("支払内訳：現金はお預かりではなく実際の金額（お釣りを除く）、返金は返金した方法から引く", () => {
+  const ps = [
+    pay(11, 11, "架空 一郎", "2026-10-05", 3200, [], "現金:¥10,000"),                // 1万円札で払った（お釣り6,800円）
+    pay(12, 12, "架空 二郎", "2026-10-05", 1000, [{ label: "鍼", amount: 4000 }], "現金:¥2,000・カード:¥4,000"), // 現金は1,000円＋お釣り
+    { id: "refund_2", is_refund: true, booking_id: 12, patient_name: "架空 二郎", payment_date: "2026-10-06", staff_id: 1, total_amount: -4000, insurance_amount: 0, jifee_amount: -4000, refund_method: "カード" },
+  ];
+  const r = SR.buildReport(ps, { from: "2026-10-01", to: "2026-10-31", bookings: [] });
+  assert.deepEqual(plain(r.pay.cash), { count: 2, amount: 3200 + 1000 });
+  assert.deepEqual(plain(r.pay.credit), { count: 1, amount: 4000 - 4000 });
+  assert.equal(r.total.amount, 3200 + 5000 - 4000);
+  assert.equal(Object.values(r.pay).reduce((t, x) => t + x.amount, 0), r.total.amount);
 });

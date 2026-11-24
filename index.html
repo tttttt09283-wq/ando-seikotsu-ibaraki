@@ -15217,7 +15217,7 @@ function SalesReportPanel({payments,bookings,stores,todayStr}){
             <Table title="支払内訳" head={["","件数","金額"]} rows={[
               ...[...SR.PAY_KINDS.map(k=>[k.label,k.key]),["その他","other"]].map(([l,k])=>[l,n(r.pay[k].count),n(r.pay[k].amount)]),
               ["合計",n(Object.values(r.pay).reduce((s,x)=>s+x.count,0)),n(Object.values(r.pay).reduce((s,x)=>s+x.amount,0))],
-            ]} note="お預かりの金額（お釣りを含む場合があります）。"/>
+            ]} note="実際に受け取った金額です（現金はお釣りを除いた額＝会計の合計−現金以外）。返金は返金した方法から引いているので、合計は総売上と同じになります。"/>
             <Table title="客単価・スタッフ1人当たり" head={["","客単価",`客数（${r.staffCount}人あたり）`,"金額（1人あたり）"]} rows={[
               ["総合",avg(T,C),r.staffCount?(Math.round(C/r.staffCount*10)/10).toLocaleString():"0",r.staffCount?n(T/r.staffCount):"0"],
               ["技術",avg(r.tech.amount,r.tech.count),r.staffCount?(Math.round(r.tech.count/r.staffCount*10)/10).toLocaleString():"0",r.staffCount?n(r.tech.amount/r.staffCount):"0"],
