@@ -597,7 +597,7 @@ const sb = {
 // ===== 全端末で共有する設定（月次シフト・休暇残・売上目標） =====
 // 以前はブラウザ（localStorage）にだけ保存していたため、端末ごとに設定し直す必要があった。
 // サーバー（app_settings）を正として、localStorage はその写し（すぐ読めるようにするための控え）として使う。
-const SHARED_SETTING_PREFIXES=["shifts_","shifthalf_","shiftstore_","shift_required","holiday_balance","ando_sales_target_","attendance_rules","sales_simulator_","away_custom_reasons"];
+const SHARED_SETTING_PREFIXES=["shifts_","shifthalf_","shiftstore_","shift_required","holiday_balance","ando_sales_target_","attendance_rules","sales_simulator_","away_custom_reasons","month_goal_"];
 // ===== 半日出勤（シフト表の「午前出勤」＝午後休み／「午後出勤」＝午前休み） =====
 // 午前・午後の時間帯は、設定「shift_half_times」（平日／土日・祝それぞれ）。未設定なら HALF_SHIFT_DEFAULT_TIMES
 const HALF_SHIFT={"午前出勤":"am","午後出勤":"pm"};
@@ -1202,6 +1202,187 @@ function LoginScreen({onLogin}){
           {loading?"確認中...":"ログイン"}
         </button>
         <div style={{marginTop:14,fontSize:11,color:"#94a3b8",textAlign:"center",lineHeight:1.6}}>パスワードを忘れた場合は管理者に再設定を依頼してください</div>
+      </div>
+    </div>
+  );
+}
+
+// ===== 月の目標ボード（香里園駅前院。院のホワイトボードと同じ形で、月の目標を組んで実績と比べる） =====
+// 総売上＝窓口（サブスク込み）＋保険請求（自賠込み）＋そのほか。総来院数、スタッフごとの売上（窓口）と人数、テーマ・メモ。
+// 保存：共有設定 month_goal_{院ID|all}_{YYYY-MM}（JSON）。保存すると、窓口の目標を「月間売上目標」（予約分析・1日の売上目標で使う）に、
+// スタッフの売上目標を「個人目標売上」にも入れる。実績は総合売上日報と同じ計算（SalesReport.buildReport。返金後・お釣りを含めない）
+const MONTH_GOAL_PREFIX="month_goal_";
+const emptyMonthGoal=()=>({theme:"",window:"",subscription:"",claim:"",jibai:"",extras:[],visits:"",newPatients:"",staff:[],memo:""});
+function readMonthGoal(storeKey,month){
+  try{ const v=JSON.parse(localStorage.getItem(`${MONTH_GOAL_PREFIX}${storeKey}_${month}`)||"null"); return v&&typeof v==="object"?{...emptyMonthGoal(),...v}:null; }catch(e){ return null; }
+}
+// 香里園駅前院の専用（院は香里園に固定。スタッフは香里園で勤務する人を最初から並べる）
+function MonthGoalPanel({payments,bookings,stores,todayStr,staffStoreMap}){
+  const SR=window.SalesReport;
+  const ver=useSharedSettingsVersion();
+  const [month,setMonth]=React.useState(todayStr.slice(0,7));
+  const kaori=(stores||[]).find(s=>/香里園/.test(s.name||""))||(stores||[])[0]||{id:1,name:"香里園駅前院"};
+  const storeId=kaori.id;
+  const storeKey=String(storeId);
+  // 香里園で勤務するスタッフ（スタッフ・シフト管理の勤務地。未設定ならコードの storeIds、それも無ければ全院）
+  const worksHere=o=>{ const db=staffStoreMap&&staffStoreMap[o.id]; if(Array.isArray(db)&&db.length) return db.map(String).includes(String(storeId)); if(o.storeIds) return o.storeIds.map(String).includes(String(storeId)); return true; };
+  const kaoriStaff=STAFF_ACCOUNTS.filter(o=>!o.eventOnly&&worksHere(o));
+  const defaultStaffRows=()=>kaoriStaff.filter(o=>o.id<100).map(o=>({staffId:o.id,sales:"",visits:"",note:""}));
+  const [g,setG]=React.useState(emptyMonthGoal());
+  const [dirty,setDirty]=React.useState(false);
+  const [msg,setMsg]=React.useState("");
+  const [passes,setPasses]=React.useState([]);
+  const loadGoal=()=>{ const v=readMonthGoal(storeKey,month); return v||{...emptyMonthGoal(),staff:defaultStaffRows()}; };
+  React.useEffect(()=>{ if(dirty) return; setG(loadGoal()); },[storeKey,month,ver,kaoriStaff.length]);
+  React.useEffect(()=>{ setDirty(false); setG(loadGoal()); },[storeKey,month]);
+  React.useEffect(()=>{ sb.select("passes",`?purchased_date=gte.${month}-01&purchased_date=lte.${month}-31&select=id,pass_type,amount,purchased_date,is_training`).then(r=>setPasses(Array.isArray(r)?r:[])).catch(()=>setPasses([])); },[month]);
+  const num=v=>{ const n=Number(String(v==null?"":v).replace(/[^\d.-]/g,"")); return Number.isFinite(n)?n:0; };
+  const upd=patch=>{ setG(x=>({...x,...patch})); setDirty(true); setMsg(""); };
+  const updStaff=(i,patch)=>upd({staff:g.staff.map((s,j)=>j===i?{...s,...patch}:s)});
+  const updExtra=(i,patch)=>upd({extras:g.extras.map((s,j)=>j===i?{...s,...patch}:s)});
+
+  // ===== 目標の合計 =====
+  const extrasSum=g.extras.reduce((t,x)=>t+num(x.amount),0);
+  const totalGoal=num(g.window)+num(g.claim)+extrasSum;
+  const staffSalesSum=g.staff.reduce((t,s)=>t+num(s.sales),0), staffVisitsSum=g.staff.reduce((t,s)=>t+num(s.visits),0);
+
+  // ===== 実績（総合売上日報と同じ計算） =====
+  const [y,m]=month.split("-").map(Number);
+  const lastDay=new Date(y,m,0).getDate(), from=`${month}-01`, to=`${month}-${String(lastDay).padStart(2,"0")}`;
+  const act=React.useMemo(()=>{
+    if(!SR) return null;
+    const r=SR.buildReport(payments||[],{from,to,storeId,bookings:bookings||[]});
+    const bk={}; (bookings||[]).forEach(b=>{ bk[b.id]=b; });
+    const inStore=p=>storeId==null||p.booking_id==null||((bk[p.booking_id]||{}).store_id||1)===storeId;
+    const staffSales={}, staffVisits={};
+    (payments||[]).forEach(p=>{
+      if(!p.payment_date||p.payment_date<from||p.payment_date>to||!inStore(p)) return;
+      const b=bk[p.booking_id];
+      splitPaymentByStaff(p,b?b.staff_id:p.staff_id).forEach(x=>{ staffSales[x.staffId]=(staffSales[x.staffId]||0)+x.total; });
+      if(!p.is_refund&&b){ (staffVisits[b.staff_id]=staffVisits[b.staff_id]||new Set()).add(p.booking_id); }
+    });
+    const sub=passes.filter(p=>!p.is_training&&/フリーパス/.test(p.pass_type||"")).reduce((t,p)=>t+(Number(p.amount)||0),0);
+    const claim=(r.dept.ju.claim||0)+(r.dept.acu.claim||0);
+    return {window:r.total.amount,claim,total:r.total.amount+claim,visits:r.total.count,newPatients:(r.visitClass.new||{}).count||0,subscription:sub,staffSales,staffVisits:Object.fromEntries(Object.entries(staffVisits).map(([k,v])=>[k,v.size]))};
+  },[payments,bookings,passes,from,to,storeId]);
+
+  // 今月の残り日数（今日を含む）
+  const daysLeft=todayStr.slice(0,7)===month?lastDay-Number(todayStr.slice(8))+1:(month>todayStr.slice(0,7)?lastDay:0);
+
+  async function save(){
+    const key=`${MONTH_GOAL_PREFIX}${storeKey}_${month}`;
+    const clean={...g,extras:g.extras.filter(x=>x.label||x.amount),staff:g.staff.filter(s=>s.staffId||s.name||s.sales||s.visits)};
+    const kv={[key]:JSON.stringify(clean)};
+    // 窓口の目標を「月間売上目標」に、スタッフの売上を「個人目標売上」にも入れる（予約分析・1日の売上目標と同じ数字にする）
+    if(num(clean.window)) kv[`ando_sales_target_store_${storeKey}_${month}`]=String(num(clean.window));
+    clean.staff.forEach(s=>{ if(s.staffId&&num(s.sales)) kv[`ando_sales_target_staff_${storeKey}_${s.staffId}_${month}`]=String(num(s.sales)); });
+    const ok=await sharedSettings.saveNow(kv);
+    if(ok){ setDirty(false); setG(clean); setMsg("✓ 保存しました（窓口の目標を「月間売上目標」、スタッフの売上を「個人目標売上」にも入れました）"); window.dispatchEvent(new Event("ando-shared-settings")); }
+    else setMsg("⚠ 保存できませんでした（ログインし直して、もう一度保存してください）");
+  }
+  function copyPrev(){
+    const d=new Date(y,m-2,1), pm=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+    const prev=readMonthGoal(storeKey,pm);
+    if(!prev){ setMsg(`⚠ ${d.getMonth()+1}月の目標が見つかりませんでした`); return; }
+    setG({...prev,theme:""}); setDirty(true); setMsg(`${d.getMonth()+1}月の目標をコピーしました（テーマは空にしています）。保存を押すと確定します`);
+  }
+
+  const yen=v=>"¥"+Math.round(v||0).toLocaleString();
+  const card={background:"white",borderRadius:12,boxShadow:"0 1px 4px rgba(0,0,0,.06)",border:"1px solid #f1f5f9",marginBottom:14,padding:"14px 16px"};
+  const inp={padding:"6px 8px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontFamily:"inherit",boxSizing:"border-box"};
+  const money=(v,on,label,w)=>(<input value={v===""||v==null?"":Number(num(v)).toLocaleString()} onChange={e=>on(e.target.value.replace(/[^\d]/g,""))} inputMode="numeric" aria-label={label} placeholder="0" style={{...inp,width:w||140,textAlign:"right",fontWeight:800}}/>);
+  const bar=(actual,goal)=>{ const pct=goal>0?Math.round(actual/goal*1000)/10:null; const c=pct==null?"#cbd5e1":pct>=100?"#059669":pct>=70?"#2563eb":"#f59e0b";
+    return <div style={{minWidth:150}}>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:12,fontWeight:700,color:"#475569"}}><span>達成率</span><span style={{color:c}}>{pct==null?"—":pct+"%"}</span></div>
+      <div style={{height:7,background:"#f1f5f9",borderRadius:4,overflow:"hidden",marginTop:2}}><div style={{height:"100%",width:Math.min(100,pct||0)+"%",background:c}}/></div>
+    </div>; };
+  const row=(label,sub,input,actual,goal,fmtA)=>(
+    <tr style={{borderBottom:"1px solid #f1f5f9"}}>
+      <td style={{padding:"8px 6px",fontWeight:800,fontSize:15,color:"#1e293b",whiteSpace:"nowrap"}}>{label}{sub&&<div style={{fontSize:11,color:"#64748b",fontWeight:600}}>{sub}</div>}</td>
+      <td style={{padding:"8px 6px"}}>{input}</td>
+      <td style={{padding:"8px 6px",textAlign:"right",fontWeight:800,whiteSpace:"nowrap",color:"#0e7490"}}>{actual==null?"—":fmtA?fmtA(actual):yen(actual)}</td>
+      <td style={{padding:"8px 6px"}}>{actual==null||!goal?<span style={{fontSize:12,color:"#94a3b8"}}>—</span>:bar(actual,goal)}</td>
+      <td style={{padding:"8px 6px",textAlign:"right",fontSize:12,color:"#475569",whiteSpace:"nowrap"}}>{actual!=null&&goal>0&&daysLeft>0&&goal>actual?<>あと {fmtA?fmtA(goal-actual):yen(goal-actual)}<br/><span style={{color:"#94a3b8"}}>1日 {fmtA?fmtA(Math.ceil((goal-actual)/daysLeft)):yen((goal-actual)/daysLeft)}</span></>:actual!=null&&goal>0&&actual>=goal?<span style={{color:"#059669",fontWeight:800}}>✓ 達成</span>:""}</td>
+    </tr>);
+  const ppl=v=>Math.round(v).toLocaleString()+"人";
+  const staffOptions=kaoriStaff;
+  return(
+    <div style={{maxWidth:1100,margin:"0 auto"}}>
+      <div style={card}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <span style={{fontSize:17,fontWeight:900,color:"#1e3a5f"}}>🎯 月の目標ボード（{(kaori.name||"").replace(/^あんど整骨院\s*/,"")}）</span>
+          <input type="month" value={month} onChange={e=>{ if(e.target.value&&(!dirty||window.confirm("保存していない変更があります。破棄して月を変えますか？"))) setMonth(e.target.value); }} aria-label="月" style={inp}/>
+          <span style={{flex:1}}/>
+          <button type="button" onClick={copyPrev} style={{...inp,cursor:"pointer",fontWeight:700,background:"white"}}>前の月をコピー</button>
+          <button type="button" onClick={save} disabled={!dirty} style={{padding:"8px 18px",borderRadius:8,border:"none",background:dirty?"#059669":"#cbd5e1",color:"white",fontWeight:800,fontSize:14,cursor:dirty?"pointer":"default",fontFamily:"inherit"}}>{dirty?"💾 保存する":"保存済み"}</button>
+        </div>
+        {msg&&<div style={{marginTop:8,fontSize:12.5,fontWeight:700,color:msg.startsWith("⚠")?"#b91c1c":"#047857"}}>{msg}</div>}
+        <div style={{display:"flex",alignItems:"center",gap:8,marginTop:12}}>
+          <span style={{fontSize:20,fontWeight:900,color:"#1e293b",whiteSpace:"nowrap"}}>{m}月 テーマ</span>
+          <input value={g.theme} onChange={e=>upd({theme:e.target.value})} placeholder="例：良い年末は良い11月から" aria-label="テーマ" maxLength={60} style={{...inp,flex:1,fontSize:18,fontWeight:800}}/>
+        </div>
+      </div>
+
+      <div style={card}>
+        <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:6}}>💰 売上・来院の目標</div>
+        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:720}}>
+          <thead><tr style={{fontSize:12,color:"#64748b"}}>{["項目","目標","実績","達成率","残り"].map(h=><th key={h} style={{textAlign:h==="実績"||h==="残り"?"right":"left",padding:"4px 6px",fontWeight:800}}>{h}</th>)}</tr></thead>
+          <tbody>
+            <tr style={{borderBottom:"2px solid #e2e8f0",background:"#f8fafc"}}>
+              <td style={{padding:"10px 6px",fontWeight:900,fontSize:17,color:"#1e3a5f"}}>総売上<div style={{fontSize:11,color:"#64748b",fontWeight:600}}>＝窓口＋請求{g.extras.length?"＋そのほか":""}（自動）</div></td>
+              <td style={{padding:"10px 6px",fontWeight:900,fontSize:20,color:"#1e293b"}}>{yen(totalGoal)}</td>
+              <td style={{padding:"10px 6px",textAlign:"right",fontWeight:900,fontSize:16,color:"#0e7490"}}>{act?yen(act.total+0):"—"}</td>
+              <td style={{padding:"10px 6px"}}>{act&&totalGoal?bar(act.total,totalGoal):"—"}</td>
+              <td style={{padding:"10px 6px",textAlign:"right",fontSize:12,color:"#475569"}}>{act&&totalGoal>act.total&&daysLeft>0?<>あと {yen(totalGoal-act.total)}<br/><span style={{color:"#94a3b8"}}>1日 {yen((totalGoal-act.total)/daysLeft)}</span></>:act&&totalGoal&&act.total>=totalGoal?<span style={{color:"#059669",fontWeight:800}}>✓ 達成</span>:""}</td>
+            </tr>
+            {row("窓口","サブスク込み",money(g.window,v=>upd({window:v}),"窓口の目標"),act&&act.window,num(g.window))}
+            {row("　うちサブスク","フリーパスの購入",money(g.subscription,v=>upd({subscription:v}),"サブスクの目標"),act&&act.subscription,num(g.subscription))}
+            {row("請求","保険請求（見込み）",money(g.claim,v=>upd({claim:v}),"請求の目標"),act&&act.claim,num(g.claim))}
+            {row("　うち自賠","",money(g.jibai,v=>upd({jibai:v}),"自賠の目標"),null,num(g.jibai))}
+            {g.extras.map((x,i)=><tr key={i} style={{borderBottom:"1px solid #f1f5f9"}}>
+              <td style={{padding:"8px 6px"}}><input value={x.label} onChange={e=>updExtra(i,{label:e.target.value})} placeholder="例：EMS" aria-label="そのほかの項目名" style={{...inp,width:120,fontWeight:800}}/></td>
+              <td style={{padding:"8px 6px"}}>{money(x.amount,v=>updExtra(i,{amount:v}),"そのほかの目標")} <button type="button" onClick={()=>upd({extras:g.extras.filter((_,j)=>j!==i)})} aria-label="この項目を消す" style={{border:"none",background:"none",color:"#94a3b8",cursor:"pointer",fontSize:16}}>✕</button></td>
+              <td colSpan={3} style={{padding:"8px 6px",fontSize:11,color:"#94a3b8"}}>総売上に足します（実績は自動で出ません）</td>
+            </tr>)}
+            <tr><td colSpan={5} style={{padding:"6px"}}><button type="button" onClick={()=>upd({extras:[...g.extras,{label:"",amount:""}]})} style={{...inp,cursor:"pointer",fontSize:12.5,fontWeight:700,background:"white"}}>＋ 売上の項目を追加（EMS など）</button></td></tr>
+            {row("総来院","",<span><input value={g.visits} onChange={e=>upd({visits:e.target.value.replace(/[^\d]/g,"")})} inputMode="numeric" aria-label="総来院の目標" placeholder="0" style={{...inp,width:100,textAlign:"right",fontWeight:800}}/> 人</span>,act&&act.visits,num(g.visits),ppl)}
+            {row("新患","",<span><input value={g.newPatients} onChange={e=>upd({newPatients:e.target.value.replace(/[^\d]/g,"")})} inputMode="numeric" aria-label="新患の目標" placeholder="0" style={{...inp,width:100,textAlign:"right",fontWeight:800}}/> 人</span>,act&&act.newPatients,num(g.newPatients),ppl)}
+          </tbody>
+        </table></div>
+        <div style={{fontSize:11,color:"#94a3b8",marginTop:6,lineHeight:1.6}}>実績は総合売上日報と同じ計算です（窓口＝会計の合計から返金を引いた額、請求＝保険の来院回数×見込み単価、サブスク＝その月に買われたフリーパスの金額）。「残り」の1日あたりは、今日を含む残りの日数で割っています。</div>
+      </div>
+
+      <div style={card}>
+        <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap",marginBottom:6}}>
+          <span style={{fontWeight:800,fontSize:15,color:"#1e3a5f"}}>👥 スタッフごとの目標</span>
+          <span style={{fontSize:12,color:"#64748b"}}>合計：売上 {yen(staffSalesSum)}{num(g.window)?<span style={{color:staffSalesSum===num(g.window)?"#059669":"#b45309",fontWeight:700}}>（窓口の目標 {yen(num(g.window))} {staffSalesSum===num(g.window)?"と一致":`との差 ${staffSalesSum-num(g.window)<0?"−":"+"}${yen(Math.abs(staffSalesSum-num(g.window)))}`}）</span>:""}／人数 {staffVisitsSum.toLocaleString()}人{num(g.visits)?<span style={{color:staffVisitsSum===num(g.visits)?"#059669":"#b45309",fontWeight:700}}>（総来院 {num(g.visits)}人 {staffVisitsSum===num(g.visits)?"と一致":`との差 ${staffVisitsSum-num(g.visits)>0?"+":""}${staffVisitsSum-num(g.visits)}人`}）</span>:""}</span>
+        </div>
+        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:860}}>
+          <thead><tr style={{fontSize:12,color:"#64748b"}}>{["スタッフ","売上の目標（窓口）","売上の実績","人数の目標","人数の実績","メモ（口コミ・役割など）",""].map(h=><th key={h} style={{textAlign:"left",padding:"4px 6px",fontWeight:800}}>{h}</th>)}</tr></thead>
+          <tbody>
+            {g.staff.map((s,i)=>{ const sid=s.staffId?Number(s.staffId):null; const as=sid!=null&&act?act.staffSales[sid]||0:null, av=sid!=null&&act?act.staffVisits[sid]||0:null;
+              return <tr key={i} style={{borderBottom:"1px solid #f1f5f9"}}>
+                <td style={{padding:"6px",whiteSpace:"nowrap"}}>{(()=>{ const o=STAFF_ACCOUNTS.find(x=>x.id===sid); return o?<span style={{display:"inline-flex",width:26,height:26,borderRadius:7,background:o.color||"#64748b",color:"white",fontWeight:900,fontSize:13,alignItems:"center",justifyContent:"center",marginRight:6,verticalAlign:"middle"}}>{o.initial||o.name.charAt(0)}</span>:null; })()}<select value={s.staffId||""} onChange={e=>updStaff(i,{staffId:e.target.value?Number(e.target.value):null})} aria-label="スタッフ" style={{...inp,fontWeight:800}}>
+                  <option value="">選択</option>{staffOptions.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></td>
+                <td style={{padding:"6px"}}>{money(s.sales,v=>updStaff(i,{sales:v}),"スタッフの売上目標",120)}</td>
+                <td style={{padding:"6px"}}>{as==null?"—":<><div style={{fontWeight:800,color:"#0e7490"}}>{yen(as)}</div>{num(s.sales)>0&&bar(as,num(s.sales))}</>}</td>
+                <td style={{padding:"6px",whiteSpace:"nowrap"}}><input value={s.visits||""} onChange={e=>updStaff(i,{visits:e.target.value.replace(/[^\d]/g,"")})} inputMode="numeric" aria-label="スタッフの人数目標" placeholder="0" style={{...inp,width:70,textAlign:"right",fontWeight:800}}/> 人</td>
+                <td style={{padding:"6px"}}>{av==null?"—":<><div style={{fontWeight:800,color:"#0e7490"}}>{av}人</div>{num(s.visits)>0&&bar(av,num(s.visits))}</>}</td>
+                <td style={{padding:"6px"}}><input value={s.note||""} onChange={e=>updStaff(i,{note:e.target.value})} placeholder="例：口コミ 1/3" aria-label="スタッフのメモ" maxLength={40} style={{...inp,width:"100%",minWidth:140}}/></td>
+                <td style={{padding:"6px"}}><button type="button" onClick={()=>upd({staff:g.staff.filter((_,j)=>j!==i)})} aria-label="この行を消す" style={{border:"none",background:"none",color:"#94a3b8",cursor:"pointer",fontSize:16}}>✕</button></td>
+              </tr>; })}
+          </tbody>
+        </table></div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+          <button type="button" onClick={()=>upd({staff:[...g.staff,{staffId:null,sales:"",visits:"",note:""}]})} style={{...inp,cursor:"pointer",fontSize:12.5,fontWeight:700,background:"white"}}>＋ スタッフを追加</button>
+          {g.staff.length===0&&<button type="button" onClick={()=>upd({staff:defaultStaffRows()})} style={{...inp,cursor:"pointer",fontSize:12.5,fontWeight:700,background:"white"}}>香里園のスタッフ全員の行を作る</button>}
+        </div>
+        <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>売上の実績は、会計で項目ごとに選んだ担当で分けています（分けていない会計は予約の担当）。人数の実績は、会計があった予約の担当で数えています。</div>
+      </div>
+
+      <div style={card}>
+        <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:6}}>📝 メモ（紹介・キャンペーン・新規の目標など）</div>
+        <textarea value={g.memo} onChange={e=>upd({memo:e.target.value})} rows={5} aria-label="メモ" placeholder={"例：11月中の紹介 奥田4・佐藤4\n④ 初診料0・FP1回 20%off\n新規 6人/日"} style={{...inp,width:"100%",resize:"vertical",lineHeight:1.6}}/>
       </div>
     </div>
   );
@@ -19002,6 +19183,7 @@ function Dashboard({user,onLogout}){
       {id:"stats",label:"予約分析・サマリー",icon:"bar-chart",special:""},
       {id:"staff_kpi",label:"スタッフKPI管理",icon:"trending",special:""},
       {id:"staff_summary",label:"個人サマリー（売上・客数・客単価）",icon:"bar-chart",special:""},
+      {id:"month_goal",label:"月の目標ボード（香里園）",icon:"trending",special:""},
       {id:"sales_report",label:"総合売上日報・日計／累計表",icon:"bar-chart",special:""},
       {id:"monthly_kpi",label:"月次KPI（期ごと：売上・カルテ枚数・単価・LTV・離反）",icon:"trending",special:""},
       {id:"sales_simulator",label:"総売上シミュレーター（目標逆算・3パターン比較）",icon:"trending",special:""},
@@ -19692,6 +19874,7 @@ function Dashboard({user,onLogout}){
                     {view==="line_link_check"&&<LineLinkCheckPanel bookings={bookings}/>}
                              {view==="staff_kpi"&&<StaffKPIPanel onOpenPatient={openPatientByName} bookings={bookings} payments={paymentsNet} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr} trainingMode={trainingMode}/>}
                              {view==="staff_summary"&&<StaffSummaryPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}
+                             {view==="month_goal"&&<MonthGoalPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr} staffStoreMap={staffStoreMap}/>}
                              {view==="sales_report"&&<SalesReportPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}
                              {view==="monthly_kpi"&&<MonthlyKpiPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}
                              {view==="sales_simulator"&&<SalesSimulatorPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}
