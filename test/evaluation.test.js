@@ -38,9 +38,9 @@ test("scoreMonth: behavior = points x score/5, rank only when complete, required
   const items = itemsFor(DEFAULT_ITEMS, "G4", [], { grades: { G4: { num: 55, beh: 30, basic: 15, kdi: 0, line: 3 } }, depts: {}, deptDefault: 10 });
   const values = { clinic_budget: 100, clinic_labor: 40, new_count: 10, new_close: 70, new_sales: 200000, clinic_continue_rate: 75, clinic_patient_care: 85, avg_visits: 6, clinic_retail_sales: 100000 };
   const scores = { pl: 5, shift: 5, claim: 5, develop: 5, pc: 2,
-    basic_greeting: 5, basic_appearance: 5, basic_punctual: 2, basic_hourensou: 5, basic_rules: 5 };
+    basic_greeting: 5, basic_appearance: 5, basic_punctual: 2, basic_hourensou: 5, basic_deadline: 5, basic_rules: 5 };
   const r = scoreMonth(items, values, scores);
-  assert.equal(r.total, 94.6); // 行動30%÷5項目＝PC 6点 × 2/5（-3.6）、基本15%÷5項目＝時間厳守 3点 × 2/5（-1.8）
+  assert.equal(r.total, 94.9); // 行動30%÷5項目＝PC 6点 × 2/5（-3.6）、基本15%÷6項目（期日ものを含む）＝時間厳守 2.5点 × 2/5（-1.5）
   assert.equal(r.rank, "S");
   assert.deepEqual(r.requiredMissed, ["PC業務（必須）"]);
   assert.deepEqual(r.basicIssues, ["時間厳守・無遅刻無欠勤"]);
