@@ -1208,11 +1208,11 @@ function LoginScreen({onLogin}){
 }
 
 // ===== 月の目標ボード（香里園駅前院。院のホワイトボードと同じ形で、月の目標を組んで実績と比べる） =====
-// 総売上＝窓口（サブスク込み）＋保険請求（自賠込み）＋そのほか。総来院数、スタッフごとの売上（窓口）と人数、テーマ・メモ。
+// 総売上＝窓口＋保険請求（自賠込み）＋そのほか。総来院数、スタッフごとの売上（窓口）と人数、テーマ・メモ。
 // 保存：共有設定 month_goal_{院ID|all}_{YYYY-MM}（JSON）。保存すると、窓口の目標を「月間売上目標」（予約分析・1日の売上目標で使う）に、
 // スタッフの売上目標を「個人目標売上」にも入れる。実績は総合売上日報と同じ計算（SalesReport.buildReport。返金後・お釣りを含めない）
 const MONTH_GOAL_PREFIX="month_goal_";
-const emptyMonthGoal=()=>({theme:"",window:"",subscription:"",claim:"",jibai:"",extras:[],visits:"",newPatients:"",staff:[],memo:""});
+const emptyMonthGoal=()=>({theme:"",window:"",claim:"",jibai:"",extras:[],visits:"",newPatients:"",staff:[],memo:""});
 function readMonthGoal(storeKey,month){
   try{ const v=JSON.parse(localStorage.getItem(`${MONTH_GOAL_PREFIX}${storeKey}_${month}`)||"null"); return v&&typeof v==="object"?{...emptyMonthGoal(),...v}:null; }catch(e){ return null; }
 }
@@ -1231,11 +1231,9 @@ function MonthGoalPanel({payments,bookings,stores,todayStr,staffStoreMap}){
   const [g,setG]=React.useState(emptyMonthGoal());
   const [dirty,setDirty]=React.useState(false);
   const [msg,setMsg]=React.useState("");
-  const [passes,setPasses]=React.useState([]);
   const loadGoal=()=>{ const v=readMonthGoal(storeKey,month); return v||{...emptyMonthGoal(),staff:defaultStaffRows()}; };
   React.useEffect(()=>{ if(dirty) return; setG(loadGoal()); },[storeKey,month,ver,kaoriStaff.length]);
   React.useEffect(()=>{ setDirty(false); setG(loadGoal()); },[storeKey,month]);
-  React.useEffect(()=>{ sb.select("passes",`?purchased_date=gte.${month}-01&purchased_date=lte.${month}-31&select=id,pass_type,amount,purchased_date,is_training`).then(r=>setPasses(Array.isArray(r)?r:[])).catch(()=>setPasses([])); },[month]);
   const num=v=>{ const n=Number(String(v==null?"":v).replace(/[^\d.-]/g,"")); return Number.isFinite(n)?n:0; };
   const upd=patch=>{ setG(x=>({...x,...patch})); setDirty(true); setMsg(""); };
   const updStaff=(i,patch)=>upd({staff:g.staff.map((s,j)=>j===i?{...s,...patch}:s)});
@@ -1261,10 +1259,9 @@ function MonthGoalPanel({payments,bookings,stores,todayStr,staffStoreMap}){
       splitPaymentByStaff(p,b?b.staff_id:p.staff_id).forEach(x=>{ staffSales[x.staffId]=(staffSales[x.staffId]||0)+x.total; });
       if(!p.is_refund&&b){ (staffVisits[b.staff_id]=staffVisits[b.staff_id]||new Set()).add(p.booking_id); }
     });
-    const sub=passes.filter(p=>!p.is_training&&/フリーパス/.test(p.pass_type||"")).reduce((t,p)=>t+(Number(p.amount)||0),0);
     const claim=(r.dept.ju.claim||0)+(r.dept.acu.claim||0);
-    return {window:r.total.amount,claim,total:r.total.amount+claim,visits:r.total.count,newPatients:(r.visitClass.new||{}).count||0,subscription:sub,staffSales,staffVisits:Object.fromEntries(Object.entries(staffVisits).map(([k,v])=>[k,v.size]))};
-  },[payments,bookings,passes,from,to,storeId]);
+    return {window:r.total.amount,claim,total:r.total.amount+claim,visits:r.total.count,newPatients:(r.visitClass.new||{}).count||0,staffSales,staffVisits:Object.fromEntries(Object.entries(staffVisits).map(([k,v])=>[k,v.size]))};
+  },[payments,bookings,from,to,storeId]);
 
   // 今月の残り日数（今日を含む）
   const daysLeft=todayStr.slice(0,7)===month?lastDay-Number(todayStr.slice(8))+1:(month>todayStr.slice(0,7)?lastDay:0);
@@ -1335,8 +1332,7 @@ function MonthGoalPanel({payments,bookings,stores,todayStr,staffStoreMap}){
               <td style={{padding:"10px 6px"}}>{act&&totalGoal?bar(act.total,totalGoal):"—"}</td>
               <td style={{padding:"10px 6px",textAlign:"right",fontSize:12,color:"#475569"}}>{act&&totalGoal>act.total&&daysLeft>0?<>あと {yen(totalGoal-act.total)}<br/><span style={{color:"#94a3b8"}}>1日 {yen((totalGoal-act.total)/daysLeft)}</span></>:act&&totalGoal&&act.total>=totalGoal?<span style={{color:"#059669",fontWeight:800}}>✓ 達成</span>:""}</td>
             </tr>
-            {row("窓口","サブスク込み",money(g.window,v=>upd({window:v}),"窓口の目標"),act&&act.window,num(g.window))}
-            {row("　うちサブスク","フリーパスの購入",money(g.subscription,v=>upd({subscription:v}),"サブスクの目標"),act&&act.subscription,num(g.subscription))}
+            {row("窓口","",money(g.window,v=>upd({window:v}),"窓口の目標"),act&&act.window,num(g.window))}
             {row("請求","保険請求（見込み）",money(g.claim,v=>upd({claim:v}),"請求の目標"),act&&act.claim,num(g.claim))}
             {row("　うち自賠","",money(g.jibai,v=>upd({jibai:v}),"自賠の目標"),null,num(g.jibai))}
             {g.extras.map((x,i)=><tr key={i} style={{borderBottom:"1px solid #f1f5f9"}}>
@@ -1349,7 +1345,7 @@ function MonthGoalPanel({payments,bookings,stores,todayStr,staffStoreMap}){
             {row("新患","",<span><input value={g.newPatients} onChange={e=>upd({newPatients:e.target.value.replace(/[^\d]/g,"")})} inputMode="numeric" aria-label="新患の目標" placeholder="0" style={{...inp,width:100,textAlign:"right",fontWeight:800}}/> 人</span>,act&&act.newPatients,num(g.newPatients),ppl)}
           </tbody>
         </table></div>
-        <div style={{fontSize:11,color:"#94a3b8",marginTop:6,lineHeight:1.6}}>実績は総合売上日報と同じ計算です（窓口＝会計の合計から返金を引いた額、請求＝保険の来院回数×見込み単価、サブスク＝その月に買われたフリーパスの金額）。「残り」の1日あたりは、今日を含む残りの日数で割っています。</div>
+        <div style={{fontSize:11,color:"#94a3b8",marginTop:6,lineHeight:1.6}}>実績は総合売上日報と同じ計算です（窓口＝会計の合計から返金を引いた額、請求＝保険の来院回数×見込み単価）。「残り」の1日あたりは、今日を含む残りの日数で割っています。</div>
       </div>
 
       <div style={card}>
