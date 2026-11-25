@@ -1212,9 +1212,14 @@ function LoginScreen({onLogin}){
 // 保存：共有設定 month_goal_{院ID|all}_{YYYY-MM}（JSON）。保存すると、窓口の目標を「月間売上目標」（予約分析・1日の売上目標で使う）に、
 // スタッフの売上目標を「個人目標売上」にも入れる。実績は総合売上日報と同じ計算（SalesReport.buildReport。返金後・お釣りを含めない）
 const MONTH_GOAL_PREFIX="month_goal_";
-const emptyMonthGoal=()=>({theme:"",window:"",claim:"",jibai:"",extras:[],visits:"",newPatients:"",staff:[],memo:""});
+const emptyMonthGoal=()=>({theme:"",window:"",claimJu:"",claimAcu:"",jibai:"",extras:[],visits:"",newPatients:"",staff:[],memo:""});
 function readMonthGoal(storeKey,month){
-  try{ const v=JSON.parse(localStorage.getItem(`${MONTH_GOAL_PREFIX}${storeKey}_${month}`)||"null"); return v&&typeof v==="object"?{...emptyMonthGoal(),...v}:null; }catch(e){ return null; }
+  try{ const v=JSON.parse(localStorage.getItem(`${MONTH_GOAL_PREFIX}${storeKey}_${month}`)||"null"); if(!v||typeof v!=="object") return null;
+    // 以前の「請求」（柔整・鍼灸を分けていない）は柔整の請求として読む
+    const out={...emptyMonthGoal(),...v};
+    if(v.claim&&!v.claimJu&&!v.claimAcu) out.claimJu=v.claim;
+    delete out.claim;
+    return out; }catch(e){ return null; }
 }
 // 香里園駅前院の専用（院は香里園に固定。スタッフは香里園で勤務する人を最初から並べる）
 function MonthGoalPanel({payments,bookings,stores,todayStr,staffStoreMap}){
@@ -1241,7 +1246,8 @@ function MonthGoalPanel({payments,bookings,stores,todayStr,staffStoreMap}){
 
   // ===== 目標の合計 =====
   const extrasSum=g.extras.reduce((t,x)=>t+num(x.amount),0);
-  const totalGoal=num(g.window)+num(g.claim)+extrasSum;
+  const claimGoal=num(g.claimJu)+num(g.claimAcu);
+  const totalGoal=num(g.window)+claimGoal+extrasSum;
   const staffSalesSum=g.staff.reduce((t,s)=>t+num(s.sales),0), staffVisitsSum=g.staff.reduce((t,s)=>t+num(s.visits),0);
 
   // ===== 実績（総合売上日報と同じ計算） =====
@@ -1259,8 +1265,8 @@ function MonthGoalPanel({payments,bookings,stores,todayStr,staffStoreMap}){
       splitPaymentByStaff(p,b?b.staff_id:p.staff_id).forEach(x=>{ staffSales[x.staffId]=(staffSales[x.staffId]||0)+x.total; });
       if(!p.is_refund&&b){ (staffVisits[b.staff_id]=staffVisits[b.staff_id]||new Set()).add(p.booking_id); }
     });
-    const claim=(r.dept.ju.claim||0)+(r.dept.acu.claim||0);
-    return {window:r.total.amount,claim,total:r.total.amount+claim,visits:r.total.count,newPatients:(r.visitClass.new||{}).count||0,staffSales,staffVisits:Object.fromEntries(Object.entries(staffVisits).map(([k,v])=>[k,v.size]))};
+    const claimJu=r.dept.ju.claim||0, claimAcu=r.dept.acu.claim||0, claim=claimJu+claimAcu;
+    return {window:r.total.amount,claim,claimJu,claimAcu,juVisits:r.dept.ju.visits,acuVisits:r.dept.acu.visits,total:r.total.amount+claim,visits:r.total.count,newPatients:(r.visitClass.new||{}).count||0,staffSales,staffVisits:Object.fromEntries(Object.entries(staffVisits).map(([k,v])=>[k,v.size]))};
   },[payments,bookings,from,to,storeId]);
 
   // 今月の残り日数（今日を含む）
@@ -1333,7 +1339,9 @@ function MonthGoalPanel({payments,bookings,stores,todayStr,staffStoreMap}){
               <td style={{padding:"10px 6px",textAlign:"right",fontSize:12,color:"#475569"}}>{act&&totalGoal>act.total&&daysLeft>0?<>あと {yen(totalGoal-act.total)}<br/><span style={{color:"#94a3b8"}}>1日 {yen((totalGoal-act.total)/daysLeft)}</span></>:act&&totalGoal&&act.total>=totalGoal?<span style={{color:"#059669",fontWeight:800}}>✓ 達成</span>:""}</td>
             </tr>
             {row("窓口","",money(g.window,v=>upd({window:v}),"窓口の目標"),act&&act.window,num(g.window))}
-            {row("請求","保険請求（見込み）",money(g.claim,v=>upd({claim:v}),"請求の目標"),act&&act.claim,num(g.claim))}
+            {row("請求","柔整＋鍼灸（自動）",<span style={{fontWeight:900,fontSize:16}}>{yen(claimGoal)}</span>,act&&act.claim,claimGoal)}
+            {row("　柔整の請求",act?`保険の来院 ${act.juVisits}回（見込み）`:"保険請求（見込み）",money(g.claimJu,v=>upd({claimJu:v}),"柔整の請求の目標"),act&&act.claimJu,num(g.claimJu))}
+            {row("　鍼灸の請求",act?`鍼灸保険の来院 ${act.acuVisits}回（見込み）`:"保険請求（見込み）",money(g.claimAcu,v=>upd({claimAcu:v}),"鍼灸の請求の目標"),act&&act.claimAcu,num(g.claimAcu))}
             {row("　うち自賠","",money(g.jibai,v=>upd({jibai:v}),"自賠の目標"),null,num(g.jibai))}
             {g.extras.map((x,i)=><tr key={i} style={{borderBottom:"1px solid #f1f5f9"}}>
               <td style={{padding:"8px 6px"}}><input value={x.label} onChange={e=>updExtra(i,{label:e.target.value})} placeholder="例：EMS" aria-label="そのほかの項目名" style={{...inp,width:120,fontWeight:800}}/></td>
