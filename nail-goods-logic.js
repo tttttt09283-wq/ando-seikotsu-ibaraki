@@ -109,7 +109,7 @@
       "2026-09":{days:18,"newCount":7,"web":6,"inStore":1,"total":48,"four":3,"second":3,"cont":41,"cured":0,"avgVisits":1.5,"sales":696180,"lastYearSales":513000,"inquiry":7,"drop":1,"cost":158510},
       "2026-10":{days:18,"newCount":7,"web":5,"nobori":1,"inStore":1,"revisit":1,"total":45,"four":1,"cont":36,"cured":1,"avgVisits":1,"sales":585300,"lastYearSales":437000,"inquiry":8,"drop":1},
     }},
-    {id:"hirakata_ekimae",name:"枚方市駅前巻き爪センター",staff:"原田",source:"最新巻き爪分析表（スプレッドシート）",nail:{
+    {id:"hirakata_ekimae",name:"枚方市駅前巻き爪センター",staff:"原田",sheetUrl:"https://docs.google.com/spreadsheets/d/1Uy3UytDSV4Gsv_EZXGmeorrpWRltJD7nqZBX4TgeYGA/edit",source:"最新巻き爪分析表（スプレッドシート）",nail:{
       "2025-08":{days:26,"newCount":2,"nobori":1,"inStore":1,"revisit":0,"total":2,"four":0,"second":2,"cont":0,"cured":0,"avgVisits":6,"sales":20900,"inquiry":2,"drop":0},
       "2025-09":{days:26,"newCount":3,"web":1,"inStore":2,"revisit":0,"total":5,"four":2,"second":2,"cont":2,"cured":0,"avgVisits":2.3,"sales":67650,"inquiry":4,"drop":1},
       "2025-10":{days:26,"newCount":0,"revisit":0,"total":4,"four":0,"second":0,"cont":4,"cured":0,"sales":17600,"inquiry":0,"drop":0},
@@ -211,6 +211,8 @@
     //   11月は途中（新規4人だけで売上が未入力）のため取り込まない。
     // 津田：2026年11月から担当を大森さんに（10月までは児玉さん）
     {id:"tsuda-staff-2026-11",center:"tsuda",months:[],staff:true},
+    // 枚方市駅前：いただいたGoogleスプレッドシートを自動読み込みの対象にする
+    {id:"hirakata-ekimae-sheet",center:"hirakata_ekimae",months:[],sheet:true},
     {id:"katano-2026-11",center:"katano",months:["2026-01","2026-02","2026-03","2026-04","2026-05","2026-06","2026-07","2026-08","2026-09","2026-10"]},
   ];
   // まだ反映していない差し替えを centers に反映し、反映済みの id の一覧を返す
@@ -225,10 +227,102 @@
         pt.months.forEach(ym=>{ if(seed.nail[ym]) c.nail[ym]=JSON.parse(JSON.stringify(seed.nail[ym])); });
         if(seed.source&&pt.months.length) c.source=seed.source;
         if(pt.staff){ c.staff=seed.staff; c.staffChanges=JSON.parse(JSON.stringify(seed.staffChanges||[])); }
+        if(pt.sheet&&!c.sheetUrl) c.sheetUrl=seed.sheetUrl;
       }
       done.push(pt.id);
     });
     return done;
+  }
+
+  // ===== Googleスプレッドシートの巻き爪分析表を読む =====
+  // 全角数字を半角に
+  const half=v=>String(v==null?"":v).replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).trim();
+  // 見出し → 項目（見出しの書き方の違いも吸収する）
+  const HEADER_KEYS=[
+    [/^営業日数$/,"days"],[/^新規数?$/,"newCount"],[/^web$/i,"web"],[/^のぼり$/,"nobori"],[/^紹介$/,"referral"],
+    [/^店舗内$/,"inStore"],[/^その他$/,"other"],[/^再診数?$/,"revisit"],[/^総人数$/,"total"],[/^4箇所(以上)?$/,"four"],
+    [/^2回目継続$/,"second"],[/^継続数$/,"cont"],[/^(治癒|完治)数$/,"cured"],[/^平均通院回数$/,"avgVisits"],
+    [/^売上$/,"sales"],[/^昨年の売上[髙高]$/,"lastYearSales"],[/^問合せ件数$/,"inquiry"],[/^問合せ離脱$/,"drop"],
+  ];
+  const toNum=v=>{
+    if(typeof v==="number") return isFinite(v)?v:null;
+    const t=half(v).replace(/[,，\s円人件回]/g,"");
+    if(!t||t.startsWith("#")) return null;
+    const m=t.match(/^(-?\d+(?:\.\d+)?)(万)?$/);
+    return m?Number(m[1])*(m[2]?10000:1):null;
+  };
+  // 1枚のシート（A1:AD16 の2次元配列）を読む
+  function parseNailSheet(title,values){
+    const rows=Array.isArray(values)?values:[];
+    const top=rows[0]||[];
+    const head=top.map(half).join(" ");
+    const titleYear=(half(title).match(/(20\d\d)/)||[])[1];
+    const headYear=(half(top[0]).match(/(20\d\d)/)||[])[1];
+    const year=titleYear||headYear||null;
+    // 「〇〇巻き爪センター　施術者△△」
+    const cm=head.match(/([^\s]*?巻き爪センター)[\s　]*(?:施術者[\s　]*([^\s　]+))?/);
+    const name=cm?cm[1]:"", staff=cm&&cm[2]?cm[2]:"";
+    const hi=rows.findIndex(r=>(r||[]).some(c=>half(c)==="営業日数"));
+    if(hi<0||!year) return {title,year,name,staff,months:{},skipped:[],fixed:[],error:hi<0?"見出し（営業日数など）が見つかりません":"年が分かりません"};
+    const hdr=(rows[hi]||[]).map(half);
+    const col={};
+    hdr.forEach((h,i)=>{ const k=HEADER_KEYS.find(([re])=>re.test(h)); if(k&&col[k[1]]===undefined) col[k[1]]=i; });
+    // 仕入れ・広告費：「仕入れ＋広告費」のような合計の列があればそれ、無ければ広告費・仕入れの列を足す
+    const costCols=hdr.map((h,i)=>[h,i]).filter(([h])=>/広告|仕入/.test(h));
+    const both=costCols.filter(([h])=>/広告/.test(h)&&/仕入/.test(h));
+    const useCost=(both.length?both:costCols).map(([,i])=>i);
+    const months={},skipped=[],fixed=[];
+    rows.slice(hi+1).forEach(r=>{
+      const mm=(half((r||[])[0]).match(/^(\d{1,2})月$/)||[])[1];
+      if(!mm||Number(mm)<1||Number(mm)>12) return;
+      const ym=`${year}-${String(mm).padStart(2,"0")}`;
+      const d={};
+      Object.entries(col).forEach(([k,i])=>{
+        let v=toNum(r[i]);
+        if(v===null) return;
+        v=["avgVisits","days","second"].includes(k)?Math.round(v*10)/10:Math.round(v);
+        if(v!==0||["cured","drop","four","second","cont"].includes(k)) d[k]=v;
+      });
+      if(useCost.length){ const c=useCost.map(i=>toNum(r[i])).filter(v=>v!==null).reduce((a,b)=>a+b,0); if(c>0) d.cost=Math.round(c); }
+      if(!Object.keys(d).length||!(num(d.newCount)||num(d.cont)||num(d.total)||num(d.sales))) return;
+      // 総人数が0・空欄（計算式の崩れ）のときは 新規＋再診＋継続＋治癒
+      if(!(num(d.total)>0)&&(num(d.newCount)||num(d.cont))){ d.total=num(d.newCount)+num(d.revisit)+num(d.cont)+num(d.cured); fixed.push(ym); }
+      // 売上がまだ無い月は途中の月として取り込まない
+      if(!(num(d.sales)>0)){ skipped.push(ym); return; }
+      months[ym]=d;
+    });
+    return {title,year,name,staff,months,skipped,fixed};
+  }
+  // 写し間違いの見分けに使う主な数字（新規・総人数・売上・4箇所・問合せ・離脱）
+  const DUP_KEYS=["newCount","total","sales","four","inquiry","drop"];
+  // スプレッドシートの全ての分析表を読む。前の年の月が次の年の同じ月と主な数字がすべて同じなら、写し間違いとして前の年を外す
+  function parseNailSheets(sheets){
+    const parsed=(sheets||[]).map(x=>parseNailSheet(x.title,x.values));
+    const months={},skipped=[],fixed=[],duplicate=[],errors=[];
+    parsed.forEach(p=>{ if(p.error) errors.push(`${p.title}：${p.error}`); Object.assign(months,p.months); skipped.push(...p.skipped); fixed.push(...p.fixed); });
+    Object.keys(months).forEach(ym=>{
+      const next=`${Number(ym.slice(0,4))+1}${ym.slice(4)}`;
+      const same=months[next]&&DUP_KEYS.every(k=>num(months[next][k])===num(months[ym][k]));
+      if(same){ delete months[ym]; duplicate.push(ym); }
+    });
+    const main=parsed.filter(p=>!p.error).sort((a,b)=>String(b.year).localeCompare(String(a.year)))[0]||{};
+    return {months,skipped:skipped.sort(),fixed:fixed.sort(),duplicate:duplicate.sort(),errors,name:main.name||"",staff:main.staff||""};
+  }
+  // 読んだ月をセンターに反映する（スプレッドシートにある月はスプレッドシートの数字で上書き、無い月はそのまま）。変わった月の一覧を返す
+  function applySheetMonths(center,months){
+    const changed=[];
+    center.nail=center.nail||{};
+    Object.entries(months||{}).forEach(([ym,row])=>{
+      if(JSON.stringify(center.nail[ym]||null)!==JSON.stringify(row)){ center.nail[ym]=JSON.parse(JSON.stringify(row)); changed.push(ym); }
+    });
+    return changed.sort();
+  }
+  // スプレッドシートのURL（またはID）からIDを取り出す
+  function sheetIdOf(url){
+    const t=String(url||"").trim();
+    const m=t.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]{20,100})/);
+    if(m) return m[1];
+    return /^[A-Za-z0-9_-]{20,100}$/.test(t)?t:"";
   }
 
   // ===== 担当者の交代 =====
@@ -444,7 +538,7 @@
     return bought-num(soldUnits);
   }
 
-  const api={NAIL_KPIS,NAIL_FIELDS,SEED_NAIL_2026,SEED_CENTERS,SEED_PATCHES,applySeedPatches,staffAt,staffLabel,sortedChanges,combineCenters,migrateCenters,DEFAULT_PRODUCTS,DEFAULT_SEGMENTS,SCENARIOS,GOODS_LABEL_PREFIX,
+  const api={NAIL_KPIS,NAIL_FIELDS,SEED_NAIL_2026,SEED_CENTERS,SEED_PATCHES,applySeedPatches,staffAt,staffLabel,sortedChanges,parseNailSheet,parseNailSheets,applySheetMonths,sheetIdOf,combineCenters,migrateCenters,DEFAULT_PRODUCTS,DEFAULT_SEGMENTS,SCENARIOS,GOODS_LABEL_PREFIX,
     goodsLabel,nailMonthMetrics,judgeKpi,nailSummary,segmentsFromNail,forecast,requiredForTarget,
     aggregatePayments,aggregateProposals,stockLeft};
   root.NailGoods=api;

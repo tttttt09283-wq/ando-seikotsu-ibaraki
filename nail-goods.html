@@ -212,6 +212,8 @@ async function load() {
   try { stores = await sbGet("stores", "?select=id,name&order=id"); } catch (e) { stores = []; }
   render();
   if (patched) save();
+  // スプレッドシートを登録しているセンターは、開くたびに自動で読み込む
+  syncSheets(false);
 }
 function save() {
   lsSet(LS_KEY, JSON.stringify(data));
@@ -455,6 +457,71 @@ function delStaffChange(i) {
   if (ch.length) c.staff = NG.staffAt(c, thisMonth());
   save(); render();
 }
+// ---------- スプレッドシートから自動読み込み ----------
+let sheetSync = { busy: false, shareWith: "", error: "" };
+async function syncSheets(manual) {
+  const targets = data.centers.filter((c) => NG.sheetIdOf(c.sheetUrl));
+  if (!targets.length) { if (manual) alert("スプレッドシートのURLが登録されているセンターがありません"); return; }
+  const t = await token();
+  if (!session) { if (manual) alert("ログインしてから読み込んでください"); return; }
+  sheetSync.busy = true; sheetSync.error = ""; if (tab === "nail") render();
+  try {
+    const ids = [...new Set(targets.map((c) => NG.sheetIdOf(c.sheetUrl)))];
+    const res = await fetch(`/api/nail-sheets?ids=${encodeURIComponent(ids.join(","))}`, { headers: { Authorization: `Bearer ${t}` } });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || `読み込みに失敗しました（HTTP ${res.status}）`);
+    sheetSync.shareWith = json.shareWith || "";
+    let any = false;
+    const at = new Date().toISOString();
+    targets.forEach((c) => {
+      const r = (json.results || []).find((x) => x.id === NG.sheetIdOf(c.sheetUrl));
+      if (!r || r.error) { c.sheetSync = { at, error: (r && r.error) || "読み込めませんでした" }; any = true; return; }
+      const p = NG.parseNailSheets(r.sheets);
+      const changed = NG.applySheetMonths(c, p.months);
+      // 担当者の交代の記録が無いセンターは、表の施術者名を担当者にする
+      if (p.staff && !NG.sortedChanges(c).length && c.staff !== p.staff) { c.staff = p.staff; changed.push("担当者"); }
+      c.sheetSync = { at, months: Object.keys(p.months).length, changed, skipped: p.skipped, fixed: p.fixed, duplicate: p.duplicate, error: p.errors.join(" / ") };
+      any = true;
+    });
+    if (any) save();
+  } catch (e) { sheetSync.error = e.message; }
+  sheetSync.busy = false;
+  render();
+}
+function setSheetUrl(id, v) {
+  const c = data.centers.find((x) => x.id === id); if (!c) return;
+  const url = String(v || "").trim();
+  if (url && !NG.sheetIdOf(url)) { alert("GoogleスプレッドシートのURL（https://docs.google.com/spreadsheets/d/…）を貼り付けてください"); render(); return; }
+  c.sheetUrl = url; delete c.sheetSync;
+  save(); render();
+  if (url) syncSheets(true);
+}
+const ymShort = (list) => (list || []).map((k) => `${k.slice(2, 4)}/${Number(k.slice(5))}`).join("・");
+function syncStatus(c) {
+  const st = c.sheetSync;
+  if (!NG.sheetIdOf(c.sheetUrl)) return `<span class="muted">未登録（手入力・いただいたファイルの数字）</span>`;
+  if (!st) return `<span class="muted">${sheetSync.busy ? "読み込み中…" : "まだ読み込んでいません"}</span>`;
+  const time = new Date(st.at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  if (st.error && !st.months) return `<span class="cell-ng">⚠ ${esc(st.error)}</span><div class="small">${time}${/403|permission|404|not found/i.test(st.error) ? "・スプレッドシートがシステム用のアドレスに共有されていないか、URLが違う可能性があります（下の説明を見てください）" : ""}</div>`;
+  return `<span class="cell-ok">✓ ${st.months}か月分を読み込み</span>${st.changed && st.changed.length ? `（更新：${esc(ymShort(st.changed.filter((x) => x !== "担当者")))}${st.changed.includes("担当者") ? "・担当者" : ""}）` : "（変更なし）"}
+    <div class="small">${time}${st.skipped && st.skipped.length ? `・途中の月（売上が未入力）は外す：${ymShort(st.skipped)}` : ""}${st.fixed && st.fixed.length ? `・総人数を補正：${ymShort(st.fixed)}` : ""}${st.duplicate && st.duplicate.length ? `・翌年と同じ数字の月を外す：${ymShort(st.duplicate)}` : ""}${st.error ? `・⚠ ${esc(st.error)}` : ""}</div>`;
+}
+function sheetsCard(c) {
+  const list = c ? [c] : data.centers;
+  const n = data.centers.filter((x) => NG.sheetIdOf(x.sheetUrl)).length;
+  return `<div class="card"><div class="card-h"><span>スプレッドシートから自動読み込み（${n}／${data.centers.length}センター）</span>
+    <button class="btn btn-main btn-sm" ${sheetSync.busy ? "disabled" : ""} onclick="syncSheets(true)">${sheetSync.busy ? "読み込み中…" : "今すぐ読み込む"}</button></div>
+  <div class="card-b scroll">
+    ${sheetSync.error ? `<div class="err">${esc(sheetSync.error)}</div>` : ""}
+    <table><tr><th class="l">センター</th><th class="l">巻き爪分析表のスプレッドシートのURL</th><th class="l">状態</th></tr>
+    ${list.map((x) => `<tr><td class="l"><b>${esc(x.name.replace("巻き爪センター", ""))}</b></td>
+      <td class="l"><input style="width:300px;text-align:left;" placeholder="https://docs.google.com/spreadsheets/d/…" value="${esc(x.sheetUrl || "")}" onchange="setSheetUrl('${x.id}',this.value)"/>${x.sheetUrl ? ` <a href="${esc(x.sheetUrl)}" target="_blank" rel="noreferrer" class="small">開く↗</a>` : ""}</td>
+      <td class="l" style="white-space:normal;min-width:260px;">${syncStatus(x)}</td></tr>`).join("")}
+    </table>
+    <div class="small" style="margin-top:8px;">URLを登録したセンターは、このページを開くたびに「分析表」シート（「分析表(2025)」なども。「分析表原本」は除く）を読み込み、スプレッドシートにある月を最新の数字に置き換えます。売上が未入力の月は途中の月として外します。<br>
+    読み込むには、スプレッドシートを${sheetSync.shareWith ? `<b>${esc(sheetSync.shareWith)}</b>` : "システム用のアドレス（インセンティブの台帳を共有しているアドレス）"}に「閲覧者」で共有してください。Excel（.xlsx）のままでは読めないので、Googleドライブで「Googleスプレッドシートとして保存」してからURLを登録してください。</div>
+  </div></div>`;
+}
 function viewNail() {
   const c = curCenter();
   const nail = curNail();
@@ -470,6 +537,7 @@ function viewNail() {
   return `
   ${centerChips()}
   <div class="note">${c ? `${esc(c.name)}（施術者 ${esc(NG.staffLabel(c) || "-")}）の分析表（${esc(c.source || "手入力")}）の数字を読み取って入れています。月ごとの数字はこの表に直接入力できます。` : `${data.centers.length}センター（${data.centers.map((x) => x.name.replace("巻き爪センター", "")).join("・")}）の分析表を足し合わせた数字です。センターごとの数字を直すときは、上のボタンでセンターを選んでください。`}計算式（2回目継続率・4箇所施術率・平均単価・離脱率）は分析表と同じです。</div>
+  ${sheetsCard(c)}
   ${c ? "" : compareCard(y)}
   ${trendCard()}
   <div class="card"><div class="card-h"><span>${esc(curName())}の指標（${esc(y)}年・${s.count}か月分${s.months.length ? "・" + monthLabel(s.months[0]) + "〜" + monthLabel(s.lastKey) : ""}）</span>

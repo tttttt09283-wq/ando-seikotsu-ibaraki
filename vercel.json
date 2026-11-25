@@ -29,6 +29,10 @@
       "destination": "/api/evaluation?__mandala=1"
     },
     {
+      "source": "/api/nail-sheets",
+      "destination": "/api/evaluation?__nailsheets=1"
+    },
+    {
       "source": "/api/manual",
       "destination": "/api/evaluation?__manual=1"
     },

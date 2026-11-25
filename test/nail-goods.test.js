@@ -67,7 +67,7 @@ test("津田の正式な分析表（10月は19日・554,400円）を、保存済
   // 以前の数字（10月は5日分・148,500円）が保存されている場合
   const saved = [{ id: "tsuda", name: "津田巻き爪センター", nail: { "2026-10": { days: 5, total: 10, sales: 148500 }, "2026-11": { total: 30, sales: 400000 } } }];
   const applied = NG.applySeedPatches(saved, []);
-  assert.deepEqual(applied, ["tsuda-2026-official", "tsuda-staff-2026-11", "katano-2026-11"]);
+  assert.deepEqual(applied, ["tsuda-2026-official", "tsuda-staff-2026-11", "hirakata-ekimae-sheet", "katano-2026-11"]);
   assert.equal(saved[0].nail["2026-10"].sales, 554400);
   assert.equal(saved[0].nail["2026-11"].sales, 400000); // 手で入れた別の月は残す
   // 2回目は反映しない（その後に手で直した数字を上書きしない）
@@ -221,4 +221,57 @@ test("練習（トレーニングモード）の会計は本番の集計に入�
   assert.equal(NG.aggregatePayments(pays).goodsUnits, 1);
   assert.equal(NG.aggregatePayments(pays, undefined, true).goodsUnits, 1);
   assert.equal(NG.aggregatePayments(pays, undefined, true).goods.insole.units, 1);
+});
+
+// ===== Googleスプレッドシートの巻き爪分析表を読む =====
+const fixture = (name) => JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf8"));
+
+test("スプレッドシートの分析表（交野）を読むと、取り込み済みの数字と同じになる", () => {
+  const p = NG.parseNailSheets(fixture("nail-sheet-katano.json"));
+  assert.equal(p.name, "交野巻き爪センター");
+  assert.equal(p.staff, "藤原");
+  assert.deepEqual([...p.skipped], ["2026-11"]); // 売上が未入力の11月は途中の月
+  const seed = NG.SEED_CENTERS.find((c) => c.id === "katano").nail;
+  assert.equal(JSON.stringify(Object.keys(p.months).sort()), JSON.stringify(Object.keys(seed).sort()));
+  Object.keys(seed).forEach((ym) => assert.deepEqual({ ...p.months[ym] }, { ...seed[ym] }, ym));
+});
+
+test("表示形式のままの値（11.2万・100%・#DIV/0!）や崩れた総人数も読める（枚方市駅前）", () => {
+  const p = NG.parseNailSheets(fixture("nail-sheet-hirakata-ekimae.json"));
+  assert.equal(p.name, "枚方市駅前巻き爪センター");
+  assert.equal(p.staff, "原田");
+  assert.equal(Object.keys(p.months).length, 10);
+  assert.ok(p.months["2026-01"], "表題は2025年でもシート名の（2026）を使う");
+  assert.equal(p.months["2026-01"].sales, 112000);
+  assert.deepEqual([...p.fixed], ["2026-09", "2026-10"]);
+  assert.equal(p.months["2026-09"].total, 9);
+  assert.equal(p.months["2026-10"].cost, 120000); // 広告費5万＋仕入れ7万
+});
+
+test("前の年の月が翌年の同じ月と同じ数字なら、写し間違いとして外す", () => {
+  const head = ["", "営業日数", "新規数", "総人数", "売上", "2回目継続", "問合せ件数"];
+  const sheet = (title, jan) => ({ title, values: [["２０２６年", "", "〇〇巻き爪センター　施術者山田"], head, ["１月", 24, ...jan], ["２月", 24, 2, 4, 57200, 2, 4]] });
+  const p = NG.parseNailSheets([sheet("分析表(2025)", [5, 10, 111650, 1, 8]), sheet("分析表（2026）", [5, 10, 111650, 5, 8])]);
+  assert.deepEqual([...p.duplicate], ["2025-01", "2025-02"]);
+  assert.ok(p.months["2026-01"] && !p.months["2025-01"]);
+  assert.equal(p.staff, "山田");
+});
+
+test("読んだ月だけをセンターに反映し、変わった月を返す", () => {
+  const c = { nail: { "2026-01": { total: 10, sales: 100 }, "2025-12": { total: 5, sales: 50 } } };
+  const changed = NG.applySheetMonths(c, { "2026-01": { total: 10, sales: 100 }, "2026-02": { total: 3, sales: 30 } });
+  assert.deepEqual([...changed], ["2026-02"]);
+  assert.equal(c.nail["2025-12"].sales, 50); // スプレッドシートに無い月は残す
+});
+
+test("スプレッドシートのURLからIDを取り出す", () => {
+  assert.equal(NG.sheetIdOf("https://docs.google.com/spreadsheets/d/1Uy3UytDSV4Gsv_EZXGmeorrpWRltJD7nqZBX4TgeYGA/edit?usp=sharing"), "1Uy3UytDSV4Gsv_EZXGmeorrpWRltJD7nqZBX4TgeYGA");
+  assert.equal(NG.sheetIdOf("https://example.com/x"), "");
+  assert.equal(NG.sheetIdOf(""), "");
+});
+
+test("枚方市駅前のスプレッドシートが、保存済みのデータにも自動読み込みの対象として入る", () => {
+  const saved = [{ id: "hirakata_ekimae", nail: {} }];
+  NG.applySeedPatches(saved, ["tsuda-2026-official", "tsuda-staff-2026-11", "katano-2026-11"]);
+  assert.equal(NG.sheetIdOf(saved[0].sheetUrl), "1Uy3UytDSV4Gsv_EZXGmeorrpWRltJD7nqZBX4TgeYGA");
 });
