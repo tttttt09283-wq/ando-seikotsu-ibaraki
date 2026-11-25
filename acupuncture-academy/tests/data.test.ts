@@ -18,6 +18,18 @@ test("全10章があり、講義IDが重複しない", () => {
   for (const c of chapters) for (const l of c.lessons) assert.equal(l.chapterId, c.id, l.id);
 });
 
+test("全10章37講がすべて公開されている", () => {
+  assert.equal(allLessons.length, 37);
+  assert.equal(publishedLessons.length, 37);
+  for (const c of chapters) assert.ok(c.lessons.length >= 3, c.id);
+});
+
+test("小テストの正解の位置が偏っていない（すべて先頭にならない）", () => {
+  const firsts = publishedLessons.flatMap((l) => l.quiz ?? []).filter((q) => q.type === "single");
+  const atA = firsts.filter((q) => q.answer[0] === "a").length;
+  assert.ok(atA / firsts.length < 0.6, `先頭が正解の割合 ${atA}/${firsts.length}`);
+});
+
 test("最初の講義は第1章第1講「経絡とは何か」", () => {
   assert.equal(publishedLessons[0].id, "c1-l1");
   assert.equal(publishedLessons[0].title, "経絡とは何か");
