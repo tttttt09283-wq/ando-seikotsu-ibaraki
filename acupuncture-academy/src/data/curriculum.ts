@@ -3,6 +3,7 @@ import { meridianIntro } from "./lessons/meridian-intro";
 import { fiveElements, qiBloodFluid, yinYang, zangFu } from "./lessons/chapter1";
 import { jingjinJingbie, jingLuo, piBu } from "./lessons/chapter2";
 import { flowOverview, footChannels, handChannels, pairsAndSymptoms } from "./lessons/chapter3";
+import { boneProportion, locatingPractice, pointTypes } from "./lessons/chapter4";
 
 /** 準備中の講義を作る */
 function planned(chapterId: string, titles: [string, string][]): Lesson[] {
@@ -54,11 +55,7 @@ export const chapters: Chapter[] = [
     subtitle: "正経穴・奇穴・阿是穴・取穴",
     description: "経穴の分類と、正確に取穴するための方法。",
     color: "#0f766e",
-    lessons: planned("c4", [
-      ["正経穴・奇穴・阿是穴", "経穴の3分類と、それぞれの使い方。"],
-      ["骨度法と同身寸", "体の比率で位置を決める方法と、その限界。"],
-      ["取穴の実際", "体表指標・触診での確認と、記録のしかた。"],
-    ]),
+    lessons: [pointTypes, boneProportion, locatingPractice],
   },
   {
     id: "c5",

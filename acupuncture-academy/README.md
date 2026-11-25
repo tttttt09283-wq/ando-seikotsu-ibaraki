@@ -23,7 +23,7 @@ npm test         # 教材データの整合性・記録の移行・復習間隔
 | --- | --- |
 | `src/data/curriculum.ts` | 全10章・講義一覧 |
 | `src/data/lessons/meridian-intro.ts` | 第1章第1講「経絡とは何か」 |
-| `src/data/lessons/chapter1.ts` 〜 `chapter3.ts` | 第1〜3章の講義 |
+| `src/data/lessons/chapter1.ts` 〜 `chapter4.ts` | 第1〜4章の講義 |
 | `src/data/meridians.ts` | 十二経脈・奇経八脈 |
 | `src/data/points.ts` / `points-key.ts` | 経穴辞典（八脈交会穴8穴＋要穴15穴） |
 | `src/data/eight-confluent.ts` | 八脈交会穴4組 |

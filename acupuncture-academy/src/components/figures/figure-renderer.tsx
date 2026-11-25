@@ -17,6 +17,7 @@ import {
   YinYangFigure,
   ZangFuFigure,
 } from "./diagrams-basics";
+import { BoneProportionFigure, FingerCunFigure, PointClassificationFigure, SpineLandmarksFigure } from "./diagrams-points";
 import type { MeridianId, View } from "@/data/types";
 
 function BodyPair({ views, visible }: { views: View[]; visible: MeridianId[] }) {
@@ -59,6 +60,14 @@ export function FigureRenderer({ id }: { id: string }) {
       return <ArmChannelsFigure />;
     case "channel-pairs":
       return <ChannelPairsFigure />;
+    case "point-classification":
+      return <PointClassificationFigure />;
+    case "bone-proportion":
+      return <BoneProportionFigure />;
+    case "finger-cun":
+      return <FingerCunFigure />;
+    case "spine-landmarks":
+      return <SpineLandmarksFigure />;
     case "body-arms":
       return <BodyPair views={["front", "back"]} visible={["LU", "PC", "HT", "LI", "TE", "SI"]} />;
     case "body-legs":
