@@ -1,5 +1,7 @@
 # 株式会社Enejoy Hand 本部システム
 
+**EHMS（Enjoy Hand Management System／統合経営戦略システム）** をこの本部システムの中で開発しています。設計・計算ルール・権限・進捗は `docs/ehms/`（README → `docs/ehms/ARCHITECTURE.md`、進捗 → `docs/ehms/DEVELOPMENT_STATUS.md`）。
+
 予約管理システム（あんど整骨院の予約・会計）とは**別のシステム**です。全院・全部門を本部の立場で俯瞰して管理します。
 
 | 部門 | できること |

@@ -14,6 +14,13 @@
   // 部門（サイドメニューの順）
   const SECTIONS = [
     { id: "dashboard", label: "ダッシュボード", icon: "📊" },
+    { id: "ehms_dash", label: "全社経営ダッシュボード", icon: "🏛" },
+    { id: "ehms_store", label: "院別ダッシュボード", icon: "🏥" },
+    { id: "ehms_pl", label: "月次PL", icon: "📒" },
+    { id: "ehms_year", label: "年間PL・推移・着地", icon: "📊" },
+    { id: "ehms_io", label: "データ入出力", icon: "🔁" },
+    { id: "ehms_master", label: "マスター設定", icon: "⚙" },
+    { id: "ehms_admin", label: "権限・締め・履歴", icon: "🔐" },
     { id: "performance", label: "業績", icon: "📈" },
     { id: "marketing", label: "集客", icon: "📣" },
     { id: "people", label: "人材", icon: "👥" },

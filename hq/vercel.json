@@ -24,5 +24,27 @@
         }
       ]
     }
+  ],
+  "redirects": [
+    {
+      "source": "/docs",
+      "destination": "/",
+      "permanent": false
+    },
+    {
+      "source": "/docs/:path*",
+      "destination": "/",
+      "permanent": false
+    },
+    {
+      "source": "/.env.example",
+      "destination": "/",
+      "permanent": false
+    },
+    {
+      "source": "/README.md",
+      "destination": "/",
+      "permanent": false
+    }
   ]
 }

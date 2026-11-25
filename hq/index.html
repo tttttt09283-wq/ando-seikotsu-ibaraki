@@ -6,6 +6,8 @@
 <title>本部システム - 株式会社Enejoy Hand</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="/hq-logic.js"></script>
+<script src="/ehms-calc.js"></script>
+<script src="/ehms-ui.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#eef2f7;color:#1e293b;}
@@ -408,8 +410,8 @@ function render() {
   const focusKey = active && active.dataset && active.dataset.path ? `${active.dataset.doc}|${active.dataset.path}` : null;
   const al = alertsNow();
   const badge = (id) => { const n = al.filter((a) => a.section === id && a.level !== "info").length; return n ? `<span class="badge">${n}</span>` : ""; };
-  const side = HQ.SECTIONS.map((s) => `${s.id === "performance" ? '<div class="sep">部門</div>' : ""}${s.id === "org" ? '<div class="sep">組織・計画</div>' : ""}<button class="${S.sec === s.id ? "sel" : ""}" onclick="go('${s.id}')"><span>${s.icon}</span>${esc(s.label)}${s.id === "dashboard" ? (al.filter((a) => a.level === "ng").length ? `<span class="badge">${al.filter((a) => a.level === "ng").length}</span>` : "") : badge(s.id)}</button>`).join("");
-  const fn = { dashboard: secDashboard, performance: secPerformance, marketing: secMarketing, people: secPeople, daily: secDaily, fit: secFit, intake: secIntake, accounting: secAccounting, education: secEducation, org: secOrg, career: secCareer, expansion: secExpansion, annual: secAnnual, mandala: secMandala }[S.sec];
+  const side = HQ.SECTIONS.map((s) => `${s.id === "ehms_dash" ? '<div class="sep" style="color:#C5A46D;">EHMS 経営管理</div>' : ""}${s.id === "performance" ? '<div class="sep">部門</div>' : ""}${s.id === "org" ? '<div class="sep">組織・計画</div>' : ""}<button class="${S.sec === s.id ? "sel" : ""}" onclick="go('${s.id}')"><span>${s.icon}</span>${esc(s.label)}${s.id === "dashboard" ? (al.filter((a) => a.level === "ng").length ? `<span class="badge">${al.filter((a) => a.level === "ng").length}</span>` : "") : badge(s.id)}</button>`).join("");
+  const fn = { ehms_dash: secEhmsDash, ehms_store: secEhmsStore, ehms_pl: secEhmsPl, ehms_year: secEhmsYear, ehms_io: secEhmsIo, ehms_master: secEhmsMaster, ehms_admin: secEhmsAdmin, dashboard: secDashboard, performance: secPerformance, marketing: secMarketing, people: secPeople, daily: secDaily, fit: secFit, intake: secIntake, accounting: secAccounting, education: secEducation, org: secOrg, career: secCareer, expansion: secExpansion, annual: secAnnual, mandala: secMandala }[S.sec];
   let body;
   try { body = fn(); } catch (e) { console.error(e); body = `<div class="err">表示できませんでした：${esc(e.message)}</div>`; }
   if (["performance", "marketing", "people", "accounting"].includes(S.sec)) {
