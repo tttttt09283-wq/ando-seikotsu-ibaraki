@@ -17,6 +17,28 @@ import {
   YinYangFigure,
   ZangFuFigure,
 } from "./diagrams-basics";
+import { BoneProportionFigure, FingerCunFigure, PointClassificationFigure, SpineLandmarksFigure } from "./diagrams-points";
+import {
+  BiaoBenFigure,
+  CareTeamFigure,
+  ConfluentOverviewFigure,
+  EightPrinciplesFigure,
+  ExtraVesselsFigure,
+  FiveShuFigure,
+  FourExamsFigure,
+  HeadacheChannelsFigure,
+  HuiHeFigure,
+  NeedleMoxaFigure,
+  NeuropathicPainFigure,
+  ParkinsonFigure,
+  PulsePositionsFigure,
+  RedFlagFlowFigure,
+  ShuMuFigure,
+  TongueMapFigure,
+  TonifyDrainFigure,
+  YuanTableFigure,
+  ZangfuPatternsFigure,
+} from "./diagrams-advanced";
 import type { MeridianId, View } from "@/data/types";
 
 function BodyPair({ views, visible }: { views: View[]; visible: MeridianId[] }) {
@@ -59,6 +81,52 @@ export function FigureRenderer({ id }: { id: string }) {
       return <ArmChannelsFigure />;
     case "channel-pairs":
       return <ChannelPairsFigure />;
+    case "point-classification":
+      return <PointClassificationFigure />;
+    case "bone-proportion":
+      return <BoneProportionFigure />;
+    case "finger-cun":
+      return <FingerCunFigure />;
+    case "spine-landmarks":
+      return <SpineLandmarksFigure />;
+    case "five-shu":
+      return <FiveShuFigure />;
+    case "yuan-table":
+      return <YuanTableFigure />;
+    case "shu-mu":
+      return <ShuMuFigure />;
+    case "hui-he":
+      return <HuiHeFigure />;
+    case "extra-vessels":
+      return <ExtraVesselsFigure />;
+    case "confluent-overview":
+      return <ConfluentOverviewFigure />;
+    case "four-exams":
+      return <FourExamsFigure />;
+    case "tongue-map":
+      return <TongueMapFigure />;
+    case "pulse-positions":
+      return <PulsePositionsFigure />;
+    case "eight-principles":
+      return <EightPrinciplesFigure />;
+    case "zangfu-patterns":
+      return <ZangfuPatternsFigure />;
+    case "headache-channels":
+      return <HeadacheChannelsFigure />;
+    case "biao-ben":
+      return <BiaoBenFigure />;
+    case "tonify-drain":
+      return <TonifyDrainFigure />;
+    case "needle-moxa":
+      return <NeedleMoxaFigure />;
+    case "redflag-flow":
+      return <RedFlagFlowFigure />;
+    case "neuropathic-pain":
+      return <NeuropathicPainFigure />;
+    case "parkinson":
+      return <ParkinsonFigure />;
+    case "care-team":
+      return <CareTeamFigure />;
     case "body-arms":
       return <BodyPair views={["front", "back"]} visible={["LU", "PC", "HT", "LI", "TE", "SI"]} />;
     case "body-legs":
