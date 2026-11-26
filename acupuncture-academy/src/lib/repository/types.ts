@@ -63,6 +63,8 @@ export interface LearningState {
   favorites: string[];
   reviewItems: Record<string, ReviewItem>;
   lastVisited?: { lessonId: string; at: string };
+  /** 講義ごとに、最後に確認した版（教材の更新を知らせるため） */
+  seenRevisions: Record<string, number>;
 }
 
 export const emptyState = (): LearningState => ({
@@ -73,6 +75,7 @@ export const emptyState = (): LearningState => ({
   studyLog: {},
   favorites: [],
   reviewItems: {},
+  seenRevisions: {},
 });
 
 export interface LearningRepository {

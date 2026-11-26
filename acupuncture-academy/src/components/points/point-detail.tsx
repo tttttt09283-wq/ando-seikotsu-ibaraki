@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { AlertTriangle, MapPin, Network } from "lucide-react";
 import type { AcuPoint, KnowledgeKind } from "@/data/types";
-import { meridianMap, extraVesselMap } from "@/data/meridians";
+import { channelInfo, extraVesselMap } from "@/data/meridians";
 import { pointMap } from "@/data/points";
 import { Badge } from "@/components/ui/badge";
 import { KindBadge, ReviewStatusBadge, kindLabel } from "@/components/common/badges";
@@ -20,7 +20,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 export function PointDetail({ point, headingLevel = "h1" }: { point: AcuPoint; headingLevel?: "h1" | "h2" }) {
-  const m = meridianMap[point.meridian];
+  const m = channelInfo[point.meridian];
   const H = headingLevel;
   const ev = point.extraVessel ? extraVesselMap[point.extraVessel] : null;
   return (
@@ -58,6 +58,13 @@ export function PointDetail({ point, headingLevel = "h1" }: { point: AcuPoint; h
         </p>
       </Section>
 
+      {point.detail === "brief" && (
+        <p className="rounded-lg border border-dashed bg-muted/40 p-3 text-sm text-muted-foreground">
+          簡易版の経穴です。名称・部位・要穴の分類・安全上の注意を掲載しています。取穴方法・局所解剖・作用・主治は、監修体制が整いしだい追加します。
+        </p>
+      )}
+
+      {point.howToLocate.length > 0 && (
       <Section title="取穴方法">
         <ol className="space-y-1.5 text-sm leading-relaxed">
           {point.howToLocate.map((h, i) => (
@@ -68,7 +75,9 @@ export function PointDetail({ point, headingLevel = "h1" }: { point: AcuPoint; h
           ))}
         </ol>
       </Section>
+      )}
 
+      {point.anatomy.length > 0 && (
       <Section title="局所解剖（現代医学）">
         <dl className="grid gap-px overflow-hidden rounded-lg border bg-border text-sm">
           {point.anatomy.map((a) => (
@@ -80,6 +89,7 @@ export function PointDetail({ point, headingLevel = "h1" }: { point: AcuPoint; h
         </dl>
         <p className="text-xs text-verify">局所解剖は個体差があります。解剖学教科書での照合前（要確認）。</p>
       </Section>
+      )}
 
       {ev && (
         <Section title="八脈交会穴としての位置づけ">
@@ -95,6 +105,8 @@ export function PointDetail({ point, headingLevel = "h1" }: { point: AcuPoint; h
         </Section>
       )}
 
+      {point.detail === "full" && (
+      <>
       <Section title="伝統的な作用">
         <ul className="flex flex-wrap gap-1.5">
           {point.actions.map((a) => (
@@ -176,6 +188,9 @@ export function PointDetail({ point, headingLevel = "h1" }: { point: AcuPoint; h
           ))}
         </ul>
       </Section>
+
+      </>
+      )}
 
       <Section title="安全上の注意">
         <ul className="space-y-1.5 rounded-lg border border-warn/25 bg-red-50 p-3 text-sm">

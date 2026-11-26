@@ -1,4 +1,5 @@
-import { AlertTriangle, Lightbulb } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, ArrowRight, Lightbulb } from "lucide-react";
 import type { ContentBlock } from "@/data/types";
 import { FigureRenderer } from "@/components/figures/figure-renderer";
 
@@ -73,6 +74,16 @@ export function ContentBlockView({ block }: { block: ContentBlock }) {
             ))}
           </div>
         </section>
+      );
+    case "link":
+      return (
+        <Link href={block.href ?? "/"} className="flex items-center gap-3 rounded-xl border border-primary/20 bg-white p-4 hover:border-primary/50">
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-bold text-primary">{block.title}</span>
+            {block.body && <span className="mt-0.5 block text-sm text-muted-foreground">{block.body}</span>}
+          </span>
+          <ArrowRight className="size-4 shrink-0 text-primary" />
+        </Link>
       );
     case "figure":
       return (

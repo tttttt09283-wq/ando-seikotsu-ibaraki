@@ -9,7 +9,7 @@ const trad = (text: string): ClaimItem => ({ text, kind: "traditional", reviewSt
 
 const base = { reviewStatus: "unverified" as const, sourceIds: SRC };
 
-export const keyPoints: AcuPoint[] = [
+export const keyPoints: Omit<AcuPoint, "detail">[] = [
   {
     ...base,
     code: "LU9",

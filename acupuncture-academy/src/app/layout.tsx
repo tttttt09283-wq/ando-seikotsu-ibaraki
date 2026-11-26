@@ -3,6 +3,8 @@ import "./globals.css";
 import { LearningProvider } from "@/lib/learning-store";
 import { SiteHeader } from "@/components/layout/site-header";
 import { BottomNav } from "@/components/layout/bottom-nav";
+import Link from "next/link";
+import { contentVersion } from "@/data/changelog";
 
 export const metadata: Metadata = {
   title: { default: "鍼灸臨床アカデミー", template: "%s｜鍼灸臨床アカデミー" },
@@ -21,7 +23,14 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
       <body className="min-h-dvh">
         <LearningProvider>
           <SiteHeader />
-          <main className="mx-auto w-full max-w-6xl px-4 pt-6 pb-24 lg:pb-12">{children}</main>
+          <main className="mx-auto w-full max-w-6xl px-4 pt-6 pb-8">{children}</main>
+          <footer className="mx-auto w-full max-w-6xl px-4 pb-24 text-xs text-muted-foreground lg:pb-10">
+            教材データ {contentVersion.replaceAll("-", "/")} 版 ・{" "}
+            <Link href="/updates" className="underline">
+              更新情報
+            </Link>{" "}
+            ・ 全教材「要確認（未監修）」
+          </footer>
           <BottomNav />
         </LearningProvider>
       </body>

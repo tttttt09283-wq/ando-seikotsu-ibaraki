@@ -1,5 +1,6 @@
 import type { AcuPoint, ClaimItem } from "./types";
 import { keyPoints } from "./points-key";
+import { briefPoints, channelOfCode, derivedCategories } from "./yaoxue";
 
 /**
  * 経穴辞典：八脈交会穴 8穴（要穴・頻用穴は points-key.ts）。
@@ -13,7 +14,7 @@ const SRC = [...LOC, "anatomy-general"];
 const trad = (text: string): ClaimItem => ({ text, kind: "traditional", reviewStatus: "unverified", sourceIds: ["jp-textbook-points"] });
 const modern = (text: string, sourceIds: string[] = ["app-original"]): ClaimItem => ({ text, kind: "modern", reviewStatus: "unverified", sourceIds });
 
-const confluentPoints: AcuPoint[] = [
+const confluentPoints: Omit<AcuPoint, "detail">[] = [
   {
     code: "SI3",
     name: "後渓",
@@ -313,7 +314,50 @@ const confluentPoints: AcuPoint[] = [
   },
 ];
 
-/** 辞典の全経穴（八脈交会穴 8穴 ＋ 要穴・頻用穴） */
-export const points: AcuPoint[] = [...confluentPoints, ...keyPoints];
+const LOC_SOURCES = ["who2008", "jp-textbook-points"];
+
+/** 要穴の分類は yaoxue.ts の表から作り、手書きの分類のうち表にない種類（交会穴など）だけ残す */
+function withTableCategories(p: Omit<AcuPoint, "detail">, detail: AcuPoint["detail"]): AcuPoint {
+  const derived = derivedCategories(p.code);
+  const kinds = new Set(derived.map((c) => c.category));
+  return { ...p, detail, categories: [...derived, ...p.categories.filter((c) => !kinds.has(c.category))] };
+}
+
+const fullPoints: AcuPoint[] = [...confluentPoints, ...keyPoints].map((p) => withTableCategories(p, "full"));
+const fullCodes = new Set(fullPoints.map((p) => p.code));
+
+const brief: AcuPoint[] = briefPoints
+  .filter((b) => !fullCodes.has(b.code))
+  .map((b) =>
+    withTableCategories(
+      {
+        code: b.code,
+        name: b.name,
+        reading: b.reading,
+        meridian: channelOfCode(b.code),
+        reviewStatus: "unverified",
+        sourceIds: LOC_SOURCES,
+        categories: [],
+        location: b.location,
+        howToLocate: [],
+        anatomy: [],
+        actions: [],
+        indications: [],
+        related: [],
+        combinations: [],
+        safety: b.safety ?? ["刺鍼の前に、局所解剖（血管・神経・臓器の位置）を必ず確認する"],
+      },
+      "brief",
+    ),
+  );
+
+const order = (code: string) => {
+  const ch = channelOfCode(code);
+  const idx = ["LU", "LI", "ST", "SP", "HT", "SI", "BL", "KI", "PC", "TE", "GB", "LR", "CV", "GV"].indexOf(ch);
+  return idx * 1000 + Number(code.replace(/^\D+/, ""));
+};
+
+/** 辞典の全経穴（詳細版＋要穴の簡易版）。経の流注順・番号順に並べる */
+export const points: AcuPoint[] = [...fullPoints, ...brief].sort((a, b) => order(a.code) - order(b.code));
 
 export const pointMap = Object.fromEntries(points.map((p) => [p.code, p])) as Record<string, AcuPoint>;

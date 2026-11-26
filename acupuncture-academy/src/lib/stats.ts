@@ -2,6 +2,7 @@ import { addDays, dateKey, weekStart } from "./dates";
 import type { LearningState } from "./repository/types";
 import { isDue } from "./review";
 import { allLessons, publishedLessons } from "@/data/curriculum";
+import { lessonRevision } from "@/data/changelog";
 
 export function totalStudySeconds(s: LearningState) {
   return Object.values(s.studyLog).reduce((a, b) => a + b, 0);
@@ -111,4 +112,13 @@ export function nextLesson(s: LearningState) {
     return allLessons.find((l) => l.id === s.lastVisited!.lessonId) ?? null;
   }
   return publishedLessons.find((l) => s.lessons[l.id]?.status !== "completed") ?? null;
+}
+
+/** 学習を始めた講義のうち、最後に確認したあとで教材が更新されたもの */
+export function updatedSinceSeen(s: LearningState) {
+  return allLessons.filter((l) => {
+    if (!s.lessons[l.id]) return false;
+    const seen = s.seenRevisions?.[l.id] ?? 1;
+    return seen < lessonRevision(l.id).revision;
+  });
 }

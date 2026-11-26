@@ -7,8 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { points } from "@/data/points";
-import { meridianMap, meridians } from "@/data/meridians";
-import type { MeridianId, PointCategory } from "@/data/types";
+import { channelInfo, channelOrder } from "@/data/meridians";
+import type { PointCategory, PointChannel } from "@/data/types";
 import { useLearning } from "@/lib/learning-store";
 import { FavoriteButton } from "@/components/points/favorite-button";
 import { ReviewStatusBadge } from "@/components/common/badges";
@@ -35,18 +35,18 @@ function Chip({ active, onClick, children, color }: { active: boolean; onClick: 
 export function PointExplorer() {
   const { state } = useLearning();
   const [q, setQ] = React.useState("");
-  const [meridian, setMeridian] = React.useState<MeridianId | "all">("all");
+  const [meridian, setMeridian] = React.useState<PointChannel | "all">("all");
   const [category, setCategory] = React.useState<PointCategory | "all">("all");
   const [favOnly, setFavOnly] = React.useState(false);
 
   const counts = React.useMemo(() => {
-    const c: Partial<Record<MeridianId, number>> = {};
+    const c: Partial<Record<PointChannel, number>> = {};
     for (const p of points) c[p.meridian] = (c[p.meridian] ?? 0) + 1;
     return c;
   }, []);
 
   const filtered = points.filter((p) => {
-    const text = `${p.name}${p.reading}${p.code}${meridianMap[p.meridian].name}${p.indications.map((i) => i.text).join("")}`.toLowerCase();
+    const text = `${p.name}${p.reading}${p.code}${channelInfo[p.meridian].name}${p.categories.map((c) => c.category + c.detail).join("")}${p.indications.map((i) => i.text).join("")}`.toLowerCase();
     if (q && !text.includes(q.trim().toLowerCase())) return false;
     if (meridian !== "all" && p.meridian !== meridian) return false;
     if (category !== "all" && !p.categories.some((c) => c.category === category)) return false;
@@ -67,10 +67,10 @@ export function PointExplorer() {
           <Chip active={meridian === "all"} onClick={() => setMeridian("all")}>
             すべて
           </Chip>
-          {meridians.map((m) => (
-            <Chip key={m.id} active={meridian === m.id} onClick={() => setMeridian(m.id)} color={m.color}>
-              {m.short}
-              {counts[m.id] ? `（${counts[m.id]}）` : ""}
+          {channelOrder.map((id) => (
+            <Chip key={id} active={meridian === id} onClick={() => setMeridian(id)} color={channelInfo[id].color}>
+              {channelInfo[id].short}
+              {counts[id] ? `（${counts[id]}）` : ""}
             </Chip>
           ))}
         </div>
@@ -89,7 +89,12 @@ export function PointExplorer() {
         </div>
       </div>
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{filtered.length}件</p>
+        <p className="text-sm text-muted-foreground">
+          {filtered.length}件
+          <Link href="/key-points" className="ml-3 font-semibold text-primary underline">
+            要穴の一覧表で見る
+          </Link>
+        </p>
         <Chip active={favOnly} onClick={() => setFavOnly((v) => !v)}>
           <span className="flex items-center gap-1">
             <Star className={cn("size-3.5", favOnly && "fill-current")} />
@@ -105,7 +110,7 @@ export function PointExplorer() {
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((p) => {
-            const m = meridianMap[p.meridian];
+            const m = channelInfo[p.meridian];
             return (
               <li key={p.code}>
                 <Link href={`/points/${p.code}`} className="flex h-full flex-col gap-2 rounded-xl border bg-white p-4 transition-colors hover:border-primary/40" style={{ borderLeft: `4px solid ${m.color}` }}>
@@ -125,11 +130,12 @@ export function PointExplorer() {
                   </div>
                   <p className="line-clamp-2 text-sm text-muted-foreground">{p.location}</p>
                   <div className="mt-auto flex flex-wrap gap-1">
-                    {p.categories.map((c) => (
-                      <Badge key={c.category} variant={c.category === "八脈交会穴" ? "extra" : "key"}>
-                        {c.category}
+                    {[...new Set(p.categories.map((c) => c.category))].map((c) => (
+                      <Badge key={c} variant={c === "八脈交会穴" ? "extra" : "key"}>
+                        {c}
                       </Badge>
                     ))}
+                    {p.detail === "brief" && <Badge variant="outline">簡易版</Badge>}
                     <ReviewStatusBadge status={p.reviewStatus} short />
                   </div>
                 </Link>

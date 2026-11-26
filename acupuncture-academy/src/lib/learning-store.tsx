@@ -11,6 +11,7 @@ export const PASS_RATE = 0.7;
 
 interface LearningActions {
   openLesson(lessonId: string): void;
+  markLessonSeen(lessonId: string, revision: number): void;
   setLessonStep(lessonId: string, stepIndex: number): void;
   recordQuiz(lessonId: string, results: QuestionResult[]): { passed: boolean; score: number; total: number };
   answerReview(itemId: string, correct: boolean): void;
@@ -69,6 +70,9 @@ export function LearningProvider({ children }: { children: React.ReactNode }) {
             ? s.lessons
             : { ...s.lessons, [lessonId]: { stepIndex: 0, status: "in-progress", startedAt: now, updatedAt: now } },
         }));
+      },
+      markLessonSeen(lessonId, revision) {
+        update((s) => (s.seenRevisions?.[lessonId] === revision ? s : { ...s, seenRevisions: { ...(s.seenRevisions ?? {}), [lessonId]: revision } }));
       },
       setLessonStep(lessonId, stepIndex) {
         const now = new Date().toISOString();
