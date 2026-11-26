@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Scale, Stethoscope } from "lucide-react";
 import { confluentPairs } from "@/data/eight-confluent";
-import { extraVesselMap, meridianMap } from "@/data/meridians";
+import { channelInfo, extraVesselMap } from "@/data/meridians";
 import { pointMap } from "@/data/points";
-import type { View } from "@/data/types";
+import type { MeridianId, View } from "@/data/types";
 import { PageHeader } from "@/components/common/page-header";
 import { ConfluentPairFigure } from "@/components/figures/diagrams";
 import { BodyFigure } from "@/components/figures/body-figure";
@@ -44,11 +44,11 @@ export default function EightConfluentPage() {
                   <p className="text-xs font-semibold text-extra">第{idx + 1}組</p>
                   <h2 className="text-xl font-bold">
                     <Link href={`/points/${up.code}`} className="hover:underline">
-                      {up.name} <span className="font-mono text-base" style={{ color: meridianMap[up.meridian].color }}>{up.code}</span>
+                      {up.name} <span className="font-mono text-base" style={{ color: channelInfo[up.meridian].color }}>{up.code}</span>
                     </Link>
                     <span className="mx-2 text-muted-foreground">＋</span>
                     <Link href={`/points/${lo.code}`} className="hover:underline">
-                      {lo.name} <span className="font-mono text-base" style={{ color: meridianMap[lo.meridian].color }}>{lo.code}</span>
+                      {lo.name} <span className="font-mono text-base" style={{ color: channelInfo[lo.meridian].color }}>{lo.code}</span>
                     </Link>
                   </h2>
                   <p className="mt-1 text-sm text-muted-foreground">
@@ -126,7 +126,7 @@ export default function EightConfluentPage() {
                 <aside className="space-y-2">
                   <BodyFigure
                     view={pairView[pair.id]}
-                    visible={[up.meridian, lo.meridian]}
+                    visible={[up.meridian as MeridianId, lo.meridian as MeridianId]}
                     pointCodes={[up.code, lo.code]}
                     className="mx-auto h-80 w-full"
                   />

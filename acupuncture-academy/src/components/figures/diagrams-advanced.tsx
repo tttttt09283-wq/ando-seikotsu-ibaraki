@@ -8,6 +8,19 @@ import * as React from "react";
 import { confluentPairs } from "@/data/eight-confluent";
 import { extraVesselMap, meridianMap } from "@/data/meridians";
 import { pointMap } from "@/data/points";
+import {
+  SHU_NAMES,
+  YANG_ELEMENTS,
+  YIN_ELEMENTS,
+  extraXi,
+  fiveShuTable,
+  huiTable,
+  lowerHeTable,
+  shuMuTable,
+  yuanLuoXiTable,
+} from "@/data/yaoxue";
+
+const nm = (code: string) => pointMap[code]?.name ?? code;
 
 const ink = "#0f1b2d";
 const muted = "#64748b";
@@ -204,20 +217,19 @@ export function FiveShuFigure() {
 }
 
 export function YuanTableFigure() {
+  const rows: string[][] = [];
+  for (let i = 0; i < yuanLuoXiTable.length; i += 2) {
+    const yin = yuanLuoXiTable.find((r) => r.meridian === ["LU", "SP", "HT", "KI", "PC", "LR"][i / 2])!;
+    const yang = yuanLuoXiTable.find((r) => r.meridian === ["LI", "ST", "SI", "BL", "TE", "GB"][i / 2])!;
+    rows.push([meridianMap[yin.meridian].organ, nm(yin.yuan), nm(yin.xi), meridianMap[yang.meridian].organ, nm(yang.yuan), nm(yang.xi)]);
+  }
   return (
     <TableFigure
       label="十二経の原穴と郄穴"
       headers={["経脈", "原穴", "郄穴", "経脈", "原穴", "郄穴"]}
       widths={[52, 60, 60, 52, 60, 60]}
-      rows={[
-        ["肺", "太淵", "孔最", "大腸", "合谷", "温溜"],
-        ["脾", "太白", "地機", "胃", "衝陽", "梁丘"],
-        ["心", "神門", "陰郄", "小腸", "腕骨", "養老"],
-        ["腎", "太渓", "水泉", "膀胱", "京骨", "金門"],
-        ["心包", "大陵", "郄門", "三焦", "陽池", "会宗"],
-        ["肝", "太衝", "中都", "胆", "丘墟", "外丘"],
-      ]}
-      note="陰経の原穴は兪穴と同じ穴。郄穴はほかに奇経の4穴（交信・跗陽・築賓・陽交）がある"
+      rows={rows}
+      note={`陰経の原穴は兪穴と同じ穴。郄穴はほかに奇経の4穴（${extraXi.map((x) => nm(x.code)).join("・")}）がある`}
     />
   );
 }
@@ -229,20 +241,7 @@ export function ShuMuFigure() {
       headers={["臓腑", "背部兪穴（高さ）", "募穴"]}
       widths={[60, 160, 120]}
       rowH={20}
-      rows={[
-        ["肺", "肺兪（T3）", "中府"],
-        ["心包", "厥陰兪（T4）", "膻中"],
-        ["心", "心兪（T5）", "巨闕"],
-        ["肝", "肝兪（T9）", "期門"],
-        ["胆", "胆兪（T10）", "日月"],
-        ["脾", "脾兪（T11）", "章門"],
-        ["胃", "胃兪（T12）", "中脘"],
-        ["三焦", "三焦兪（L1）", "石門"],
-        ["腎", "腎兪（L2）", "京門"],
-        ["大腸", "大腸兪（L4）", "天枢"],
-        ["小腸", "小腸兪（S1）", "関元"],
-        ["膀胱", "膀胱兪（S2）", "中極"],
-      ]}
+      rows={shuMuTable.map((r) => [r.organ, `${nm(r.shu)}（${r.level}）`, nm(r.mu)])}
       note="背部兪穴は各棘突起下縁の高さで後正中線の外方1寸5分（仙骨部は正中仙骨稜の外方1寸5分）"
     />
   );
@@ -255,10 +254,27 @@ export function HuiHeFigure() {
       cols={2}
       tileH={112}
       tiles={[
-        { head: "八会穴", sub: "組織ごとの会穴", color: purple, body: "臓会 章門／腑会 中脘／気会 膻中／血会 膈兪／筋会 陽陵泉／脈会 太淵／骨会 大杼／髄会 懸鐘（絶骨）" },
-        { head: "下合穴", sub: "六腑の病に", color: teal, body: "胃 足三里／大腸 上巨虚／小腸 下巨虚／胆 陽陵泉／膀胱 委中／三焦 委陽（いずれも足の三陽経上）" },
+        { head: "八会穴", sub: "組織ごとの会穴", color: purple, body: huiTable.map((r) => `${r.tissue}会 ${nm(r.code)}`).join("／") },
+        { head: "下合穴", sub: "六腑の病に", color: teal, body: `${lowerHeTable.map((r) => `${r.fu} ${nm(r.code)}`).join("／")}（いずれも足の三陽経上）` },
       ]}
       note="陽陵泉は胆の下合穴であり、八会穴の筋会でもある"
+    />
+  );
+}
+
+export function FiveShuTableFigure() {
+  const yin = new Set(["LU", "SP", "HT", "KI", "PC", "LR"]);
+  return (
+    <TableFigure
+      label="十二経の五兪穴"
+      headers={["経脈", ...SHU_NAMES.map((n) => `${n}穴`)]}
+      widths={[50, 58, 58, 58, 58, 58]}
+      rowH={30}
+      rows={fiveShuTable.map((r) => {
+        const els = yin.has(r.meridian) ? YIN_ELEMENTS : YANG_ELEMENTS;
+        return [meridianMap[r.meridian].organ, ...r.codes.map((c, i) => `${nm(c)}（${els[i]}）`)];
+      })}
+      note="（ ）は五行。陰経は井木から、陽経は井金から相生の順"
     />
   );
 }

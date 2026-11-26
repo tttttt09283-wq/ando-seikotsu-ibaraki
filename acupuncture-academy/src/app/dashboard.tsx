@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, BookOpen, CalendarClock, Clock, Map, Network, PlayCircle, Search, Stethoscope, Target, TrendingUp } from "lucide-react";
+import { ArrowRight, BookOpen, CalendarClock, Clock, Map, Network, PlayCircle, Search, Stethoscope, Table2, Target, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -10,6 +10,8 @@ import { chapters, chapterMap, publishedLessons, allLessons } from "@/data/curri
 import { completedCount, dueItems, mastery, nextLesson, overallAccuracy, totalStudySeconds } from "@/lib/stats";
 import { formatMinutes } from "@/lib/dates";
 import { EducationNotice } from "@/components/common/notices";
+import { UpdatedForYou } from "./updates/updated-for-you";
+import { changelog } from "@/data/changelog";
 
 const steps = ["解説", "図解", "臨床例", "小テスト", "復習"];
 
@@ -58,6 +60,8 @@ export function Dashboard() {
           </>
         )}
       </section>
+
+      <UpdatedForYou compact />
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat icon={BookOpen} label="完了した講義" value={`${done} / ${publishedLessons.length}`} sub={`全${allLessons.length}講（公開${publishedLessons.length}）`} />
@@ -130,12 +134,32 @@ export function Dashboard() {
 
       <section>
         <h2 className="mb-3 text-base font-bold text-primary">学習ツール</h2>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <UpdatedForYou compact />
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
           <Tool href="/meridians" icon={Map} title="経絡マップ" desc="十二経脈の模式図" />
           <Tool href="/points" icon={Search} title="経穴辞典" desc="検索・お気に入り" />
+          <Tool href="/key-points" icon={Table2} title="要穴一覧" desc="分類ごとの一覧表" />
           <Tool href="/eight-confluent" icon={Network} title="八脈交会穴" desc="4組のつながり" />
           <Tool href="/cases" icon={Stethoscope} title="症例演習" desc="7段階の臨床判断" />
         </div>
+      </section>
+
+      <section className="rounded-xl border bg-white p-4">
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-sm font-bold text-primary">教材の更新情報</h2>
+          <Link href="/updates" className="text-xs font-semibold text-primary underline">
+            すべて見る
+          </Link>
+        </div>
+        <ul className="space-y-1 text-sm">
+          {changelog.slice(0, 2).map((c) => (
+            <li key={c.date + c.title} className="flex gap-3">
+              <span className="w-20 shrink-0 text-xs text-muted-foreground tabular-nums">{c.date.replaceAll("-", "/")}</span>
+              <span>{c.title}</span>
+            </li>
+          ))}
+        </ul>
       </section>
 
       <EducationNotice />

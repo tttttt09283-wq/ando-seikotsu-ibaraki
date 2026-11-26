@@ -27,6 +27,8 @@ export interface Reviewed {
 
 // ---------- 経絡 ----------
 export type MeridianId = "LU" | "LI" | "ST" | "SP" | "HT" | "SI" | "BL" | "KI" | "PC" | "TE" | "GB" | "LR";
+/** 経穴が所属する経（十二経脈＋任脈・督脈＝十四経） */
+export type PointChannel = MeridianId | "CV" | "GV";
 export type ExtraVesselId = "GV" | "CV" | "TV" | "BV" | "YangLink" | "YinLink" | "YangHeel" | "YinHeel";
 export type View = "front" | "back" | "side";
 
@@ -90,7 +92,9 @@ export interface AcuPoint extends Reviewed {
   code: string; // WHO 標準コード 例: PC6
   name: string;
   reading: string;
-  meridian: MeridianId;
+  meridian: PointChannel;
+  /** full：作用・主治・局所解剖まで記載／brief：名称・部位・分類・安全のみ（詳細は準備中） */
+  detail: "full" | "brief";
   categories: { category: PointCategory; detail: string }[];
   /** 八脈交会穴で通じる奇経 */
   extraVessel?: ExtraVesselId;
@@ -123,7 +127,9 @@ export interface QuizQuestion {
 }
 
 export interface ContentBlock {
-  type: "text" | "keypoint" | "caution" | "list" | "figure" | "compare";
+  type: "text" | "keypoint" | "caution" | "list" | "figure" | "compare" | "link";
+  /** link 用の移動先 */
+  href?: string;
   title?: string;
   body?: string;
   items?: string[];

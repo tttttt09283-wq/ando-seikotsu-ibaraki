@@ -25,6 +25,7 @@ import {
   EightPrinciplesFigure,
   ExtraVesselsFigure,
   FiveShuFigure,
+  FiveShuTableFigure,
   FourExamsFigure,
   HeadacheChannelsFigure,
   HuiHeFigure,
@@ -89,6 +90,8 @@ export function FigureRenderer({ id }: { id: string }) {
       return <FingerCunFigure />;
     case "spine-landmarks":
       return <SpineLandmarksFigure />;
+    case "five-shu-table":
+      return <FiveShuTableFigure />;
     case "five-shu":
       return <FiveShuFigure />;
     case "yuan-table":

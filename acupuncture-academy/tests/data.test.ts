@@ -6,7 +6,7 @@ import { pointMap, points } from "@/data/points";
 import { cases } from "@/data/cases";
 import { confluentPairs } from "@/data/eight-confluent";
 import { sourceMap } from "@/data/sources";
-import { meridianMap } from "@/data/meridians";
+import { channelInfo } from "@/data/meridians";
 import { pointPositions, labelPlacements } from "@/components/figures/body-geometry";
 
 const renderer = readFileSync(new URL("../src/components/figures/figure-renderer.tsx", import.meta.url), "utf8");
@@ -71,10 +71,13 @@ test("小テスト：IDが一意で、正解が選択肢に含まれ、参照経
 test("経穴辞典：コード一意・経絡が存在・模式図の位置がある・出典が登録済み", () => {
   assert.equal(new Set(points.map((p) => p.code)).size, points.length);
   for (const p of points) {
-    assert.ok(meridianMap[p.meridian], p.code);
-    assert.ok(p.code.startsWith(p.meridian), `${p.code} と経絡 ${p.meridian}`);
-    assert.ok(pointPositions[p.code], `${p.code} の位置`);
-    assert.ok(p.safety.length && p.howToLocate.length && p.anatomy.length, p.code);
+    assert.ok(channelInfo[p.meridian], p.code);
+    assert.equal(p.code.replace(/\d+$/, ""), p.meridian, `${p.code} と経絡 ${p.meridian}`);
+    assert.ok(p.name && p.reading && p.location && p.safety.length, p.code);
+    if (p.detail === "full") {
+      assert.ok(pointPositions[p.code], `${p.code} の位置`);
+      assert.ok(p.howToLocate.length && p.anatomy.length && p.indications.length, p.code);
+    }
     for (const id of [...p.sourceIds, ...p.indications.flatMap((i) => i.sourceIds)]) assert.ok(sourceMap[id], `${p.code}: 出典 ${id}`);
   }
   for (const code of [...Object.keys(pointPositions), ...Object.keys(labelPlacements)]) assert.ok(pointMap[code], `位置データ ${code}`);

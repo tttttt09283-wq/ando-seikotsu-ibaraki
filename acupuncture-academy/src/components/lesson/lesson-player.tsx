@@ -15,6 +15,8 @@ import { ClinicalExampleView } from "./clinical-example";
 import { ReviewStep } from "./review-step";
 import { QuizRunner } from "@/components/quiz/quiz-runner";
 import { publishedLessons } from "@/data/curriculum";
+import { lessonRevision } from "@/data/changelog";
+import { RefreshCw } from "lucide-react";
 
 const steps: { id: LessonStepId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "explain", label: "解説", icon: BookText },
@@ -25,23 +27,47 @@ const steps: { id: LessonStepId; label: string; icon: React.ComponentType<{ clas
 ];
 
 export function LessonPlayer({ lesson, chapter }: { lesson: Lesson; chapter: Chapter }) {
-  const { state, hydrated, openLesson, setLessonStep, recordQuiz } = useLearning();
+  const { state, hydrated } = useLearning();
+  // 保存データの読み込み後に一度だけ、再開位置と「更新あり」の表示を決める
+  if (!hydrated) return <LessonPlayerInner key="loading" lesson={lesson} chapter={chapter} initialStep={0} initialNote={null} />;
+  const rev = lessonRevision(lesson.id);
+  const started = Boolean(state.lessons[lesson.id]);
+  const seen = state.seenRevisions?.[lesson.id] ?? 1;
+  return (
+    <LessonPlayerInner
+      key="ready"
+      lesson={lesson}
+      chapter={chapter}
+      initialStep={Math.min(state.lessons[lesson.id]?.stepIndex ?? 0, steps.length - 1)}
+      initialNote={started && seen < rev.revision ? rev.note : null}
+    />
+  );
+}
+
+function LessonPlayerInner({
+  lesson,
+  chapter,
+  initialStep,
+  initialNote,
+}: {
+  lesson: Lesson;
+  chapter: Chapter;
+  initialStep: number;
+  initialNote: string | null;
+}) {
+  const { state, hydrated, openLesson, setLessonStep, recordQuiz, markLessonSeen } = useLearning();
+  const rev = lessonRevision(lesson.id);
+  const [updateNote] = React.useState<string | null>(initialNote);
   useStudyTimer(true);
   const progress = state.lessons[lesson.id];
   const completed = progress?.status === "completed";
-  const [current, setCurrent] = React.useState(0);
-  const restored = React.useRef(false);
+  const [current, setCurrent] = React.useState(initialStep);
 
   React.useEffect(() => {
     if (!hydrated) return;
     openLesson(lesson.id);
-    if (!restored.current) {
-      restored.current = true;
-      const saved = state.lessons[lesson.id]?.stepIndex ?? 0;
-      setCurrent(Math.min(saved, steps.length - 1));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated, lesson.id]);
+    markLessonSeen(lesson.id, rev.revision);
+  }, [hydrated, lesson.id, rev.revision, openLesson, markLessonSeen]);
 
   const reached = Math.max(progress?.stepIndex ?? 0, current);
   const unlocked = (i: number) => completed || (i <= reached + 1 && i < 4) || (i === 4 && completed);
@@ -77,6 +103,21 @@ export function LessonPlayer({ lesson, chapter }: { lesson: Lesson; chapter: Cha
         <p className="mt-1 text-sm text-muted-foreground">
           {lesson.summary}（目安 {lesson.minutes}分）
         </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          第{rev.revision}版・{rev.updatedAt.replaceAll("-", "/")} 更新
+        </p>
+        {updateNote && (
+          <div className="mt-3 flex items-start gap-2 rounded-lg border border-primary/25 bg-accent/60 p-3 text-sm" role="status">
+            <RefreshCw className="mt-0.5 size-4 shrink-0 text-primary" />
+            <p>
+              <span className="font-semibold text-primary">前回の学習のあとに教材が更新されました。</span>
+              {updateNote}
+              <Link href="/updates" className="ml-1 text-primary underline">
+                更新情報
+              </Link>
+            </p>
+          </div>
+        )}
       </div>
 
       {/* ステップ表示 */}

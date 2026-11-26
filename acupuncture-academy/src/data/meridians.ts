@@ -1,4 +1,4 @@
-import type { ExtraVessel, ExtraVesselId, Meridian, MeridianId } from "./types";
+import type { ExtraVessel, ExtraVesselId, Meridian, MeridianId, PointChannel } from "./types";
 
 /**
  * 十二経脈（伝統理論）。流注・病候は『霊枢』経脈篇と国内教科書の記載を要約したもの。
@@ -388,3 +388,12 @@ export const extraVessels: ExtraVessel[] = [
 ];
 
 export const extraVesselMap = Object.fromEntries(extraVessels.map((v) => [v.id, v])) as Record<ExtraVesselId, ExtraVessel>;
+
+/** 十四経の表示用情報（任脈・督脈を含む） */
+export const channelInfo: Record<PointChannel, { name: string; short: string; color: string }> = {
+  ...(Object.fromEntries(meridians.map((m) => [m.id, { name: m.name, short: m.short, color: m.color }])) as Record<MeridianId, { name: string; short: string; color: string }>),
+  CV: { name: "任脈", short: "任脈", color: "#7e22ce" },
+  GV: { name: "督脈", short: "督脈", color: "#6d28d9" },
+};
+
+export const channelOrder: PointChannel[] = [...flowOrder, "CV", "GV"];

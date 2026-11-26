@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { meridianMap } from "@/data/meridians";
+import { channelInfo, meridianMap } from "@/data/meridians";
 import { pointMap } from "@/data/points";
 import type { MeridianId, View } from "@/data/types";
 import { labelPlacements, meridianPaths, mirrorPt, pointPositions, sideEar, silhouettes, smoothPath, type Pt } from "./body-geometry";
@@ -114,7 +114,7 @@ export function BodyFigure({
         const pos = pointPositions[code]?.[view];
         const p = pointMap[code];
         if (!pos || !p) return null;
-        const color = meridianMap[p.meridian].color;
+        const color = channelInfo[p.meridian].color;
         const dim = Boolean(selected && selected !== p.meridian);
         const isSel = selectedPoint === code;
         const positions = mirror ? [pos, mirrorPt(pos)] : [pos];
