@@ -274,10 +274,109 @@
     return out;
   }
 
+  // ===== Phase 2：日計表 → 月次の売上・指標 =====
+  // 日計表の「合計」行は 総売上 ＝ 保険窓口 ＋ 自費合計 ＋ 物販 ＋ 請求額（巻き爪・自賠は自費・窓口の内数）なので、この4つだけを科目にする
+  function dailyTotalToRecords(total) {
+    const t = total || {};
+    const g = (k) => num(t[k]);
+    const out = [];
+    const add = (code, v) => { if (v !== null) out.push({ code, amount: Math.round(v) }); };
+    add("R18", g("保険窓口"));
+    add("R17", g("自費合計"));
+    add("R15", g("物販"));
+    const ju = g("柔整請求額"), ha = g("鍼灸請求額");
+    if (ju !== null || ha !== null) { add("R02", ju); add("R04", ha); }
+    else add("R19", g("請求額") ?? g("請求額合計"));
+    const sum = out.reduce((a, r) => a + r.amount, 0);
+    const totalSales = g("総売上");
+    const metrics = [["new_patients", "新患数"], ["visits", "総来院数"], ["receipts", "レセ枚数"], ["revisits", "再診数"], ["cancels", "キャンセル数"]]
+      .map(([metric, col]) => ({ metric, value: g(col) })).filter((m) => m.value !== null);
+    return { records: out, metrics, totalSales, sum, matches: totalSales === null ? null : Math.round(totalSales) === sum };
+  }
+
+  // ===== Phase 2：スタッフ生産性 =====
+  // 総雇用コスト（月）＝ 支給合計（または 基本給＋手当＋交通費）＋ 会社負担社会保険料 ＋ 賞与予算月割 ＋ 福利厚生 ＋ 教育
+  function employmentCost(pay, opt) {
+    const p = pay || {};
+    const base = num(p.total_pay) !== null ? num(p.total_pay) : sumOrNull([p.base_salary, p.allowances, p.commute]);
+    if (base === null) return null;
+    const socialRate = num(opt && opt.socialRate) ?? 0;
+    const social = num(p.social_insurance) !== null ? num(p.social_insurance) : base * socialRate;
+    const bonus = num(p.bonus_budget) ?? 0;
+    return { base, social, bonus, welfare: num(p.welfare) ?? 0, education: num(p.education) ?? 0, total: base + social + bonus + (num(p.welfare) ?? 0) + (num(p.education) ?? 0), socialEstimated: num(p.social_insurance) === null };
+  }
+  function productivity({ sales, cost, workDays, workHours, treatHours, fte, required }) {
+    const s = num(sales);
+    return {
+      sales: s,
+      perDay: ratio(s, workDays), perHour: ratio(s, workHours), perTreatHour: ratio(s, treatHours), perFte: ratio(s, fte),
+      costMultiple: ratio(s, cost), requiredRate: ratio(s, required),
+    };
+  }
+
+  // ===== Phase 2：必要売上の説明文（数値は計算結果から） =====
+  function requiredSalesText(r, p) {
+    if (!r || r.error) return r && r.error ? r.error : "";
+    const man = (v) => `${Math.round(v / 1000) / 10}万円`;
+    const pay = num(p.salary) ?? num(p.totalPay);
+    return `月給${pay !== null ? man(pay) : "（未入力）"}のスタッフを雇用するためには、給与以外に社会保険料・賞与・福利厚生・教育費などが必要で、雇用にかかる費用は月${man(r.employment || 0)}です。`
+      + `さらに店舗の運営費（${man(num(p.storeFixed) || 0)}）と本部の運営費（${man(num(p.hqAllocation) || 0)}）を合わせると月${man(r.burden)}になり、`
+      + `損益が0になる売上は月${man(r.breakEven)}、会社の将来投資とスタッフ還元に必要な利益（目標営業利益率${Math.round((num(p.targetMargin) || 0) * 100)}%）まで確保するには、設定条件では月${man(r.required)}の売上が必要です。`;
+  }
+  // 必要売上の内訳（積み上げ）：給与 → 雇用維持 → 店舗運営 → 本部運営 → 変動費 → 利益
+  function requiredSalesBreakdown(r, p, cost) {
+    if (!r || r.error) return [];
+    const v = num(p.variableRate) || 0, m = num(p.targetMargin) || 0;
+    const base = cost ? cost.base : (num(p.salary) || 0);
+    return [
+      { label: "給与（支給額）", value: base },
+      { label: "雇用維持（社保・賞与・福利厚生・教育）", value: (r.employment || 0) - base },
+      { label: "店舗運営費の負担", value: num(p.storeFixed) || 0 },
+      { label: "本部運営費の負担", value: num(p.hqAllocation) || 0 },
+      { label: "変動費（材料・手数料など）", value: r.required * v },
+      { label: "会社の利益（将来投資・還元の原資）", value: r.required * m },
+    ];
+  }
+  // 無理な目標かどうか：必要時間売上 ＞ 施術可能時間1時間あたりの最大売上（単価 × 1時間の最大対応数 × 目標稼働率）
+  function feasibility({ required, treatHours, unitPrice, maxPerHour, utilization }) {
+    const perHour = ratio(required, treatHours);
+    const cap = num(unitPrice) !== null && num(maxPerHour) !== null && num(utilization) !== null ? unitPrice * maxPerHour * utilization : null;
+    const level = perHour === null || cap === null ? "unknown" : perHour > cap ? "ng" : perHour > cap * 0.9 ? "warn" : "ok";
+    return { perHour, cap, level, explain: explain(perHour, "必要時間売上 ＝ 必要売上 ÷ 施術可能時間（上限＝単価 × 1時間の最大対応数 × 目標稼働率）", { 必要売上: num(required), 施術可能時間: num(treatHours), 上限: cap }) };
+  }
+
+  // ===== Phase 2：適正人員（需要から） =====
+  // 月間需要（延べ来院）÷ 1人の適正対応数（勤務日数 × 1日最大対応数 × 目標稼働率）＝ 必要常勤換算
+  function staffingByDemand({ demand, workDays, maxPerDay, utilization, currentFte, avgCost, unitPrice }) {
+    const st = staffing({ demand, workDays, maxPerDay, utilization });
+    if (st.error) return st;
+    const cur = num(currentFte);
+    const gap = st.fte !== null && cur !== null ? cur - st.fte : null;
+    const capacity = cur !== null ? cur * st.perStaff : null;
+    const unmet = capacity !== null && num(demand) !== null ? Math.max(0, demand - capacity) : null;
+    return {
+      ...st, currentFte: cur, gap, capacity,
+      shortage: gap !== null && gap < 0 ? -gap : 0, surplus: gap !== null && gap > 0 ? gap : 0,
+      laborDelta: gap !== null && num(avgCost) !== null ? -gap * avgCost : null,           // 適正にしたときの人件費の増減（＋＝増える）
+      opportunityLoss: unmet !== null && num(unitPrice) !== null ? unmet * unitPrice : null, // 受けきれない来院 × 単価
+      unmet,
+    };
+  }
+  // 曜日ごとの必要人数（日計表の日別来院の曜日平均 ÷ 1人1日の適正対応数）
+  function weekdayNeeds(days, perStaffDay) {
+    const by = Array.from({ length: 7 }, () => []);
+    for (const d of days || []) { const v = num(d.visits); if (v === null || !v) continue; by[new Date(`${d.date}T00:00:00Z`).getUTCDay()].push(v); }
+    return by.map((xs, wd) => {
+      const avg = xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null;
+      return { wd, days: xs.length, avg, need: avg !== null && num(perStaffDay) ? avg / perStaffDay : null };
+    });
+  }
+
   root.EHMS = {
     CALC_VERSION, SECTIONS, SECTION_LABELS, num, sumOrNull, ratio, explain,
     fiscalYearOf, fiscalMonths, shiftMonth,
     pl, plFromRecords, amountsByAccount, variance, aggregate, periodSums, landing, allocate,
     requiredSales, raiseImpact, breakEven, staffing, alerts,
+    dailyTotalToRecords, employmentCost, productivity, requiredSalesText, requiredSalesBreakdown, feasibility, staffingByDemand, weekdayNeeds,
   };
 })(typeof window !== "undefined" ? window : globalThis);
