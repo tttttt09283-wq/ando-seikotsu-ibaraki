@@ -154,7 +154,7 @@ function secEhmsStaff() {
   const e = eh(), u = ehUi(), set = ehStaffSet();
   if (e.canSeePay && S.salaryViewer === true && !S.wage && !S.wageErr && typeof loadWage === "function") setTimeout(() => loadWage(false), 0);
   const filter = u.staffStore || "";
-  const mult = 3;
+  const mult = ehPolicy().multiple; // 会社の目安：売上＝人件費×3
   const list = e.employees.filter((x) => (u.showInactive || x.active) && (!filter || x.store_id === filter || (filter === "none" && !x.store_id)));
   const orgTab = S.fit && S.fit !== "loading" && S.fit.org ? HQ.orgTabForMonth(S.fit.org, thisMonth).tab : null;
   const rows = list.map((x) => {
@@ -177,7 +177,7 @@ function secEhmsStaff() {
       <label class="small"><input type="checkbox" ${u.showInactive ? "checked" : ""} onchange="eh().ui.showInactive=this.checked;render()"/> 退職者も表示</label>
       ${ed && orgTab ? `<button class="btn btn-gray btn-sm" onclick="ehFillFromOrg()">組織図から院・役職を反映</button>` : ""}
       ${ed ? `<button class="btn btn-blue btn-sm" onclick="ehAddEmployee()">＋ スタッフを追加</button>` : ""}</span></div><div class="card-b scroll"><table>
-    <tr><th class="l">氏名</th><th class="l">院</th><th class="l">役職</th><th class="l">雇用形態</th><th>常勤換算</th><th>直接売上</th>${e.canSeePay ? "<th>月給（支給合計）</th><th>雇用コスト（月）</th>" : ""}<th>個人売上（月平均）</th><th>出勤日数</th><th>1日あたり売上</th><th>1時間あたり売上</th>${e.canSeePay ? "<th>人件費倍率</th><th>必要売上</th>" : ""}<th>必要売上の達成率</th><th class="l">判定</th></tr>
+    <tr><th class="l">氏名</th><th class="l">院</th><th class="l">役職</th><th class="l">雇用形態</th><th>常勤換算</th><th>直接売上</th>${e.canSeePay ? "<th>月給（支給合計）</th><th>雇用コスト（月）</th>" : ""}<th>個人売上（月平均）</th><th>出勤日数</th><th>1日あたり売上</th><th>1時間あたり売上</th>${e.canSeePay ? "<th>人件費倍率</th><th>売上の目安（人件費×${mult}）</th><th>必要売上</th>" : ""}<th>必要売上の達成率</th><th class="l">判定</th></tr>
     ${rows.map((r) => { const v = verdict(r); const x = r.x; return `<tr${x.active ? "" : ' style="opacity:.5;"'}><td class="l"><b>${esc(x.name)}</b>${ed ? `<div><a href="javascript:void(0)" class="small" onclick="ehPatchEmp('${x.id}',{active:${!x.active}})">${x.active ? "退職にする" : "在籍に戻す"}</a></div>` : ""}</td>
       <td class="l">${storeSel(x)}</td>
       <td class="l">${ed ? `<input style="width:96px;" value="${esc(x.position || "")}" placeholder="${esc(r.org ? r.org.role : "役職")}" onchange="ehPatchEmp('${x.id}',{position:this.value||null})"/>` : esc(x.position || (r.org ? r.org.role : "-"))}</td>
@@ -187,9 +187,9 @@ function secEhmsStaff() {
       ${e.canSeePay ? `<td>${ed ? `<input class="num" style="width:96px;" value="${r.pay && r.pay.total_pay !== null ? r.pay.total_pay : ""}" placeholder="未入力" onchange="ehSavePay('${x.id}',this.value)"/>` : ehYen(r.pay && r.pay.total_pay)}${r.pay ? `<div class="small">${esc(r.pay.effective_from)}〜</div>` : ""}</td><td>${r.cost ? man(r.cost.total) : "-"}${r.cost && r.cost.socialEstimated ? `<div class="small">社保は${Math.round(ehNum(set.social_rate, 0.155) * 1000) / 10}%で見込み</div>` : ""}</td>` : ""}
       <td>${ehMan(r.ps.sales)}${r.ps.months ? `<div class="small">${r.ps.months}か月</div>` : ""}</td><td>${r.work && r.work.days !== null ? `${r.work.days}日` : x.monthly_work_days ? `${x.monthly_work_days}日` : "-"}</td>
       <td>${r.prod.perDay !== null ? yen(r.prod.perDay) : "-"}</td><td>${r.prod.perHour !== null ? yen(r.prod.perHour) : "-"}</td>
-      ${e.canSeePay ? `<td>${r.prod.costMultiple !== null ? `${(Math.round(r.prod.costMultiple * 10) / 10).toFixed(1)}倍` : "-"}</td><td>${r.req && !r.req.error ? `<a href="javascript:void(0)" onclick="eh().ui.reqEmp='${x.id}';go('ehms_required')">${man(r.req.required)}</a>` : "-"}</td>` : ""}
+      ${e.canSeePay ? `<td>${r.prod.costMultiple !== null ? `${(Math.round(r.prod.costMultiple * 10) / 10).toFixed(1)}倍` : "-"}</td><td>${r.cost ? `${man(r.cost.total * mult)}${r.ps.sales ? `<div class="small ${r.ps.sales >= r.cost.total * mult ? "ok" : "ng"}">達成率 ${pct(r.ps.sales / (r.cost.total * mult), 0)}</div>` : ""}` : "-"}</td><td>${r.req && !r.req.error ? `<a href="javascript:void(0)" onclick="eh().ui.reqEmp='${x.id}';go('ehms_required')">${man(r.req.required)}</a>` : "-"}</td>` : ""}
       <td>${ehPct(r.prod.requiredRate)}</td><td class="l"><span class="vtag ${v.cls}">${esc(v.label)}</span></td></tr>`; }).join("")}
-  </table><div class="small" style="margin-top:6px;">個人売上：台帳（進捗売上実績の「個人」）の直近3か月平均。出勤日数・勤務時間：賃金管理表の最新月（給与を見る権限のある人だけ）。必要売上：その人の雇用コスト＋院の固定費（人件費を除く）と本部経費の配賦を院の常勤換算で割った額から、目標営業利益率で計算（金額を押すと根拠シミュレーターへ）。給与を変えると、今月1日から適用する新しい記録を作ります（過去の記録は変えません）。</div></div></div>`;
+  </table><div class="small" style="margin-top:6px;">個人売上：台帳（進捗売上実績の「個人」）の直近3か月平均。出勤日数・勤務時間：賃金管理表の最新月（給与を見る権限のある人だけ）。必要売上：その人の雇用コスト＋院の固定費（人件費を除く）と本部経費の配賦を院の常勤換算で割った額から、目標営業利益率で計算（金額を押すと根拠シミュレーターへ）。売上の目安：会社の方針「人件費の3倍」（雇用コスト×倍率。倍率は「💰 人件費枠・賞与原資」で設定）。給与を変えると、今月1日から適用する新しい記録を作ります（過去の記録は変えません）。</div></div></div>`;
   return head + ehBar({ scope: false }) + table;
 }
 async function ehPatchEmp(id, body) {
@@ -359,4 +359,132 @@ function secEhmsStaffing() {
     ${rows.map(({ s, wk }) => `<tr><td class="l"><b>${esc(s.name)}</b></td>${[1, 2, 3, 4, 5, 6, 0].map((w) => { const x = wk[w]; if (!x.avg) return `<td style="text-align:center;" class="muted">-</td>`; const lvl = x.need >= 5 ? 4 : x.need >= 4 ? 3 : x.need >= 3 ? 2 : x.need >= 2 ? 1 : 0; const bg = ["#eaf2fd", "#cfe1f8", "#a9c9f1", "#7eaee8", "#4f8fdc"][lvl]; return `<td style="padding:3px;"><div title="平均来院 ${Math.round(x.avg)}人（${x.days}日）" style="background:${bg};border-radius:6px;text-align:center;padding:5px 2px;font-weight:800;color:${lvl >= 3 ? "#fff" : "#142D3C"};">${(Math.round(x.need * 10) / 10).toFixed(1)}人<div style="font-size:10px;font-weight:600;">来院${Math.round(x.avg)}</div></div></td>`; }).join("")}</tr>`).join("")}
   </table><div class="small" style="margin-top:6px;">読み込んだ日計表の月の日別データから出しています（時間帯別は日計表に時間のデータがないため、まだ出せません）。</div></div></div>`;
   return head + ehBar({ scope: false }) + ctl + table + heat + (typeof secFit === "function" ? secFit() : "");
+}
+
+// ===== 5. 人件費枠・賞与原資（目安＝人件費×3／枠＝売上×42%／余り＝賞与原資・新店舗の担保） =====
+// 人件費枠の率は「目標人件費率」（targets.labor_ratio）と同じ値を使う（設定を二重に持たない）
+const ehPolicy = () => {
+  const p = eh().settings.labor_policy || {};
+  return { cap: ehNum(ehTargets().labor_ratio, 0.42), multiple: ehNum(p.multiple, 3), bonusShare: ehNum(p.bonus_share, 0.5) };
+};
+// 月ごとの売上・人件費（全社）。EHMS の月次PLに売上と人件費の両方があればそれを、無ければ台帳（月次推移の支給合計）を使う
+function ehLaborMonths() {
+  const months = ehMonths();
+  const A = ehYearPls(EH_ALL, "actual", false);
+  const led = S.model && S.model.company ? S.model.company.flatMap((h) => h.months || []) : [];
+  return months.map((mk, i) => {
+    const p = A[i];
+    if (p && p.revenue !== null && p.labor !== null && p.revenue > 0) return { mk, sales: p.revenue, labor: p.labor, src: "EHMS" };
+    if (S.model && S.model.fiscalYear !== undefined) {
+      const m = led.find((x) => HQ.monthKeyInFiscal(S.model.fiscalYear, x.month) === mk);
+      if (m && m.sales) return { mk, sales: m.sales, labor: m.labor, src: m.laborEstimated ? "台帳（推定）" : "台帳" };
+    }
+    return { mk, sales: null, labor: null, src: null };
+  });
+}
+// 院ごと（年度の実績がある月の合計）。EHMS → 台帳（固定人件費×月数）の順
+function ehLaborStores(pol) {
+  const months = ehMonths();
+  return ehActiveStores().map((s) => {
+    const A = ehYearPls(s.id, "actual", false).filter((p) => p && p.revenue !== null && p.labor !== null);
+    if (A.length) return { name: s.name, n: A.length, src: "EHMS", ...EHMS.laborPolicy({ sales: A.reduce((a, p) => a + p.revenue, 0), labor: A.reduce((a, p) => a + p.labor, 0), ...pol }) };
+    const c = S.model && (S.model.clinics || []).find((x) => x.name === s.name || (s.aliases || []).includes(x.name));
+    if (!c || c.fixedLabor === undefined || c.fixedLabor === null) return { name: s.name, n: 0, src: null, ...EHMS.laborPolicy({ sales: null, labor: null, ...pol }) };
+    const ms = c.months.filter((m) => m.actual && months.includes(HQ.monthKeyInFiscal(S.model.fiscalYear, m.month)));
+    return { name: s.name, n: ms.length, src: "台帳（固定人件費×月数）", ...EHMS.laborPolicy({ sales: ms.length ? ms.reduce((a, m) => a + m.actual, 0) : null, labor: ms.length ? c.fixedLabor * ms.length : null, ...pol }) };
+  });
+}
+function secEhmsPool() {
+  const head = ehHead("💰", "人件費枠・賞与原資", "会社の方針は「売上の目安は人件費の3倍」「売上が上がっても人件費は売上の42%で組む」。実際の人件費が42%の枠を下回った分が<b>枠の余り</b>で、<b>賞与原資</b>と<b>新店舗の担保</b>になります。欲しい賞与原資から、必要な売上も逆算できます。");
+  const g = ehGuard(); if (g) return head + g;
+  const e = eh(), u = ehUi(), pol = ehPolicy(), set = ehStaffSet();
+  if (!["owner", "gm", "accounting"].includes(e.role)) return head + `<div class="err">全社の人件費と賞与原資は、社長・GM・経理のアカウントだけで表示します。</div>`;
+  if (!S.model && !S.modelErr) return head + `<div class="center">台帳を読み込み中...</div>`;
+  e.explains = {};
+  const rows = ehLaborMonths();
+  const done = rows.filter((r) => r.sales !== null && r.labor !== null);
+  const sum = (k) => (done.length ? done.reduce((a, r) => a + r[k], 0) : null);
+  const ytd = EHMS.laborPolicy({ sales: sum("sales"), labor: sum("labor"), ...pol });
+  const n = done.length;
+  // 今のペースが続いたときの年間（実績月の平均 × 12）
+  const year = n ? EHMS.laborPolicy({ sales: ytd.sales / n * 12, labor: ytd.labor / n * 12, ...pol }) : EHMS.laborPolicy({ sales: null, labor: null, ...pol });
+  const ed = ehCan.settings();
+  const policyBar = `<div class="card" style="border-top:3px solid #C5A46D;"><div class="card-b"><div class="ctl">
+    <div><label>人件費枠（売上に対する%）</label><input class="num" style="width:80px;" ${ed ? "" : "disabled"} value="${Math.round(pol.cap * 1000) / 10}" onchange="ehSaveSetting('targets','labor_ratio',this.value===''?null:Number(this.value)/100)"/></div>
+    <div><label>売上の目安（人件費の◯倍）</label><input class="num" style="width:70px;" ${ed ? "" : "disabled"} value="${pol.multiple}" onchange="ehSaveSetting('labor_policy','multiple',this.value===''?null:Number(this.value))"/></div>
+    <div><label>余りのうち賞与原資に回す割合（%）</label><input class="num" style="width:80px;" ${ed ? "" : "disabled"} value="${Math.round(pol.bonusShare * 100)}" onchange="ehSaveSetting('labor_policy','bonus_share',this.value===''?null:Math.max(0,Math.min(100,Number(this.value)))/100)"/></div>
+    <div class="small" style="max-width:420px;">残り ${Math.round((1 - pol.bonusShare) * 100)}% が新店舗の担保（内部留保）。目安どおり（人件費×${pol.multiple}）なら人件費率は ${(100 / pol.multiple).toFixed(1)}% で、枠の ${Math.round(pol.cap * 1000) / 10}% との差 ${(pol.cap * 100 - 100 / pol.multiple).toFixed(1)}pt が売上に対する余りになります。${ed ? "" : "（変更は社長のアカウントだけ）"}</div>
+  </div></div></div>`;
+  const cls = (v) => (v === null ? "" : v < 0 ? "ng" : "ok");
+  const tiles = `<div class="grid g4" style="margin-bottom:12px;">
+    ${ehTile("lp_sales", `年度累計の売上（${n}か月）`, ehMan(ytd.sales), `目安（人件費×${pol.multiple}）${ehMan(ytd.guideSales)}`)}
+    ${ehTile("lp_labor", "年度累計の人件費（社保込）", ehMan(ytd.labor), `人件費率 <b class="${ytd.ratio !== null && ytd.ratio > pol.cap ? "ng" : "ok"}">${ehPct(ytd.ratio)}</b>`)}
+    ${ehTile("lp_cap", `人件費枠（売上×${Math.round(pol.cap * 1000) / 10}%）`, ehMan(ytd.capAmount), "この金額までは人件費に使ってよい")}
+    ${ehTile("lp_pool", "枠の余り", `<span class="${cls(ytd.pool)}">${ytd.pool === null ? "未入力" : `${ytd.pool < 0 ? "−" : ""}${man(Math.abs(ytd.pool))}`}</span>`, ytd.over ? "枠を超えています" : "枠 − 実際の人件費", ytd.explain, ytd.over ? "ng" : "")}
+    ${ehTile("lp_bonus", "うち賞与原資", `<span style="color:#7a5a1e;">${ehMan(ytd.bonusPool)}</span>`, `余りの ${Math.round(pol.bonusShare * 100)}%`)}
+    ${ehTile("lp_reserve", "うち新店舗の担保", `<span style="color:#142D3C;">${ehMan(ytd.reservePool)}</span>`, `余りの ${Math.round((1 - pol.bonusShare) * 100)}%`)}
+    ${ehTile("lp_guide", `目安（人件費×${pol.multiple}）の達成率`, `<span class="${ytd.guideRate === null ? "" : ytd.guideRate >= 1 ? "ok" : "ng"}">${ehPct(ytd.guideRate)}</span>`, ytd.guideGap === null ? "" : `目安まで ${ytd.guideGap >= 0 ? "到達済み" : `あと ${man(-ytd.guideGap)}`}・達成なら余り ${ehMan(ytd.poolAtGuide)}`, ytd.explainGuide)}
+    ${ehTile("lp_year", "今のペースで年間の余り", `<span class="${cls(year.pool)}">${year.pool === null ? "未入力" : `${year.pool < 0 ? "−" : ""}${man(Math.abs(year.pool))}`}</span>`, year.pool === null ? "" : `賞与原資 ${man(year.bonusPool)}・担保 ${man(year.reservePool)}`, n ? EHMS.explain(year.pool, "年間の余り ＝（実績月の平均売上 × 12）× 枠 −（実績月の平均人件費 × 12）", { 実績月数: n, 平均売上: ytd.sales / n, 平均人件費: ytd.labor / n, 枠: pol.cap }) : null)}
+  </div>`;
+  const mrows = rows.map((r) => ({ r, p: EHMS.laborPolicy({ sales: r.sales, labor: r.labor, ...pol }) }));
+  const monthly = `<div class="card"><div class="card-h">月別：売上・人件費・42%枠・余り（全社）</div><div class="card-b scroll"><table>
+    <tr><th class="l">月</th><th>売上</th><th>人件費（社保込）</th><th>人件費率</th><th>枠（${Math.round(pol.cap * 1000) / 10}%）</th><th>枠の余り</th><th>賞与原資</th><th>新店舗の担保</th><th>目安（×${pol.multiple}）</th><th>目安の達成率</th><th class="l">元データ</th></tr>
+    ${mrows.map(({ r, p }) => `<tr><td class="l">${monthLabel(r.mk)}</td><td>${p.sales === null ? '<span class="muted">-</span>' : man(p.sales)}</td><td>${p.labor === null ? "-" : man(p.labor)}</td><td class="${p.ratio !== null && p.ratio > pol.cap ? "ng" : ""}">${p.ratio === null ? "-" : pct(p.ratio, 1)}</td><td>${p.capAmount === null ? "-" : man(p.capAmount)}</td>
+      <td class="${cls(p.pool)}"><b>${p.pool === null ? "-" : `${p.pool < 0 ? "−" : ""}${man(Math.abs(p.pool))}`}</b></td><td>${p.bonusPool === null ? "-" : man(p.bonusPool)}</td><td>${p.reservePool === null ? "-" : man(p.reservePool)}</td><td>${p.guideSales === null ? "-" : man(p.guideSales)}</td><td>${p.guideRate === null ? "-" : pct(p.guideRate, 1)}</td><td class="l small">${esc(r.src || "")}</td></tr>`).join("")}
+    <tr class="total"><td class="l">累計</td><td>${ehMan(ytd.sales)}</td><td>${ehMan(ytd.labor)}</td><td>${ehPct(ytd.ratio)}</td><td>${ehMan(ytd.capAmount)}</td><td class="${cls(ytd.pool)}">${ytd.pool === null ? "-" : `${ytd.pool < 0 ? "−" : ""}${man(Math.abs(ytd.pool))}`}</td><td>${ehMan(ytd.bonusPool)}</td><td>${ehMan(ytd.reservePool)}</td><td>${ehMan(ytd.guideSales)}</td><td>${ehPct(ytd.guideRate)}</td><td></td></tr></table>
+    <div style="margin-top:10px;">${ehBars(mrows.filter(({ p }) => p.pool !== null).map(({ r, p }) => ({ label: `${Number(r.mk.slice(5))}月`, value: p.pool, sub: `率 ${pct(p.ratio, 1)}` })), (v) => `${v < 0 ? "−" : ""}${man(Math.abs(v))}`)}</div>
+    <div class="small" style="margin-top:6px;">累計の人件費率は月の率の平均ではなく、累計の人件費 ÷ 累計の売上。枠を超えた月はマイナスのまま累計に入れています（よい月の余りで悪い月を埋める考え方）。元データ：EHMS の月次PLに売上と人件費（人件費の科目）が両方あればそれを、無ければキャリア制度台帳の「月次推移ダッシュボード」の支給合計×（1＋社保率）を使います（支給合計が無い月は各院の固定人件費の合計で推定）。</div></div></div>`;
+  const st = ehLaborStores(pol);
+  const stores = `<div class="card"><div class="card-h">院別：枠の余り（年度の実績月の合計）</div><div class="card-b scroll"><table>
+    <tr><th class="l">院</th><th>月数</th><th>売上</th><th>人件費</th><th>人件費率</th><th>枠の余り</th><th>目安（×${pol.multiple}）の達成率</th><th class="l">元データ</th></tr>
+    ${st.map((s) => `<tr><td class="l"><b>${esc(s.name)}</b></td><td>${s.n || "-"}</td><td>${ehMan(s.sales)}</td><td>${ehMan(s.labor)}</td><td class="${s.ratio !== null && s.ratio > pol.cap ? "ng" : ""}">${ehPct(s.ratio)}</td><td class="${cls(s.pool)}"><b>${s.pool === null ? "-" : `${s.pool < 0 ? "−" : ""}${man(Math.abs(s.pool))}`}</b></td><td>${ehPct(s.guideRate)}</td><td class="l small">${esc(s.src || "データなし")}</td></tr>`).join("")}</table>
+    <div class="small" style="margin-top:6px;">院ごとの余りは、どの院が賞与原資・担保を生んでいるかを見るためのものです（本部経費は含みません）。台帳の院別人件費は固定人件費の見込みのため、全社の実際の人件費とは合計が一致しないことがあります。</div></div></div>`;
+  // ===== シミュレーター：欲しい賞与原資 → 必要売上 =====
+  const avgS = n ? ytd.sales / n : null, avgL = n ? ytd.labor / n : null;
+  const defMonths = 12;
+  const key = `${u.fy}|${n}`;
+  const si = u.poolSim && u.poolSim.__key === key ? u.poolSim : (u.poolSim = { __key: key, bonus: 3000000, months: defMonths, labor: avgL === null ? "" : Math.round(avgL * defMonths), current: avgS === null ? "" : Math.round(avgS * defMonths), growth: 0, social: Math.round(ehNum(set.social_rate, 0.155) * 1000) / 10 });
+  const f = (k, label, unit, hint) => `<div><label>${esc(label)}${unit ? `（${unit}）` : ""}</label><input class="num" style="width:100%;" value="${si[k] ?? ""}" onchange="ehPoolSim('${k}',this.value)"/>${hint ? `<div class="small">${esc(hint)}</div>` : ""}</div>`;
+  const P = { bonus: ehNum(si.bonus, null), labor: ehNum(si.labor, null), cap: pol.cap, bonusShare: pol.bonusShare, socialRate: ehNum(si.social, 0) / 100, months: ehNum(si.months, 12), currentSales: si.current === "" ? null : ehNum(si.current, null), laborGrowth: ehNum(si.growth, 0) / 100 };
+  const r = EHMS.bonusTarget(P);
+  const nm = P.months || 12;
+  const simIn = `<div class="form">
+    ${f("bonus", "欲しい賞与原資（期間の合計・支給額）", "円")}${f("months", "期間", "か月", "12＝年間、6＝半期")}
+    ${f("labor", "期間の人件費（社保込・賞与を除く）", "円", avgL === null ? "実績がないため手入力" : `初期値：実績の月平均 ${man(avgL)} × 期間`)}
+    ${f("current", "今のペースの売上（期間）", "円", avgS === null ? "" : `初期値：実績の月平均 ${man(avgS)} × 期間`)}
+    ${f("social", "賞与にかかる会社の社保率", "%")}${f("growth", "売上が増えたとき人件費が増える割合", "%", "0＝今の人員のまま。歩合・増員がある場合は入れる（例：歩合10%なら10）")}
+  </div><div style="margin-top:8px;"><button class="btn btn-gray btn-sm" onclick="eh().ui.poolSim=null;render()">初期値に戻す</button></div>`;
+  let simOut = "";
+  if (r.error) simOut = `<div class="err">${esc(r.error)}</div>`;
+  else {
+    const guide = P.labor !== null ? P.labor * pol.multiple : null;
+    simOut = `<div class="grid g4" style="margin:12px 0;">
+      ${ehTile("bs_pool", "必要な枠の余り", man(r.poolNeeded), `賞与 ${man(P.bonus)}＋社保 ${man(r.bonusCost - P.bonus)} を ${Math.round(pol.bonusShare * 100)}% で割る`)}
+      ${ehTile("bs_req", `必要売上（${nm}か月）`, `<span style="color:#142D3C;">${man(r.required)}</span>`, `月あたり <b>${man(r.perMonth)}</b>`, r.explain)}
+      ${ehTile("bs_gap", "今のペースとの差", r.extra === null ? "-" : `<span class="${r.extra > 0 ? "ng" : "ok"}">${r.extra > 0 ? "+" : "−"}${man(Math.abs(r.extra))}</span>`, r.extra === null ? "今の売上が未入力" : r.extra > 0 ? `月あたり +${man(r.extraPerMonth)}（${pct(r.growth, 1)}増）` : "今のペースで届きます", null, r.extra !== null && r.extra > 0 ? "ng" : "ok")}
+      ${ehTile("bs_ratio", "その売上での人件費率", ehPct(r.ratioAt), `人件費 ${man(r.laborAt)}（賞与を除く）`)}
+      ${ehTile("bs_reserve", "同時に貯まる新店舗の担保", man(r.reserve), `余りの ${Math.round((1 - pol.bonusShare) * 100)}%`)}
+      ${ehTile("bs_guide", `目安（人件費×${pol.multiple}）との比較`, guide === null ? "-" : man(guide), guide === null ? "" : r.required <= guide ? `目安を達成すれば届きます（目安での余り ${man(guide * pol.cap - P.labor)}）` : `目安より ${man(r.required - guide)} 多く必要`)}
+    </div>
+    <div class="card" style="background:#fffaf0;border-color:#C5A46D;"><div class="card-b" style="line-height:1.9;">${esc(`賞与原資を${man(P.bonus)}確保するには、会社負担の社保を含めて${man(r.bonusCost)}が必要です。枠の余りのうち賞与に回すのは${Math.round(pol.bonusShare * 100)}%なので、枠の余りは${man(r.poolNeeded)}必要になり、残りの${man(r.reserve)}は新店舗の担保として残ります。${nm}か月の人件費${man(P.labor)}${P.laborGrowth ? `（売上が増えた分の${Math.round(P.laborGrowth * 1000) / 10}%が人件費に乗る前提）` : ""}に対して、人件費を売上の${Math.round(pol.cap * 1000) / 10}%に収めながらこの余りを出すには、${nm}か月で${man(r.required)}（月${man(r.perMonth)}）の売上が必要です。${r.extra === null ? "" : r.extra > 0 ? `今のペースより月${man(r.extraPerMonth)}（${pct(r.growth, 1)}）多く売り上げる必要があります。` : "今のペースで届きます。"}`)}</div></div>`;
+    const presets = [1000000, 2000000, 3000000, 5000000, 10000000, 20000000];
+    const pr = presets.map((b) => ({ b, x: EHMS.bonusTarget({ ...P, bonus: b }) }));
+    simOut += `<div style="margin-top:12px;font-weight:800;font-size:13px;color:#1e3a5f;">早見表（同じ条件で賞与原資を変えた場合）</div><table>
+      <tr><th class="l">賞与原資</th><th>必要な枠の余り</th><th>必要売上（${nm}か月）</th><th>月あたり</th><th>今のペースとの差（月）</th><th>人件費率</th></tr>
+      ${pr.map(({ b, x }) => `<tr><td class="l"><a href="javascript:void(0)" onclick="ehPoolSim('bonus',${b})">${man(b)}</a></td><td>${x.error ? "-" : man(x.poolNeeded)}</td><td>${x.error ? "-" : man(x.required)}</td><td><b>${x.error ? "-" : man(x.perMonth)}</b></td><td class="${!x.error && x.extraPerMonth > 0 ? "ng" : "ok"}">${x.error || x.extraPerMonth === null ? "-" : `${x.extraPerMonth > 0 ? "+" : "−"}${man(Math.abs(x.extraPerMonth))}`}</td><td>${x.error ? "-" : pct(x.ratioAt, 1)}</td></tr>`).join("")}</table>`;
+  }
+  const sim = `<div class="card" style="border-top:3px solid #142D3C;"><div class="card-h">🎁 シミュレーター：賞与原資をいくら欲しいか → 必要な売上</div><div class="card-b">${simIn}${simOut}
+    <div class="small" style="margin-top:8px;">計算：必要な枠の余り ＝ 賞与 ×（1＋社保率）÷ 賞与に回す割合。必要売上 ＝（期間の人件費 ＋ 必要な枠の余り）÷ 人件費枠（売上連動の人件費がある場合はその分を差し引いて計算）。シミュレーションは画面の中だけで、実績・予算は書き換えません。</div></div></div>`;
+  return head + ehBar({ scope: false }) + policyBar + tiles + sim + monthly + stores;
+}
+function ehPoolSim(k, raw) {
+  const u = ehUi();
+  const v = raw === "" ? "" : Number(String(raw).replace(/[,，¥円%\s]/g, ""));
+  u.poolSim[k] = v === "" || isFinite(v) ? v : u.poolSim[k];
+  // 期間を変えたら、月平均から人件費・今の売上を引き直す
+  if (k === "months" && isFinite(v) && v > 0) {
+    const done = ehLaborMonths().filter((r) => r.sales !== null && r.labor !== null);
+    if (done.length) { u.poolSim.labor = Math.round(done.reduce((a, r) => a + r.labor, 0) / done.length * v); u.poolSim.current = Math.round(done.reduce((a, r) => a + r.sales, 0) / done.length * v); }
+  }
+  render();
 }

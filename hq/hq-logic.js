@@ -20,6 +20,7 @@
     { id: "ehms_year", label: "年間PL・推移・着地", icon: "📊" },
     { id: "ehms_staff", label: "スタッフ・生産性", icon: "👤" },
     { id: "ehms_required", label: "必要売上シミュレーター", icon: "🎯" },
+    { id: "ehms_pool", label: "人件費枠・賞与原資", icon: "💰" },
     { id: "fit", label: "適正人員配置", icon: "⚖️" },
     { id: "ehms_io", label: "データ入出力", icon: "🔁" },
     { id: "ehms_master", label: "マスター設定", icon: "⚙" },

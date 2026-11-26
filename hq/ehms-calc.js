@@ -372,11 +372,56 @@
     });
   }
 
+  // ===== 人件費の方針：目安（人件費×3）・42%枠・枠の余り（賞与原資・新店舗の担保） =====
+  // 会社の方針：売上が上がっても人件費は売上の42%（cap）で組む。実際の人件費が枠を下回った分が「枠の余り」で、
+  // 賞与原資（bonusShare）と新店舗の担保（残り）に分ける。売上の目安は人件費×3（multiple）＝人件費率33.3%。
+  function laborPolicy({ sales, labor, cap, multiple, bonusShare }) {
+    const S = num(sales), L = num(labor), c = num(cap) ?? 0.42, k = num(multiple) ?? 3, b = Math.max(0, Math.min(1, num(bonusShare) ?? 0.5));
+    const capAmount = S === null ? null : S * c;
+    const pool = capAmount === null || L === null ? null : capAmount - L;
+    const pos = pool === null ? null : Math.max(0, pool);
+    const guideSales = L === null ? null : L * k;
+    return {
+      sales: S, labor: L, cap: c, multiple: k, bonusShare: b,
+      ratio: ratio(L, S), capAmount, pool, over: pool !== null && pool < 0,
+      bonusPool: pos === null ? null : pos * b, reservePool: pos === null ? null : pos * (1 - b),
+      guideSales, guideRate: ratio(S, guideSales), guideGap: S === null || guideSales === null ? null : S - guideSales,
+      // 目安（×3）を達成したときの枠の余り ＝ 目安売上 × 42% − 人件費
+      poolAtGuide: guideSales === null ? null : guideSales * c - L,
+      explain: explain(pool, "枠の余り ＝ 売上 × 人件費枠（42%）− 実際の人件費", { 売上: S, 人件費枠: c, 実際の人件費: L }, "余りがマイナスのときは枠を超えています（賞与原資・担保はゼロ）"),
+      explainGuide: explain(guideSales, `売上の目安 ＝ 人件費 × ${k}`, { 人件費: L, 倍率: k }, `目安どおりなら人件費率は ${(100 / k).toFixed(1)}%`),
+    };
+  }
+
+  // 欲しい賞与原資から必要売上を逆算する
+  //   必要な枠の余り ＝ 賞与 ×（1＋社保率）÷ 賞与に回す割合
+  //   必要売上 ＝（期間の人件費 ＋ 必要な枠の余り − 連動率×今の売上）÷（人件費枠 − 連動率）
+  //   連動率（laborGrowth）：売上が1円増えたときに増える人件費（0 ＝ 今の人員のまま）
+  function bonusTarget({ bonus, labor, cap, bonusShare, socialRate, months, currentSales, laborGrowth }) {
+    const B = num(bonus), L = num(labor), c = num(cap) ?? 0.42, sh = num(bonusShare) ?? 0.5, sr = num(socialRate) ?? 0, n = num(months) || 1, g = num(laborGrowth) || 0;
+    const cur = num(currentSales);
+    if (B === null || L === null) return { error: "欲しい賞与原資と期間の人件費を入れてください" };
+    if (!(sh > 0)) return { error: "賞与に回す割合が0%のため計算できません" };
+    const denom = c - g;
+    if (denom <= 0) return { error: "売上に連動して増える人件費の割合が人件費枠以上のため、売上を増やしても余りが増えません" };
+    const poolNeeded = (B * (1 + sr)) / sh;
+    const base = cur === null ? 0 : cur;
+    const required = (poolNeeded + L - g * base) / denom;
+    const laborAt = L + g * (required - base);
+    return {
+      poolNeeded, bonusCost: B * (1 + sr), reserve: poolNeeded - B * (1 + sr), required, perMonth: required / n, laborAt, ratioAt: ratio(laborAt, required),
+      extra: cur === null ? null : required - cur, extraPerMonth: cur === null ? null : (required - cur) / n, growth: cur ? required / cur - 1 : null,
+      explain: explain(required, "必要売上 ＝（期間の人件費 ＋ 必要な枠の余り − 連動率 × 今の売上）÷（人件費枠 − 連動率）　／　必要な枠の余り ＝ 賞与 ×（1＋社保率）÷ 賞与に回す割合",
+        { 欲しい賞与原資: B, 社保率: sr, 賞与に回す割合: sh, 必要な枠の余り: poolNeeded, 期間の人件費: L, 人件費枠: c, 連動率: g, 今の売上: cur }),
+    };
+  }
+
   root.EHMS = {
     CALC_VERSION, SECTIONS, SECTION_LABELS, num, sumOrNull, ratio, explain,
     fiscalYearOf, fiscalMonths, shiftMonth,
     pl, plFromRecords, amountsByAccount, variance, aggregate, periodSums, landing, allocate,
     requiredSales, raiseImpact, breakEven, staffing, alerts,
     dailyTotalToRecords, employmentCost, productivity, requiredSalesText, requiredSalesBreakdown, feasibility, staffingByDemand, weekdayNeeds,
+    laborPolicy, bonusTarget,
   };
 })(typeof window !== "undefined" ? window : globalThis);

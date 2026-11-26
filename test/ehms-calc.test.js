@@ -182,3 +182,43 @@ test("Phase 2 適正人員（需要から）：不足・余剰・人件費の増
   near(w[1].need, 45 / 12);
   assert.equal(w[2].avg, null); // 0 は記録なしとして扱う
 });
+
+test("人件費の方針：42%枠・枠の余り（賞与原資・担保）・目安（人件費×3）", () => {
+  // 売上1,000万・人件費350万 → 枠420万・余り70万（半分ずつ35万）、目安1,050万（達成率95.2%）
+  const r = E.laborPolicy({ sales: 10_000_000, labor: 3_500_000, cap: 0.42, multiple: 3, bonusShare: 0.5 });
+  near(r.capAmount, 4_200_000);
+  near(r.pool, 700_000);
+  near(r.bonusPool, 350_000);
+  near(r.reservePool, 350_000);
+  near(r.bonusPool + r.reservePool, r.pool); // 分けた合計＝余り
+  near(r.guideSales, 10_500_000);
+  near(r.guideRate, 10_000_000 / 10_500_000);
+  near(r.poolAtGuide, 10_500_000 * 0.42 - 3_500_000); // 目安達成なら余り91万
+  // 枠を超えたら原資はゼロ（マイナスを配らない）
+  const o = E.laborPolicy({ sales: 8_000_000, labor: 3_500_000 });
+  assert.equal(o.over, true);
+  near(o.pool, -140_000);
+  assert.equal(o.bonusPool, 0);
+  // 未入力はゼロ扱いしない
+  const n = E.laborPolicy({ sales: null, labor: 3_500_000 });
+  assert.equal(n.pool, null);
+  assert.equal(n.ratio, null);
+});
+
+test("人件費の方針：欲しい賞与原資から必要売上を逆算", () => {
+  // 賞与300万（社保15%で345万）、賞与に回す割合50% → 余り690万が必要。人件費4,200万（12か月）
+  const r = E.bonusTarget({ bonus: 3_000_000, labor: 42_000_000, cap: 0.42, bonusShare: 0.5, socialRate: 0.15, months: 12, currentSales: 100_000_000 });
+  near(r.poolNeeded, 6_900_000);
+  near(r.required, (42_000_000 + 6_900_000) / 0.42);
+  near(r.extra, r.required - 100_000_000);
+  near(r.perMonth, r.required / 12);
+  // 逆算した売上で laborPolicy を回すと、賞与原資がちょうど賞与×(1+社保) になる
+  const chk = E.laborPolicy({ sales: r.required, labor: r.laborAt, cap: 0.42, bonusShare: 0.5 });
+  near(chk.bonusPool, 3_450_000);
+  // 売上に連動して人件費が増える場合（連動率10%）
+  const g = E.bonusTarget({ bonus: 3_000_000, labor: 42_000_000, cap: 0.42, bonusShare: 0.5, socialRate: 0.15, currentSales: 100_000_000, laborGrowth: 0.1 });
+  const chk2 = E.laborPolicy({ sales: g.required, labor: g.laborAt, cap: 0.42, bonusShare: 0.5 });
+  near(chk2.bonusPool, 3_450_000);
+  assert.ok(E.bonusTarget({ bonus: 1, labor: 1, bonusShare: 0 }).error);
+  assert.ok(E.bonusTarget({ bonus: 1, labor: 1, laborGrowth: 0.5 }).error);
+});
