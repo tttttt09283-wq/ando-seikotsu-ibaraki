@@ -132,3 +132,53 @@ test("アラート：予算未達・営業赤字・人件費率超過・年間�
   for (const t of ["売上予算未達", "営業赤字", "人件費率超過", "目標営業利益率に未達", "年間目標未達見込み"]) assert.ok(titles.includes(t), t);
   for (const x of a) { assert.ok(x.reason && x.check && x.action); }
 });
+
+test("Phase 2 日計表→科目：保険窓口＋自費＋物販＋請求＝総売上（巻き爪・自賠は取り込まない）。柔整・鍼灸の請求が分かれていれば分ける", () => {
+  const r = E.dailyTotalToRecords({ 総売上: 1_802_270, 保険窓口: 547_550, 自費合計: 648_700, 物販: 2_220, 請求額: 603_800, "巻き爪（売上）": 71_500, 自賠売上: 44_000, 新患数: 7, 総来院数: 667, キャンセル数: 62 });
+  assert.equal(r.matches, true);
+  assert.deepEqual([...r.records.map((x) => x.code)].sort(), ["R15", "R17", "R18", "R19"]);
+  assert.deepEqual([...r.metrics.map((m) => m.metric)], ["new_patients", "visits", "cancels"]);
+  const k = E.dailyTotalToRecords({ 総売上: 851_880, 保険窓口: 100_000, 自費合計: 487_880, 物販: 0, 柔整請求額: 264_000, 鍼灸請求額: 0, 請求額合計: 264_000 });
+  assert.equal(k.matches, true);
+  assert.ok(k.records.some((x) => x.code === "R02") && !k.records.some((x) => x.code === "R19"));
+});
+
+test("Phase 2 雇用コスト・生産性：社保は未入力なら率で見込む。分母が未入力の指標は算出不可", () => {
+  const c = E.employmentCost({ total_pay: 300_000, bonus_budget: 20_000 }, { socialRate: 0.155 });
+  near(c.total, 300_000 + 46_500 + 20_000);
+  assert.equal(c.socialEstimated, true);
+  assert.equal(E.employmentCost({}, {}), null);
+  const p = E.productivity({ sales: 900_000, cost: c.total, workDays: 20, workHours: null, fte: 1, required: 1_000_000 });
+  near(p.perDay, 45_000);
+  assert.equal(p.perHour, null);
+  near(p.requiredRate, 0.9);
+});
+
+test("Phase 2 必要売上の説明文・内訳・実現可能性", () => {
+  const p = { salary: 300_000, socialInsurance: 46_500, bonus: 25_000, welfare: 5_000, education: 3_500, storeFixed: 150_000, hqAllocation: 30_000, variableRate: 0.05, targetMargin: 0.2 };
+  const r = E.requiredSales(p);
+  assert.equal(r.employment, 380_000);
+  assert.equal(r.burden, 560_000);
+  near(r.required, 746_666.6666666666);
+  const text = E.requiredSalesText(r, p);
+  assert.match(text, /月給30万円/);
+  assert.match(text, /74\.7万円/);
+  const parts = E.requiredSalesBreakdown(r, p, { base: 300_000 });
+  near(parts.reduce((a, x) => a + x.value, 0), r.required); // 内訳の合計＝必要売上
+  const f = E.feasibility({ required: r.required, treatHours: 100, unitPrice: 3000, maxPerHour: 2, utilization: 0.8 });
+  assert.equal(f.level, "ng"); // 7,467円/時 ＞ 上限 4,800円/時
+  assert.equal(E.feasibility({ required: 400_000, treatHours: 100, unitPrice: 3000, maxPerHour: 2, utilization: 0.8 }).level, "ok");
+});
+
+test("Phase 2 適正人員（需要から）：不足・余剰・人件費の増減・機会損失、曜日ごとの必要人数", () => {
+  const r = E.staffingByDemand({ demand: 1000, workDays: 20, maxPerDay: 15, utilization: 0.8, currentFte: 3, avgCost: 350_000, unitPrice: 3000 });
+  near(r.fte, 1000 / 240);
+  near(r.shortage, 1000 / 240 - 3);
+  near(r.laborDelta, (1000 / 240 - 3) * 350_000);
+  near(r.unmet, 1000 - 720);
+  near(r.opportunityLoss, 280 * 3000);
+  const w = E.weekdayNeeds([{ date: "2026-11-02", visits: 40 }, { date: "2026-11-09", visits: 50 }, { date: "2026-11-03", visits: 0 }], 12);
+  assert.equal(w[1].avg, 45); // 月曜
+  near(w[1].need, 45 / 12);
+  assert.equal(w[2].avg, null); // 0 は記録なしとして扱う
+});
