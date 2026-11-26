@@ -504,7 +504,7 @@ function secEhmsIo() {
   const g = ehGuard(); if (g) return head + g;
   const e = eh(), u = ehUi();
   const imp = e.importPreview;
-  const preview = imp ? `<div class="card"><div class="card-h"><span>取り込み前の確認：${esc(imp.fileName)}</span><span>${imp.already ? '<span class="tag amber">このファイルは取り込み済みです（もう一度取り込んでも上書きされるだけです）</span>' : ""}</span></div><div class="card-b scroll">
+  const preview = imp ? `<div class="card"><div class="card-h"><span>取り込み前の確認：${esc(imp.fileName)}</span><span>${imp.already ? '<span class="tag amber">このファイルは取り込み済みです（もう一度取り込んでも上書きされるだけです）</span>' : ""}</span></div><div class="card-b scroll">${imp.note ? `<div class="note">${esc(imp.note)}</div>` : ""}
     <div class="grid g4" style="margin-bottom:10px;">
       <div class="tile"><div class="k">行数</div><div class="v">${imp.rows.length}</div></div>
       <div class="tile"><div class="k">新しく追加</div><div class="v ok">${imp.rows.filter((r) => !r.error && !r.existing).length}</div></div>
@@ -512,8 +512,8 @@ function secEhmsIo() {
       <div class="tile"><div class="k">エラー</div><div class="v ${imp.rows.some((r) => r.error) ? "ng" : ""}">${imp.rows.filter((r) => r.error).length}</div><div class="s">エラーの行は取り込みません</div></div>
     </div>
     <table><tr><th class="l">行</th><th class="l">年月</th><th class="l">店舗</th><th class="l">科目</th><th class="l">区分</th><th>金額</th><th class="l">結果</th></tr>
-    ${imp.rows.slice(0, 300).map((r) => `<tr><td class="l">${r.line}</td><td class="l">${esc(r.mk || r.raw[0] || "")}</td><td class="l">${esc(r.storeLabel || "")}</td><td class="l">${esc(r.accountLabel || "")}</td><td class="l">${esc(EH_KIND_LABELS[r.kind] || "")}</td><td>${r.amount !== null && r.amount !== undefined ? yen(r.amount) : "-"}</td>
-      <td class="l ${r.error ? "ng" : r.existing ? "warn" : "ok"}">${r.error ? esc(r.error) : r.existing ? (r.existing.amount === r.amount ? "変更なし" : `上書き（今 ${yen(r.existing.amount)}）`) : "追加"}</td></tr>`).join("")}
+    ${imp.rows.slice(0, 300).map((r) => `<tr><td class="l">${r.line}</td><td class="l">${esc(r.mk || r.raw[0] || "")}</td><td class="l">${esc(r.storeLabel || "")}</td><td class="l">${esc(r.accountLabel || "")}</td><td class="l">${esc(EH_KIND_LABELS[r.kind] || "")}</td><td>${r.amount !== null && r.amount !== undefined ? (r.metric ? Number(r.amount).toLocaleString("ja-JP") : yen(r.amount)) : "-"}</td>
+      <td class="l ${r.error ? "ng" : r.existing ? "warn" : "ok"}">${r.error ? esc(r.error) : r.existing ? (r.existing.amount === r.amount ? "変更なし" : `上書き（今 ${r.metric ? Number(r.existing.amount).toLocaleString("ja-JP") : yen(r.existing.amount)}）`) : "追加"}</td></tr>`).join("")}
     </table>${imp.rows.length > 300 ? `<div class="small">先頭300行だけ表示しています。</div>` : ""}
     <div style="margin-top:10px;display:flex;gap:8px;"><button class="btn btn-blue" ${ehCan.import() && imp.rows.some((r) => !r.error) ? "" : "disabled"} onclick="ehRunImport()">取り込む</button><button class="btn btn-gray" onclick="eh().importPreview=null;render()">やめる</button></div></div></div>` : "";
   const io = `<div class="grid g2">
@@ -530,7 +530,7 @@ function secEhmsIo() {
   const jobs = e.jobs.length ? `<div class="card"><div class="card-h">取り込みの履歴</div><div class="card-b scroll"><table><tr><th class="l">日時</th><th class="l">ファイル</th><th>行数</th><th>追加</th><th>上書き</th><th>スキップ</th><th class="l">実行者</th></tr>
     ${e.jobs.map((j) => `<tr><td class="l">${esc(new Date(j.created_at).toLocaleString("ja-JP"))}</td><td class="l">${esc(j.file_name || "")}</td><td>${j.rows_total}</td><td>${j.rows_inserted}</td><td>${j.rows_updated}</td><td>${j.rows_skipped}</td><td class="l">${esc(j.created_by || "")}</td></tr>`).join("")}</table></div></div>` : "";
   if (!e.jobsLoaded && ehCan.import()) { e.jobsLoaded = true; rest("ehms_import_jobs?select=*&order=created_at.desc&limit=30").then((r) => { e.jobs = r || []; render(); }).catch(() => {}); }
-  return head + ehBar({ scope: false }) + preview + io + jobs;
+  return head + ehBar({ scope: false }) + preview + (typeof ehSyncCard === "function" ? ehSyncCard() : "") + io + jobs;
 }
 function ehDownload(name, blob) { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500); }
 const ehCsvCell = (v) => { const s = v === null || v === undefined ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
@@ -623,17 +623,23 @@ async function ehRunImport() {
   const errors = imp.rows.filter((r) => r.error).map((r) => ({ line: r.line, error: r.error }));
   flash("取り込み中…");
   try {
-    const job = (await rest("ehms_import_jobs", { method: "POST", headers: { Prefer: "return=representation" }, body: { file_name: imp.fileName, file_hash: imp.hash, target: "monthly_records", rows_total: imp.rows.length, errors, created_by: by, status: "running" } }))[0];
-    const toInsert = imp.rows.filter((r) => !r.error && !r.existing).map((r) => ({ store_id: r.storeId, month: `${r.mk}-01`, account_id: r.accountId, kind: r.kind, amount: r.amount, source: "import", import_job_id: job.id, created_by: by, updated_by: by }));
-    for (let i = 0; i < toInsert.length; i += 500) { await rest("ehms_monthly_records", { method: "POST", headers: { Prefer: "return=minimal" }, body: toInsert.slice(i, i + 500) }); ins += toInsert.slice(i, i + 500).length; }
-    for (const r of imp.rows.filter((x) => !x.error && x.existing)) {
-      if (r.existing.amount === r.amount) { skip++; continue; }
-      await rest(`ehms_monthly_records?id=eq.${r.existing.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { amount: r.amount, source: "import", import_job_id: job.id, updated_by: by } });
+    const src = imp.source || "import";
+    const job = (await rest("ehms_import_jobs", { method: "POST", headers: { Prefer: "return=representation" }, body: { file_name: imp.fileName, file_hash: imp.hash, target: src === "sheet" ? "sheet_sync" : "monthly_records", rows_total: imp.rows.length, errors, created_by: by, status: "running" } }))[0];
+    const ok = imp.rows.filter((r) => !r.error);
+    const recIns = ok.filter((r) => !r.metric && !r.existing).map((r) => ({ store_id: r.storeId, month: `${r.mk}-01`, account_id: r.accountId, kind: r.kind, amount: r.amount, source: src, import_job_id: job.id, created_by: by, updated_by: by }));
+    const metIns = ok.filter((r) => r.metric && !r.existing).map((r) => ({ store_id: r.storeId, month: `${r.mk}-01`, metric: r.metric, kind: r.kind, value: r.amount, source: src, import_job_id: job.id, created_by: by, updated_by: by }));
+    for (const [table, list] of [["ehms_monthly_records", recIns], ["ehms_monthly_metrics", metIns]]) {
+      for (let i = 0; i < list.length; i += 500) { await rest(table, { method: "POST", headers: { Prefer: "return=minimal" }, body: list.slice(i, i + 500) }); ins += list.slice(i, i + 500).length; }
+    }
+    for (const r of ok.filter((x) => x.existing)) {
+      if (Number(r.existing.amount) === Number(r.amount)) { skip++; continue; }
+      if (r.metric) await rest(`ehms_monthly_metrics?id=eq.${r.existing.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { value: r.amount, source: src, import_job_id: job.id, updated_by: by } });
+      else await rest(`ehms_monthly_records?id=eq.${r.existing.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: { amount: r.amount, source: src, import_job_id: job.id, updated_by: by } });
       upd++;
     }
     skip += errors.length;
     flash(`✓ 追加 ${ins}行・上書き ${upd}行・スキップ ${skip}行`);
-    e.importPreview = null; e.jobsLoaded = false; e.recFy = null;
+    e.importPreview = null; e.jobsLoaded = false; e.recFy = null; e.peopleLoaded = false;
     await ehLoadRecords(true);
   } catch (err) { flash(`取り込みの途中で止まりました：${err.message}（ここまでの分は保存されています。もう一度取り込むと残りが入ります）`, true); }
   render();

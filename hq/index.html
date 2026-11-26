@@ -8,6 +8,7 @@
 <script src="/hq-logic.js"></script>
 <script src="/ehms-calc.js"></script>
 <script src="/ehms-ui.js"></script>
+<script src="/ehms-ui2.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
 body{font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;background:#eef2f7;color:#1e293b;}
@@ -411,11 +412,11 @@ function render() {
   const al = alertsNow();
   const badge = (id) => { const n = al.filter((a) => a.section === id && a.level !== "info").length; return n ? `<span class="badge">${n}</span>` : ""; };
   const side = HQ.SECTIONS.map((s) => `${s.id === "ehms_dash" ? '<div class="sep" style="color:#C5A46D;">EHMS 経営管理</div>' : ""}${s.id === "performance" ? '<div class="sep">部門</div>' : ""}${s.id === "org" ? '<div class="sep">組織・計画</div>' : ""}<button class="${S.sec === s.id ? "sel" : ""}" onclick="go('${s.id}')"><span>${s.icon}</span>${esc(s.label)}${s.id === "dashboard" ? (al.filter((a) => a.level === "ng").length ? `<span class="badge">${al.filter((a) => a.level === "ng").length}</span>` : "") : badge(s.id)}</button>`).join("");
-  const fn = { ehms_dash: secEhmsDash, ehms_store: secEhmsStore, ehms_pl: secEhmsPl, ehms_year: secEhmsYear, ehms_io: secEhmsIo, ehms_master: secEhmsMaster, ehms_admin: secEhmsAdmin, dashboard: secDashboard, performance: secPerformance, marketing: secMarketing, people: secPeople, daily: secDaily, fit: secFit, intake: secIntake, accounting: secAccounting, education: secEducation, org: secOrg, career: secCareer, expansion: secExpansion, annual: secAnnual, mandala: secMandala }[S.sec];
+  const fn = { ehms_staff: secEhmsStaff, ehms_required: secEhmsRequired, ehms_dash: secEhmsDash, ehms_store: secEhmsStore, ehms_pl: secEhmsPl, ehms_year: secEhmsYear, ehms_io: secEhmsIo, ehms_master: secEhmsMaster, ehms_admin: secEhmsAdmin, dashboard: secDashboard, performance: secPerformance, marketing: secMarketing, people: secPeople, daily: secDaily, fit: secEhmsStaffing, intake: secIntake, accounting: secAccounting, education: secEducation, org: secOrg, career: secCareer, expansion: secExpansion, annual: secAnnual, mandala: secMandala }[S.sec];
   let body;
   try { body = fn(); } catch (e) { console.error(e); body = `<div class="err">表示できませんでした：${esc(e.message)}</div>`; }
   if (["performance", "marketing", "people", "accounting"].includes(S.sec)) {
-    try { body += (S.sec === "performance" ? kpiCard() : "") + intakeCard(S.sec) + (S.sec === "people" ? payCard() + wageCard() : ""); } catch (e) { console.error(e); body += `<div class="err">日計表を表示できませんでした：${esc(e.message)}</div>`; }
+    try { body += (S.sec === "performance" ? kpiCard() : "") + intakeCard(S.sec) + (S.sec === "people" ? wageCard() : ""); } catch (e) { console.error(e); body += `<div class="err">日計表を表示できませんでした：${esc(e.message)}</div>`; }
   }
   app.innerHTML = `${topbar()}<div class="layout"><nav class="side">${side}</nav><main class="main">${S.docsErr ? `<div class="err">${esc(S.docsErr)}</div>` : ""}${body}</main></div>`;
   window.scrollTo(0, y);
@@ -484,41 +485,8 @@ function secDashboard() {
 
 // ---------- 業績 ----------
 function secPerformance() {
-  const head = `<div class="h2">📈 業績</div><div class="lead">院ごとの売上予算と実績（7月始まりの年度）。数字は「進捗売上実績」シート・台帳から自動で読み込みます。</div>`;
-  const nm = needModel();
-  if (nm) return head + nm;
-  const p = perf();
-  const fy = S.model.fiscalYear;
-  const view = S.ui.perfView || "actual";
-  const cell = (m) => {
-    if (!m) return "<td>-</td>";
-    const r = m.budget && m.actual !== null && m.actual !== undefined ? m.actual / m.budget : null;
-    if (view === "budget") return `<td>${man(m.budget)}</td>`;
-    if (view === "rate") return `<td class="${rateCls(r)}">${pct(r, 0)}</td>`;
-    return `<td>${m.actual === null || m.actual === undefined ? '<span class="muted">-</span>' : man(m.actual)}</td>`;
-  };
-  const rows = S.model.clinics.map((c) => `<tr><td class="l"><b>${esc(c.name)}</b></td>${HQ.FISCAL_MONTHS.map((m) => cell(c.months.find((x) => x.month === m))).join("")}
-    <td><b>${view === "budget" ? man(p.rows.find((r) => r.name === c.name).yearBudget) : view === "rate" ? `<span class="${rateCls(p.rows.find((r) => r.name === c.name).rate)}">${pct(p.rows.find((r) => r.name === c.name).rate, 0)}</span>` : man(p.rows.find((r) => r.name === c.name).actual)}</b></td></tr>`).join("");
-  const total = `<tr class="total"><td class="l">全社</td>${p.monthly.map((m) => view === "budget" ? `<td>${man(m.budget)}</td>` : view === "rate" ? `<td class="${rateCls(m.rate)}">${pct(m.rate, 0)}</td>` : `<td>${man(m.actual)}</td>`).join("")}<td>${view === "budget" ? man(p.total.yearBudget) : view === "rate" ? pct(p.total.rate, 0) : man(p.total.actual)}</td></tr>`;
-  const max = Math.max(1, ...p.monthly.map((m) => Math.max(m.budget || 0, m.actual || 0)));
-  const chart = `<div style="display:flex;align-items:flex-end;gap:6px;height:170px;padding-top:10px;">${p.monthly.map((m) => `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0;">
-      <div style="display:flex;align-items:flex-end;gap:2px;height:140px;width:100%;justify-content:center;">
-        <div title="予算 ${yen(m.budget)}" style="width:40%;max-width:18px;background:#cbd5e1;border-radius:3px 3px 0 0;height:${(m.budget || 0) / max * 100}%;"></div>
-        <div title="実績 ${yen(m.actual)}" style="width:40%;max-width:18px;background:${m.rate === null ? "#e2e8f0" : m.rate >= 1 ? "#16a34a" : m.rate >= 0.8 ? "#f59e0b" : "#dc2626"};border-radius:3px 3px 0 0;height:${(m.actual || 0) / max * 100}%;"></div>
-      </div><div class="small">${m.month}月</div></div>`).join("")}</div>
-    <div class="small" style="margin-top:6px;"><span style="display:inline-block;width:10px;height:10px;background:#cbd5e1;border-radius:2px;"></span> 予算　<span style="display:inline-block;width:10px;height:10px;background:#16a34a;border-radius:2px;"></span> 実績（達成）　<span style="display:inline-block;width:10px;height:10px;background:#f59e0b;border-radius:2px;"></span> 80〜99%　<span style="display:inline-block;width:10px;height:10px;background:#dc2626;border-radius:2px;"></span> 80%未満</div>`;
-  const ytd = p.rows.map((r) => `<tr><td class="l"><b>${esc(r.name)}</b></td><td class="l">${esc(r.manager || "-")}</td><td class="l">${esc(r.bm || "-")}</td><td>${man(r.budget)}</td><td>${man(r.actual)}</td><td class="${rateCls(r.rate)}"><b>${pct(r.rate)}</b></td><td style="width:110px;">${bar(r.rate)}</td><td>${man(r.yearBudget)}</td><td>${pct(r.yearProgress)}</td></tr>`).join("");
-  return head + `<div class="grid g4" style="margin-bottom:14px;">
-      <div class="tile"><div class="k">${esc(latestLabel())} 全社売上</div><div class="v">${man(p.latest && p.latest.actual)}</div><div class="s">達成率 <b class="${rateCls(p.latest && p.latest.rate)}">${pct(p.latest && p.latest.rate)}</b></div></div>
-      <div class="tile"><div class="k">${fy}年度 累計</div><div class="v">${man(p.total.actual)}</div><div class="s">累計予算 ${man(p.total.budget)}・<b class="${rateCls(p.total.rate)}">${pct(p.total.rate)}</b></div></div>
-      <div class="tile"><div class="k">年間予算</div><div class="v">${man(p.total.yearBudget)}</div><div class="s">進捗 ${pct(p.total.yearProgress)}</div>${bar(p.total.yearProgress, "blue")}</div>
-      <div class="tile"><div class="k">年間予算までの残り</div><div class="v">${man(p.total.yearBudget - p.total.actual)}</div><div class="s">残り${12 - (HQ.FISCAL_MONTHS.indexOf(S.model.latestMonth) + 1)}ヶ月</div></div>
-    </div>
-    <div class="card"><div class="card-h">全社の月別 予算と実績（${fy}年度）</div><div class="card-b">${chart}</div></div>
-    <div class="card"><div class="card-h"><span>院別 × 月</span><div class="chips" style="margin:0;">${[["actual", "実績"], ["budget", "予算"], ["rate", "達成率"]].map(([k, l]) => `<button class="chip ${view === k ? "sel" : ""}" onclick="ui('perfView','${k}')">${l}</button>`).join("")}</div></div><div class="card-b scroll">
-      <table><tr><th class="l">院</th>${HQ.FISCAL_MONTHS.map((m) => `<th>${m}月</th>`).join("")}<th>${view === "budget" ? "年間" : "累計"}</th></tr>${rows}${total}</table></div></div>
-    <div class="card"><div class="card-h">院別の年度累計（${esc(latestLabel())}まで）</div><div class="card-b scroll">
-      <table><tr><th class="l">院</th><th class="l">院長</th><th class="l">BM</th><th>累計予算</th><th>累計実績</th><th>達成率</th><th></th><th>年間予算</th><th>年間進捗</th></tr>${ytd}</table></div></div>`;
+  // 院別・月別の予算と実績は EHMS（🏛 全社経営ダッシュボード・🏥 院別ダッシュボード・📊 年間PL）に一本化した。ここは売上・患者の KPI（下のカード）
+  return `<div class="h2">📈 売上・患者KPI</div><div class="lead">新患数・来院数・単価・離反率などの KPI の年間推移と昨対比（店舗別KPIダッシュボード）と、日計表から振り分けた業績の数字。予算と実績・利益は <a href="javascript:void(0)" onclick="go('ehms_dash')">🏛 全社経営ダッシュボード</a>・<a href="javascript:void(0)" onclick="go('ehms_year')">📊 年間PL</a> で見てください。</div>`;
 }
 
 // ---------- 集客 ----------
@@ -597,8 +565,7 @@ function fitMembersHtml(r) {
   return Object.entries(groups).map(([role, names]) => `<span class="small" style="font-weight:800;">${esc(FIT_ROLE_SHORT[role] || role)}</span> ${names.map(esc).join("・")}`).join("<br>");
 }
 function secFit() {
-  const head = `<div class="h2">⚖️ 人員の適正判断</div><div class="lead">組織図（月ごとのタブ）の人員から「売上の目安」を出し、年間予算シートの院別・月別の予算・実績と比べて、人が足りているか・余っているかを判定します。<br>
-    人員の目安 ＝ 役割ごとの人数 × 1人あたりの目安（組織図シートの「院長：1100000」などの行）。予算 ÷ 目安 が判定の幅の中なら <span class="vtag ok">適正</span>、上回れば <span class="vtag short">人員不足</span>、下回れば <span class="vtag surplus">人員に余裕</span>。</div>`;
+  const head = `<div class="h2" style="margin-top:18px;">📐 組織図 × 予算での判定</div><div class="lead">組織図（月ごとのタブ）の人員から「売上の目安」を出し、年間予算シートの院別・月別の予算・実績と比べて、人が足りているか・余っているかを判定します。人員の目安 ＝ 役割ごとの人数 × 1人あたりの目安（組織図シートの「院長：1100000」などの行）。予算 ÷ 目安 が判定の幅の中なら <span class="vtag ok">適正</span>、上回れば <span class="vtag short">人員不足</span>、下回れば <span class="vtag surplus">人員に余裕</span>。</div>`;
   if (S.fitErr) return head + `<div class="err">組織図・年間予算のスプレッドシートを読み込めませんでした：${esc(S.fitErr)}<br>2つのスプレッドシートを、本部システムのサービスアカウント（Vercel の GOOGLE_SERVICE_ACCOUNT_EMAIL）に「閲覧者」で共有してください。<br><button class="btn btn-gray btn-sm" style="margin-top:6px;" onclick="loadFit(true)">もう一度読み込む</button></div>`;
   if (!S.fit) return head + `<div class="center">組織図と年間予算を読み込み中...</div>`;
   const b = fitBudget();
@@ -669,7 +636,7 @@ function secFit() {
     ${yearRows}</table>
     <div class="legend"><span class="vtag short">人員不足</span>予算が目安の${Math.round((1 + tol) * 100)}%超 <span class="vtag ok">適正</span>${Math.round((1 - tol) * 100)}〜${Math.round((1 + tol) * 100)}% <span class="vtag surplus">人員に余裕</span>${Math.round((1 - tol) * 100)}%未満 <span>「実」＝実績 ÷ 目安</span></div>
   </div></div>`;
-  return head + controls + note + tiles + table + fitIssuesCard(allIssues, tab) + fitLaborCard(b, month, mk, tol, tab) + year;
+  return head + controls + note + tiles + table + fitIssuesCard(allIssues, tab) + year;
 }
 // ---- 組織図の問題点（シートの「問題点」の列＋本部で追加したもの） ----
 function fitIssueClinicNames() {
@@ -710,58 +677,6 @@ function fitIssuesCard(all, tab) {
     </span></div>
     <div class="card-b scroll">${rows ? `<table><tr><th class="l">出どころ</th><th class="l">問題点</th><th class="l">関係する院</th><th class="l">状態</th><th class="l">担当</th><th class="l">メモ</th><th></th></tr>${rows}</table>` : `<div class="muted">${statusF === "open" ? "未解決の問題点はありません。" : "問題点はありません。"}組織図シートの「問題点」の列に書くか、「＋ 問題点を追加」から追加できます。</div>`}
     <div class="small" style="margin-top:6px;">シートの問題点は組織図シートの「問題点」と書いたセルの下から読み込みます（文を直すときはシートで）。状態・担当・メモと「本部で追加」した問題点は本部システムに保存されます。未解決の問題点は、上の院別判定の「理由・打ち手」にも出ます。</div></div></div>`;
-}
-// 人件費 × 倍率 の売上設定（スタッフ別の人件費は hq_docs の labor。管理者だけが読める）
-function fitLaborClinics(tab) {
-  const names = [];
-  (tab ? tab.clinics : []).forEach((c) => names.push(c.name));
-  S.fit.org.filter((o) => o.start).forEach((o) => o.clinics.forEach((c) => { if (!names.some((n) => HQ.fitClinicKey(n) === c.key)) names.push(c.name); }));
-  return names;
-}
-function fitLaborCard(b, month, mk, tol, tab) {
-  const title = `<div class="card-h">💴 人件費 × 倍率 の売上設定</div>`;
-  if (S.privateErr) return `<div class="card">${title}<div class="card-b"><div class="err">${esc(S.privateErr)}</div></div></div>`;
-  if (S.salaryViewer !== true) return `<div class="card">${title}<div class="card-b"><div class="muted">給与・人件費を見る権限がこのアカウントにありません（clinic_staff の salary_viewer が必要です）。</div></div></div>`;
-  const d = doc("labor");
-  const people = d.people || [];
-  const clinicNamesL = fitLaborClinics(tab);
-  const plan = HQ.laborPlan({ people, multiplier: d.multiplier, budget: b, month, tol, clinicNames: clinicNamesL });
-  const mult = plan.mult;
-  const lcls = (id) => id === "low" ? "short" : id === "high" ? "surplus" : id; // 予算が低め＝人件費率が高い（赤）、予算が高め（黄）
-  const vt = (v) => `<span class="vtag ${lcls(v.id)}">${esc(v.label)}</span>`;
-  const lr = (r) => r === null ? "-" : `<span class="${r > 1 / mult * (1 + tol) ? "ng" : r < 1 / mult * (1 - tol) ? "ok" : ""}">${pct(r, 1)}</span>`;
-  const t = plan.total;
-  const monthTable = people.length ? `<table>
-    <tr><th class="l">院</th><th>人数</th><th>人件費（月平均）</th><th>売上設定（×${mult}）</th><th>予算</th><th>予算÷売上設定</th><th class="l">判定</th><th>人件費率（予算）</th><th>実績</th><th>人件費率（実績）</th></tr>
-    ${plan.rows.map((r) => `<tr><td class="l"><b>${esc(r.name)}</b></td><td>${r.count}名${r.estimated ? `<div class="small">見込み${r.estimated}名</div>` : ""}</td>
-      <td>${man(r.labor)}</td><td><b>${man(r.target)}</b></td><td>${man(r.budget)}</td><td><b>${pct(r.ratio, 0)}</b></td><td class="l">${vt(r.verdict)}</td>
-      <td>${lr(r.laborRate)}</td><td>${man(r.actual)}</td><td>${lr(r.actualLaborRate)}</td></tr>`).join("")}
-    <tr class="total"><td class="l">院の合計</td><td>${plan.rows.reduce((a, r) => a + r.count, 0)}名</td><td>${man(t.labor)}</td><td>${man(t.target)}</td><td>${man(t.budget)}</td><td>${pct(t.ratio, 0)}</td><td class="l">${vt(t.verdict)}</td><td>${lr(t.laborRate)}</td><td>${man(t.actual)}</td><td>${lr(t.actual ? t.labor / t.actual : null)}</td></tr>
-    ${t.unassignedCount ? `<tr><td class="l small">院に割り当てていない人（本部など）</td><td class="small">${t.unassignedCount}名</td><td class="small">${man(t.unassigned)}</td><td class="small">${man(t.unassigned * mult)}</td><td colspan="6" class="l small">全社では 人件費 ${man(t.companyLabor)} → 売上設定 <b>${man(t.companyTarget)}</b></td></tr>` : ""}
-  </table>
-  <div class="small" style="margin-top:6px;">予算 ÷ 売上設定 が ${Math.round((1 - tol) * 100)}〜${Math.round((1 + tol) * 100)}% なら適正。<span class="vtag short">予算が低め</span>＝人件費率が高くなる（${pct(1 / mult, 0)}超）、<span class="vtag surplus">予算が高め</span>＝人件費の${mult}倍より高い予算（今の人員で届くか確認）。人件費は支給合計（会社負担の社会保険料は含まない）。</div>`
-    : `<div class="muted">スタッフ別の人件費がまだ登録されていません。下の「スタッフ別の人件費」から追加してください。</div>`;
-  // 年度の一覧（予算 ÷ 売上設定）
-  const ym = HQ.FISCAL_MONTHS.map((m) => ({ m, p: HQ.laborPlan({ people, multiplier: d.multiplier, budget: b, month: m, tol, clinicNames: clinicNamesL }) }));
-  const yearL = people.length ? `<div class="scroll" style="margin-top:12px;"><table><tr><th class="l">予算 ÷ 売上設定</th>${ym.map((x) => `<th style="text-align:center;">${x.m}月</th>`).join("")}</tr>
-    ${plan.rows.map((r) => `<tr><td class="l"><b>${esc(r.name)}</b></td>${ym.map((x) => { const c = x.p.rows.find((y) => y.key === r.key); if (!c || c.ratio === null) return "<td></td>"; const cls = lcls(c.verdict.id); return `<td style="padding:3px;"><span class="fitcell ${cls} ${x.m === month ? "sel" : ""}" onclick="fitSetMonth(${x.m})">${pct(c.ratio, 0)}</span></td>`; }).join("")}</tr>`).join("")}
-  </table></div>` : "";
-  const sorted = [...people].sort((a, b2) => String(a.clinic || "~").localeCompare(String(b2.clinic || "~"), "ja") || (Number(b2.avg) || 0) - (Number(a.avg) || 0));
-  const editor = `<details style="margin-top:12px;" ${S.ui.laborOpen ? "open" : ""} ontoggle="S.ui.laborOpen=this.open"><summary style="cursor:pointer;font-weight:800;font-size:13px;color:#1e3a5f;">スタッフ別の人件費（${people.length}名）を見る・直す</summary>
-    <div class="small" style="margin:8px 0;">${esc(d.source || "")}　所属院を空欄にすると、院の合計には入らず全社の合計にだけ入ります。</div>
-    <div class="scroll"><table><tr><th class="l">氏名</th><th class="l">所属院</th><th>人件費（月平均）</th><th>×${mult}</th><th class="l">見込み</th><th class="l">メモ</th><th></th></tr>
-    ${sorted.map((p) => `<tr><td class="l">${inp("labor", `people.#${p.id}.name`, p.name, { style: "width:120px;" })}</td>
-      <td class="l">${sel("labor", `people.#${p.id}.clinic`, p.clinic, clinicNamesL, { blank: "（院に割り当てない）" })}</td>
-      <td>${inp("labor", `people.#${p.id}.avg`, p.avg, { num: 1, r: 1 })}</td><td>${man((Number(p.avg) || 0) * mult)}</td>
-      <td class="l">${chk("labor", `people.#${p.id}.est`, p.est)}</td>
-      <td class="l">${inp("labor", `people.#${p.id}.note`, p.note, { style: "width:200px;" })}</td>
-      <td><button class="btn-del" onclick="removeItem('labor','people','${p.id}','${esc(p.name || "この人")}')">✕</button></td></tr>`).join("")}
-    </table></div>
-    <button class="btn btn-gray btn-sm" style="margin-top:8px;" onclick="addItem('labor','people',{id:HQ.uid('l'),name:'',clinic:'',avg:null,est:true,note:''})">＋ スタッフを追加</button>
-  </details>`;
-  return `<div class="card"><div class="card-h"><span>💴 人件費 × ${mult} の売上設定（${esc(monthLabel(mk))}の予算と比較）</span>
-    <span style="display:flex;gap:6px;align-items:center;font-size:12px;font-weight:700;color:#64748b;">倍率 ${inp("labor", "multiplier", d.multiplier ?? HQ.LABOR_DEFAULT_MULT, { num: 1, r: 1, style: "width:60px;" })} 倍</span></div>
-    <div class="card-b scroll">${monthTable}${yearL}${editor}</div></div>`;
 }
 
 // ---------- データ取り込み（院の日計表 → 部門へ自動で振り分け） ----------
@@ -1024,36 +939,13 @@ function secDaily() {
   </table><div class="legend"><span class="vtag ok">${Math.round(opt.lowRate * 100)}%以上</span><span class="vtag surplus">${Math.round((opt.lowRate - 0.15) * 100)}〜${Math.round(opt.lowRate * 100)}%</span><span class="vtag short">${Math.round((opt.lowRate - 0.15) * 100)}%未満</span><span>空欄＝稼働率タブに記録なし</span></div></div></div>` : "";
   return head + staffing + controls + shiftNote + tiles + alertsHtml + table + (staffHtml ? `<div class="card"><div class="card-h">スタッフ別（${esc(date)}）</div><div class="card-b scroll">${staffHtml}</div></div>` : "") + heat;
 }
-// ---- 生産性と給与（人材・salary_viewer だけ） ----
-function payCard() {
-  if (S.salaryViewer !== true) return "";
-  const head = `<div class="card-h">💴 生産性と給与（個人売上 ÷ 人件費）</div>`;
-  const labor = (doc("labor").people || []);
-  if (!S.model) return `<div class="card">${head}<div class="card-b muted">台帳（個人売上）を読み込み中...</div></div>`;
-  if (!labor.length) return `<div class="card">${head}<div class="card-b muted">スタッフ別の人件費が登録されていません（「人員の適正判断」の「スタッフ別の人件費」から）。</div></div>`;
-  const mult = Number(doc("labor").multiplier) > 0 ? Number(doc("labor").multiplier) : HQ.LABOR_DEFAULT_MULT;
-  const rows = HQ.payVsProductivity({ people: S.model.people, labor, multiplier: mult });
-  const { book } = intakeBook();
-  const rateOf = (name) => { const n = String(name).replace(/[\s　]/g, "").replace(/﨑/g, "崎"); for (const s of (book && book.staffRates) || []) for (const p of s.staff) { if (!p.slots) continue; const sn = String(p.name).replace(/﨑/g, "崎"); if (sn && n.startsWith(sn)) return p.rate; } return null; };
-  const cnt = (id) => rows.filter((r) => r.verdict.id === id).length;
-  const cls = (id) => id === "ok" ? "ok" : id === "warn" ? "surplus" : id === "ng" ? "short" : "nobudget";
-  return `<div class="card">${head}<div class="card-b scroll">
-    <div class="small" style="margin-bottom:8px;">個人売上（台帳・直近3か月の平均）が人件費（月平均）の <b>${mult}倍</b> 以上なら「見合っている」、${mult * 0.75}倍以上なら「やや不足」、それ未満は「見合っていない」。
-      <span class="vtag ok">見合っている ${cnt("ok")}人</span> <span class="vtag surplus">やや不足 ${cnt("warn")}人</span> <span class="vtag short">見合っていない ${cnt("ng")}人</span> <span class="vtag nobudget">売上データなし ${cnt("nodata")}人</span></div>
-    <table><tr><th class="l">氏名</th><th class="l">院</th><th class="l">等級</th><th>人件費（月平均）</th><th>個人売上（月平均）</th><th>倍率</th><th>目安（人件費×${mult}）</th><th>差</th><th class="l">判定</th><th>稼働率（${esc(S.intakeMonth ? monthLabel(S.intakeMonth) : "-")}）</th></tr>
-    ${rows.map((r) => { const rt = rateOf(r.name); return `<tr><td class="l"><b>${esc(r.name)}</b>${r.est ? '<span class="small">（見込み）</span>' : ""}</td><td class="l small">${esc(r.clinic || "-")}</td><td class="l small">${esc(r.grade || "-")}</td>
-      <td>${man(r.pay)}</td><td>${man(r.sales)}${r.months ? `<div class="small">${r.months}か月</div>` : ""}</td><td><b>${r.ratio !== null ? `${(Math.round(r.ratio * 10) / 10).toFixed(1)}倍` : "-"}</b></td>
-      <td>${man(r.target)}</td><td class="${r.gap === null ? "" : r.gap >= 0 ? "ok" : "ng"}">${r.gap === null ? "-" : `${r.gap >= 0 ? "+" : "−"}${man(Math.abs(r.gap))}`}</td>
-      <td class="l"><span class="vtag ${cls(r.verdict.id)}">${esc(r.verdict.label)}</span></td><td>${rt === null || rt === undefined ? "-" : rateCell(rt, dailyOpt().lowRate)}</td></tr>`; }).join("")}
-    </table><div class="small" style="margin-top:6px;">個人売上は進捗売上実績の「個人」シート（台帳）から。人件費は給与明細の支給合計の平均（会社負担の社会保険料は含まない）。院長・受付など個人売上が少ない役割は低く出ます。給与を見る権限（salary_viewer）のある人だけに表示。</div></div></div>`;
-}
 
 // ---- KPI推移と昨対比（店舗別KPIダッシュボード） ----
 async function loadKpi(refresh) {
   S.kpi = "loading"; S.kpiErr = null; render();
   try {
     const raw = await apiGet(`/api/intake?kpi=1${refresh ? "&refresh=1" : ""}`);
-    S.kpi = { url: raw.url, loadedAt: raw.loadedAt, tabs: raw.tabs.map((t) => HQ.parseKpiTab(t.title, t.values)).filter((t) => t.periods.length) };
+    S.kpi = { url: raw.url, loadedAt: raw.loadedAt, tabs: (raw.tabs || []).map((t) => HQ.parseKpiTab(t.title, t.values)).filter((t) => t.periods.length) };
   } catch (e) { S.kpi = null; S.kpiErr = e.message; }
   render();
 }

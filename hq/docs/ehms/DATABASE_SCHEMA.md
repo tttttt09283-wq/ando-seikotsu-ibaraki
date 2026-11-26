@@ -39,3 +39,14 @@ erDiagram
 
 ## 初期データ
 事業部1（整骨院事業）・店舗7・会計科目50（売上16・原価5・販管費24・営業外2・特別2・法人税等1）・設定4。金額のサンプルは入れていない。
+
+## Phase 2 の追加（`sql/2026-11-26_ehms_phase2.sql`）
+| テーブル・列 | 説明 |
+|---|---|
+| `ehms_stores.aliases` | シートの院名（「本院」「香里園院」「田口山分院」など）との対応 |
+| `ehms_accounts` R17・R18・R19 | 日計表からの売上（自費施術・保険窓口負担・保険者請求。柔整／鍼灸の内訳がある院は R02・R04） |
+| `ehms_accounts` R90 | 年間予算シートの売上予算（総額だけ） |
+| `ehms_employees` | スタッフ（給与以外）：院・役職・雇用形態・資格・常勤換算・勤務日数／時間・施術可能時間・直接売上の有無・在籍。読める人は院の数字と同じ、変更は owner / gm |
+| `ehms_employee_pay` | 報酬：適用開始日つき（支給合計・基本給・手当・会社負担社保・賞与月割・交通費・福利厚生・教育）。owner と can_view_pay の人だけ |
+| `ehms_user_roles.can_view_pay` | GM などに給与の閲覧を許可する |
+| 指標（`ehms_monthly_metrics.metric`） | new_patients・visits・receipts・revisits・cancels |
