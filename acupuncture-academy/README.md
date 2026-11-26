@@ -28,6 +28,8 @@ npm test         # 教材データの整合性・記録の移行・復習間隔
 | `src/data/yaoxue.ts` | 要穴の分類表（五兪穴・原絡郄・兪募・八会・下合・四総）と、要穴の簡易エントリ。辞典の「分類」はここから自動で作る |
 | `src/data/points.ts` / `points-key.ts` | 経穴辞典の詳細版（作用・主治・局所解剖まで記載した23穴） |
 | `src/data/changelog.ts` | 教材の更新履歴・講義ごとの版・教材データの版 |
+| `src/data/symptoms.ts` | 「症状から取穴」のガイド（危険徴候・部位と経絡・証・取穴候補と根拠・評価項目） |
+| `src/data/ziwu.ts` | 子午流注（納支法）の刻と経脈、補瀉の穴（五兪穴の表から自動計算） |
 | `src/data/eight-confluent.ts` | 八脈交会穴4組 |
 | `src/data/cases.ts` / `cases-more.ts` | 架空の症例演習（4例） |
 | `src/data/sources.ts` | 出典と照合状態 |

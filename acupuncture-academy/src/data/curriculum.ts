@@ -7,7 +7,7 @@ import { boneProportion, locatingPractice, pointTypes } from "./lessons/chapter4
 import { fiveShu, huiHe, shuMu, xiPoints, yuanLuo } from "./lessons/chapter5";
 import { confluentLesson, limbVessels, trunkVessels } from "./lessons/chapter6";
 import { channelPatterns, eightPrinciples, fourExams, zangfuPatterns } from "./lessons/chapter7";
-import { biaoBen, buXie, needleMoxa } from "./lessons/chapter8";
+import { biaoBen, buXie, needleMoxa, ziwuLiuzhu } from "./lessons/chapter8";
 import { frozenShoulder, lowBack, neckShoulder, sciatica } from "./lessons/chapter9";
 import { careTeam, neuropathicPain, parkinson } from "./lessons/chapter10";
 
@@ -79,10 +79,10 @@ export const chapters: Chapter[] = [
     id: "c8",
     number: 8,
     title: "治療",
-    subtitle: "本治・標治・補瀉・鍼灸の使い分け",
+    subtitle: "本治・標治・補瀉・鍼灸の使い分け・子午流注",
     description: "証から治則・配穴・手技を組み立てる。",
     color: "#155e75",
-    lessons: [biaoBen, buXie, needleMoxa],
+    lessons: [biaoBen, buXie, needleMoxa, ziwuLiuzhu],
   },
   {
     id: "c9",

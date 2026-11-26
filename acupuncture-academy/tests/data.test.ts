@@ -18,9 +18,9 @@ test("全10章があり、講義IDが重複しない", () => {
   for (const c of chapters) for (const l of c.lessons) assert.equal(l.chapterId, c.id, l.id);
 });
 
-test("全10章37講がすべて公開されている", () => {
-  assert.equal(allLessons.length, 37);
-  assert.equal(publishedLessons.length, 37);
+test("全10章38講がすべて公開されている", () => {
+  assert.equal(allLessons.length, 38);
+  assert.equal(publishedLessons.length, 38);
   for (const c of chapters) assert.ok(c.lessons.length >= 3, c.id);
 });
 
