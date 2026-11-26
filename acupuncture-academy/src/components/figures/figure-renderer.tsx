@@ -40,6 +40,7 @@ import {
   YuanTableFigure,
   ZangfuPatternsFigure,
 } from "./diagrams-advanced";
+import { ZiwuClock } from "./ziwu-clock";
 import type { MeridianId, View } from "@/data/types";
 
 function BodyPair({ views, visible }: { views: View[]; visible: MeridianId[] }) {
@@ -90,6 +91,8 @@ export function FigureRenderer({ id }: { id: string }) {
       return <FingerCunFigure />;
     case "spine-landmarks":
       return <SpineLandmarksFigure />;
+    case "ziwu-clock":
+      return <ZiwuClock />;
     case "five-shu-table":
       return <FiveShuTableFigure />;
     case "five-shu":

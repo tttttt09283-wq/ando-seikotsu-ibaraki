@@ -25,6 +25,19 @@ export interface ChangeEntry {
 export const changelog: ChangeEntry[] = [
   {
     date: "2026-11-26",
+    title: "「症状から取穴」と子午流注の講義を追加",
+    items: [
+      "症状を検索して、危険徴候の確認 → 部位から経絡 → 所見から証 → 局所・遠隔・背景の取穴候補と根拠を組み立てる「症状から取穴」を追加（14の症状）",
+      "第8章第4講「子午流注」を追加。刻を押すと経脈と納支法の補瀉の穴がわかる時計の図つき",
+      "経穴辞典に頻用穴14穴（百会・大椎・肩髃・承山・血海など）を追加",
+    ],
+    links: [
+      { href: "/symptoms", label: "症状から取穴" },
+      { href: "/lessons/c8-l4", label: "子午流注" },
+    ],
+  },
+  {
+    date: "2026-11-26",
     title: "要穴を全面拡充、経穴数の基準を追記",
     items: [
       "経穴辞典に十四経の要穴をすべて収録（五兪穴・原穴・絡穴・郄穴・背部兪穴・募穴・八会穴・下合穴・八脈交会穴・四総穴）",
@@ -70,6 +83,7 @@ export const lessonRevisions: Record<string, { revision: number; updatedAt: stri
 const publishedOn = (lessonId: string) => {
   const ch = Number(lessonId.match(/^c(\d+)/)?.[1] ?? 0);
   if (lessonId === "c1-l1") return "2026-11-20";
+  if (lessonId === "c8-l4") return "2026-11-26";
   if (ch <= 3) return "2026-11-21";
   return "2026-11-25";
 };

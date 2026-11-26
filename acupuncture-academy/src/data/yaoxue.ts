@@ -331,6 +331,21 @@ export const briefPoints: BriefPoint[] = [
   { code: "CV14", name: "巨闕", reading: "こけつ", location: "上腹部、前正中線上、臍中央の上方6寸。", safety: [ABDOMEN, "上方に向けて深く刺入しない（心臓・肝臓）"] },
   { code: "CV15", name: "鳩尾", reading: "きゅうび", location: "上腹部、前正中線上、胸骨体下端の下方1寸。", safety: ["上方に向けて深く刺入しない（心臓・肝臓）。剣状突起の形には個人差がある"] },
   { code: "CV17", name: "膻中", reading: "だんちゅう", location: "前胸部、前正中線上、第4肋間と同じ高さ。", safety: ["胸骨上で皮下が薄い。胸骨に孔（胸骨孔）がある人もいるため深刺しない"] },
+  // 頻用穴（要穴ではないが、症状からの取穴でよく使う経穴）
+  { code: "ST8", name: "頭維", reading: "ずい", location: "頭部、額角髪際の直上5分、前正中線の外方4寸5分。" },
+  { code: "ST35", name: "犢鼻", reading: "とくび", location: "膝前面、膝蓋靱帯外方の陥凹部。", safety: ["関節腔に刺入しないよう、深さと方向に注意する。膝の腫れ・熱感があれば施術より受診を優先する"] },
+  { code: "SP10", name: "血海", reading: "けっかい", location: "大腿前内側、内側広筋隆起部、膝蓋骨底内端の上方2寸。" },
+  { code: "LI15", name: "肩髃", reading: "けんぐう", location: "肩周囲部、肩峰外縁の前端と上腕骨大結節の間の陥凹部。" },
+  { code: "TE14", name: "肩髎", reading: "けんりょう", location: "肩周囲部、肩峰角と上腕骨大結節の間の陥凹部。" },
+  { code: "SI9", name: "肩貞", reading: "けんてい", location: "肩周囲部、肩関節の後下方、腋窩横紋後端の上方1寸。", safety: ["深部に腋窩の神経・血管がある。腋窩方向へ深く刺入しない"] },
+  { code: "SI11", name: "天宗", reading: "てんそう", location: "肩甲部、肩甲棘の中点と肩甲骨下角を結んだ線上、肩甲棘から3分の1にある陥凹部。", safety: ["肩甲骨上で比較的安全だが、肩甲骨の外側を越えて深刺すると胸腔に達するおそれがある"] },
+  { code: "BL32", name: "次髎", reading: "じりょう", location: "仙骨部、第2後仙骨孔。" },
+  { code: "BL57", name: "承山", reading: "しょうざん", location: "下腿後面、腓腹筋筋腹とアキレス腱の移行部。", safety: ["深部に脛骨神経・後脛骨動静脈がある。強い刺激はこむら返りを誘発することがある"] },
+  { code: "GB8", name: "率谷", reading: "そっこく", location: "頭部、耳尖の直上、髪際の上方1寸5分。" },
+  { code: "CV6", name: "気海", reading: "きかい", location: "下腹部、前正中線上、臍中央の下方1寸5分。", safety: [ABDOMEN] },
+  { code: "GV4", name: "命門", reading: "めいもん", location: "腰部、後正中線上、第2腰椎棘突起下方の陥凹部。", safety: ["深部に脊髄（馬尾）がある。深刺しない"] },
+  { code: "GV14", name: "大椎", reading: "だいつい", location: "後頸部、後正中線上、第7頸椎棘突起下方の陥凹部。", safety: ["深部に脊髄がある。深刺しない"] },
+  { code: "GV20", name: "百会", reading: "ひゃくえ", location: "頭部、前正中線上、前髪際の後方5寸。", safety: ["頭皮は出血しやすい。抜鍼後に圧迫する"] },
   // 督脈
   { code: "GV1", name: "長強", reading: "ちょうきょう", location: "会陰部、尾骨の下方、尾骨端と肛門の中央。", safety: ["直腸に注意し、尾骨前面に沿って刺入する。羞恥心・プライバシーに配慮する"] },
 ];

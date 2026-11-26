@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, BookOpen, CalendarClock, Clock, Map, Network, PlayCircle, Search, Stethoscope, Table2, Target, TrendingUp } from "lucide-react";
+import { ArrowRight, BookOpen, CalendarClock, Clock, Map, Network, PlayCircle, Search, Stethoscope, Table2, Target, TrendingUp, Crosshair, Clock3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -136,7 +136,9 @@ export function Dashboard() {
         <h2 className="mb-3 text-base font-bold text-primary">学習ツール</h2>
         <UpdatedForYou compact />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          <Tool href="/symptoms" icon={Crosshair} title="症状から取穴" desc="検索して配穴を組み立てる" />
+          <Tool href="/lessons/c8-l4" icon={Clock3} title="子午流注" desc="時刻と経絡の時計" />
           <Tool href="/meridians" icon={Map} title="経絡マップ" desc="十二経脈の模式図" />
           <Tool href="/points" icon={Search} title="経穴辞典" desc="検索・お気に入り" />
           <Tool href="/key-points" icon={Table2} title="要穴一覧" desc="分類ごとの一覧表" />
