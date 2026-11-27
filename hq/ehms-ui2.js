@@ -488,3 +488,173 @@ function ehPoolSim(k, raw) {
   }
   render();
 }
+
+// ===== 6. デイリー稼働：その日の人件費と、月の支出に対する1日の利益 =====
+// 見られる人：EHMS の役割がある人（院の共用アカウントは役割なし＝見えない）。一般スタッフは見えない。
+// BM・院長は担当院だけ。実際の制御はデータベースの RLS（報酬・実績）で、ここは画面の出し分け。
+function ehDailyCanSee(storeId) {
+  const e = eh();
+  if (!e.loaded || !e.role || e.role === "staff" || e.demo) return false;
+  if (["owner", "gm", "accounting"].includes(e.role)) return true;
+  return !!storeId && e.storeIds.includes(storeId);
+}
+function ehDailyEnsure() {
+  const e = eh();
+  if (!e.loaded && !e.loading && !e.err) setTimeout(() => ehLoad(false), 0);
+  if (e.loaded && e.role && e.role !== "staff" && !e.peopleLoaded && !e.peopleLoading && !e.peopleErr) setTimeout(() => ehLoadPeople(false), 0);
+}
+const ehDailySet = () => eh().settings.daily_costs || {};
+// 院のその月の人件費・固定費・変動費率（どこから取ったかも返す）
+function ehMonthCosts(clinicName, mk) {
+  const e = eh(), st = ehStoreByName(clinicName);
+  if (!st || !ehDailyCanSee(st.id)) return null;
+  const p = ehPl(st.id, mk, "actual", false);
+  const avg = ehStoreAvg(st.id);
+  const set = ehDailySet();
+  let labor = null, laborSrc = null;
+  if (p.hasData && p.labor) { labor = p.labor; laborSrc = "EHMS 月次PL"; }
+  else if (e.canSeePay && e.peopleLoaded) {
+    const sr = ehNum(ehStaffSet().social_rate, 0.155);
+    const costs = e.employees.filter((x) => x.active && x.store_id === st.id).map((x) => { const pay = ehPayOf(x.id); const c = pay ? EHMS.employmentCost(pay, { socialRate: sr }) : null; return c ? c.total : null; }).filter((v) => v !== null);
+    if (costs.length) { labor = costs.reduce((a, b) => a + b, 0); laborSrc = `報酬マスター（在籍${costs.length}人）`; }
+  }
+  if (labor === null && S.model && S.model.clinics) {
+    const k = HQ.fitClinicKey(clinicName);
+    const c = S.model.clinics.find((x) => HQ.fitClinicKey(x.name) === k || [st.name, ...(st.aliases || [])].includes(x.name));
+    if (c && c.fixedLabor) { labor = c.fixedLabor; laborSrc = "台帳（固定人件費・社保込）"; }
+  }
+  let fixed = null, fixedSrc = null;
+  const manual = (set.fixed || {})[st.id];
+  if (p.hasData && p.fixed !== null && p.fixed - (p.labor || 0) > 0) { fixed = p.fixed - (p.labor || 0); fixedSrc = "EHMS 月次PL"; }
+  else if (manual !== undefined && manual !== null && manual !== "") { fixed = Number(manual); fixedSrc = "手入力（月の固定費）"; }
+  else if (avg && avg.fixedExLabor > 0) { fixed = avg.fixedExLabor; fixedSrc = `直近${avg.months}か月の実績平均`; }
+  const vr = avg && avg.variableRate !== null ? avg.variableRate : ehNum(set.variable_rate, null);
+  return { store: st, labor, laborSrc, fixed, fixedSrc, variableRate: vr, variableSrc: avg && avg.variableRate !== null ? "実績" : vr !== null ? "手入力" : null };
+}
+// シフト表から、その月の営業日数と延べ出勤予定
+function ehShiftPlan(clinicName, mk) {
+  const shifts = S.shift && S.shift !== "loading" ? S.shift.clinics || [] : [];
+  const k = HQ.fitClinicKey(clinicName);
+  const sh = shifts.find((s) => s.key === k || HQ.fitClinicKey(s.name) === k);
+  if (!sh) return null;
+  const ds = Object.keys(sh.days).filter((d) => d.startsWith(mk));
+  if (!ds.length) return null;
+  let open = 0, staffDays = 0;
+  ds.forEach((d) => { const x = sh.days[d]; if ((x.am && x.am.open) || (x.pm && x.pm.open)) { open++; staffDays += new Set([...(x.am ? x.am.on : []), ...(x.pm ? x.pm.on : [])]).size; } });
+  return open ? { days: open, staffDays } : null;
+}
+// 日曜を除いた日数（シフト表が無いときの営業日の推定）
+function ehWeekdaysIn(mk) {
+  const [y, m] = mk.split("-").map(Number); const n = new Date(y, m, 0).getDate(); let c = 0;
+  for (let d = 1; d <= n; d++) if (new Date(y, m - 1, d).getDay() !== 0) c++;
+  return c;
+}
+// 院ごとの月の結果（その月の日計表の全日）
+function ehDailyProfitAll(book, dates, mk) {
+  const shifts = S.shift && S.shift !== "loading" ? S.shift.clinics : [];
+  const perDate = dates.map((d) => HQ.dailyOverview({ book, shifts, date: d, opt: dailyOpt() }));
+  const names = [...new Set(perDate.flatMap((o) => o.rows.map((r) => r.name)))];
+  const set = ehDailySet();
+  return names.map((name) => {
+    const cost = ehMonthCosts(name, mk);
+    if (!cost) return null;
+    const plan = ehShiftPlan(name, mk);
+    const manualDays = (set.days || {})[cost.store.id];
+    const plannedDays = manualDays ? Number(manualDays) : plan ? plan.days : ehWeekdaysIn(mk);
+    const days = perDate.map((o) => { const r = o.rows.find((x) => x.name === name); return r && r.sales !== null && r.sales !== undefined && (r.sales > 0 || r.visits > 0) ? { date: o.date, sales: r.sales, staffN: r.staffN } : null; /* 売上も来院も0の日は休み */ }).filter(Boolean);
+    const res = EHMS.dailyProfit({ days, monthLabor: cost.labor, monthFixed: cost.fixed, variableRate: cost.variableRate, plannedDays, plannedStaffDays: !manualDays && plan ? plan.staffDays : null });
+    return { name, cost, plan, plannedDays, daysSrc: manualDays ? "手入力" : plan ? "シフト表" : "推定（日曜を除く日数）", res };
+  }).filter(Boolean);
+}
+// 全院の合計（日付ごとに足す。どこかの院が未入力なら利益は算出不可）
+function ehDailySum(list) {
+  const dates = [...new Set(list.flatMap((x) => x.res.rows.map((r) => r.date)))].sort();
+  let cum = 0, cumM = 0, broken = false;
+  const exp = list.every((x) => x.res.complete) ? list.reduce((a, x) => a + x.res.expense, 0) : null;
+  let recoveredOn = null;
+  const rows = dates.map((d) => {
+    const rs = list.map((x) => x.res.rows.find((r) => r.date === d)).filter(Boolean);
+    const add = (k) => (rs.some((r) => r[k] === null) ? null : rs.reduce((a, r) => a + r[k], 0));
+    const row = { date: d, sales: add("sales"), staffN: rs.reduce((a, r) => a + (r.staffN || 0), 0) || null, variable: add("variable"), margin: add("margin"), labor: add("labor"), fixed: add("fixed"), afterLabor: add("afterLabor"), profit: add("profit") };
+    cumM += row.margin || 0; if (row.profit === null) broken = true; else cum += row.profit;
+    if (recoveredOn === null && exp !== null && cumM >= exp) recoveredOn = d;
+    return { ...row, cumMargin: cumM, cumProfit: broken ? null : cum, laborRatio: row.labor === null ? null : EHMS.ratio(row.labor, row.sales) };
+  });
+  const complete = exp !== null;
+  const projected = complete ? list.reduce((a, x) => a + x.res.projected, 0) : null;
+  const done = rows.length;
+  const remaining = list.length ? Math.max(...list.map((x) => x.res.remaining || 0)) : null;
+  return { rows, expense: exp, complete, cumMargin: cumM, projected, recoveredOn, done, remaining, days: list.length ? Math.max(...list.map((x) => x.res.days || 0)) : null,
+    breakEvenPerDay: complete ? list.reduce((a, x) => a + x.res.breakEvenPerDay, 0) : null, needPerDay: complete ? list.reduce((a, x) => a + (x.res.needPerDay || 0), 0) : null, sales: list.reduce((a, x) => a + x.res.sales, 0),
+    explain: EHMS.explain(projected, "全院の月末利益見込み ＝ 各院の見込みの合計", Object.fromEntries(list.map((x) => [x.name, x.res.projected]))) };
+}
+function ehDailyProfitCard(book, dates, date, pre) {
+  ehDailyEnsure();
+  const e = eh();
+  if (!e.loaded || !e.role || e.role === "staff") return "";
+  const mk = S.intakeMonth;
+  const list = pre || ehDailyProfitAll(book, dates, mk);
+  if (!list.length) return "";
+  e.explains = e.explains || {};
+  const sel = S.ui.dpClinic && list.some((x) => x.name === S.ui.dpClinic) ? S.ui.dpClinic : "";
+  const one = sel ? list.find((x) => x.name === sel) : null;
+  const R = one ? one.res : ehDailySum(list);
+  const signed = (v) => (v === null || v === undefined ? "算出不可" : `${v < 0 ? "−" : ""}${man(Math.abs(v))}`);
+  const cls = (v) => (v === null || v === undefined ? "" : v < 0 ? "ng" : "ok");
+  const missing = list.filter((x) => (!one || x === one) && (x.cost.labor === null || x.cost.fixed === null));
+  const today = R.rows.find((r) => r.date === date);
+  const tiles = `<div class="grid g4" style="margin-bottom:12px;">
+    ${ehTile("dp_exp", "月の支出（人件費＋固定費）", R.expense === null ? "未入力あり" : man(R.expense), one ? `人件費 ${ehMan(one.cost.labor)}・固定費 ${ehMan(one.cost.fixed)}` : `${list.length}院の合計`)}
+    ${ehTile("dp_be", "1日の損益分岐の売上", R.breakEvenPerDay === null ? "算出不可" : man(R.breakEvenPerDay), `営業 ${R.days ?? "-"}日で月の支出をまかなう売上`)}
+    ${ehTile("dp_today", `${Number(date.slice(5, 7))}/${Number(date.slice(8))}の利益`, `<span class="${cls(today && today.profit)}">${today ? signed(today.profit) : "-"}</span>`, today ? `売上 ${man(today.sales)}・人件費 ${today.labor === null ? "-" : man(today.labor)}` : "記録なし")}
+    ${ehTile("dp_cum", `今月の累計利益（${R.done}日）`, `<span class="${cls(R.rows.length ? R.rows[R.rows.length - 1].cumProfit : null)}">${R.rows.length ? signed(R.rows[R.rows.length - 1].cumProfit) : "-"}</span>`, `累計の粗利 ${man(R.cumMargin)}`)}
+    ${ehTile("dp_rec", "月の支出を回収した日", R.recoveredOn ? `${Number(R.recoveredOn.slice(5, 7))}/${Number(R.recoveredOn.slice(8))}` : R.expense === null ? "算出不可" : "まだ", R.expense === null ? "" : R.recoveredOn ? "この日以降の粗利が利益" : `あと ${man(Math.max(0, R.expense - R.cumMargin))}`, null, R.recoveredOn ? "ok" : "")}
+    ${ehTile("dp_need", "残りの日に必要な1日の粗利", R.needPerDay === null ? "算出不可" : R.recoveredOn ? '<span class="ok">回収済み</span>' : man(R.needPerDay), `残り ${R.remaining ?? "-"}日で支出を回収するには`)}
+    ${ehTile("dp_proj", "月末の利益見込み", `<span class="${cls(R.projected)}">${signed(R.projected)}</span>`, "今の1日平均が続いた場合", R.explain)}
+  </div>`;
+  const labels = R.rows.map((r) => `${Number(r.date.slice(5, 7))}/${Number(r.date.slice(8))}`);
+  const fmt = (v, short) => (v === null || v === undefined || !isFinite(v) ? "-" : short ? `${Math.round(v / 10000).toLocaleString("ja-JP")}万` : `${v < 0 ? "−" : ""}${man(Math.abs(v))}`);
+  const charts = `<div class="grid g2" style="margin-bottom:10px;">
+    <div><div style="font-weight:800;font-size:13px;color:#1e3a5f;margin-bottom:4px;">1日の売上と利益</div>${ehLineChart("dp_day", labels, [
+      { label: "売上", color: "#2a78d6", values: R.rows.map((r) => r.sales) },
+      { label: "利益（人件費・固定費・変動費を引いた後）", color: "#1baf7a", values: R.rows.map((r) => r.profit) },
+      { label: "1日の損益分岐の売上", color: "#eb6834", dash: "6 4", values: R.rows.map(() => R.breakEvenPerDay) },
+    ], fmt)}</div>
+    <div><div style="font-weight:800;font-size:13px;color:#1e3a5f;margin-bottom:4px;">累計の粗利と月の支出（交わった日が回収日）</div>${ehLineChart("dp_cum", labels, [
+      { label: "累計の粗利（売上 − 変動費）", color: "#2a78d6", values: R.rows.map((r) => r.cumMargin) },
+      { label: "月の支出（人件費＋固定費）", color: "#e34948", dash: "6 4", values: R.rows.map(() => R.expense) },
+      { label: "累計の利益", color: "#1baf7a", values: R.rows.map((r) => r.cumProfit) },
+    ], fmt)}</div></div>`;
+  const table = `<div class="scroll"><table><tr><th class="l">日付</th><th>売上</th><th>出勤</th><th>人件費</th><th>人件費率</th><th>固定費（日割り）</th><th>変動費</th><th>利益</th><th>累計の利益</th></tr>
+    ${R.rows.map((r) => `<tr${r.date === date ? ' style="background:#fff7e6;"' : ""}><td class="l"><a href="javascript:void(0)" onclick="dailyGo('${r.date}')">${Number(r.date.slice(5, 7))}/${Number(r.date.slice(8))}（${"日月火水木金土"[new Date(`${r.date}T00:00:00`).getDay()]}）</a></td><td>${man(r.sales)}</td><td>${r.staffN ? `${r.staffN}人` : "-"}</td><td>${r.labor === null ? "-" : man(r.labor)}</td><td class="${r.laborRatio !== null && r.laborRatio > ehNum(ehTargets().labor_ratio, 0.42) ? "ng" : ""}">${r.laborRatio === null ? "-" : pct(r.laborRatio, 0)}</td><td>${r.fixed === null ? "-" : man(r.fixed)}</td><td>${man(r.variable)}</td><td class="${cls(r.profit)}"><b>${signed(r.profit)}</b></td><td class="${cls(r.cumProfit)}">${signed(r.cumProfit)}</td></tr>`).join("")}</table></div>`;
+  const ed = ehCan.settings();
+  const set = ehDailySet();
+  const costs = `<details style="margin-top:10px;" ${missing.length ? "open" : ""}><summary style="cursor:pointer;font-weight:800;font-size:13px;">月の支出の元データ（院ごと）${missing.length ? `<span class="warn">・未入力 ${missing.length}院</span>` : ""}</summary><div class="scroll"><table style="margin-top:6px;">
+    <tr><th class="l">院</th><th>人件費（月）</th><th class="l">元</th><th>固定費（月・人件費以外）</th><th class="l">元</th><th>変動費率</th><th>営業日数</th><th>延べ出勤予定</th><th>1人1日の人件費</th></tr>
+    ${list.filter((x) => !one || x === one).map((x) => `<tr><td class="l"><b>${esc(x.name)}</b></td><td>${ehMan(x.cost.labor)}</td><td class="l small">${esc(x.cost.laborSrc || "なし")}</td>
+      <td>${ed ? `<input class="num" style="width:100px;" value="${(set.fixed || {})[x.cost.store.id] ?? ""}" placeholder="${x.cost.fixed !== null && x.cost.fixedSrc !== "手入力（月の固定費）" ? Math.round(x.cost.fixed) : "家賃・光熱費など"}" onchange="ehSaveDailyCost('fixed','${x.cost.store.id}',this.value)"/>` : ehMan(x.cost.fixed)}</td><td class="l small">${esc(x.cost.fixedSrc || "未入力")}</td>
+      <td>${x.cost.variableRate === null ? "0%（未入力）" : pct(x.cost.variableRate, 1)}</td>
+      <td>${ed ? `<input class="num" style="width:56px;" value="${(set.days || {})[x.cost.store.id] ?? ""}" placeholder="${x.plannedDays}" onchange="ehSaveDailyCost('days','${x.cost.store.id}',this.value)"/>` : x.plannedDays}<div class="small">${esc(x.daysSrc)}</div></td>
+      <td>${x.plan ? `${x.plan.staffDays}人日` : "-"}</td><td>${x.res.perStaffDay === null ? "-" : yen(x.res.perStaffDay)}</td></tr>`).join("")}</table></div>
+    ${ed ? `<div class="ctl" style="margin-top:6px;"><div><label>変動費率（実績が無い院に使う・%）</label><input class="num" style="width:80px;" value="${set.variable_rate !== undefined && set.variable_rate !== null ? Math.round(set.variable_rate * 1000) / 10 : ""}" placeholder="例：5" onchange="ehSaveDailyCost('variable_rate',null,this.value)"/></div></div>` : ""}
+    <div class="small" style="margin-top:6px;">人件費：EHMS の月次PL → 報酬マスター（在籍スタッフの雇用コストの合計。給与を見る権限のある人だけ）→ 台帳の固定人件費 の順に使います。固定費：EHMS の月次PL → 手入力 → 直近の実績平均。1日の人件費 ＝ 月の人件費 ÷ 月の延べ出勤予定（シフト表）× その日の出勤人数。固定費は営業日数で日割り。固定費が未入力の院は利益を「算出不可」にします（ゼロとみなしません）。本部経費の配賦は含みません。</div></details>`;
+  return `<div class="card" style="border-top:3px solid #1baf7a;"><div class="card-h"><span>💴 1日の利益の動き（${esc(monthLabel(mk))}・月の支出に対して）</span>
+    <select onchange="ui('dpClinic',this.value)"><option value="">全院（見られる院の合計）</option>${list.map((x) => `<option value="${esc(x.name)}" ${x.name === sel ? "selected" : ""}>${esc(x.name)}</option>`).join("")}</select></div><div class="card-b">
+    ${missing.length ? `<div class="note">固定費または人件費が未入力の院があります（${esc(missing.map((x) => x.name).join("・"))}）。下の「月の支出の元データ」で月の固定費（家賃・光熱費など）を入れると利益が出ます。</div>` : ""}
+    ${tiles}${charts}${table}${costs}</div></div>`;
+}
+async function ehSaveDailyCost(field, storeId, raw) {
+  const set = ehDailySet();
+  const v = raw === "" ? null : Number(String(raw).replace(/[,，¥円%\s]/g, ""));
+  if (v !== null && !isFinite(v)) { flash("数字を入れてください", true); return; }
+  if (field === "variable_rate") return ehSaveSetting("daily_costs", "variable_rate", v === null ? null : v / 100);
+  const m = { ...(set[field] || {}) };
+  if (v === null) delete m[storeId]; else m[storeId] = Math.round(v);
+  return ehSaveSetting("daily_costs", field, m);
+}
+// 院ごとの状況の表に足す「その日の人件費・利益」
+function ehDailyRowCost(list, name, date) {
+  const x = (list || []).find((y) => y.name === name);
+  if (!x) return null;
+  return x.res.rows.find((r) => r.date === date) || { labor: null, profit: null, afterLabor: null, laborRatio: null };
+}

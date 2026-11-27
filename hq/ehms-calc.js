@@ -416,12 +416,56 @@
     };
   }
 
+  // ===== 1日の利益（月の支出に対して） =====
+  // days：[{ date, sales, staffN }]（その月の記録のある日）
+  // monthLabor：その月の人件費（社保込）。出勤人数の割合で日に割り振る（1人1日 ＝ 月の人件費 ÷ 月の延べ出勤予定）
+  // monthFixed：その月の固定費（人件費以外：家賃・光熱費など）。営業日数で日割り
+  // variableRate：変動費率（材料・カード手数料など）
+  // plannedDays：月の営業日数（シフト表の営業日。無ければ推定）／plannedStaffDays：月の延べ出勤予定（シフト表）
+  function dailyProfit({ days, monthLabor, monthFixed, variableRate, plannedDays, plannedStaffDays }) {
+    const L = num(monthLabor), F = num(monthFixed), v = num(variableRate) ?? 0;
+    const list = (days || []).filter((d) => num(d.sales) !== null);
+    const nDays = num(plannedDays) || list.length || null;
+    const knownStaff = list.filter((d) => num(d.staffN));
+    const avgStaff = knownStaff.length ? knownStaff.reduce((a, d) => a + num(d.staffN), 0) / knownStaff.length : null;
+    const staffDays = num(plannedStaffDays) || (avgStaff && nDays ? avgStaff * nDays : null);
+    const perStaffDay = L !== null && staffDays ? L / staffDays : null;
+    const laborFlat = L !== null && nDays ? L / nDays : null;
+    const fixedDay = F !== null && nDays ? F / nDays : null;
+    let cumMargin = 0, cumLabor = 0, cumProfit = 0, recoveredOn = null;
+    const expense = L === null && F === null ? null : (L || 0) + (F || 0);
+    const rows = list.map((d) => {
+      const s = num(d.sales), n = num(d.staffN);
+      const variable = s * v, margin = s - variable;
+      const labor = perStaffDay !== null && n ? perStaffDay * n : laborFlat;
+      const afterLabor = labor === null ? null : margin - labor;
+      const profit = afterLabor === null || fixedDay === null ? null : afterLabor - fixedDay;
+      cumMargin += margin; cumLabor += labor || 0; if (profit !== null) cumProfit += profit;
+      if (recoveredOn === null && expense !== null && L !== null && F !== null && cumMargin >= expense) recoveredOn = d.date;
+      return { date: d.date, sales: s, staffN: n, variable, margin, labor, fixed: fixedDay, afterLabor, profit, cumMargin, cumProfit: profit === null ? null : cumProfit, laborRatio: labor === null ? null : ratio(labor, s) };
+    });
+    const done = rows.length, remaining = nDays ? Math.max(0, nDays - done) : null;
+    const sales = rows.reduce((a, r) => a + r.sales, 0);
+    const avgMargin = done ? cumMargin / done : null;
+    const complete = expense !== null && L !== null && F !== null;
+    // 月末の見込み ＝ 1日平均の粗利 × 営業日数 − 月の支出
+    const projected = complete && avgMargin !== null && nDays ? avgMargin * nDays - expense : null;
+    const needPerDay = complete && remaining ? Math.max(0, (expense - cumMargin) / remaining) : null;
+    return {
+      rows, days: nDays, done, remaining, perStaffDay, fixedDay, expense, complete, sales, cumMargin, cumLabor,
+      breakEvenPerDay: complete && nDays ? expense / nDays / (1 - v) : null, // 1日あたり損益分岐の売上
+      recoveredOn, projected, needPerDay,
+      explain: explain(projected, "月末の利益見込み ＝ 1日平均の粗利（売上 −変動費）× 営業日数 −（月の人件費 ＋ 月の固定費）",
+        { "1日平均の粗利": avgMargin, 営業日数: nDays, 月の人件費: L, 月の固定費: F, 変動費率: v }, "1日の人件費 ＝ 月の人件費 ÷ 月の延べ出勤予定 × その日の出勤人数。固定費は営業日数で日割り"),
+    };
+  }
+
   root.EHMS = {
     CALC_VERSION, SECTIONS, SECTION_LABELS, num, sumOrNull, ratio, explain,
     fiscalYearOf, fiscalMonths, shiftMonth,
     pl, plFromRecords, amountsByAccount, variance, aggregate, periodSums, landing, allocate,
     requiredSales, raiseImpact, breakEven, staffing, alerts,
     dailyTotalToRecords, employmentCost, productivity, requiredSalesText, requiredSalesBreakdown, feasibility, staffingByDemand, weekdayNeeds,
-    laborPolicy, bonusTarget,
+    laborPolicy, bonusTarget, dailyProfit,
   };
 })(typeof window !== "undefined" ? window : globalThis);
