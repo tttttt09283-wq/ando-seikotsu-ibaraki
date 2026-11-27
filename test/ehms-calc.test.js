@@ -222,3 +222,27 @@ test("人件費の方針：欲しい賞与原資から必要売上を逆算", ()
   assert.ok(E.bonusTarget({ bonus: 1, labor: 1, bonusShare: 0 }).error);
   assert.ok(E.bonusTarget({ bonus: 1, labor: 1, laborGrowth: 0.5 }).error);
 });
+
+test("1日の利益：人件費を出勤人数で割り振り、固定費は営業日数で日割り", () => {
+  // 月の人件費 100万・固定費 50万・営業日 20日・延べ出勤 80人日（1人1日 12,500円）・変動費率 5%
+  const r = E.dailyProfit({ days: [{ date: "2026-11-01", sales: 100_000, staffN: 4 }, { date: "2026-11-02", sales: 60_000, staffN: 3 }], monthLabor: 1_000_000, monthFixed: 500_000, variableRate: 0.05, plannedDays: 20, plannedStaffDays: 80 });
+  near(r.perStaffDay, 12_500);
+  near(r.fixedDay, 25_000);
+  near(r.rows[0].labor, 50_000);
+  near(r.rows[0].profit, 100_000 * 0.95 - 50_000 - 25_000); // 20,000
+  near(r.rows[1].profit, 60_000 * 0.95 - 37_500 - 25_000); // −5,500
+  near(r.rows[1].cumProfit, 20_000 - 5_500);
+  near(r.expense, 1_500_000);
+  near(r.breakEvenPerDay, 1_500_000 / 20 / 0.95);
+  near(r.projected, (152_000 / 2) * 20 - 1_500_000);
+  near(r.needPerDay, (1_500_000 - 152_000) / 18);
+  assert.equal(r.recoveredOn, null);
+  // 固定費が未入力なら利益は「算出不可」（ゼロ扱いしない）。人件費差引後は出す
+  const n = E.dailyProfit({ days: [{ date: "2026-11-01", sales: 100_000, staffN: 4 }], monthLabor: 1_000_000, monthFixed: null, plannedDays: 20, plannedStaffDays: 80 });
+  assert.equal(n.rows[0].profit, null);
+  near(n.rows[0].afterLabor, 50_000);
+  assert.equal(n.projected, null);
+  // 出勤人数が分からない日は、人件費を営業日数で均等割り
+  const f = E.dailyProfit({ days: [{ date: "2026-11-01", sales: 100_000 }], monthLabor: 1_000_000, monthFixed: 0, plannedDays: 20 });
+  near(f.rows[0].labor, 50_000);
+});
