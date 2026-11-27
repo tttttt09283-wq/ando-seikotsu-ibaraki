@@ -296,16 +296,17 @@ function compareCard(y) {
   const rows = data.centers.map((c) => ({ c, s: NG.nailSummary(c.nail, y) })).filter((x) => x.s.count);
   if (!rows.length) return "";
   const all = NG.nailSummary(NG.combineCenters(data.centers), y);
+  const hasMixed = all.sum.mixedCost > 0;
   const line = (name, s, id) => `<tr ${id ? `style="cursor:pointer" onclick="setCenter('${id}')"` : `class="sum"`}><td class="l">${id ? `<b style="color:#0f766e">${esc(name)}</b>` : esc(name)}</td>
     <td>${s.count}か月</td><td>${n1(s.avg.newCount)}</td><td>${n1(s.avg.total)}</td><td>${s.last ? n0(s.last.cont) : "-"}</td>
     <td class="${cellCls("secondRate", s.metrics.secondRate)}">${pctS(s.metrics.secondRate)}</td><td class="${cellCls("fourRate", s.metrics.fourRate)}">${pctS(s.metrics.fourRate)}</td>
     <td class="${cellCls("unitPrice", s.metrics.unitPrice)}">${yen(s.metrics.unitPrice)}</td><td class="${cellCls("dropRate", s.metrics.dropRate)}">${pctS(s.metrics.dropRate)}</td>
-    <td>${n1(s.metrics.avgVisits)}</td><td>${man(s.avg.sales)}</td><td>${man(s.sum.sales)}</td><td>${pctS(s.metrics.yoy)}</td><td>${s.metrics.salesPerCost ? n1(s.metrics.salesPerCost) + "倍" : "-"}</td></tr>`;
+    <td>${n1(s.metrics.avgVisits)}</td><td>${man(s.avg.sales)}</td><td>${man(s.sum.sales)}</td><td>${pctS(s.metrics.yoy)}</td><td>${s.sum.adCost ? man(s.sum.adCost) : "-"}</td><td>${s.metrics.adPerNew ? yen(s.metrics.adPerNew) : "-"}</td><td>${s.sum.stockCost ? man(s.sum.stockCost) : "-"}</td><td>${s.metrics.stockRate ? pctS(s.metrics.stockRate) : "-"}</td>${hasMixed ? `<td>${s.sum.mixedCost ? man(s.sum.mixedCost) : "-"}</td>` : ""}<td>${s.metrics.salesPerCost ? n1(s.metrics.salesPerCost) + "倍" : "-"}</td></tr>`;
   return `<div class="card"><div class="card-h">センター比較（${esc(y)}年）</div><div class="card-b scroll"><table>
-    <tr><th class="l">センター</th><th>入力月</th><th>新規/月</th><th>総人数/月</th><th>継続数（直近）</th><th>2回目継続率</th><th>4箇所率</th><th>平均単価</th><th>離脱率</th><th>平均通院回数</th><th>売上/月</th><th>売上合計</th><th>昨対比</th><th>売上÷仕入れ広告費</th></tr>
+    <tr><th class="l">センター</th><th>入力月</th><th>新規/月</th><th>総人数/月</th><th>継続数（直近）</th><th>2回目継続率</th><th>4箇所率</th><th>平均単価</th><th>離脱率</th><th>平均通院回数</th><th>売上/月</th><th>売上合計</th><th>昨対比</th><th>広告費</th><th>広告費/新規</th><th>仕入れ</th><th>仕入れ率</th>${hasMixed ? "<th>内訳なし</th>" : ""}<th>売上÷費用</th></tr>
     ${rows.map((x) => line(`${x.c.name.replace("巻き爪センター", "")}（${shortStaff(x.c) || "-"}）`, x.s, x.c.id)).join("")}
     ${line("全センター合計", all, null)}
-  </table><div class="small" style="margin-top:6px;">センター名を押すと、そのセンターの分析表を開きます。昨対比・売上÷仕入れ広告費は、その数字が入っている月だけで計算しています。</div></div></div>`;
+  </table><div class="small" style="margin-top:6px;">センター名を押すと、そのセンターの分析表を開きます。昨対比・費用の数字は、その数字が入っている月だけで計算しています（広告費/新規＝新規1人を集めるのにかかった広告費、仕入れ率＝仕入れ÷売上、売上÷費用＝売上が広告費＋仕入れの何倍か）。${hasMixed ? "「内訳なし」は、分析表に「仕入れ＋広告費」の合計しか無かった月の金額です。" : ""}</div></div></div>`;
 }
 // ---------- 推移グラフ（折れ線） ----------
 // 系列の色は固定の順番（センターの並び順）で割り当てる。表示を絞っても色は変わらない
@@ -321,6 +322,8 @@ const TREND_METRICS = [
   { key: "dropRate", label: "問合せ離脱率", kind: "pct", kpi: "dropRate" },
   { key: "inquiry", label: "問合せ件数", kind: "count", unit: "件", get: (r) => r.inquiry },
   { key: "avgVisits", label: "平均通院回数", kind: "count", unit: "回", get: (r) => r.avgVisits },
+  { key: "adCost", label: "広告費", kind: "yen", get: (r) => r.adCost },
+  { key: "stockCost", label: "仕入れ", kind: "yen", get: (r) => r.stockCost },
 ];
 let trend = { metric: lsGet("nail_trend_metric") || "sales", range: lsGet("nail_trend_range") || "year", hidden: {} };
 let trendDraw = null; // ホバーで使う、いま描いているグラフの情報
@@ -528,7 +531,8 @@ function viewNail() {
   const y = data.year;
   const s = NG.nailSummary(nail, y);
   const months = Array.from({ length: 12 }, (_, i) => `${y}-${String(i + 1).padStart(2, "0")}`);
-  const F = NG.NAIL_FIELDS;
+  // 「内訳なし」の列は、その年に数字がある時だけ出す
+  const F = NG.NAIL_FIELDS.filter((f) => !f.optional || months.some((ym) => Number((nail[ym] || {})[f.key]) > 0));
   const recent = s.months.slice(-3);
   const r3 = NG.nailSummary(Object.fromEntries(recent.map((k) => [k, nail[k]])));
   const target = 600000 * (c ? 1 : data.centers.filter((x) => NG.nailSummary(x.nail, y).count).length || 1);
@@ -549,7 +553,8 @@ function viewNail() {
       <div class="stat"><div class="l">巻き爪の売上（月平均）</div><div class="v">${man(s.avg.sales)}円</div><div class="s">合計 ${man(s.sum.sales)}円・月の目標${man(target)}円に対して ${pctS(s.avg.sales / target * 100)}</div></div>
       <div class="stat"><div class="l">平均通院回数</div><div class="v">${n1(s.metrics.avgVisits)}回</div><div class="s">指標 5回／優良 6回（9か月後）。継続表の平均通院回数の月平均</div></div>
       <div class="stat"><div class="l">昨対比</div><div class="v">${pctS(s.metrics.yoy)}</div><div class="s">昨年の売上が入っている月だけで比較</div></div>
-      <div class="stat"><div class="l">仕入れ＋広告費</div><div class="v">${s.sum.cost ? yen(s.sum.cost) : "-"}</div><div class="s">${s.metrics.salesPerCost ? `入っている月の売上は費用の ${n1(s.metrics.salesPerCost)}倍・新規1人あたり ${yen(s.metrics.costPerNew)}` : "まだ入力がありません"}</div></div>
+      <div class="stat"><div class="l">広告費</div><div class="v">${s.sum.adCost ? yen(s.sum.adCost) : "-"}</div><div class="s">${s.metrics.adPerNew ? `新規1人あたり ${yen(s.metrics.adPerNew)}（広告費が入っている月の新規数で計算）` : "まだ入力がありません"}</div></div>
+      <div class="stat"><div class="l">仕入れ</div><div class="v">${s.sum.stockCost ? yen(s.sum.stockCost) : "-"}</div><div class="s">${s.metrics.stockRate ? `仕入れ率 ${pctS(s.metrics.stockRate)}（仕入れ÷その月の売上）` : "まだ入力がありません"}${s.sum.mixedCost ? `<br>ほかに内訳の分からない「仕入れ＋広告費」${yen(s.sum.mixedCost)}` : ""}${s.metrics.salesPerCost ? `<br>売上は広告費＋仕入れの ${n1(s.metrics.salesPerCost)}倍` : ""}</div></div>
     </div>
     ${recent.length ? `<div class="small" style="margin-top:10px;">直近3か月（${recent.map(monthLabel).join("・")}）：2回目継続率 <b class="${cellCls("secondRate", r3.metrics.secondRate)}">${pctS(r3.metrics.secondRate)}</b>／4箇所施術率 <b class="${cellCls("fourRate", r3.metrics.fourRate)}">${pctS(r3.metrics.fourRate)}</b>／平均単価 <b class="${cellCls("unitPrice", r3.metrics.unitPrice)}">${yen(r3.metrics.unitPrice)}</b>／離脱率 <b class="${cellCls("dropRate", r3.metrics.dropRate)}">${pctS(r3.metrics.dropRate)}</b></div>` : ""}` : `<div class="muted">${esc(y)}年の数字はまだありません。</div>`}
   </div></div>
