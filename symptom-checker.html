@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>症状チェッカー（試験運用）｜あんど整骨院</title>
+<style>
+  :root{--navy:#1e3a5f;--ink:#1e293b;--sub:#64748b;--line:#e2e8f0;--bg:#eef2f7;--red:#b91c1c;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;line-height:1.6}
+  header{background:linear-gradient(135deg,#0f2744,#1e4d8c);color:#fff;padding:14px 16px}
+  header h1{margin:0;font-size:19px}
+  header p{margin:4px 0 0;font-size:12.5px;opacity:.85}
+  main{max-width:1100px;margin:0 auto;padding:14px 16px 40px;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:14px}
+  @media (max-width:860px){main{grid-template-columns:1fr}}
+  .card{background:#fff;border-radius:12px;border:1px solid #f1f5f9;box-shadow:0 1px 4px rgba(0,0,0,.06);padding:14px 16px;margin-bottom:14px}
+  h2{font-size:15px;margin:0 0 8px;color:var(--navy)}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{border:1.5px solid var(--line);background:#fff;border-radius:18px;padding:6px 12px;font-size:13.5px;font-weight:700;color:#334155;cursor:pointer;font-family:inherit}
+  .chip[aria-pressed="true"]{background:var(--navy);border-color:var(--navy);color:#fff}
+  .chip.rf[aria-pressed="true"]{background:var(--red);border-color:var(--red)}
+  .grp{font-size:12px;font-weight:800;color:var(--sub);margin:10px 0 5px}
+  .redbox{border:2px solid #fecaca;background:#fef2f2}
+  .redbox h2{color:var(--red)}
+  .alert{background:var(--red);color:#fff;border-radius:10px;padding:12px 14px;font-weight:800;margin-bottom:12px}
+  .alert small{display:block;font-weight:600;margin-top:4px;opacity:.95}
+  .cand{border:1.5px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px}
+  .cand h3{margin:0;font-size:15.5px}
+  .lv{display:inline-block;font-size:11.5px;font-weight:800;border-radius:10px;padding:1px 8px;margin-left:6px;vertical-align:2px}
+  .lv.高{background:#fee2e2;color:#b91c1c}.lv.中{background:#fef3c7;color:#92400e}.lv.低{background:#f1f5f9;color:#475569}
+  .bar{height:6px;background:#f1f5f9;border-radius:3px;overflow:hidden;margin:6px 0}
+  .bar>div{height:100%;background:#2563eb}
+  .row{font-size:13px;margin-top:4px}
+  .row b{color:#334155}
+  .hit{color:#047857}.against{color:#b45309}
+  .ins li{font-size:13px;margin-bottom:4px}
+  .muted{font-size:12px;color:var(--sub)}
+  .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .btn{border:none;border-radius:8px;padding:9px 14px;font-weight:800;font-size:13.5px;cursor:pointer;font-family:inherit}
+  .btn.p{background:var(--navy);color:#fff}.btn.s{background:#fff;border:1.5px solid var(--line);color:#334155}
+  .sticky{position:sticky;top:12px}
+  @media (max-width:860px){.sticky{position:static}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🔎 症状チェッカー（試験運用）</h1>
+  <p>問診で聞いたことを選ぶと、考えられる状態・確かめる検査・施術の方向性・保険の目安が出ます。<b>診断ではありません。</b>最終判断は施術者が行い、危険なサインがあれば医療機関へ。</p>
+</header>
+<main>
+  <section>
+    <div class="card">
+      <h2>① 痛い・気になる部位</h2>
+      <div class="chips" id="regions"></div>
+    </div>
+    <div class="card redbox">
+      <h2>② 危険なサイン（当てはまれば選ぶ）</h2>
+      <div class="muted" style="margin-bottom:6px">ひとつでもあれば、施術より先に医療機関の受診を勧めます。</div>
+      <div class="chips" id="redflags"></div>
+    </div>
+    <div class="card">
+      <h2>③ 問診で聞いたこと（当てはまるものを全部）</h2>
+      <div id="factors"></div>
+    </div>
+  </section>
+  <section>
+    <div class="card sticky" id="result" aria-live="polite"></div>
+  </section>
+</main>
+<script src="/symptom-logic.js"></script>
+<script>
+(function(){
+  const S=window.SymptomLogic;
+  const st={region:null,factors:[],redFlags:[]};
+  const $=id=>document.getElementById(id);
+  const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  function chip(label,on,cls,onClick){ const b=document.createElement("button"); b.type="button"; b.className="chip"+(cls?" "+cls:""); b.textContent=label; b.setAttribute("aria-pressed",on?"true":"false"); b.onclick=onClick; return b; }
+  function toggle(list,id){ const i=list.indexOf(id); if(i<0) list.push(id); else list.splice(i,1); }
+  function render(){
+    const rg=$("regions"); rg.innerHTML="";
+    S.REGIONS.forEach(r=>rg.appendChild(chip(r.label,st.region===r.id,"",()=>{ st.region=st.region===r.id?null:r.id; render(); })));
+    const rf=$("redflags"); rf.innerHTML="";
+    S.RED_FLAGS.forEach(x=>rf.appendChild(chip(x.label,st.redFlags.includes(x.id),"rf",()=>{ toggle(st.redFlags,x.id); render(); })));
+    const fc=$("factors"); fc.innerHTML="";
+    S.FACTORS.forEach(g=>{ const h=document.createElement("div"); h.className="grp"; h.textContent=g.group; fc.appendChild(h);
+      const box=document.createElement("div"); box.className="chips"; g.items.forEach(it=>box.appendChild(chip(it.label,st.factors.includes(it.id),"",()=>{ toggle(st.factors,it.id); render(); }))); fc.appendChild(box); });
+    renderResult();
+  }
+  function renderResult(){
+    const el=$("result");
+    if(!st.region&&!st.redFlags.length){ el.innerHTML='<h2>結果</h2><div class="muted">まず ① の部位を選んでください。</div>'; return; }
+    const res=S.evaluate(st);
+    let h='<h2>結果</h2>';
+    if(res.urgent){
+      h+='<div class="alert">⚠ 危険なサインがあります：'+res.redFlags.map(x=>esc(x.label)).join("・")+'<small>'+esc(S.RED_FLAG_ADVICE)+'</small></div>';
+    }
+    if(!st.region){ h+='<div class="muted">部位を選ぶと、考えられる状態の候補が出ます。</div>'; }
+    else if(!res.candidates.length){ h+='<div class="muted">③ で当てはまるものを選ぶと、候補が出ます。</div>'; }
+    else{
+      res.candidates.forEach((c,i)=>{
+        h+='<div class="cand"><h3>'+(i+1)+'. '+esc(c.name)+'<span class="lv '+c.level+'">可能性 '+c.level+'</span></h3>'
+          +'<div class="bar"><div style="width:'+Math.min(100,c.pct)+'%"></div></div>'
+          +(c.hits.length?'<div class="row hit">✓ 当てはまる：'+c.hits.map(esc).join("・")+'</div>':'')
+          +(c.against.length?'<div class="row against">△ 合わない点：'+c.against.map(esc).join("・")+'</div>':'')
+          +'<div class="row"><b>確かめる検査：</b>'+c.tests.map(esc).join("／")+'</div>'
+          +'<div class="row"><b>施術の方向性：</b>'+esc(c.care)+'</div>'
+          +(c.note?'<div class="row muted">'+esc(c.note)+'</div>':'')+'</div>';
+      });
+    }
+    h+='<h2 style="margin-top:12px">保険の目安</h2><ul class="ins" style="padding-left:18px;margin:4px 0">'+res.insurance.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul>';
+    h+='<div class="btns"><button class="btn p" type="button" id="copy">📋 施術記録用に文章をコピー</button><button class="btn s" type="button" id="reset">最初からやり直す</button></div><div class="muted" id="copied" style="margin-top:6px"></div>';
+    h+='<div class="muted" style="margin-top:10px">※ 候補は選んだ特徴との当てはまり具合の目安です。診断ではありません。</div>';
+    el.innerHTML=h;
+    $("copy").onclick=()=>{ const t=S.summaryText(st,res); (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>{ $("copied").textContent="✓ コピーしました。施術記録やメモに貼り付けてください"; }).catch(()=>{ window.prompt("この文章をコピーしてください",t); }); };
+    $("reset").onclick=()=>{ st.region=null; st.factors=[]; st.redFlags=[]; render(); window.scrollTo({top:0,behavior:"smooth"}); };
+  }
+  render();
+})();
+</script>
+</body>
+</html>
