@@ -17,6 +17,7 @@
 
 import { mandalaHandler } from "../lib/mandala-api.js";
 import { manualHandler } from "../lib/manual-api.js";
+import { nailSheetsHandler } from "../lib/nail-sheets-api.js";
 import { batchGet, batchUpdate, getSheetTitles, addSheets, appendRows } from "../lib/google-sheets.js";
 import { resolveViewer, filterModelForViewer, canSeeLabor, canSeeCompany, clinicsAt, evalGradeAt, evalAsAt } from "../lib/incentive-calc.js";
 import { CAREER_SHEET_ID, loadModel, invalidateModel, loadNewPatients, authenticate, viewerNotFound } from "../lib/incentive-data.js";
@@ -499,6 +500,7 @@ export default async function handler(req, res) {
   // /api/mandala もこの関数で受ける（Vercelの無料プランは関数が12個までのため。vercel.json で振り替え）
   if (req.query && req.query.__mandala) return mandalaHandler(req, res);
   if (req.query && req.query.__manual) return manualHandler(req, res); // /api/manual も同じ理由で
+  if (req.query && req.query.__nailsheets) return nailSheetsHandler(req, res); // /api/nail-sheets（巻き爪分析表のスプレッドシート）も同じ理由で
   if (req.method !== "GET" && req.method !== "POST") {
     res.status(405).json({ error: "GET・POSTのみ対応しています" });
     return;

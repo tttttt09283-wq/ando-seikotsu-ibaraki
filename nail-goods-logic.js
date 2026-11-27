@@ -28,7 +28,10 @@
     {key:"lastYearSales",label:"昨年の売上",yen:true},
     {key:"inquiry",label:"問合せ件数"},
     {key:"drop",label:"問合せ離脱"},
-    {key:"cost",label:"仕入れ＋広告費",yen:true},
+    {key:"adCost",label:"広告費",yen:true},
+    {key:"stockCost",label:"仕入れ",yen:true},
+    // 分析表に「仕入れ＋広告費」の合計しか無い月（内訳が分からない）。数字がある時だけ列を出す
+    {key:"mixedCost",label:"仕入れ＋広告費（内訳なし）",yen:true,optional:true},
   ];
 
   // 各センターの巻き爪分析表の実績（2026年11月にいただいた分析表から読み取り）
@@ -47,7 +50,7 @@
       "2026-07":{days:26,"newCount":9,"web":8,"referral":1,"total":38,"four":5,"second":4,"cont":29,"avgVisits":1,"sales":493886,"inquiry":9,"drop":0},
       "2026-08":{days:26,"newCount":7,"web":6,"nobori":1,"total":45,"four":2,"second":8,"cont":37,"cured":1,"avgVisits":1,"sales":534150,"lastYearSales":31000,"inquiry":7,"drop":0},
       "2026-09":{days:26,"newCount":6,"web":5,"referral":1,"total":43,"four":2,"second":6,"cont":36,"cured":1,"avgVisits":1,"sales":523482,"lastYearSales":127000,"inquiry":8,"drop":1},
-      "2026-10":{days:25,"newCount":6,"web":6,"total":43,"four":0,"second":5,"cont":36,"cured":1,"avgVisits":1,"sales":510539,"lastYearSales":221000,"inquiry":7,"drop":1,"cost":91690},
+      "2026-10":{days:25,"newCount":6,"web":6,"total":43,"four":0,"second":5,"cont":36,"cured":1,"avgVisits":1,"sales":510539,"lastYearSales":221000,"inquiry":7,"drop":1,"adCost":50000,"stockCost":41690},
     }},
     {id:"ibaraki",name:"茨木巻き爪センター",staff:"広川",source:"巻き爪分析表（PDF）",nail:{
       "2026-01":{days:18,"newCount":11,"web":10,"nobori":1,"total":53,"four":5,"second":9,"cont":41,"cured":1,"avgVisits":4.5,"sales":741417,"lastYearSales":702000,"inquiry":12,"drop":2},
@@ -59,7 +62,7 @@
       "2026-07":{days:21,"newCount":7,"web":7,"total":55,"four":3,"second":5,"cont":48,"cured":0,"avgVisits":2.4,"sales":734745,"lastYearSales":363000,"inquiry":9,"drop":2},
       "2026-08":{days:20,"newCount":11,"web":10,"inStore":1,"total":63,"four":3,"second":7,"cont":49,"cured":3,"avgVisits":1.8,"sales":824481,"lastYearSales":647000,"inquiry":12,"drop":3},
       "2026-09":{days:22,"newCount":5,"web":5,"revisit":1,"total":48,"four":3,"second":3,"cont":41,"cured":1,"avgVisits":1.6,"sales":562944,"lastYearSales":607000,"inquiry":5,"drop":2},
-      "2026-10":{days:21,"newCount":9,"web":9,"total":59,"four":3,"cont":47,"cured":3,"avgVisits":1.2,"sales":721629,"lastYearSales":675000,"inquiry":9,"drop":2,"cost":50000},
+      "2026-10":{days:21,"newCount":9,"web":9,"total":59,"four":3,"cont":47,"cured":3,"avgVisits":1.2,"sales":721629,"lastYearSales":675000,"inquiry":9,"drop":2,"mixedCost":50000},
     }},
     {id:"tsuda",name:"津田巻き爪センター",staff:"大森",staffChanges:[{from:"2026-01",staff:"児玉"},{from:"2026-11",staff:"大森"}],source:"巻き爪分析表2026（11月に正式な売上で差し替え）",nail:{
       "2026-01":{days:19.5,"newCount":7,"web":6,"other":1,"total":34,"four":1,"second":3,"cont":25,"cured":2,"avgVisits":2.1,"sales":393250,"inquiry":8,"drop":1},
@@ -71,7 +74,7 @@
       "2026-07":{days:18,"newCount":6,"web":4,"nobori":2,"total":31,"four":3,"second":6,"cont":21,"cured":4,"avgVisits":3.3,"sales":359700,"lastYearSales":51000,"inquiry":8,"drop":0},
       "2026-08":{days:15,"newCount":9,"web":4,"nobori":3,"other":2,"total":35,"four":5,"second":8,"cont":24,"cured":2,"avgVisits":3.2,"sales":362150,"lastYearSales":225000,"inquiry":10,"drop":0},
       "2026-09":{days:20,"newCount":9,"web":9,"total":40,"four":3,"second":6,"cont":29,"cured":2,"avgVisits":1.7,"sales":508700,"lastYearSales":307250,"inquiry":10,"drop":0},
-      "2026-10":{days:19,"newCount":9,"web":5,"nobori":2,"referral":1,"other":1,"total":45,"four":5,"second":1,"cont":36,"cured":0,"avgVisits":1.1,"sales":554400,"lastYearSales":358600,"inquiry":10,"drop":0,"cost":136680},
+      "2026-10":{days:19,"newCount":9,"web":5,"nobori":2,"referral":1,"other":1,"total":45,"four":5,"second":1,"cont":36,"cured":0,"avgVisits":1.1,"sales":554400,"lastYearSales":358600,"inquiry":10,"drop":0,"mixedCost":136680},
     }},
     {id:"katano",name:"交野巻き爪センター",staff:"藤原",source:"巻き爪分析表（11月に10月分まで更新）",nail:{
       "2026-01":{days:23.0,"newCount":2,"nobori":2,"total":18,"four":2,"second":2.0,"cont":16,"avgVisits":3.0,"sales":305050,"inquiry":2,"drop":0},
@@ -82,8 +85,8 @@
       "2026-06":{days:25.0,"newCount":2,"web":1,"referral":1,"total":21,"four":1,"second":2.0,"cont":19,"avgVisits":1.0,"sales":363600,"inquiry":2,"drop":0},
       "2026-07":{days:25.0,"newCount":3,"web":2,"nobori":1,"total":23,"four":3,"second":3.0,"cont":20,"avgVisits":1.0,"sales":395550,"inquiry":3,"drop":0},
       "2026-08":{days:26.0,"newCount":4,"web":1,"nobori":2,"other":1,"total":34,"four":4,"second":4.0,"cont":30,"avgVisits":1.0,"sales":560350,"inquiry":4,"drop":0},
-      "2026-09":{days:24.0,"newCount":3,"web":1,"nobori":2,"total":39,"four":2,"second":3.0,"cont":36,"avgVisits":1.0,"sales":593500,"inquiry":3,"drop":0,"cost":50000},
-      "2026-10":{days:27.0,"newCount":4,"web":2,"nobori":1,"referral":1,"total":31,"four":3,"second":4.0,"cont":27,"avgVisits":1.0,"sales":419850,"inquiry":1,"drop":0,"cost":138000},
+      "2026-09":{days:24.0,"newCount":3,"web":1,"nobori":2,"total":39,"four":2,"second":3.0,"cont":36,"avgVisits":1.0,"sales":593500,"inquiry":3,"drop":0,"adCost":50000},
+      "2026-10":{days:27.0,"newCount":4,"web":2,"nobori":1,"referral":1,"total":31,"four":3,"second":4.0,"cont":27,"avgVisits":1.0,"sales":419850,"inquiry":1,"drop":0,"adCost":138000},
     }},
     {id:"hirakata",name:"枚方巻き爪センター",staff:"木村",source:"巻き爪分析表2025・2026.xlsx",nail:{
       "2025-01":{days:19,"newCount":6,"web":5,"inStore":1,"revisit":4,"total":44,"four":1,"second":6,"cont":29,"cured":5,"avgVisits":5.3,"sales":483850,"lastYearSales":365000,"inquiry":7,"drop":3},
@@ -106,24 +109,24 @@
       "2026-06":{days:20.5,"newCount":6,"web":5,"other":1,"revisit":2,"total":46,"four":4,"second":1.7,"cont":37,"cured":1,"avgVisits":1,"sales":547850,"lastYearSales":555700,"inquiry":7,"drop":1},
       "2026-07":{days:20,"newCount":7,"web":6,"inStore":1,"total":44,"four":3,"second":6,"cont":36,"cured":1,"avgVisits":1.9,"sales":533000,"lastYearSales":441000,"inquiry":9,"drop":2},
       "2026-08":{days:19,"newCount":4,"web":2,"inStore":2,"revisit":2,"total":41,"four":3,"second":4,"cont":35,"cured":0,"avgVisits":2.5,"sales":546150,"lastYearSales":486000,"inquiry":4,"drop":2},
-      "2026-09":{days:18,"newCount":7,"web":6,"inStore":1,"total":48,"four":3,"second":3,"cont":41,"cured":0,"avgVisits":1.5,"sales":696180,"lastYearSales":513000,"inquiry":7,"drop":1,"cost":158510},
+      "2026-09":{days:18,"newCount":7,"web":6,"inStore":1,"total":48,"four":3,"second":3,"cont":41,"cured":0,"avgVisits":1.5,"sales":696180,"lastYearSales":513000,"inquiry":7,"drop":1,"mixedCost":158510},
       "2026-10":{days:18,"newCount":7,"web":5,"nobori":1,"inStore":1,"revisit":1,"total":45,"four":1,"cont":36,"cured":1,"avgVisits":1,"sales":585300,"lastYearSales":437000,"inquiry":8,"drop":1},
     }},
-    {id:"hirakata_ekimae",name:"枚方市駅前巻き爪センター",staff:"原田",source:"最新巻き爪分析表（スプレッドシート）",nail:{
+    {id:"hirakata_ekimae",name:"枚方市駅前巻き爪センター",staff:"原田",sheetUrl:"https://docs.google.com/spreadsheets/d/1Uy3UytDSV4Gsv_EZXGmeorrpWRltJD7nqZBX4TgeYGA/edit",source:"最新巻き爪分析表（スプレッドシート）",nail:{
       "2025-08":{days:26,"newCount":2,"nobori":1,"inStore":1,"revisit":0,"total":2,"four":0,"second":2,"cont":0,"cured":0,"avgVisits":6,"sales":20900,"inquiry":2,"drop":0},
       "2025-09":{days:26,"newCount":3,"web":1,"inStore":2,"revisit":0,"total":5,"four":2,"second":2,"cont":2,"cured":0,"avgVisits":2.3,"sales":67650,"inquiry":4,"drop":1},
       "2025-10":{days:26,"newCount":0,"revisit":0,"total":4,"four":0,"second":0,"cont":4,"cured":0,"sales":17600,"inquiry":0,"drop":0},
       "2025-11":{days:26,"newCount":1,"web":1,"revisit":0,"total":5,"four":0,"second":1,"cont":4,"cured":0,"avgVisits":3,"sales":43450,"inquiry":1,"drop":0},
-      "2026-01":{days:24,"newCount":5,"web":3,"inStore":2,"revisit":0,"total":10,"four":3,"second":5,"cont":5,"cured":0,"avgVisits":3.8,"sales":111650,"inquiry":8,"drop":3,"cost":50000},
-      "2026-02":{days:24,"newCount":2,"web":1,"nobori":1,"revisit":0,"total":4,"four":1,"second":2,"cont":2,"cured":0,"avgVisits":4,"sales":57200,"inquiry":4,"drop":2,"cost":50000},
-      "2026-03":{days:27,"newCount":1,"web":1,"revisit":0,"total":11,"four":1,"second":1,"cont":10,"cured":0,"avgVisits":7,"sales":158400,"inquiry":2,"drop":1,"cost":50000},
-      "2026-04":{days:25,"newCount":3,"web":2,"inStore":1,"revisit":0,"total":10,"four":1,"second":3,"cont":7,"cured":0,"avgVisits":5.3,"sales":86350,"inquiry":3,"drop":0,"cost":50000},
-      "2026-05":{days:26,"newCount":1,"referral":1,"revisit":0,"total":9,"four":0,"second":1,"cont":7,"cured":1,"avgVisits":5,"sales":103401,"inquiry":2,"drop":1,"cost":50000},
-      "2026-06":{days:26,"newCount":5,"web":2,"inStore":1,"other":2,"revisit":0,"total":14,"four":2,"second":3,"cont":8,"cured":1,"avgVisits":2.8,"sales":151844,"inquiry":6,"drop":1,"cost":50000},
-      "2026-07":{days:26,"newCount":0,"revisit":0,"total":8,"four":1,"second":0,"cont":7,"cured":1,"sales":71904,"inquiry":1,"drop":1,"cost":50000},
-      "2026-08":{days:27,"newCount":2,"web":1,"inStore":1,"revisit":0,"total":13,"four":0,"second":0,"cont":10,"cured":1,"avgVisits":5,"sales":121953,"lastYearSales":20900,"inquiry":2,"drop":0,"cost":50000},
-      "2026-09":{days:26,"newCount":4,"web":2,"nobori":1,"inStore":1,"revisit":0,"total":9,"four":2,"second":2,"cont":5,"cured":0,"avgVisits":2.1,"sales":116000,"lastYearSales":67650,"inquiry":4,"drop":0,"cost":50000},
-      "2026-10":{days:26,"newCount":1,"inStore":1,"revisit":0,"total":10,"four":0,"cont":9,"cured":0,"avgVisits":1,"sales":126000,"lastYearSales":17600,"inquiry":2,"drop":1,"cost":120000},
+      "2026-01":{days:24,"newCount":5,"web":3,"inStore":2,"revisit":0,"total":10,"four":3,"second":5,"cont":5,"cured":0,"avgVisits":3.8,"sales":111650,"inquiry":8,"drop":3,"adCost":50000},
+      "2026-02":{days:24,"newCount":2,"web":1,"nobori":1,"revisit":0,"total":4,"four":1,"second":2,"cont":2,"cured":0,"avgVisits":4,"sales":57200,"inquiry":4,"drop":2,"adCost":50000},
+      "2026-03":{days:27,"newCount":1,"web":1,"revisit":0,"total":11,"four":1,"second":1,"cont":10,"cured":0,"avgVisits":7,"sales":158400,"inquiry":2,"drop":1,"adCost":50000},
+      "2026-04":{days:25,"newCount":3,"web":2,"inStore":1,"revisit":0,"total":10,"four":1,"second":3,"cont":7,"cured":0,"avgVisits":5.3,"sales":86350,"inquiry":3,"drop":0,"adCost":50000},
+      "2026-05":{days:26,"newCount":1,"referral":1,"revisit":0,"total":9,"four":0,"second":1,"cont":7,"cured":1,"avgVisits":5,"sales":103401,"inquiry":2,"drop":1,"adCost":50000},
+      "2026-06":{days:26,"newCount":5,"web":2,"inStore":1,"other":2,"revisit":0,"total":14,"four":2,"second":3,"cont":8,"cured":1,"avgVisits":2.8,"sales":151844,"inquiry":6,"drop":1,"adCost":50000},
+      "2026-07":{days:26,"newCount":0,"revisit":0,"total":8,"four":1,"second":0,"cont":7,"cured":1,"sales":71904,"inquiry":1,"drop":1,"adCost":50000},
+      "2026-08":{days:27,"newCount":2,"web":1,"inStore":1,"revisit":0,"total":13,"four":0,"second":0,"cont":10,"cured":1,"avgVisits":5,"sales":121953,"lastYearSales":20900,"inquiry":2,"drop":0,"adCost":50000},
+      "2026-09":{days:26,"newCount":4,"web":2,"nobori":1,"inStore":1,"revisit":0,"total":9,"four":2,"second":2,"cont":5,"cured":0,"avgVisits":2.1,"sales":116000,"lastYearSales":67650,"inquiry":4,"drop":0,"adCost":50000},
+      "2026-10":{days:26,"newCount":1,"inStore":1,"revisit":0,"total":10,"four":0,"cont":9,"cured":0,"avgVisits":1,"sales":126000,"lastYearSales":17600,"inquiry":2,"drop":1,"adCost":50000,"stockCost":70000},
     }},
   ];
   // 以前の版との互換（門真の実績）
@@ -134,6 +137,8 @@
   const ratio=(a,b)=>num(b)>0?num(a)/num(b):null;
   const pct=(a,b)=>{const r=ratio(a,b);return r===null?null:r*100;};
 
+  // 広告費＋仕入れ（＋内訳の分からない合計）
+  const totalCost=r=>num(r&&r.adCost)+num(r&&r.stockCost)+num(r&&r.mixedCost);
   // 1か月分の分析表から、分析表と同じ計算式で指標を出す
   function nailMonthMetrics(row){
     const r=row||{};
@@ -145,8 +150,9 @@
       dropRate:pct(r.drop,r.inquiry),                 // 離脱率＝問合せ離脱÷問合せ件数
       bookRate:has(r.inquiry)&&num(r.inquiry)>0?(1-num(r.drop)/num(r.inquiry))*100:null, // 問合せ→予約
       yoy:num(r.lastYearSales)>0&&has(r.sales)?num(r.sales)/num(r.lastYearSales)*100:null, // 昨対比
-      costPerNew:num(r.cost)>0?ratio(r.cost,r.newCount):null,  // 新規1人あたりの仕入れ＋広告費
-      salesPerCost:num(r.cost)>0?ratio(r.sales,r.cost):null,   // 売上÷（仕入れ＋広告費）
+      adPerNew:num(r.adCost)>0?ratio(r.adCost,r.newCount):null,      // 新規1人あたりの広告費
+      stockRate:num(r.stockCost)>0?pct(r.stockCost,r.sales):null,     // 仕入れ率＝仕入れ÷売上
+      salesPerCost:totalCost(r)>0?ratio(r.sales,totalCost(r)):null,   // 売上÷（広告費＋仕入れ）
     };
   }
 
@@ -174,10 +180,17 @@
     const lyKeys=keys.filter(k=>num(months[k].lastYearSales)>0&&has(months[k].sales));
     const lySales=lyKeys.reduce((s,k)=>s+num(months[k].sales),0),ly=lyKeys.reduce((s,k)=>s+num(months[k].lastYearSales),0);
     metrics.yoy=ly>0?lySales/ly*100:null;
-    const cKeys=keys.filter(k=>num(months[k].cost)>0);
-    const cost=cKeys.reduce((s,k)=>s+num(months[k].cost),0);
-    metrics.costPerNew=cost>0?ratio(cost,cKeys.reduce((s,k)=>s+num(months[k].newCount),0)):null;
-    metrics.salesPerCost=cost>0?ratio(cKeys.reduce((s,k)=>s+num(months[k].sales),0),cost):null;
+    // 費用は、その費用が入っている月どうしで比べる（広告費は新規数と、仕入れは売上と）
+    // 合計（combineCenters）の月は、その費用を入れたセンターの新規数・売上だけ（_adBase など）で割る
+    const baseOf=(r,base,hidden)=>has(r[hidden])?num(r[hidden]):num(r[base]);
+    const over=(field,base,hidden)=>{ const ks=keys.filter(k=>num(months[k][field])>0); const c=ks.reduce((s,k)=>s+num(months[k][field]),0); return {c,b:ks.reduce((s,k)=>s+baseOf(months[k],base,hidden),0)}; };
+    const ad=over("adCost","newCount","_adBase"), st=over("stockCost","sales","_stockBase");
+    metrics.adPerNew=ad.c>0?ratio(ad.c,ad.b):null;
+    metrics.stockRate=st.c>0?pct(st.c,st.b):null;
+    const cKeys=keys.filter(k=>totalCost(months[k])>0);
+    const cost=cKeys.reduce((s,k)=>s+totalCost(months[k]),0);
+    metrics.totalCost=cost;
+    metrics.salesPerCost=cost>0?ratio(cKeys.reduce((s,k)=>s+baseOf(months[k],"sales","_costBase"),0),cost):null;
     metrics.avgVisits=avg.avgVisits;
     const last=n?months[keys[n-1]]:null;
     return {months:keys,count:n,sum,avg,metrics,last,lastKey:n?keys[n-1]:null};
@@ -196,6 +209,10 @@
           else o[f.key]=num(o[f.key])+num(r[f.key]);
         });
         if(has(r.avgVisits)) o._avgN++;
+        // 費用の比率は、その費用を入れたセンターの数字どうしで計算するため、分母も別に足しておく
+        if(num(r.adCost)>0) o._adBase=num(o._adBase)+num(r.newCount);
+        if(num(r.stockCost)>0) o._stockBase=num(o._stockBase)+num(r.sales);
+        if(totalCost(r)>0) o._costBase=num(o._costBase)+num(r.sales);
       });
     });
     Object.values(out).forEach(o=>{delete o._avgN;});
@@ -211,13 +228,30 @@
     //   11月は途中（新規4人だけで売上が未入力）のため取り込まない。
     // 津田：2026年11月から担当を大森さんに（10月までは児玉さん）
     {id:"tsuda-staff-2026-11",center:"tsuda",months:[],staff:true},
+    // 枚方市駅前：いただいたGoogleスプレッドシートを自動読み込みの対象にする
+    {id:"hirakata-ekimae-sheet",center:"hirakata_ekimae",months:[],sheet:true},
+    // 全センター：「仕入れ＋広告費」を広告費と仕入れに分ける（分析表で分かれていた月はその数字、分からない月は内訳なし）
+    {id:"split-cost-2026-11",center:"*",months:[],splitCost:true},
     {id:"katano-2026-11",center:"katano",months:["2026-01","2026-02","2026-03","2026-04","2026-05","2026-06","2026-07","2026-08","2026-09","2026-10"]},
   ];
+  // 以前の「cost（仕入れ＋広告費）」を広告費・仕入れに分ける
+  function splitCostOf(c){
+    const seed=SEED_CENTERS.find(x=>x.id===c.id);
+    Object.entries(c.nail||{}).forEach(([ym,r])=>{
+      if(!r||r.cost===undefined) return;
+      const sr=seed&&seed.nail[ym];
+      const same=sr&&num(r.cost)===totalCost(sr);
+      if(same) ["adCost","stockCost","mixedCost"].forEach(k=>{ if(has(sr[k])) r[k]=sr[k]; });
+      else if(num(r.cost)>0) r.mixedCost=num(r.cost);
+      delete r.cost;
+    });
+  }
   // まだ反映していない差し替えを centers に反映し、反映済みの id の一覧を返す
   function applySeedPatches(centers,applied){
     const done=Array.isArray(applied)?applied.slice():[];
     SEED_PATCHES.forEach(pt=>{
       if(done.includes(pt.id)) return;
+      if(pt.splitCost){ (centers||[]).forEach(splitCostOf); done.push(pt.id); return; }
       const seed=SEED_CENTERS.find(c=>c.id===pt.center);
       const c=(centers||[]).find(x=>x.id===pt.center);
       if(seed&&c){
@@ -225,10 +259,106 @@
         pt.months.forEach(ym=>{ if(seed.nail[ym]) c.nail[ym]=JSON.parse(JSON.stringify(seed.nail[ym])); });
         if(seed.source&&pt.months.length) c.source=seed.source;
         if(pt.staff){ c.staff=seed.staff; c.staffChanges=JSON.parse(JSON.stringify(seed.staffChanges||[])); }
+        if(pt.sheet&&!c.sheetUrl) c.sheetUrl=seed.sheetUrl;
       }
       done.push(pt.id);
     });
     return done;
+  }
+
+  // ===== Googleスプレッドシートの巻き爪分析表を読む =====
+  // 全角数字を半角に
+  const half=v=>String(v==null?"":v).replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)).trim();
+  // 見出し → 項目（見出しの書き方の違いも吸収する）
+  const HEADER_KEYS=[
+    [/^営業日数$/,"days"],[/^新規数?$/,"newCount"],[/^web$/i,"web"],[/^のぼり$/,"nobori"],[/^紹介$/,"referral"],
+    [/^店舗内$/,"inStore"],[/^その他$/,"other"],[/^再診数?$/,"revisit"],[/^総人数$/,"total"],[/^4箇所(以上)?$/,"four"],
+    [/^2回目継続$/,"second"],[/^継続数$/,"cont"],[/^(治癒|完治)数$/,"cured"],[/^平均通院回数$/,"avgVisits"],
+    [/^売上$/,"sales"],[/^昨年の売上[髙高]$/,"lastYearSales"],[/^問合せ件数$/,"inquiry"],[/^問合せ離脱$/,"drop"],
+  ];
+  const toNum=v=>{
+    if(typeof v==="number") return isFinite(v)?v:null;
+    const t=half(v).replace(/[,，\s円人件回]/g,"");
+    if(!t||t.startsWith("#")) return null;
+    const m=t.match(/^(-?\d+(?:\.\d+)?)(万)?$/);
+    return m?Number(m[1])*(m[2]?10000:1):null;
+  };
+  // 1枚のシート（A1:AD16 の2次元配列）を読む
+  function parseNailSheet(title,values){
+    const rows=Array.isArray(values)?values:[];
+    const top=rows[0]||[];
+    const head=top.map(half).join(" ");
+    const titleYear=(half(title).match(/(20\d\d)/)||[])[1];
+    const headYear=(half(top[0]).match(/(20\d\d)/)||[])[1];
+    const year=titleYear||headYear||null;
+    // 「〇〇巻き爪センター　施術者△△」
+    const cm=head.match(/([^\s]*?巻き爪センター)[\s　]*(?:施術者[\s　]*([^\s　]+))?/);
+    const name=cm?cm[1]:"", staff=cm&&cm[2]?cm[2]:"";
+    const hi=rows.findIndex(r=>(r||[]).some(c=>half(c)==="営業日数"));
+    if(hi<0||!year) return {title,year,name,staff,months:{},skipped:[],fixed:[],error:hi<0?"見出し（営業日数など）が見つかりません":"年が分かりません"};
+    const hdr=(rows[hi]||[]).map(half);
+    const col={};
+    hdr.forEach((h,i)=>{ const k=HEADER_KEYS.find(([re])=>re.test(h)); if(k&&col[k[1]]===undefined) col[k[1]]=i; });
+    // 広告費・仕入れ：別々の列があればそれぞれに。「仕入れ＋広告費」の合計の列しか無いときは内訳なし（mixedCost）
+    const costCols=hdr.map((h,i)=>[h,i]).filter(([h])=>/広告|仕入/.test(h));
+    const adCols=costCols.filter(([h])=>/広告/.test(h)&&!/仕入/.test(h)).map(([,i])=>i);
+    const stockCols=costCols.filter(([h])=>/仕入/.test(h)&&!/広告/.test(h)).map(([,i])=>i);
+    const mixedCols=adCols.length||stockCols.length?[]:costCols.filter(([h])=>/広告/.test(h)&&/仕入/.test(h)).map(([,i])=>i);
+    const months={},skipped=[],fixed=[];
+    rows.slice(hi+1).forEach(r=>{
+      const mm=(half((r||[])[0]).match(/^(\d{1,2})月$/)||[])[1];
+      if(!mm||Number(mm)<1||Number(mm)>12) return;
+      const ym=`${year}-${String(mm).padStart(2,"0")}`;
+      const d={};
+      Object.entries(col).forEach(([k,i])=>{
+        let v=toNum(r[i]);
+        if(v===null) return;
+        v=["avgVisits","days","second"].includes(k)?Math.round(v*10)/10:Math.round(v);
+        if(v!==0||["cured","drop","four","second","cont"].includes(k)) d[k]=v;
+      });
+      [["adCost",adCols],["stockCost",stockCols],["mixedCost",mixedCols]].forEach(([k,cols])=>{
+        const c=cols.map(i=>toNum(r[i])).filter(v=>v!==null).reduce((a,b)=>a+b,0);
+        if(c>0) d[k]=Math.round(c);
+      });
+      if(!Object.keys(d).length||!(num(d.newCount)||num(d.cont)||num(d.total)||num(d.sales))) return;
+      // 総人数が0・空欄（計算式の崩れ）のときは 新規＋再診＋継続＋治癒
+      if(!(num(d.total)>0)&&(num(d.newCount)||num(d.cont))){ d.total=num(d.newCount)+num(d.revisit)+num(d.cont)+num(d.cured); fixed.push(ym); }
+      // 売上がまだ無い月は途中の月として取り込まない
+      if(!(num(d.sales)>0)){ skipped.push(ym); return; }
+      months[ym]=d;
+    });
+    return {title,year,name,staff,months,skipped,fixed};
+  }
+  // 写し間違いの見分けに使う主な数字（新規・総人数・売上・4箇所・問合せ・離脱）
+  const DUP_KEYS=["newCount","total","sales","four","inquiry","drop"];
+  // スプレッドシートの全ての分析表を読む。前の年の月が次の年の同じ月と主な数字がすべて同じなら、写し間違いとして前の年を外す
+  function parseNailSheets(sheets){
+    const parsed=(sheets||[]).map(x=>parseNailSheet(x.title,x.values));
+    const months={},skipped=[],fixed=[],duplicate=[],errors=[];
+    parsed.forEach(p=>{ if(p.error) errors.push(`${p.title}：${p.error}`); Object.assign(months,p.months); skipped.push(...p.skipped); fixed.push(...p.fixed); });
+    Object.keys(months).forEach(ym=>{
+      const next=`${Number(ym.slice(0,4))+1}${ym.slice(4)}`;
+      const same=months[next]&&DUP_KEYS.every(k=>num(months[next][k])===num(months[ym][k]));
+      if(same){ delete months[ym]; duplicate.push(ym); }
+    });
+    const main=parsed.filter(p=>!p.error).sort((a,b)=>String(b.year).localeCompare(String(a.year)))[0]||{};
+    return {months,skipped:skipped.sort(),fixed:fixed.sort(),duplicate:duplicate.sort(),errors,name:main.name||"",staff:main.staff||""};
+  }
+  // 読んだ月をセンターに反映する（スプレッドシートにある月はスプレッドシートの数字で上書き、無い月はそのまま）。変わった月の一覧を返す
+  function applySheetMonths(center,months){
+    const changed=[];
+    center.nail=center.nail||{};
+    Object.entries(months||{}).forEach(([ym,row])=>{
+      if(JSON.stringify(center.nail[ym]||null)!==JSON.stringify(row)){ center.nail[ym]=JSON.parse(JSON.stringify(row)); changed.push(ym); }
+    });
+    return changed.sort();
+  }
+  // スプレッドシートのURL（またはID）からIDを取り出す
+  function sheetIdOf(url){
+    const t=String(url||"").trim();
+    const m=t.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]{20,100})/);
+    if(m) return m[1];
+    return /^[A-Za-z0-9_-]{20,100}$/.test(t)?t:"";
   }
 
   // ===== 担当者の交代 =====
@@ -444,7 +574,7 @@
     return bought-num(soldUnits);
   }
 
-  const api={NAIL_KPIS,NAIL_FIELDS,SEED_NAIL_2026,SEED_CENTERS,SEED_PATCHES,applySeedPatches,staffAt,staffLabel,sortedChanges,combineCenters,migrateCenters,DEFAULT_PRODUCTS,DEFAULT_SEGMENTS,SCENARIOS,GOODS_LABEL_PREFIX,
+  const api={NAIL_KPIS,NAIL_FIELDS,SEED_NAIL_2026,SEED_CENTERS,SEED_PATCHES,applySeedPatches,staffAt,staffLabel,sortedChanges,totalCost,parseNailSheet,parseNailSheets,applySheetMonths,sheetIdOf,combineCenters,migrateCenters,DEFAULT_PRODUCTS,DEFAULT_SEGMENTS,SCENARIOS,GOODS_LABEL_PREFIX,
     goodsLabel,nailMonthMetrics,judgeKpi,nailSummary,segmentsFromNail,forecast,requiredForTarget,
     aggregatePayments,aggregateProposals,stockLeft};
   root.NailGoods=api;
