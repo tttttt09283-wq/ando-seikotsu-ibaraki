@@ -199,7 +199,102 @@
     lines.push("※診断ではありません。最終判断は施術者が行います");
     return lines.join("\n");
   }
-  const api={REGIONS,FACTORS,RED_FLAGS,RED_FLAG_ADVICE,CONDITIONS,evaluate,labelOf,summaryText};
+
+  // ===== 治療計画（候補をタップすると出す） =====
+  // 状態の種類ごとのひな形（期間・頻度・施術・おうちでのケア）。年代・慢性かどうか・スポーツで期間と内容を調整する
+  const PLAN_TYPE={
+    neck_sprain:"acute",whiplash:"acute",acute_lbp:"acute",knee_ligament:"acute",ankle_sprain:"acute",meniscus:"acute",back_myofascial:"acute",
+    cervical_radic:"nerve",tos:"nerve",disc_hernia:"nerve",stenosis:"nerve",piriformis:"nerve",carpal:"nerve",intercostal:"nerve",
+    stiff_neck:"chronic",shoulder_stiff:"chronic",chronic_lbp:"chronic",tension_ha:"chronic",
+    frozen:"joint",hip_oa:"joint",knee_oa:"joint",si_joint:"joint",facet:"joint",
+    impinge:"tendon",rotator:"tendon",pes:"tendon",jumper:"tendon",plantar:"tendon",achilles:"tendon",tennis:"tendon",dequervain:"tendon",trigger:"tendon",
+    bunion:"foot",migraine:"refer",
+  };
+  const PLAN_TEMPLATES={
+    acute:{label:"急なけが・急な痛み",phases:[
+      {name:"急性期（炎症をおさえる）",weeks:1,freq:"週3〜4回（できれば毎日）",goal:"痛みと炎症をおさえ、悪化させない",treat:["アイシング・冷却","痛みの少ない範囲の手技","テーピング・固定（必要なとき）","電気（物理療法）"],home:["痛む動きを避ける","冷やす（1回15分程度）","入浴は短めに"]},
+      {name:"回復期（動きを取り戻す）",weeks:2,freq:"週2〜3回",goal:"動かせる範囲を広げ、日常の動作を楽にする",treat:["手技（筋・関節の動き）","鍼灸（痛み・筋緊張）","ストレッチ","温熱"],home:["痛みのない範囲で動かす","ストレッチを1日2回"]},
+      {name:"再発予防期",weeks:3,freq:"週1〜2回",goal:"再発しない体づくり",treat:["体幹・まわりの筋力トレーニング","姿勢・動き方の指導","EMS"],home:["教えた運動を続ける","重い物の持ち方に気をつける"]},
+    ]},
+    nerve:{label:"神経の症状（しびれ・放散痛）",phases:[
+      {name:"痛みをおさえる時期",weeks:2,freq:"週2〜3回",goal:"しびれ・痛みを落ち着かせる",treat:["鍼灸（神経に沿った痛み）","痛みの出ない姿勢での手技","物理療法"],home:["しびれが強くなる姿勢を避ける","長く同じ姿勢をとらない"]},
+      {name:"改善期",weeks:4,freq:"週2回",goal:"神経への負担を減らす体の使い方にする",treat:["鍼灸","手技（筋・関節）","神経の滑走を助ける運動"],home:["教えたストレッチ・運動","休みながら歩く（狭窄症のとき）"]},
+      {name:"安定期",weeks:6,freq:"週1回〜2週に1回",goal:"再発予防と体力づくり",treat:["体幹・股関節の運動","姿勢の指導","EMS"],home:["運動を続ける","症状が強くなったら早めに来院"]},
+    ]},
+    chronic:{label:"慢性のこり・痛み",phases:[
+      {name:"集中期（こりをゆるめる）",weeks:2,freq:"週2回",goal:"たまった筋緊張をゆるめ、楽な状態を作る",treat:["手技（筋緊張をゆるめる）","鍼灸","温熱","EMS"],home:["1時間に1回は体を動かす","湯船につかる"]},
+      {name:"改善期（姿勢を整える）",weeks:4,freq:"週1〜2回",goal:"こりにくい姿勢・体の使い方にする",treat:["骨格・姿勢の調整","ストレッチ指導","EMS（インナーマッスル）"],home:["デスク・スマホの姿勢を見直す","ストレッチを毎日"]},
+      {name:"メンテナンス期",weeks:8,freq:"2週に1回〜月2回",goal:"よい状態を保つ",treat:["メンテナンスの手技・鍼灸","体の状態のチェック"],home:["運動・ストレッチの習慣"]},
+    ]},
+    joint:{label:"関節の痛み・動きにくさ",phases:[
+      {name:"痛みをおさえる時期",weeks:2,freq:"週2〜3回",goal:"痛みを落ち着かせ、夜もよく眠れるように",treat:["痛みの少ない範囲の手技","鍼灸","温熱・物理療法"],home:["痛む動きを無理にしない","冷やす／温めるは状態に合わせて"]},
+      {name:"可動域改善期",weeks:6,freq:"週2回",goal:"関節の動く範囲を広げる",treat:["関節の動きを出す手技","ストレッチ","まわりの筋の運動"],home:["毎日の関節体操","体重・負担の管理"]},
+      {name:"筋力・維持期",weeks:8,freq:"週1回",goal:"関節を支える筋力と再発予防",treat:["筋力トレーニング・EMS","歩き方・動き方の指導"],home:["運動を続ける","インソール・サポーター（必要なとき）"]},
+    ]},
+    tendon:{label:"腱・付着部の使いすぎ",phases:[
+      {name:"負担を減らす時期",weeks:2,freq:"週2〜3回",goal:"炎症をおさえ、使いすぎを止める",treat:["アイシング","テーピング・サポーター","手技・鍼灸","物理療法"],home:["痛む動作・練習量を減らす","冷やす"]},
+      {name:"回復期",weeks:3,freq:"週2回",goal:"腱の柔らかさと動きを戻す",treat:["ストレッチ","手技・鍼灸","軽い負荷の運動"],home:["ストレッチを毎日","少しずつ使う量を戻す"]},
+      {name:"復帰・予防期",weeks:4,freq:"週1回",goal:"スポーツ・仕事への復帰と再発予防",treat:["筋力トレーニング・EMS","フォーム・動き方の指導"],home:["準備運動・クールダウン","道具（靴・インソール）を見直す"]},
+    ]},
+    foot:{label:"足の形・爪",phases:[
+      {name:"痛みをおさえる時期",weeks:2,freq:"週1〜2回",goal:"当たって痛いところを楽にする",treat:["巻き爪の施術（巻き爪のとき）","テーピング","足のまわりの手技"],home:["靴を見直す"]},
+      {name:"改善期",weeks:6,freq:"2週に1回",goal:"足の使い方・形を整える",treat:["インソール","足指の運動の指導"],home:["足指の運動","合う靴・インソール"]},
+    ]},
+    refer:{label:"医療機関での診断が先",phases:[
+      {name:"まず受診",weeks:0,freq:"—",goal:"医療機関で診断を受ける",treat:["医療機関の受診を勧める"],home:["発作中は暗い静かな場所で休む"]},
+      {name:"受診のあと",weeks:6,freq:"週1回",goal:"首肩のこり・生活の調整で頭痛を起こしにくくする",treat:["首肩の手技・鍼灸","生活習慣の指導"],home:["睡眠・食事のリズム","頭痛日記をつける"]},
+    ]},
+  };
+  function treatmentPlan(cond,sel){
+    if(!cond) return null;
+    const f=new Set((sel&&sel.factors)||[]);
+    const type=PLAN_TYPE[cond.id]||"chronic";
+    const tpl=PLAN_TEMPLATES[type];
+    const urgent=((sel&&sel.redFlags)||[]).length>0;
+    // 年代・慢性で期間を長めに
+    let k=1; if(f.has("age_old")) k*=1.3; if(f.has("chronic")&&type!=="chronic") k*=1.2;
+    let phases=tpl.phases.map(p=>({...p,weeks:p.weeks?Math.max(1,Math.round(p.weeks*k)):0,treat:[...p.treat],home:[...p.home]}));
+    // すでに慢性なら急性期を飛ばす
+    if(f.has("chronic")&&(type==="acute"||type==="tendon")) phases=phases.slice(1);
+    if(f.has("sports")) phases[phases.length-1].treat.push("競技に合わせた動き・復帰の段階づけ");
+    if(f.has("pregnant")) phases.forEach(p=>{ p.treat=p.treat.filter(t=>!/EMS|電気|物理療法/.test(t)); p.treat.push("妊娠中・産後に合わせた姿勢での施術（電気・EMSは使わない）"); });
+    // この状態ならではの内容を最初の時期に足す
+    phases[0].treat.push("この状態の施術："+cond.care);
+    const totalWeeks=phases.reduce((t,p)=>t+p.weeks,0);
+    const visits=phases.reduce((t,p)=>t+p.weeks*freqPerWeek(p.freq),0);
+    // おすすめのプラン（院のメニュー）
+    const menus=[];
+    if(urgent) menus.push({name:"まず医療機関の受診",why:"危険なサインがあるため、施術の前に診断を受けてもらう"});
+    if(cond.ins&&cond.ins.ju&&(f.has("sudden")||f.has("trauma")||f.has("lifting")||f.has("sleep"))&&!f.has("chronic")) menus.push({name:"柔整（健康保険）",why:"急性の外傷性の痛み（捻挫・挫傷）として"});
+    if(cond.ins&&cond.ins.acu) menus.push({name:"鍼灸（鍼灸保険）",why:"医師の同意書があれば保険で鍼灸（同意書の案内を）"});
+    if(f.has("traffic")) menus.push({name:"交通事故（自賠責）",why:"自己負担なしで施術できることが多い（医療機関の受診と手続きが必要）"});
+    const early=phases[0]?freqPerWeek(phases[0].freq):1;
+    if(early>=2&&totalWeeks>=3) menus.push({name:totalWeeks>=8?"フリーパス 3ヶ月":"フリーパス 1ヶ月",why:`最初の${phases[0].weeks}週は週${phases[0].freq.replace(/^週/,"")}通うのがおすすめのため、通い放題がお得`});
+    else menus.push({name:visits>12?"回数券 24回":"回数券 10回",why:`全体で${Math.round(visits)}回ほどの通院の目安`});
+    if(["chronic","joint","nerve"].includes(type)) menus.push({name:"EMS（インナーマッスル）",why:"姿勢を支える筋力をつけ、再発を防ぐ"});
+    if(cond.id==="bunion") menus.push({name:"巻き爪の施術・インソール",why:"足の痛みのもとに直接アプローチ"});
+    const explain=`今の状態は「${cond.name.replace(/（.*）$/,"")}」が考えられます。まず${phases[0]?phases[0].goal:""}ことを目標に、${phases[0]?phases[0].freq:""}の通院をおすすめします。全体ではおよそ${totalWeeks}週間（${Math.round(visits)}回ほど）が目安です。おうちでは${phases[0]&&phases[0].home[0]?phases[0].home[0]:"無理をしない"}ようにしてください。`;
+    return {type,typeLabel:tpl.label,urgent,phases,totalWeeks,visits:Math.round(visits),menus,explain};
+  }
+  // 「週2〜3回」→2.5、「2週に1回」→0.5、「月2回」→0.5
+  function freqPerWeek(freq){
+    const s=String(freq||"");
+    let m=s.match(/週(\d+)〜(\d+)回/); if(m) return (Number(m[1])+Number(m[2]))/2;
+    m=s.match(/週(\d+)回/); if(m) return Number(m[1]);
+    m=s.match(/(\d+)週に(\d+)回/); if(m) return Number(m[2])/Number(m[1]);
+    m=s.match(/月(\d+)回/); if(m) return Number(m[1])/4.3;
+    return 0;
+  }
+  function planText(cond,plan){
+    if(!cond||!plan) return "";
+    const L=[`【治療計画】${cond.name}（${plan.typeLabel}）`,`目安：およそ${plan.totalWeeks}週間・${plan.visits}回`];
+    if(plan.urgent) L.push("⚠ 危険なサインがあるため、まず医療機関の受診を勧める");
+    plan.phases.forEach((p,i)=>{ L.push(`${i+1}. ${p.name}${p.weeks?`（${p.weeks}週・${p.freq}）`:""}：${p.goal}`); L.push(`   施術：${p.treat.join("、")}`); L.push(`   おうちで：${p.home.join("、")}`); });
+    L.push("おすすめのプラン："+plan.menus.map(m=>m.name).join("・"));
+    L.push("患者さんへの説明："+plan.explain);
+    return L.join("\n");
+  }
+  const api={REGIONS,FACTORS,RED_FLAGS,RED_FLAG_ADVICE,CONDITIONS,evaluate,labelOf,summaryText,PLAN_TYPE,PLAN_TEMPLATES,treatmentPlan,freqPerWeek,planText};
   root.SymptomLogic=api;
   if(typeof module!=="undefined"&&module.exports) module.exports=api;
 })(typeof window!=="undefined"?window:globalThis);

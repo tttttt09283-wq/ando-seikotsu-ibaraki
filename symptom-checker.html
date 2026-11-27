@@ -40,6 +40,21 @@
   .btn{border:none;border-radius:8px;padding:9px 14px;font-weight:800;font-size:13.5px;cursor:pointer;font-family:inherit}
   .btn.p{background:var(--navy);color:#fff}.btn.s{background:#fff;border:1.5px solid var(--line);color:#334155}
   .sticky{position:sticky;top:12px}
+  .cand{cursor:pointer}
+  .cand.sel{border-color:#2563eb;box-shadow:0 0 0 2px #bfdbfe}
+  .planbtn{margin-top:8px;border:1.5px solid #2563eb;background:#eff6ff;color:#1d4ed8;border-radius:8px;padding:6px 12px;font-weight:800;font-size:13px;cursor:pointer;font-family:inherit}
+  .cand.sel .planbtn{background:#2563eb;color:#fff}
+  .plan{border:2px solid #2563eb;border-radius:12px;padding:12px 14px;margin:6px 0 14px;background:#f8fbff}
+  .plan h2{color:#1d4ed8}
+  .phase{position:relative;border-left:4px solid #93c5fd;padding:4px 0 10px 12px;margin-left:6px}
+  .phase:last-child{padding-bottom:2px}
+  .phase .ph{font-weight:900;font-size:14px}
+  .phase .meta{font-size:12px;color:#1d4ed8;font-weight:800}
+  .menu{background:#fff;border:1.5px solid #e2e8f0;border-radius:8px;padding:6px 10px;margin-bottom:6px;font-size:13px}
+  .menu b{color:#0f766e}
+  .explain{background:#fff7ed;border:1.5px solid #fed7aa;border-radius:8px;padding:8px 10px;font-size:13.5px}
+  .sum{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px}
+  .sum span{background:#fff;border:1.5px solid #dbeafe;border-radius:8px;padding:4px 10px;font-weight:800;font-size:13px}
   @media (max-width:860px){.sticky{position:static}}
 </style>
 </head>
@@ -72,7 +87,7 @@
 <script>
 (function(){
   const S=window.SymptomLogic;
-  const st={region:null,factors:[],redFlags:[]};
+  const st={region:null,factors:[],redFlags:[],sel:null};
   const $=id=>document.getElementById(id);
   const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
   function chip(label,on,cls,onClick){ const b=document.createElement("button"); b.type="button"; b.className="chip"+(cls?" "+cls:""); b.textContent=label; b.setAttribute("aria-pressed",on?"true":"false"); b.onclick=onClick; return b; }
@@ -98,22 +113,45 @@
     if(!st.region){ h+='<div class="muted">部位を選ぶと、考えられる状態の候補が出ます。</div>'; }
     else if(!res.candidates.length){ h+='<div class="muted">③ で当てはまるものを選ぶと、候補が出ます。</div>'; }
     else{
+      if(st.sel&&!res.candidates.some(c=>c.id===st.sel)) st.sel=null;
       res.candidates.forEach((c,i)=>{
-        h+='<div class="cand"><h3>'+(i+1)+'. '+esc(c.name)+'<span class="lv '+c.level+'">可能性 '+c.level+'</span></h3>'
+        h+='<div class="cand'+(st.sel===c.id?' sel':'')+'" data-cid="'+c.id+'" role="button" tabindex="0" aria-label="'+esc(c.name)+'の治療計画を見る"><h3>'+(i+1)+'. '+esc(c.name)+'<span class="lv '+c.level+'">可能性 '+c.level+'</span></h3>'
           +'<div class="bar"><div style="width:'+Math.min(100,c.pct)+'%"></div></div>'
           +(c.hits.length?'<div class="row hit">✓ 当てはまる：'+c.hits.map(esc).join("・")+'</div>':'')
           +(c.against.length?'<div class="row against">△ 合わない点：'+c.against.map(esc).join("・")+'</div>':'')
           +'<div class="row"><b>確かめる検査：</b>'+c.tests.map(esc).join("／")+'</div>'
           +'<div class="row"><b>施術の方向性：</b>'+esc(c.care)+'</div>'
-          +(c.note?'<div class="row muted">'+esc(c.note)+'</div>':'')+'</div>';
+          +(c.note?'<div class="row muted">'+esc(c.note)+'</div>':'')
+          +'<button type="button" class="planbtn" data-cid="'+c.id+'">'+(st.sel===c.id?'▼ 治療計画を表示中':'📋 治療計画・治療プランを見る')+'</button></div>';
+        if(st.sel===c.id) h+=planHtml(c,S.treatmentPlan(c,st));
       });
     }
     h+='<h2 style="margin-top:12px">保険の目安</h2><ul class="ins" style="padding-left:18px;margin:4px 0">'+res.insurance.map(x=>'<li>'+esc(x)+'</li>').join("")+'</ul>';
     h+='<div class="btns"><button class="btn p" type="button" id="copy">📋 施術記録用に文章をコピー</button><button class="btn s" type="button" id="reset">最初からやり直す</button></div><div class="muted" id="copied" style="margin-top:6px"></div>';
     h+='<div class="muted" style="margin-top:10px">※ 候補は選んだ特徴との当てはまり具合の目安です。診断ではありません。</div>';
     el.innerHTML=h;
-    $("copy").onclick=()=>{ const t=S.summaryText(st,res); (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>{ $("copied").textContent="✓ コピーしました。施術記録やメモに貼り付けてください"; }).catch(()=>{ window.prompt("この文章をコピーしてください",t); }); };
-    $("reset").onclick=()=>{ st.region=null; st.factors=[]; st.redFlags=[]; render(); window.scrollTo({top:0,behavior:"smooth"}); };
+    el.querySelectorAll("[data-cid]").forEach(n=>{ n.onclick=e=>{ e.stopPropagation(); const id=n.getAttribute("data-cid"); st.sel=st.sel===id&&n.classList.contains("planbtn")?null:id; renderResult(); const pl=document.getElementById("plan"); if(pl&&pl.scrollIntoView&&st.sel) pl.scrollIntoView({behavior:"smooth",block:"nearest"}); }; });
+    const pc=$("plancopy"); if(pc) pc.onclick=()=>{ const c=res.candidates.find(x=>x.id===st.sel); const t=S.planText(c,S.treatmentPlan(c,st)); (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>{ $("plancopied").textContent="✓ コピーしました。施術計画書・施術記録に貼り付けてください"; }).catch(()=>{ window.prompt("この文章をコピーしてください",t); }); };
+    $("copy").onclick=()=>{ let t=S.summaryText(st,res); const sc=res.candidates.find(x=>x.id===st.sel); if(sc) t+="\n\n"+S.planText(sc,S.treatmentPlan(sc,st)); (navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(()=>{ $("copied").textContent="✓ コピーしました。施術記録やメモに貼り付けてください"; }).catch(()=>{ window.prompt("この文章をコピーしてください",t); }); };
+    $("reset").onclick=()=>{ st.region=null; st.factors=[]; st.redFlags=[]; st.sel=null; render(); window.scrollTo({top:0,behavior:"smooth"}); };
+  }
+  function planHtml(c,p){
+    if(!p) return "";
+    let h='<div class="plan" id="plan"><h2>📋 治療計画：'+esc(c.name)+'</h2>';
+    if(p.urgent) h+='<div class="alert" style="margin-bottom:8px">⚠ 危険なサインがあるため、まず医療機関の受診を勧めてください。この計画は受診後の目安です。</div>';
+    h+='<div class="sum"><span>'+esc(p.typeLabel)+'</span><span>期間の目安 およそ'+p.totalWeeks+'週間</span><span>通院 '+p.visits+'回ほど</span></div>';
+    p.phases.forEach((ph,i)=>{
+      h+='<div class="phase"><div class="ph">'+(i+1)+'. '+esc(ph.name)+'</div>'
+        +'<div class="meta">'+(ph.weeks?ph.weeks+'週間・':'')+esc(ph.freq)+'</div>'
+        +'<div class="row"><b>目標：</b>'+esc(ph.goal)+'</div>'
+        +'<div class="row"><b>施術：</b>'+ph.treat.map(esc).join("／")+'</div>'
+        +'<div class="row"><b>おうちで：</b>'+ph.home.map(esc).join("／")+'</div></div>';
+    });
+    h+='<h2 style="margin-top:10px">💡 おすすめの治療プラン</h2>'+p.menus.map(m=>'<div class="menu"><b>'+esc(m.name)+'</b>　'+esc(m.why)+'</div>').join("");
+    h+='<h2 style="margin-top:10px">🗣 患者さんへの説明（例）</h2><div class="explain">'+esc(p.explain)+'</div>';
+    h+='<div class="btns"><button class="btn p" type="button" id="plancopy">📋 治療計画をコピー</button></div><div class="muted" id="plancopied" style="margin-top:4px"></div>';
+    h+='<div class="muted" style="margin-top:6px">※ 期間・回数は一般的な目安です。状態を見ながら施術者が調整してください。</div></div>';
+    return h;
   }
   render();
 })();

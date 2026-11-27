@@ -52,3 +52,30 @@ test("当てはまる特徴がなければ候補なし・慢性は柔整の保�
   assert.equal(r.candidates[0].id, "chronic_lbp");
   assert.ok(!r.insurance.some((x) => x.startsWith("柔整の保険（健康保険）")));
 });
+
+test("治療計画：どの候補にも計画が出る・ぎっくり腰は急性期から", () => {
+  for (const c of S.CONDITIONS) assert.ok(S.PLAN_TYPE[c.id], `${c.id} の種類`);
+  const c = S.CONDITIONS.find((x) => x.id === "acute_lbp");
+  const p = S.treatmentPlan(c, { factors: ["sudden", "lifting"] });
+  assert.equal(p.type, "acute");
+  assert.equal(p.phases[0].name, "急性期（炎症をおさえる）");
+  assert.equal(p.totalWeeks, 6);
+  assert.ok(p.menus.some((m) => m.name === "柔整（健康保険）"));
+  assert.ok(p.menus.some((m) => m.name.startsWith("フリーパス")));
+  assert.ok(S.planText(c, p).includes("【治療計画】"));
+});
+
+test("治療計画：60代・慢性は期間が長くなり、急性期を飛ばす。危険なサインは受診を先に", () => {
+  const c = S.CONDITIONS.find((x) => x.id === "acute_lbp");
+  const p = S.treatmentPlan(c, { factors: ["chronic", "age_old"], redFlags: ["rf_fever"] });
+  assert.notEqual(p.phases[0].name, "急性期（炎症をおさえる）");
+  assert.ok(p.totalWeeks > 5);
+  assert.equal(p.menus[0].name, "まず医療機関の受診");
+  assert.ok(!p.menus.some((m) => m.name === "柔整（健康保険）"));
+});
+
+test("通院頻度の読み取り", () => {
+  assert.equal(S.freqPerWeek("週2〜3回"), 2.5);
+  assert.equal(S.freqPerWeek("週1回"), 1);
+  assert.equal(S.freqPerWeek("2週に1回〜月2回"), 0.5);
+});
