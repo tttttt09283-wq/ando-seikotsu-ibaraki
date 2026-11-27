@@ -1,4 +1,4 @@
-import { BookOpen, ChartLine, Home, Map, Network, Search, Stethoscope, RotateCcw } from "lucide-react";
+import { BookOpen, ChartLine, Home, Map, Network, Search, Stethoscope, RotateCcw, Table2, Bell } from "lucide-react";
 
 export const primaryNav = [
   { href: "/", label: "ホーム", icon: Home },
@@ -9,9 +9,11 @@ export const primaryNav = [
 ];
 
 export const secondaryNav = [
+  { href: "/key-points", label: "要穴一覧", icon: Table2 },
   { href: "/eight-confluent", label: "八脈交会穴", icon: Network },
   { href: "/cases", label: "症例演習", icon: Stethoscope },
   { href: "/review", label: "復習", icon: RotateCcw },
+  { href: "/updates", label: "更新情報", icon: Bell },
 ];
 
 export function isActive(pathname: string, href: string) {

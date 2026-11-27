@@ -5,6 +5,7 @@ import { CheckCircle2, ChevronRight, CircleDashed, Clock, PlayCircle } from "luc
 import type { Lesson } from "@/data/types";
 import { useLearning } from "@/lib/learning-store";
 import { bestScore } from "@/lib/stats";
+import { lessonRevision } from "@/data/changelog";
 import { cn } from "@/lib/utils";
 
 export function LessonRow({ lesson }: { lesson: Lesson }) {
@@ -12,6 +13,8 @@ export function LessonRow({ lesson }: { lesson: Lesson }) {
   const p = state.lessons[lesson.id];
   const best = bestScore(state, lesson.id);
   const published = lesson.status === "published";
+  const rev = lessonRevision(lesson.id);
+  const updated = Boolean(p) && (state.seenRevisions?.[lesson.id] ?? 1) < rev.revision;
   const Icon = p?.status === "completed" ? CheckCircle2 : p ? PlayCircle : published ? PlayCircle : CircleDashed;
   const body = (
     <div className={cn("flex items-center gap-3 rounded-lg border bg-white p-3", published ? "hover:border-primary/40" : "opacity-70")}>
@@ -20,6 +23,7 @@ export function LessonRow({ lesson }: { lesson: Lesson }) {
         <p className="text-sm font-medium">
           <span className="mr-1.5 text-xs text-muted-foreground">第{lesson.number}講</span>
           {lesson.title}
+          {updated && <span className="ml-2 rounded bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-white">更新あり</span>}
         </p>
         <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{lesson.summary}</p>
       </div>
@@ -31,6 +35,7 @@ export function LessonRow({ lesson }: { lesson: Lesson }) {
               {lesson.minutes}分
             </span>
             {best !== null && <span className="mt-0.5 block font-semibold text-primary">最高 {Math.round(best * 100)}%</span>}
+            {rev.revision > 1 && <span className="mt-0.5 block">第{rev.revision}版</span>}
             {p?.status === "in-progress" && best === null && <span className="mt-0.5 block text-primary">学習中</span>}
           </>
         ) : (

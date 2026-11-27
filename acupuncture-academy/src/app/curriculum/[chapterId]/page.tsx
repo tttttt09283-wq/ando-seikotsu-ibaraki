@@ -42,7 +42,7 @@ export default async function ChapterPage({ params }: PageProps<"/curriculum/[ch
       </ol>
       {chapter.lessons.every((l) => l.status === "planned") && (
         <p className="mt-4 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-          この章の教材は監修体制を整えながら順次公開します。現在は第1章〜第3章が公開中です。
+          この章の教材は準備中です。
         </p>
       )}
       <div className="mt-8 flex justify-between gap-2 text-sm">

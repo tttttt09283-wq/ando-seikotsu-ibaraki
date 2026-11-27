@@ -283,8 +283,8 @@ export function ConfluentPairFigure({ pair }: { pair: ConfluentPair }) {
           {pair.regions.slice(3).join("・")}
         </text>
       )}
-      {pointBox(12, 10, up.code, up.name, up.meridian, pair.upper.limb)}
-      {pointBox(12, 190, lo.code, lo.name, lo.meridian, pair.lower.limb)}
+      {pointBox(12, 10, up.code, up.name, up.meridian as keyof typeof meridianMap, pair.upper.limb)}
+      {pointBox(12, 190, lo.code, lo.name, lo.meridian as keyof typeof meridianMap, pair.lower.limb)}
       {vesselBox(236, 17, upV.name, upV.color)}
       {vesselBox(236, 197, loV.name, loV.color)}
     </svg>

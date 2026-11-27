@@ -597,7 +597,7 @@ const sb = {
 // ===== 全端末で共有する設定（月次シフト・休暇残・売上目標） =====
 // 以前はブラウザ（localStorage）にだけ保存していたため、端末ごとに設定し直す必要があった。
 // サーバー（app_settings）を正として、localStorage はその写し（すぐ読めるようにするための控え）として使う。
-const SHARED_SETTING_PREFIXES=["shifts_","shifthalf_","shiftstore_","shift_required","holiday_balance","ando_sales_target_","attendance_rules","sales_simulator_","away_custom_reasons","month_goal_"];
+const SHARED_SETTING_PREFIXES=["shifts_","shifthalf_","shiftstore_","shift_required","holiday_balance","ando_sales_target_","attendance_rules","sales_simulator_","away_custom_reasons","month_goal_","menu_order"];
 // ===== 半日出勤（シフト表の「午前出勤」＝午後休み／「午後出勤」＝午前休み） =====
 // 午前・午後の時間帯は、設定「shift_half_times」（平日／土日・祝それぞれ）。未設定なら HALF_SHIFT_DEFAULT_TIMES
 const HALF_SHIFT={"午前出勤":"am","午後出勤":"pm"};
@@ -1208,16 +1208,155 @@ function LoginScreen({onLogin}){
 }
 
 // ===== 月の目標ボード（香里園駅前院。院のホワイトボードと同じ形で、月の目標を組んで実績と比べる） =====
-// 総売上＝窓口（サブスク込み）＋保険請求（自賠込み）＋そのほか。総来院数、スタッフごとの売上（窓口）と人数、テーマ・メモ。
+// 総売上＝窓口＋保険請求（自賠込み）＋そのほか。総来院数、スタッフごとの売上（窓口）と人数、テーマ・メモ。
 // 保存：共有設定 month_goal_{院ID|all}_{YYYY-MM}（JSON）。保存すると、窓口の目標を「月間売上目標」（予約分析・1日の売上目標で使う）に、
 // スタッフの売上目標を「個人目標売上」にも入れる。実績は総合売上日報と同じ計算（SalesReport.buildReport。返金後・お釣りを含めない）
 const MONTH_GOAL_PREFIX="month_goal_";
-const emptyMonthGoal=()=>({theme:"",window:"",subscription:"",claim:"",jibai:"",extras:[],visits:"",newPatients:"",staff:[],memo:""});
+const emptyMonthGoal=()=>({theme:"",window:"",claimJu:"",claimAcu:"",jibai:"",extras:[],visits:"",newPatients:"",staff:[],memo:""});
 function readMonthGoal(storeKey,month){
-  try{ const v=JSON.parse(localStorage.getItem(`${MONTH_GOAL_PREFIX}${storeKey}_${month}`)||"null"); return v&&typeof v==="object"?{...emptyMonthGoal(),...v}:null; }catch(e){ return null; }
+  try{ const v=JSON.parse(localStorage.getItem(`${MONTH_GOAL_PREFIX}${storeKey}_${month}`)||"null"); if(!v||typeof v!=="object") return null;
+    // 以前の「請求」（柔整・鍼灸を分けていない）は柔整の請求として読む
+    const out={...emptyMonthGoal(),...v};
+    if(v.claim&&!v.claimJu&&!v.claimAcu) out.claimJu=v.claim;
+    delete out.claim;
+    return out; }catch(e){ return null; }
 }
+// ===== 月の目標ボード：個人のKPI・KDI（チェックした人だけ）と、個人の振り返り報告 =====
+// KPI・KDIは「個人マンダラ・目標」（staff_goals）のもの。ここでは見るだけ（編集は個人マンダラ・目標の画面）
+function StaffMonthKpi({staffId,month,payments,bookings}){
+  const SG=window.StaffGoals;
+  const year=Number(month.slice(0,4));
+  const [goals,setGoals]=React.useState(null);
+  const [cells,setCells]=React.useState([]);
+  const [err,setErr]=React.useState("");
+  React.useEffect(()=>{
+    let alive=true; setGoals(null); setErr("");
+    Promise.all([
+      sb.query("staff_goals","GET",null,`?staff_id=eq.${staffId}&year=eq.${year}&order=sort_order.asc,id.asc`),
+      sb.query("staff_mandalas","GET",null,`?staff_id=eq.${staffId}&year=eq.${year}`),
+    ]).then(([g,m])=>{ if(!alive) return;
+      if(!Array.isArray(g)){ setErr("KPI・KDIを読み込めませんでした"); setGoals([]); return; }
+      setGoals(g); setCells(Array.isArray(m)&&m[0]&&SG?SG.normalizeCells(m[0].cells):[]);
+    }).catch(()=>{ if(alive){ setErr("KPI・KDIを読み込めませんでした"); setGoals([]); } });
+    return()=>{ alive=false; };
+  },[staffId,year]);
+  const summaryRow=React.useMemo(()=>{ if(!SG) return null; const {from,to}=SG.monthRange(month); return SG.summarize(payments,{from,to,storeOfBooking:bookingStoreLookup(bookings)}).find(r=>r.staffId===staffId)||null; },[payments,bookings,month,staffId]);
+  if(goals===null) return <div style={{fontSize:12,color:"#94a3b8",padding:8}}>読み込み中…</div>;
+  const cellTitle=i=>cells[i]&&cells[i].title?cells[i].title:(i===0?"目標（KGI）":`テーマ${i}`);
+  const kgis=goals.filter(x=>x.level==="KGI"), kpis=goals.filter(x=>x.level==="KPI"), kdis=goals.filter(x=>x.level==="KDI");
+  const orphanKdi=kdis.filter(d=>!kpis.some(k=>k.id===d.parent_id));
+  const name=((STAFF_ACCOUNTS.find(x=>x.id===staffId)||{}).name)||"";
+  const rowOf=(x,indent)=><MandalaGoalRow key={x.id} g={x} indent={indent} month={month} summaryRow={summaryRow} canEdit={false} cellTitle={cellTitle} onSaveResult={()=>{}} onEdit={()=>{}} onDelete={()=>{}}/>;
+  return(
+    <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"8px 4px"}}>
+      <div style={{fontSize:12.5,fontWeight:800,color:"#1e3a5f",padding:"2px 10px 6px"}}>📊 {name} の{Number(month.slice(5))}月のKGI・KPI・KDI <span style={{fontWeight:600,color:"#94a3b8"}}>（編集は「個人マンダラ・目標」で）</span></div>
+      {err&&<div style={{fontSize:12,color:"#b91c1c",padding:"0 10px"}}>{err}</div>}
+      {goals.length===0?<div style={{fontSize:12,color:"#94a3b8",padding:"4px 10px"}}>{year}年のKGI・KPI・KDIはまだ入っていません（「個人マンダラ・目標」で入れられます）</div>:<>
+        {kgis.map(x=>rowOf(x,0))}
+        {kpis.map(k=><React.Fragment key={k.id}>{rowOf(k,16)}{kdis.filter(d=>d.parent_id===k.id).map(d=>rowOf(d,36))}</React.Fragment>)}
+        {orphanKdi.map(d=>rowOf(d,16))}
+      </>}
+    </div>
+  );
+}
+
+const REFLECT_STATUS={
+  none:{label:"未提出",fg:"#64748b",bg:"#f1f5f9",bd:"#e2e8f0"},
+  draft:{label:"下書き",fg:"#92400e",bg:"#fef3c7",bd:"#fde68a"},
+  submitted:{label:"提出済み",fg:"#1d4ed8",bg:"#dbeafe",bd:"#93c5fd"},
+  reviewed:{label:"✓ 確認済み",fg:"#047857",bg:"#d1fae5",bd:"#6ee7b7"},
+};
+function ReflectionCard({month,storeId,staffList,reflections,onChanged,selected,onSelect,user,isAdmin,actualOf,goalOf}){
+  const sid=selected!=null?selected:(staffList[0]||{}).id;
+  const cur=reflections.find(x=>x.staff_id===sid)||null;
+  const blank={good:"",issue:"",next_action:"",self_score:null,review_comment:""};
+  const [f,setF]=React.useState(blank);
+  const [msg,setMsg]=React.useState("");
+  const [busy,setBusy]=React.useState(false);
+  const [history,setHistory]=React.useState([]);
+  React.useEffect(()=>{ setF(cur?{good:cur.good||"",issue:cur.issue||"",next_action:cur.next_action||"",self_score:cur.self_score||null,review_comment:cur.review_comment||""}:blank); setMsg(""); },[sid,month,cur&&cur.updated_at]);
+  React.useEffect(()=>{ if(sid==null) return; sb.select("staff_reflections",`?staff_id=eq.${sid}&store_id=eq.${storeId}&month=lt.${month}&order=month.desc&limit=6`).then(r=>setHistory(Array.isArray(r)?r:[])).catch(()=>setHistory([])); },[sid,month,storeId]);
+  const staffName=id=>((STAFF_ACCOUNTS.find(x=>x.id===id)||{}).name)||"";
+  async function save(status){
+    if(sid==null) return;
+    if(status!=="draft"&&!f.good.trim()&&!f.issue.trim()&&!f.next_action.trim()){ setMsg("⚠ どれか1つは書いてから提出してください"); return; }
+    setBusy(true); setMsg("");
+    try{
+      const now=new Date().toISOString();
+      const body={staff_id:sid,month,store_id:storeId,good:f.good.trim()||null,issue:f.issue.trim()||null,next_action:f.next_action.trim()||null,self_score:f.self_score||null,updated_at:now,updated_by:user&&user.id||null};
+      if(status) body.status=status;
+      if(status==="reviewed"){ body.review_comment=f.review_comment.trim()||null; body.reviewed_by=user&&user.id||null; body.reviewed_at=now; }
+      if(status==="submitted"&&cur&&cur.status==="reviewed"){ body.reviewed_at=null; body.reviewed_by=null; }
+      await goalWrite("POST","staff_reflections?on_conflict=staff_id,month,store_id",body,"","resolution=merge-duplicates,return=representation");
+      setMsg(status==="reviewed"?"✓ 確認済みにしました":status==="submitted"?"✓ 提出しました":"✓ 下書きを保存しました"); onChanged();
+    }catch(e){ setMsg("⚠ "+(e.message||"保存できませんでした")); }
+    setBusy(false);
+  }
+  const yen=v=>"¥"+Math.round(v||0).toLocaleString();
+  const counts={none:0,draft:0,submitted:0,reviewed:0}; staffList.forEach(o=>{ const r=reflections.find(x=>x.staff_id===o.id); counts[r?r.status:"none"]++; });
+  const inp={padding:"8px 10px",border:"1.5px solid #e2e8f0",borderRadius:8,fontSize:14,fontFamily:"inherit",boxSizing:"border-box",width:"100%",lineHeight:1.6,resize:"vertical"};
+  const st=REFLECT_STATUS[cur?cur.status:"none"];
+  const a=sid!=null&&actualOf?actualOf(sid):null, gl=sid!=null&&goalOf?goalOf(sid):null;
+  const pct=(x,y)=>y>0?Math.round(x/y*100)+"%":"—";
+  const field=(key,label,ph)=>(<div style={{marginBottom:10}}>
+    <div style={{fontSize:12.5,fontWeight:800,color:"#475569",marginBottom:3}}>{label}</div>
+    <textarea value={f[key]} onChange={e=>setF(x=>({...x,[key]:e.target.value}))} rows={3} aria-label={label} placeholder={ph} style={inp}/>
+  </div>);
+  return(
+    <div id="reflection-card" style={{background:"white",borderRadius:12,boxShadow:"0 1px 4px rgba(0,0,0,.06)",border:"1px solid #f1f5f9",marginBottom:14,padding:"14px 16px"}}>
+      <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap",marginBottom:8}}>
+        <span style={{fontWeight:800,fontSize:15,color:"#1e3a5f"}}>📝 個人の振り返り報告（{Number(month.slice(5))}月）</span>
+        <span style={{fontSize:12,color:"#64748b"}}>提出済み {counts.submitted+counts.reviewed}/{staffList.length}人（うち確認済み {counts.reviewed}人）{counts.draft?`・下書き ${counts.draft}人`:""}</span>
+      </div>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+        {staffList.map(o=>{ const r=reflections.find(x=>x.staff_id===o.id), s2=REFLECT_STATUS[r?r.status:"none"], on=o.id===sid;
+          return <button key={o.id} type="button" onClick={()=>onSelect(o.id)} aria-pressed={on} style={{padding:"6px 10px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontWeight:800,fontSize:13,border:"2px solid "+(on?"#1e3a5f":s2.bd),background:on?"#1e3a5f":"white",color:on?"white":"#1e293b",display:"inline-flex",alignItems:"center",gap:6}}>
+            {o.name}<span style={{fontSize:10.5,background:s2.bg,color:s2.fg,borderRadius:8,padding:"1px 6px"}}>{s2.label}</span></button>; })}
+      </div>
+      {sid==null?<div style={{fontSize:13,color:"#94a3b8"}}>スタッフがいません</div>:<>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center",background:"#f8fafc",borderRadius:10,padding:"8px 12px",marginBottom:10,fontSize:13}}>
+          <b style={{fontSize:15}}>{staffName(sid)}</b>
+          <span style={{fontSize:11.5,fontWeight:800,background:st.bg,color:st.fg,border:"1px solid "+st.bd,borderRadius:10,padding:"1px 8px"}}>{st.label}</span>
+          {a&&<span>売上 <b>{yen(a.sales)}</b>{gl&&gl.sales?<span style={{color:"#64748b"}}>／目標 {yen(gl.sales)}（{pct(a.sales,gl.sales)}）</span>:null}</span>}
+          {a&&<span>人数 <b>{a.visits}人</b>{gl&&gl.visits?<span style={{color:"#64748b"}}>／目標 {gl.visits}人（{pct(a.visits,gl.visits)}）</span>:null}</span>}
+          {cur&&cur.updated_at&&<span style={{color:"#94a3b8",fontSize:11.5}}>更新 {fmtDate(new Date(cur.updated_at))}{cur.updated_by&&staffName(cur.updated_by)?`（${staffName(cur.updated_by)}）`:""}</span>}
+        </div>
+        {field("good","① できたこと・良かったこと","例：口コミを5件いただけた。回数券の提案を毎回できた")}
+        {field("issue","② できなかったこと・課題とその原因","例：人数の目標に届かなかった。次回予約の声かけが少なかった")}
+        {field("next_action","③ 来月やること（KDI・行動）","例：施術後に必ず次回予約を提案する。毎日1件口コミをお願いする")}
+        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:12,flexWrap:"wrap"}}>
+          <span style={{fontSize:12.5,fontWeight:800,color:"#475569"}}>④ 自己評価</span>
+          {[1,2,3,4,5].map(n=><button key={n} type="button" onClick={()=>setF(x=>({...x,self_score:x.self_score===n?null:n}))} aria-label={`自己評価 ${n}`} aria-pressed={f.self_score===n}
+            style={{fontSize:22,lineHeight:1,border:"none",background:"none",cursor:"pointer",color:(f.self_score||0)>=n?"#f59e0b":"#e2e8f0",padding:"0 1px"}}>★</button>)}
+          <span style={{fontSize:12,color:"#64748b"}}>{f.self_score?`${f.self_score} / 5`:"未選択"}</span>
+        </div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <button type="button" disabled={busy} onClick={()=>save("draft")} style={{padding:"9px 16px",borderRadius:8,border:"1.5px solid #e2e8f0",background:"white",fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>下書き保存</button>
+          <button type="button" disabled={busy} onClick={()=>save("submitted")} style={{padding:"9px 18px",borderRadius:8,border:"none",background:"#2563eb",color:"white",fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>{cur&&cur.status!=="draft"?"内容を直して提出し直す":"提出する"}</button>
+        </div>
+        {isAdmin&&<div style={{marginTop:14,paddingTop:12,borderTop:"1px dashed #e2e8f0"}}>
+          <div style={{fontSize:12.5,fontWeight:800,color:"#047857",marginBottom:3}}>管理者のコメント（確認）</div>
+          <textarea value={f.review_comment} onChange={e=>setF(x=>({...x,review_comment:e.target.value}))} rows={2} aria-label="管理者のコメント" placeholder="例：口コミの声かけ、とても良かったです。来月は次回予約率を一緒に上げましょう" style={inp}/>
+          <button type="button" disabled={busy||!cur||cur.status==="draft"} onClick={()=>save("reviewed")} style={{marginTop:6,padding:"8px 16px",borderRadius:8,border:"none",background:!cur||cur.status==="draft"?"#cbd5e1":"#059669",color:"white",fontWeight:800,cursor:!cur||cur.status==="draft"?"default":"pointer",fontFamily:"inherit"}}>✓ 確認済みにする</button>
+          {(!cur||cur.status==="draft")&&<span style={{fontSize:11.5,color:"#94a3b8",marginLeft:8}}>提出されると確認できます</span>}
+        </div>}
+        {!isAdmin&&cur&&cur.review_comment&&<div style={{marginTop:12,background:"#ecfdf5",borderRadius:8,padding:"8px 10px",fontSize:13}}><b style={{color:"#047857"}}>管理者のコメント：</b>{cur.review_comment}</div>}
+        {msg&&<div style={{marginTop:8,fontSize:12.5,fontWeight:700,color:msg.startsWith("⚠")?"#b91c1c":"#047857"}}>{msg}</div>}
+        {history.length>0&&<details style={{marginTop:14}}>
+          <summary style={{cursor:"pointer",fontSize:12.5,fontWeight:800,color:"#475569"}}>{staffName(sid)}の過去の振り返り（{history.length}件）</summary>
+          {history.map(h=>{ const s2=REFLECT_STATUS[h.status]||REFLECT_STATUS.none; return <div key={h.id} style={{borderTop:"1px solid #f1f5f9",padding:"8px 2px",fontSize:12.5,lineHeight:1.7}}>
+            <b>{h.month.replace("-","年")}月</b> <span style={{fontSize:10.5,background:s2.bg,color:s2.fg,borderRadius:8,padding:"1px 6px"}}>{s2.label}</span>{h.self_score?<span style={{color:"#f59e0b",marginLeft:6}}>{"★".repeat(h.self_score)}</span>:null}
+            {h.good&&<div>① {h.good}</div>}{h.issue&&<div>② {h.issue}</div>}{h.next_action&&<div>③ {h.next_action}</div>}
+            {h.review_comment&&<div style={{color:"#047857"}}>💬 {h.review_comment}</div>}
+          </div>; })}
+        </details>}
+      </>}
+    </div>
+  );
+}
+
 // 香里園駅前院の専用（院は香里園に固定。スタッフは香里園で勤務する人を最初から並べる）
-function MonthGoalPanel({payments,bookings,stores,todayStr,staffStoreMap}){
+function MonthGoalPanel({payments,bookings,stores,todayStr,staffStoreMap,user,isAdmin}){
   const SR=window.SalesReport;
   const ver=useSharedSettingsVersion();
   const [month,setMonth]=React.useState(todayStr.slice(0,7));
@@ -1231,11 +1370,14 @@ function MonthGoalPanel({payments,bookings,stores,todayStr,staffStoreMap}){
   const [g,setG]=React.useState(emptyMonthGoal());
   const [dirty,setDirty]=React.useState(false);
   const [msg,setMsg]=React.useState("");
-  const [passes,setPasses]=React.useState([]);
+  const [openKpi,setOpenKpi]=React.useState({}); // {スタッフID:true} チェックした人のKPI・KDIを出す
+  const [reflections,setReflections]=React.useState([]);
+  const [reflectStaff,setReflectStaff]=React.useState(null);
+  const loadReflections=React.useCallback(()=>{ sb.select("staff_reflections",`?month=eq.${month}&store_id=eq.${storeId}&order=staff_id.asc`).then(r=>setReflections(Array.isArray(r)?r:[])).catch(()=>setReflections([])); },[month,storeId]);
+  React.useEffect(()=>{ loadReflections(); },[loadReflections]);
   const loadGoal=()=>{ const v=readMonthGoal(storeKey,month); return v||{...emptyMonthGoal(),staff:defaultStaffRows()}; };
   React.useEffect(()=>{ if(dirty) return; setG(loadGoal()); },[storeKey,month,ver,kaoriStaff.length]);
   React.useEffect(()=>{ setDirty(false); setG(loadGoal()); },[storeKey,month]);
-  React.useEffect(()=>{ sb.select("passes",`?purchased_date=gte.${month}-01&purchased_date=lte.${month}-31&select=id,pass_type,amount,purchased_date,is_training`).then(r=>setPasses(Array.isArray(r)?r:[])).catch(()=>setPasses([])); },[month]);
   const num=v=>{ const n=Number(String(v==null?"":v).replace(/[^\d.-]/g,"")); return Number.isFinite(n)?n:0; };
   const upd=patch=>{ setG(x=>({...x,...patch})); setDirty(true); setMsg(""); };
   const updStaff=(i,patch)=>upd({staff:g.staff.map((s,j)=>j===i?{...s,...patch}:s)});
@@ -1243,13 +1385,14 @@ function MonthGoalPanel({payments,bookings,stores,todayStr,staffStoreMap}){
 
   // ===== 目標の合計 =====
   const extrasSum=g.extras.reduce((t,x)=>t+num(x.amount),0);
-  const totalGoal=num(g.window)+num(g.claim)+extrasSum;
+  const claimGoal=num(g.claimJu)+num(g.claimAcu);
+  const totalGoal=num(g.window)+claimGoal+extrasSum;
   const staffSalesSum=g.staff.reduce((t,s)=>t+num(s.sales),0), staffVisitsSum=g.staff.reduce((t,s)=>t+num(s.visits),0);
 
   // ===== 実績（総合売上日報と同じ計算） =====
   const [y,m]=month.split("-").map(Number);
   const lastDay=new Date(y,m,0).getDate(), from=`${month}-01`, to=`${month}-${String(lastDay).padStart(2,"0")}`;
-  const act=React.useMemo(()=>{
+  function monthActual(from,to){
     if(!SR) return null;
     const r=SR.buildReport(payments||[],{from,to,storeId,bookings:bookings||[]});
     const bk={}; (bookings||[]).forEach(b=>{ bk[b.id]=b; });
@@ -1261,10 +1404,16 @@ function MonthGoalPanel({payments,bookings,stores,todayStr,staffStoreMap}){
       splitPaymentByStaff(p,b?b.staff_id:p.staff_id).forEach(x=>{ staffSales[x.staffId]=(staffSales[x.staffId]||0)+x.total; });
       if(!p.is_refund&&b){ (staffVisits[b.staff_id]=staffVisits[b.staff_id]||new Set()).add(p.booking_id); }
     });
-    const sub=passes.filter(p=>!p.is_training&&/フリーパス/.test(p.pass_type||"")).reduce((t,p)=>t+(Number(p.amount)||0),0);
-    const claim=(r.dept.ju.claim||0)+(r.dept.acu.claim||0);
-    return {window:r.total.amount,claim,total:r.total.amount+claim,visits:r.total.count,newPatients:(r.visitClass.new||{}).count||0,subscription:sub,staffSales,staffVisits:Object.fromEntries(Object.entries(staffVisits).map(([k,v])=>[k,v.size]))};
-  },[payments,bookings,passes,from,to,storeId]);
+    const claimJu=r.dept.ju.claim||0, claimAcu=r.dept.acu.claim||0, claim=claimJu+claimAcu;
+    return {window:r.total.amount,claim,claimJu,claimAcu,juVisits:r.dept.ju.visits,acuVisits:r.dept.acu.visits,total:r.total.amount+claim,visits:r.total.count,newPatients:(r.visitClass.new||{}).count||0,staffSales,staffVisits:Object.fromEntries(Object.entries(staffVisits).map(([k,v])=>[k,v.size]))};
+  }
+  const act=React.useMemo(()=>monthActual(from,to),[payments,bookings,from,to,storeId]);
+  // 先月（実績と、保存してあれば先月の目標）
+  const pd=new Date(y,m-2,1), prevMonth=`${pd.getFullYear()}-${String(pd.getMonth()+1).padStart(2,"0")}`, prevLast=new Date(pd.getFullYear(),pd.getMonth()+1,0).getDate();
+  const prevAct=React.useMemo(()=>monthActual(`${prevMonth}-01`,`${prevMonth}-${String(prevLast).padStart(2,"0")}`),[payments,bookings,prevMonth,storeId]);
+  const prevGoal=React.useMemo(()=>readMonthGoal(storeKey,prevMonth),[storeKey,prevMonth,ver]);
+  const pgNum=k=>{ if(!prevGoal) return null; if(k==="claim") return num(prevGoal.claimJu)+num(prevGoal.claimAcu); if(k==="total") return num(prevGoal.window)+num(prevGoal.claimJu)+num(prevGoal.claimAcu)+(prevGoal.extras||[]).reduce((t,x)=>t+num(x.amount),0); return num(prevGoal[k]); };
+  const prevStaffGoal=sid=>prevGoal&&(prevGoal.staff||[]).find(x=>Number(x.staffId)===sid)||null;
 
   // 今月の残り日数（今日を含む）
   const daysLeft=todayStr.slice(0,7)===month?lastDay-Number(todayStr.slice(8))+1:(month>todayStr.slice(0,7)?lastDay:0);
@@ -1296,12 +1445,16 @@ function MonthGoalPanel({payments,bookings,stores,todayStr,staffStoreMap}){
       <div style={{display:"flex",justifyContent:"space-between",fontSize:12,fontWeight:700,color:"#475569"}}><span>達成率</span><span style={{color:c}}>{pct==null?"—":pct+"%"}</span></div>
       <div style={{height:7,background:"#f1f5f9",borderRadius:4,overflow:"hidden",marginTop:2}}><div style={{height:"100%",width:Math.min(100,pct||0)+"%",background:c}}/></div>
     </div>; };
-  const row=(label,sub,input,actual,goal,fmtA)=>(
+  const pm=Number(prevMonth.slice(5));
+  const prevCell=(k,fmtA)=>{ const v=prevAct?prevAct[k]:null, pg=pgNum(k); const f=x=>fmtA?fmtA(x):yen(x);
+    return <td style={{padding:"8px 6px",textAlign:"right",whiteSpace:"nowrap",fontSize:12.5,color:"#475569",background:"#fafafa"}}>{v==null?"—":<b>{f(v)}</b>}{pg?<div style={{fontSize:10.5,color:"#94a3b8"}}>目標 {f(pg)}（{Math.round(v/pg*100)}%）</div>:null}</td>; };
+  const row=(label,sub,input,actual,goal,fmtA,pk)=>(
     <tr style={{borderBottom:"1px solid #f1f5f9"}}>
       <td style={{padding:"8px 6px",fontWeight:800,fontSize:15,color:"#1e293b",whiteSpace:"nowrap"}}>{label}{sub&&<div style={{fontSize:11,color:"#64748b",fontWeight:600}}>{sub}</div>}</td>
       <td style={{padding:"8px 6px"}}>{input}</td>
       <td style={{padding:"8px 6px",textAlign:"right",fontWeight:800,whiteSpace:"nowrap",color:"#0e7490"}}>{actual==null?"—":fmtA?fmtA(actual):yen(actual)}</td>
       <td style={{padding:"8px 6px"}}>{actual==null||!goal?<span style={{fontSize:12,color:"#94a3b8"}}>—</span>:bar(actual,goal)}</td>
+      {pk?prevCell(pk,fmtA):<td style={{background:"#fafafa"}}/>}
       <td style={{padding:"8px 6px",textAlign:"right",fontSize:12,color:"#475569",whiteSpace:"nowrap"}}>{actual!=null&&goal>0&&daysLeft>0&&goal>actual?<>あと {fmtA?fmtA(goal-actual):yen(goal-actual)}<br/><span style={{color:"#94a3b8"}}>1日 {fmtA?fmtA(Math.ceil((goal-actual)/daysLeft)):yen((goal-actual)/daysLeft)}</span></>:actual!=null&&goal>0&&actual>=goal?<span style={{color:"#059669",fontWeight:800}}>✓ 達成</span>:""}</td>
     </tr>);
   const ppl=v=>Math.round(v).toLocaleString()+"人";
@@ -1326,30 +1479,32 @@ function MonthGoalPanel({payments,bookings,stores,todayStr,staffStoreMap}){
       <div style={card}>
         <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:6}}>💰 売上・来院の目標</div>
         <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:720}}>
-          <thead><tr style={{fontSize:12,color:"#64748b"}}>{["項目","目標","実績","達成率","残り"].map(h=><th key={h} style={{textAlign:h==="実績"||h==="残り"?"right":"left",padding:"4px 6px",fontWeight:800}}>{h}</th>)}</tr></thead>
+          <thead><tr style={{fontSize:12,color:"#64748b"}}>{["項目","目標","実績","達成率",`先月（${pm}月）の実績`,"残り"].map(h=><th key={h} style={{textAlign:h==="実績"||h==="残り"||h.startsWith("先月")?"right":"left",padding:"4px 6px",fontWeight:800}}>{h}</th>)}</tr></thead>
           <tbody>
             <tr style={{borderBottom:"2px solid #e2e8f0",background:"#f8fafc"}}>
               <td style={{padding:"10px 6px",fontWeight:900,fontSize:17,color:"#1e3a5f"}}>総売上<div style={{fontSize:11,color:"#64748b",fontWeight:600}}>＝窓口＋請求{g.extras.length?"＋そのほか":""}（自動）</div></td>
               <td style={{padding:"10px 6px",fontWeight:900,fontSize:20,color:"#1e293b"}}>{yen(totalGoal)}</td>
               <td style={{padding:"10px 6px",textAlign:"right",fontWeight:900,fontSize:16,color:"#0e7490"}}>{act?yen(act.total+0):"—"}</td>
               <td style={{padding:"10px 6px"}}>{act&&totalGoal?bar(act.total,totalGoal):"—"}</td>
+              {prevCell("total")}
               <td style={{padding:"10px 6px",textAlign:"right",fontSize:12,color:"#475569"}}>{act&&totalGoal>act.total&&daysLeft>0?<>あと {yen(totalGoal-act.total)}<br/><span style={{color:"#94a3b8"}}>1日 {yen((totalGoal-act.total)/daysLeft)}</span></>:act&&totalGoal&&act.total>=totalGoal?<span style={{color:"#059669",fontWeight:800}}>✓ 達成</span>:""}</td>
             </tr>
-            {row("窓口","サブスク込み",money(g.window,v=>upd({window:v}),"窓口の目標"),act&&act.window,num(g.window))}
-            {row("　うちサブスク","フリーパスの購入",money(g.subscription,v=>upd({subscription:v}),"サブスクの目標"),act&&act.subscription,num(g.subscription))}
-            {row("請求","保険請求（見込み）",money(g.claim,v=>upd({claim:v}),"請求の目標"),act&&act.claim,num(g.claim))}
+            {row("窓口","",money(g.window,v=>upd({window:v}),"窓口の目標"),act&&act.window,num(g.window),null,"window")}
+            {row("請求","柔整＋鍼灸（自動）",<span style={{fontWeight:900,fontSize:16}}>{yen(claimGoal)}</span>,act&&act.claim,claimGoal,null,"claim")}
+            {row("　柔整の請求",act?`保険の来院 ${act.juVisits}回（見込み）`:"保険請求（見込み）",money(g.claimJu,v=>upd({claimJu:v}),"柔整の請求の目標"),act&&act.claimJu,num(g.claimJu),null,"claimJu")}
+            {row("　鍼灸の請求",act?`鍼灸保険の来院 ${act.acuVisits}回（見込み）`:"保険請求（見込み）",money(g.claimAcu,v=>upd({claimAcu:v}),"鍼灸の請求の目標"),act&&act.claimAcu,num(g.claimAcu),null,"claimAcu")}
             {row("　うち自賠","",money(g.jibai,v=>upd({jibai:v}),"自賠の目標"),null,num(g.jibai))}
             {g.extras.map((x,i)=><tr key={i} style={{borderBottom:"1px solid #f1f5f9"}}>
               <td style={{padding:"8px 6px"}}><input value={x.label} onChange={e=>updExtra(i,{label:e.target.value})} placeholder="例：EMS" aria-label="そのほかの項目名" style={{...inp,width:120,fontWeight:800}}/></td>
               <td style={{padding:"8px 6px"}}>{money(x.amount,v=>updExtra(i,{amount:v}),"そのほかの目標")} <button type="button" onClick={()=>upd({extras:g.extras.filter((_,j)=>j!==i)})} aria-label="この項目を消す" style={{border:"none",background:"none",color:"#94a3b8",cursor:"pointer",fontSize:16}}>✕</button></td>
-              <td colSpan={3} style={{padding:"8px 6px",fontSize:11,color:"#94a3b8"}}>総売上に足します（実績は自動で出ません）</td>
+              <td colSpan={4} style={{padding:"8px 6px",fontSize:11,color:"#94a3b8"}}>総売上に足します（実績は自動で出ません）</td>
             </tr>)}
-            <tr><td colSpan={5} style={{padding:"6px"}}><button type="button" onClick={()=>upd({extras:[...g.extras,{label:"",amount:""}]})} style={{...inp,cursor:"pointer",fontSize:12.5,fontWeight:700,background:"white"}}>＋ 売上の項目を追加（EMS など）</button></td></tr>
-            {row("総来院","",<span><input value={g.visits} onChange={e=>upd({visits:e.target.value.replace(/[^\d]/g,"")})} inputMode="numeric" aria-label="総来院の目標" placeholder="0" style={{...inp,width:100,textAlign:"right",fontWeight:800}}/> 人</span>,act&&act.visits,num(g.visits),ppl)}
-            {row("新患","",<span><input value={g.newPatients} onChange={e=>upd({newPatients:e.target.value.replace(/[^\d]/g,"")})} inputMode="numeric" aria-label="新患の目標" placeholder="0" style={{...inp,width:100,textAlign:"right",fontWeight:800}}/> 人</span>,act&&act.newPatients,num(g.newPatients),ppl)}
+            <tr><td colSpan={6} style={{padding:"6px"}}><button type="button" onClick={()=>upd({extras:[...g.extras,{label:"",amount:""}]})} style={{...inp,cursor:"pointer",fontSize:12.5,fontWeight:700,background:"white"}}>＋ 売上の項目を追加（EMS など）</button></td></tr>
+            {row("総来院","",<span><input value={g.visits} onChange={e=>upd({visits:e.target.value.replace(/[^\d]/g,"")})} inputMode="numeric" aria-label="総来院の目標" placeholder="0" style={{...inp,width:100,textAlign:"right",fontWeight:800}}/> 人</span>,act&&act.visits,num(g.visits),ppl,"visits")}
+            {row("新患","",<span><input value={g.newPatients} onChange={e=>upd({newPatients:e.target.value.replace(/[^\d]/g,"")})} inputMode="numeric" aria-label="新患の目標" placeholder="0" style={{...inp,width:100,textAlign:"right",fontWeight:800}}/> 人</span>,act&&act.newPatients,num(g.newPatients),ppl,"newPatients")}
           </tbody>
         </table></div>
-        <div style={{fontSize:11,color:"#94a3b8",marginTop:6,lineHeight:1.6}}>実績は総合売上日報と同じ計算です（窓口＝会計の合計から返金を引いた額、請求＝保険の来院回数×見込み単価、サブスク＝その月に買われたフリーパスの金額）。「残り」の1日あたりは、今日を含む残りの日数で割っています。</div>
+        <div style={{fontSize:11,color:"#94a3b8",marginTop:6,lineHeight:1.6}}>実績は総合売上日報と同じ計算です（窓口＝会計の合計から返金を引いた額、請求＝保険の来院回数×見込み単価）。「残り」の1日あたりは、今日を含む残りの日数で割っています。</div>
       </div>
 
       <div style={card}>
@@ -1357,20 +1512,27 @@ function MonthGoalPanel({payments,bookings,stores,todayStr,staffStoreMap}){
           <span style={{fontWeight:800,fontSize:15,color:"#1e3a5f"}}>👥 スタッフごとの目標</span>
           <span style={{fontSize:12,color:"#64748b"}}>合計：売上 {yen(staffSalesSum)}{num(g.window)?<span style={{color:staffSalesSum===num(g.window)?"#059669":"#b45309",fontWeight:700}}>（窓口の目標 {yen(num(g.window))} {staffSalesSum===num(g.window)?"と一致":`との差 ${staffSalesSum-num(g.window)<0?"−":"+"}${yen(Math.abs(staffSalesSum-num(g.window)))}`}）</span>:""}／人数 {staffVisitsSum.toLocaleString()}人{num(g.visits)?<span style={{color:staffVisitsSum===num(g.visits)?"#059669":"#b45309",fontWeight:700}}>（総来院 {num(g.visits)}人 {staffVisitsSum===num(g.visits)?"と一致":`との差 ${staffVisitsSum-num(g.visits)>0?"+":""}${staffVisitsSum-num(g.visits)}人`}）</span>:""}</span>
         </div>
-        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:860}}>
-          <thead><tr style={{fontSize:12,color:"#64748b"}}>{["スタッフ","売上の目標（窓口）","売上の実績","人数の目標","人数の実績","メモ（口コミ・役割など）",""].map(h=><th key={h} style={{textAlign:"left",padding:"4px 6px",fontWeight:800}}>{h}</th>)}</tr></thead>
+        <div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",minWidth:1050}}>
+          <thead><tr style={{fontSize:12,color:"#64748b"}}>{["スタッフ（☑でKPI・KDI）","売上の目標（窓口）","売上の実績",`先月（${pm}月）`,"人数の目標","人数の実績","メモ（口コミ・役割など）","振り返り",""].map(h=><th key={h} style={{textAlign:"left",padding:"4px 6px",fontWeight:800,whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
           <tbody>
             {g.staff.map((s,i)=>{ const sid=s.staffId?Number(s.staffId):null; const as=sid!=null&&act?act.staffSales[sid]||0:null, av=sid!=null&&act?act.staffVisits[sid]||0:null;
-              return <tr key={i} style={{borderBottom:"1px solid #f1f5f9"}}>
-                <td style={{padding:"6px",whiteSpace:"nowrap"}}>{(()=>{ const o=STAFF_ACCOUNTS.find(x=>x.id===sid); return o?<span style={{display:"inline-flex",width:26,height:26,borderRadius:7,background:o.color||"#64748b",color:"white",fontWeight:900,fontSize:13,alignItems:"center",justifyContent:"center",marginRight:6,verticalAlign:"middle"}}>{o.initial||o.name.charAt(0)}</span>:null; })()}<select value={s.staffId||""} onChange={e=>updStaff(i,{staffId:e.target.value?Number(e.target.value):null})} aria-label="スタッフ" style={{...inp,fontWeight:800}}>
+              const ps=sid!=null&&prevAct?prevAct.staffSales[sid]||0:null, pv=sid!=null&&prevAct?prevAct.staffVisits[sid]||0:null, psg=sid!=null?prevStaffGoal(sid):null;
+              const rf=sid!=null?reflections.find(x=>x.staff_id===sid):null;
+              return <React.Fragment key={i}><tr style={{borderBottom:openKpi[sid]?"none":"1px solid #f1f5f9"}}>
+                <td style={{padding:"6px",whiteSpace:"nowrap"}}>{sid!=null&&<input type="checkbox" checked={!!openKpi[sid]} onChange={e=>setOpenKpi(o=>({...o,[sid]:e.target.checked}))} aria-label={`${(STAFF_ACCOUNTS.find(x=>x.id===sid)||{}).name||""}のKPI・KDIを見る`} title="チェックすると、この月のKPI・KDIが下に出ます" style={{width:17,height:17,marginRight:6,verticalAlign:"middle",cursor:"pointer"}}/>}{(()=>{ const o=STAFF_ACCOUNTS.find(x=>x.id===sid); return o?<span style={{display:"inline-flex",width:26,height:26,borderRadius:7,background:o.color||"#64748b",color:"white",fontWeight:900,fontSize:13,alignItems:"center",justifyContent:"center",marginRight:6,verticalAlign:"middle"}}>{o.initial||o.name.charAt(0)}</span>:null; })()}<select value={s.staffId||""} onChange={e=>updStaff(i,{staffId:e.target.value?Number(e.target.value):null})} aria-label="スタッフ" style={{...inp,fontWeight:800}}>
                   <option value="">選択</option>{staffOptions.map(o=><option key={o.id} value={o.id}>{o.name}</option>)}</select></td>
                 <td style={{padding:"6px"}}>{money(s.sales,v=>updStaff(i,{sales:v}),"スタッフの売上目標",120)}</td>
                 <td style={{padding:"6px"}}>{as==null?"—":<><div style={{fontWeight:800,color:"#0e7490"}}>{yen(as)}</div>{num(s.sales)>0&&bar(as,num(s.sales))}</>}</td>
+                <td style={{padding:"6px",fontSize:12,color:"#475569",whiteSpace:"nowrap",background:"#fafafa"}}>{ps==null?"—":<><div><b>{yen(ps)}</b>{psg&&num(psg.sales)?<span style={{color:"#94a3b8"}}>／{yen(num(psg.sales))}</span>:null}</div><div><b>{pv}人</b>{psg&&num(psg.visits)?<span style={{color:"#94a3b8"}}>／{num(psg.visits)}人</span>:null}</div></>}</td>
                 <td style={{padding:"6px",whiteSpace:"nowrap"}}><input value={s.visits||""} onChange={e=>updStaff(i,{visits:e.target.value.replace(/[^\d]/g,"")})} inputMode="numeric" aria-label="スタッフの人数目標" placeholder="0" style={{...inp,width:70,textAlign:"right",fontWeight:800}}/> 人</td>
                 <td style={{padding:"6px"}}>{av==null?"—":<><div style={{fontWeight:800,color:"#0e7490"}}>{av}人</div>{num(s.visits)>0&&bar(av,num(s.visits))}</>}</td>
                 <td style={{padding:"6px"}}><input value={s.note||""} onChange={e=>updStaff(i,{note:e.target.value})} placeholder="例：口コミ 1/3" aria-label="スタッフのメモ" maxLength={40} style={{...inp,width:"100%",minWidth:140}}/></td>
+                <td style={{padding:"6px",whiteSpace:"nowrap"}}>{sid==null?null:<button type="button" onClick={()=>{ setReflectStaff(sid); setTimeout(()=>{ const el=document.getElementById("reflection-card"); if(el&&el.scrollIntoView) el.scrollIntoView({behavior:"smooth",block:"start"}); },50); }}
+                  style={{fontSize:11.5,fontWeight:800,padding:"3px 8px",borderRadius:12,cursor:"pointer",fontFamily:"inherit",border:"1px solid "+REFLECT_STATUS[rf?rf.status:"none"].bd,background:REFLECT_STATUS[rf?rf.status:"none"].bg,color:REFLECT_STATUS[rf?rf.status:"none"].fg}}>{REFLECT_STATUS[rf?rf.status:"none"].label}</button>}</td>
                 <td style={{padding:"6px"}}><button type="button" onClick={()=>upd({staff:g.staff.filter((_,j)=>j!==i)})} aria-label="この行を消す" style={{border:"none",background:"none",color:"#94a3b8",cursor:"pointer",fontSize:16}}>✕</button></td>
-              </tr>; })}
+              </tr>
+              {sid!=null&&openKpi[sid]&&<tr style={{borderBottom:"1px solid #f1f5f9"}}><td colSpan={9} style={{padding:"0 6px 10px 36px"}}><StaffMonthKpi staffId={sid} month={month} payments={payments} bookings={bookings}/></td></tr>}
+              </React.Fragment>; })}
           </tbody>
         </table></div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
@@ -1383,6 +1545,95 @@ function MonthGoalPanel({payments,bookings,stores,todayStr,staffStoreMap}){
       <div style={card}>
         <div style={{fontWeight:800,fontSize:15,color:"#1e3a5f",marginBottom:6}}>📝 メモ（紹介・キャンペーン・新規の目標など）</div>
         <textarea value={g.memo} onChange={e=>upd({memo:e.target.value})} rows={5} aria-label="メモ" placeholder={"例：11月中の紹介 奥田4・佐藤4\n④ 初診料0・FP1回 20%off\n新規 6人/日"} style={{...inp,width:"100%",resize:"vertical",lineHeight:1.6}}/>
+      </div>
+
+      <ReflectionCard month={month} storeId={storeId} staffList={kaoriStaff.filter(o=>o.id<100||g.staff.some(x=>Number(x.staffId)===o.id))} reflections={reflections} onChanged={loadReflections}
+        selected={reflectStaff} onSelect={setReflectStaff} user={user} isAdmin={isAdmin}
+        actualOf={sid=>act?{sales:act.staffSales[sid]||0,visits:act.staffVisits[sid]||0}:null} goalOf={sid=>{ const x=g.staff.find(r=>Number(r.staffId)===sid); return x?{sales:num(x.sales),visits:num(x.visits)}:null; }}/>
+    </div>
+  );
+}
+
+// ===== 管理メニューの並び替え =====
+// 共有設定 menu_order（全端末で同じ並び）：{groups:[グループID...], items:{グループID:[項目ID...]}}
+// 項目は別のグループへ移すこともできる。新しく増えたグループ・項目は、元の場所の最後に出る
+const MENU_ORDER_KEY="menu_order";
+function readMenuOrder(){ try{ const v=JSON.parse(localStorage.getItem(MENU_ORDER_KEY)||"null"); return v&&typeof v==="object"?v:null; }catch(e){ return null; } }
+function applyMenuOrder(groups,order){
+  if(!order) return groups;
+  const byId={}; groups.forEach(g=>g.items.forEach(it=>{ byId[it.id]={it,home:g.id}; }));
+  const gOrder=[...(order.groups||[]).filter(id=>groups.some(g=>g.id===id)),...groups.map(g=>g.id).filter(id=>!(order.groups||[]).includes(id))];
+  const placed=new Set();
+  const out=gOrder.map(gid=>{
+    const g=groups.find(x=>x.id===gid);
+    const ids=((order.items||{})[gid]||[]).filter(id=>byId[id]&&!placed.has(id));
+    ids.forEach(id=>placed.add(id));
+    return {...g,items:ids.map(id=>byId[id].it)};
+  });
+  // 並びに書かれていない項目（新しく増えたもの）は元のグループの最後へ
+  groups.forEach(g=>g.items.forEach(it=>{ if(!placed.has(it.id)){ const t=out.find(x=>x.id===g.id); if(t) t.items.push(it); } }));
+  return out;
+}
+function MenuOrderModal({groups,onClose,onSaved}){
+  const [list,setList]=React.useState(()=>groups.map(g=>({id:g.id,label:g.label,color:g.color,items:g.items.map(it=>({id:it.id,label:it.label}))})));
+  const [saving,setSaving]=React.useState(false);
+  const [msg,setMsg]=React.useState("");
+  const moveGroup=(i,d)=>setList(l=>{ const j=i+d; if(j<0||j>=l.length) return l; const n=[...l]; [n[i],n[j]]=[n[j],n[i]]; return n; });
+  const moveItem=(gi,ii,d)=>setList(l=>{ const n=l.map(g=>({...g,items:[...g.items]})); const it=n[gi].items; const j=ii+d; if(j<0||j>=it.length) return l; [it[ii],it[j]]=[it[j],it[ii]]; return n; });
+  const toGroup=(gi,ii,target)=>setList(l=>{ const n=l.map(g=>({...g,items:[...g.items]})); const [it]=n[gi].items.splice(ii,1); const t=n.find(g=>g.id===target); if(t) t.items.push(it); return n; });
+  async function save(){
+    setSaving(true); setMsg("");
+    const order={groups:list.map(g=>g.id),items:Object.fromEntries(list.map(g=>[g.id,g.items.map(it=>it.id)]))};
+    const ok=await sharedSettings.saveNow({[MENU_ORDER_KEY]:JSON.stringify(order)});
+    setSaving(false);
+    if(ok){ window.dispatchEvent(new Event("ando-shared-settings")); onSaved&&onSaved(); onClose(); }
+    else setMsg("⚠ 保存できませんでした（ログインし直して、もう一度保存してください）");
+  }
+  async function reset(){
+    if(!window.confirm("メニューの並びを、最初の並びに戻しますか？")) return;
+    setSaving(true);
+    const ok=await sharedSettings.saveNow({[MENU_ORDER_KEY]:""});
+    setSaving(false);
+    if(ok){ window.dispatchEvent(new Event("ando-shared-settings")); onClose(); }
+    else setMsg("⚠ 戻せませんでした（ログインし直して、もう一度やってください）");
+  }
+  const arrow=(dis,onClick,label)=>(<button type="button" disabled={dis} onClick={onClick} aria-label={label} title={label}
+    style={{width:30,height:28,borderRadius:6,border:"1.5px solid #e2e8f0",background:dis?"#f8fafc":"white",color:dis?"#cbd5e1":"#334155",fontWeight:900,cursor:dis?"default":"pointer",fontSize:13,padding:0}}>{label.startsWith("上")?"▲":"▼"}</button>);
+  return(
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-box" role="dialog" aria-label="管理メニューの並び替え" style={{maxWidth:620,overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+        <div className="modal-header" style={{background:"linear-gradient(135deg,#0f2744,#1e4d8c)"}}>
+          <div><div style={{fontWeight:800,fontSize:16,color:"white"}}>⇅ 管理メニューの並び替え</div>
+            <div style={{fontSize:12,color:"rgba(255,255,255,.85)",marginTop:2}}>▲▼で順番を入れ替え、「移す」で別のグループへ。保存すると全部の端末で同じ並びになります</div></div>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div style={{padding:14}}>
+          {list.map((g,gi)=>(
+            <div key={g.id} style={{border:"1.5px solid #e2e8f0",borderLeft:`5px solid ${g.color}`,borderRadius:10,marginBottom:10,overflow:"hidden"}}>
+              <div style={{display:"flex",alignItems:"center",gap:6,padding:"8px 10px",background:"#f8fafc"}}>
+                <span style={{flex:1,fontWeight:900,fontSize:14,color:"#1e293b"}}>{g.label}<span style={{fontSize:11,color:"#94a3b8",fontWeight:600,marginLeft:6}}>{g.items.length}項目</span></span>
+                {arrow(gi===0,()=>moveGroup(gi,-1),`上へ（${g.label}）`)}
+                {arrow(gi===list.length-1,()=>moveGroup(gi,1),`下へ（${g.label}）`)}
+              </div>
+              {g.items.length===0&&<div style={{fontSize:12,color:"#94a3b8",padding:"6px 12px"}}>（項目がありません）</div>}
+              {g.items.map((it,ii)=>(
+                <div key={it.id} style={{display:"flex",alignItems:"center",gap:6,padding:"5px 10px 5px 16px",borderTop:"1px solid #f1f5f9"}}>
+                  <span style={{flex:1,fontSize:13,color:"#334155",minWidth:0}}>{it.label}</span>
+                  {arrow(ii===0,()=>moveItem(gi,ii,-1),`上へ（${it.label}）`)}
+                  {arrow(ii===g.items.length-1,()=>moveItem(gi,ii,1),`下へ（${it.label}）`)}
+                  <select value="" onChange={e=>e.target.value&&toGroup(gi,ii,e.target.value)} aria-label={`${it.label}を別のグループへ移す`} style={{fontSize:12,padding:"4px 4px",borderRadius:6,border:"1.5px solid #e2e8f0",maxWidth:96}}>
+                    <option value="">移す…</option>{list.filter(x=>x.id!==g.id).map(x=><option key={x.id} value={x.id}>{x.label}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+          ))}
+          {msg&&<div style={{fontSize:12.5,fontWeight:700,color:"#b91c1c",marginBottom:8}}>{msg}</div>}
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button type="button" onClick={save} disabled={saving} className="btn btn-primary" style={{flex:1,justifyContent:"center",padding:11,fontSize:14.5}}>{saving?"保存中…":"この並びで保存"}</button>
+            <button type="button" onClick={reset} disabled={saving} style={{padding:"10px 14px",borderRadius:8,border:"1.5px solid #e2e8f0",background:"white",fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>最初の並びに戻す</button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -18002,6 +18253,7 @@ function Dashboard({user,onLogout}){
       return (saved&&saved!=="form")?saved:"calendar";
     }catch(e){ return "calendar"; }
   });
+  const [showMenuOrder,setShowMenuOrder]=React.useState(false);
   const [collapsedGroups,setCollapsedGroups]=React.useState(()=>{
     // サイドバーがごちゃつかないよう、今開いている画面のグループだけ最初から展開しておく
     try{
@@ -19169,7 +19421,7 @@ function Dashboard({user,onLogout}){
   const SvgRefresh=()=><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>;
 
   // メニューは「よく使うもの」を上に、使う頻度の低いものは「その他・設定」にまとめて最初は閉じておく
-  const SIDEBAR_GROUPS = [
+  const SIDEBAR_GROUPS_DEFAULT = [
     {id:"booking",label:"予約・患者",color:"#2563eb",items:[
       {id:"add",label:"新規予約",icon:"plus",special:"btn-add",action:()=>openAdd()},
       {id:"checkin",label:"来院受付",icon:"scan",special:""},
@@ -19234,6 +19486,8 @@ function Dashboard({user,onLogout}){
       {id:"settings",label:"各種設定",icon:"settings",special:""},
     ]},
   ];
+  // 並び替え（共有設定 menu_order）を当てたメニュー
+  const SIDEBAR_GROUPS = applyMenuOrder(SIDEBAR_GROUPS_DEFAULT, readMenuOrder());
   if(loading)return(<div className="loading"><div className="loading-spinner"></div><div style={{fontWeight:700,color:"#1e3a5f",fontSize:14}}>読み込み中...</div></div>);
 
   return(
@@ -19321,6 +19575,7 @@ function Dashboard({user,onLogout}){
         </div>
       )}
 
+      {showMenuOrder&&<MenuOrderModal groups={SIDEBAR_GROUPS} onClose={()=>setShowMenuOrder(false)} onSaved={()=>showToast("メニューの並びを保存しました")}/>}
       {/* メインレイアウト：サイドバー＋コンテンツ */}
       <div style={{display:"flex",minHeight:"calc(100vh - 68px)"}} onClick={()=>setShowMenu(false)}>
 
@@ -19328,7 +19583,11 @@ function Dashboard({user,onLogout}){
         <div className="sidebar">
           {/* メニューヘッダー */}
           <div className="sidebar-header">
-            <div className="sidebar-header-title">管理メニュー</div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
+              <div className="sidebar-header-title">管理メニュー</div>
+              {isAdmin&&<button type="button" onClick={()=>setShowMenuOrder(true)} title="メニューの並び替え" aria-label="メニューの並び替え"
+                style={{fontSize:11,fontWeight:800,padding:"3px 8px",borderRadius:12,border:"1.5px solid #e2e8f0",background:"white",color:"#475569",cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>⇅ 並び替え</button>}
+            </div>
             <div className="sidebar-header-sub">{user.name}</div>
           </div>
 
@@ -19874,7 +20133,7 @@ function Dashboard({user,onLogout}){
                     {view==="line_link_check"&&<LineLinkCheckPanel bookings={bookings}/>}
                              {view==="staff_kpi"&&<StaffKPIPanel onOpenPatient={openPatientByName} bookings={bookings} payments={paymentsNet} storeStaff={storeStaff} selStoreId={selStoreId} todayStr={todayStr} trainingMode={trainingMode}/>}
                              {view==="staff_summary"&&<StaffSummaryPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}
-                             {view==="month_goal"&&<MonthGoalPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr} staffStoreMap={staffStoreMap}/>}
+                             {view==="month_goal"&&<MonthGoalPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr} staffStoreMap={staffStoreMap} user={user} isAdmin={isAdmin}/>}
                              {view==="sales_report"&&<SalesReportPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}
                              {view==="monthly_kpi"&&<MonthlyKpiPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}
                              {view==="sales_simulator"&&<SalesSimulatorPanel payments={paymentsNet} bookings={bookings} stores={stores} todayStr={todayStr}/>}

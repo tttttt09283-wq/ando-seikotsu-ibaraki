@@ -29,6 +29,20 @@ export const sources: Source[] = [
     checked: false,
   },
   {
+    id: "jsam-who-history",
+    title: "WHO経穴部位国際標準化の経緯と今後（全日本鍼灸学会雑誌 57巻5号）",
+    publisher: "全日本鍼灸学会",
+    note: "WHO 経穴部位国際標準化の経緯。361穴・2006年つくば会議の記述の照合先（抄録のみ確認、本文は要確認）。",
+    checked: false,
+  },
+  {
+    id: "jsam-2006-ws",
+    title: "第55回全日本鍼灸学会学術大会ワークショップ報告（全日本鍼灸学会雑誌 56巻5号, 2006）",
+    publisher: "全日本鍼灸学会",
+    note: "361穴と日本で教育されてきた354穴の差（7穴）に関する記述の照合先（抄録のみ確認）。",
+    checked: false,
+  },
+  {
     id: "lingshu-jingmai",
     title: "『霊枢』経脈篇（第10）",
     note: "十二経脈の流注・是動病・所生病の古典的記載。現代語訳は教科書に準拠予定。",
