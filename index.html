@@ -5145,6 +5145,14 @@ function LearningPanel({user,isAdmin}){
 }
 
 
+// ===== 同じ患者さんかどうか（日計表・スタッフKPIで共通） =====
+// 空白を除いた名前が同じなら同じ人とする（スタッフKPI・患者管理と同じ）。
+// 以前の日計表は「電話番号＋名前」で見ていたため、最初は電話番号なしで予約し、あとから電話番号を入れた人が
+// 2回「新患」になっていた。電話番号は打ち間違い・自宅と携帯の違いが多いので使わない。
+// 同じ名前の別の人がいるときは、名前に区別を付けて登録する（例：山本大貴（息子））
+function buildPatientIdentity(){
+  return b=>b?String(b.patient_name||"").replace(/[\s　]/g,""):"";
+}
 function DailyReportPanel({bookings,payments,stores,todayStr,refunds,onOpenPos,onOpenRefund}){
   const fmt=n=>"¥"+Number(n||0).toLocaleString();
   const DAYS_JP=["日","月","火","水","木","金","土"];
@@ -5167,7 +5175,7 @@ function DailyReportPanel({bookings,payments,stores,todayStr,refunds,onOpenPos,o
     const bookingById={};
     storeBookings.forEach(b=>{bookingById[b.id]=b;});
     // 患者ごとの初回来院日（キャンセルを除く予約のうち一番古い日）→ 新患／再診の判定に使う
-    const patientKey=b=>(b.phone||"")+"|"+(b.patient_name||"");
+    const patientKey=buildPatientIdentity(storeBookings.filter(b=>!b.cancelled));
     const firstDate={};
     const datesByPatient={}; // 患者ごとの来院日（キャンセル除く）
     storeBookings.filter(b=>!b.cancelled).forEach(b=>{
@@ -5220,10 +5228,12 @@ function DailyReportPanel({bookings,payments,stores,todayStr,refunds,onOpenPos,o
         });
       });
       r.visits=paidIds.size;
+      const seenToday=new Set(); // 同じ日に同じ人の会計が2つ（予約の取り直し・柔整と鍼灸を分けた会計など）あっても1人と数える
       paidIds.forEach(id=>{
         const b=bookingById[id];
         if(!b) return;
         const k=patientKey(b);
+        if(seenToday.has(k)) return; seenToday.add(k);
         if(firstDate[k]===ds){ r.newPt++; return; }
         const prevDates=(datesByPatient[k]||[]).filter(x=>x<ds).sort();
         const prev=prevDates[prevDates.length-1];
@@ -16133,15 +16143,17 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
   const inRange=d=>d>=rangeStart&&d<=rangeEnd;
 
   const firstStoreId=1;
+  // 同じ患者さんの見分け方（日計表と同じ）
+  const pid=React.useMemo(()=>buildPatientIdentity(bookings.filter(b=>(b.store_id||1)===selStoreId&&!b.cancelled)),[bookings,selStoreId]);
   // 集計開始日より前の予約は、新患／再診の判定（初回来院日）にも使わない＝10/5以降の最初の来院を新患として数える
   // さらに、集計開始日より前（10/1〜10/4のプレオープン期間）に来院履歴がある患者様は、KPIの対象から丸ごと除外する
   const scopedBookings=React.useMemo(()=>{
     const storeBookings=bookings.filter(b=>(b.store_id||firstStoreId)===selStoreId&&!b.cancelled);
     // 「来院した」＝会計が済んでいる予約。予約だけで未来院（これから・来なかった）の人は、プレオープン期間の履歴にも数えない
     const paidIds=new Set(payments.map(p=>p.booking_id).filter(Boolean));
-    const preStartNames=new Set(storeBookings.filter(b=>b.date<STAFF_KPI_START&&paidIds.has(b.id)).map(b=>b.patient_name));
-    return storeBookings.filter(b=>b.date>=STAFF_KPI_START&&!preStartNames.has(b.patient_name));
-  },[bookings,payments,selStoreId]);
+    const preStartNames=new Set(storeBookings.filter(b=>b.date<STAFF_KPI_START&&paidIds.has(b.id)).map(b=>pid(b)));
+    return storeBookings.filter(b=>b.date>=STAFF_KPI_START&&!preStartNames.has(pid(b)));
+  },[bookings,payments,selStoreId,pid]);
 
   // 会計が済んだ（＝実際に来院した）予約だけ。KPIの対象はこれのみ（会計が終わるまではカウントしない）
   const completedBookings=React.useMemo(()=>{
@@ -16153,11 +16165,14 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
   const historyByPatient=React.useMemo(()=>{
     const map={};
     [...completedBookings].sort((a,b)=>a.date.localeCompare(b.date)).forEach(b=>{
-      if(!map[b.patient_name]) map[b.patient_name]=[];
-      map[b.patient_name].push(b);
+      const k=pid(b);
+      if(!map[k]) map[k]=[];
+      // 同じ日の2つ目の会計（予約の取り直しなど）は、同じ来院として数えない
+      if(map[k].some(x=>x.date===b.date)) return;
+      map[k].push(b);
     });
     return map;
-  },[completedBookings]);
+  },[completedBookings,pid]);
 
   const treatByBookingId=React.useMemo(()=>{
     const map={};
@@ -16174,7 +16189,8 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
   // その月に来院した予約のうち、新患／再診の判定（患者の初回来院日と一致するか）
   const visitsInMonth=React.useMemo(()=>{
     return completedBookings.filter(b=>inRange(b.date)).map(b=>{
-      const hist=historyByPatient[b.patient_name]||[];
+      const hist=historyByPatient[pid(b)]||[];
+      if(!hist.some(h=>h.id===b.id)) return null; // 同じ日の2つ目の会計
       const isFirstVisitEver=hist.length>0&&hist[0].id===b.id;
       // 再診＝前回の来院から1ヶ月以上空いた方（前回来院日の1ヶ月後の日付以降に来院）／それ以外の通院中は「継続」
       const prevVisit=[...hist].reverse().find(h=>h.date<b.date);
@@ -16184,19 +16200,27 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
         const limStr=lim.getFullYear()+"-"+String(lim.getMonth()+1).padStart(2,"0")+"-"+String(lim.getDate()).padStart(2,"0");
         isReturnAfterGap=limStr<=b.date;
       }
-      const hasNext=scopedBookings.some(h=>h.patient_name===b.patient_name&&h.date>b.date); // 次回予約は、まだ来院していない先の予約も含めて見る
+      const hasNext=scopedBookings.some(h=>pid(h)===pid(b)&&h.date>b.date); // 次回予約は、まだ来院していない先の予約も含めて見る
       const pay=paymentByBookingId[b.id];
       const treat=treatByBookingId[b.id];
       const jifeeAmount=pay?(pay.jifee_amount||0):0;
       const didJifee=jifeeAmount>0;
-      const isContracted=treat&&treat.result==="成約";
+      // 自費成約＝その日に回数券・フリーパスを購入した（または施術記録で「成約」）
+      const boughtToday=passes.some(p=>p.purchased_date&&p.purchased_date.slice(0,10)===b.date&&samePassPatient(p,b));
+      const isContracted=boughtToday||!!(treat&&treat.result==="成約");
       return {booking:b,isFirstVisitEver,isReturnAfterGap,hasNext,didJifee,isContracted};
-    });
-  },[completedBookings,scopedBookings,rangeStart,rangeEnd,historyByPatient,paymentByBookingId,treatByBookingId]);
+    }).filter(Boolean);
+  },[completedBookings,scopedBookings,rangeStart,rangeEnd,historyByPatient,paymentByBookingId,treatByBookingId,passes,pid]);
+  // パスの持ち主と予約の患者さんが同じか（空白を除いた名前、または電話番号）
+  function samePassPatient(p,b){
+    const nm=v=>String(v||"").replace(/[\s　]/g,""), ph=v=>String(v||"").replace(/[^\d]/g,"");
+    if(ph(p.phone)&&ph(b.phone)) return ph(p.phone)===ph(b.phone);
+    return nm(p.patient_name)===nm(b.patient_name);
+  }
 
   // 患者ごとの、当月時点までの自費（回数券・FP以外の単発自費）来院回数（自費単発継続の判定用）
-  function priorJifeeSingleCount(patientName,beforeDate){
-    const hist=historyByPatient[patientName]||[];
+  function priorJifeeSingleCount(b,beforeDate){
+    const hist=historyByPatient[pid(b)]||[];
     return hist.filter(h=>h.date<beforeDate&&(paymentByBookingId[h.id]?.jifee_amount||0)>0).length;
   }
 
@@ -16214,7 +16238,7 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
       if(v.didJifee) row.jifeeCount++;
       if(v.isContracted) row.contractCount++;
       // このタイミングで購入されたパス（回数券・FP）を集計
-      const boughtPasses=passes.filter(p=>p.patient_name===v.booking.patient_name&&p.purchased_date&&p.purchased_date.slice(0,10)===v.booking.date);
+      const boughtPasses=passes.filter(p=>samePassPatient(p,v.booking)&&p.purchased_date&&p.purchased_date.slice(0,10)===v.booking.date);
       boughtPasses.forEach(p=>{
         const isFP=(p.pass_type||"").includes("フリーパス");
         if(isFP){
@@ -16225,7 +16249,7 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
         }
       });
       // 自費単発継続：パス購入なしで自費を実施し、かつ過去にも自費単発の来院歴がある場合
-      const jifeeContinue=v.didJifee&&boughtPasses.length===0&&priorJifeeSingleCount(v.booking.patient_name,v.booking.date)>0;
+      const jifeeContinue=v.didJifee&&boughtPasses.length===0&&priorJifeeSingleCount(v.booking,v.booking.date)>0;
       if(jifeeContinue){
         row.jifeeContinueCount++;
       }
@@ -16357,12 +16381,12 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
   const newFollow=React.useMemo(()=>{
     const byStaff={};
     storeStaff.forEach(s=>{ byStaff[s.id]={staff:s,count:0,steps:{},active:0,follow:0,lost:0,list:[]}; });
-    Object.entries(historyByPatient).forEach(([name,hist])=>{
+    Object.entries(historyByPatient).forEach(([key,hist])=>{
       const first=hist[0]; if(!first) return;
       if(followScope==="month"?!inRange(first.date):first.date<STAFF_KPI_START) return;
       const row=byStaff[first.staff_id]; if(!row) return;
       const last=hist[hist.length-1];
-      const next=scopedBookings.filter(b=>b.patient_name===name&&b.date>=todayStr&&!hist.some(h=>h.id===b.id)).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))[0]||null;
+      const next=scopedBookings.filter(b=>pid(b)===key&&b.date>=todayStr&&!hist.some(h=>h.id===b.id)).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))[0]||null;
       const daysSince=Math.max(0,daysBetween(last.date,todayStr));
       const st=followStatus(daysSince,next);
       row.count++;
@@ -16489,7 +16513,8 @@ function StaffKPIPanel({bookings,payments,storeStaff,selStoreId,todayStr,trainin
             ・対応数＝その月に来院した新患／再診の人数（新患＝患者の初回来院と一致する予約）<br/>
             ・次回あり数＝その来院時点で、以降の日付の予約が存在する人数<br/>
             ・自費実施数＝その来院の会計で自費金額が発生した人数<br/>
-            ・自費成約数＝その来院の施術記録で「成約」と記録された人数（施術記録画面での入力が必要です）<br/>
+            ・自費成約数＝その来院の日に回数券・フリーパスを購入した人数（施術記録で「成約」と記録した人も含む）<br/>
+            ・同じ患者さんかどうかは日計表と同じ見分け方です（空白を除いた名前。同じ名前で電話番号が違う人は別の人）<br/>
             ・FP長期＝3・6・12ヶ月フリーパスの新規購入、FP単月＝1ヶ月フリーパスの購入（サブスクかどうかの区別は今のデータでは行っていません）<br/>
             ・回数券＝回数券の新規購入<br/>
             ・自費単発継続＝パスを買わず自費のみで、かつ過去にも自費単発の来院歴がある人数<br/>
